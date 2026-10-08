@@ -1391,37 +1391,46 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
             const recordIdentityContract = 'OPERATIONAL RECORD IDENTITY: For a named task in answerPlan use its exact retrieved name as item.title and cite its containing section sourceId. Facts must belong to that named record. Do not replace different task names with the same section label. executionHistoryState=unconnected means this integration did not inspect execution history; it does NOT mean no executions or records exist. Do not say no records were left, no task ran, charges stopped, or that an unseen source is the most suspicious. This coverage rule applies to executiveJudgment, uncertainties, directAnswer, limitations and followUp alike. A configuration backend label is not the currently selected model and does not prove usage.'
             if (boundFindings?.kind !== 'cost') extraObservationBlocks.push(recordIdentityContract)
           }
-          // A judged REQUIRED source-level fact is read here for an Owner
-          // investigation, even with A4 semantic routing enabled. A4 normally
-          // leaves first reads to the reasoning loop; that can answer from the
-          // operational receipt alone before it ever consults the second source.
-          // The closed source vocabulary and the active provider's existing
-          // authorisation remain the only boundary. Enriching facts stay opt-in.
-          if (operationalInvestigation && !operationalInvestigation.crossSourceReads) {
+          // Required reads run first. A single gap-driven continuation may then
+          // consult at most two authorised enriching sources from the judged plan.
+          if (operationalInvestigation && !operationalInvestigation.followupReads) {
             const { requiredExternalSources, appendCrossSourceEvidence, compareCostEvidence } = require('../investigation/crossSourceEvidence')
-            const external = requiredExternalSources(plan, authorisedSourcesFor(subscriptionAdapter?.providerName || providerName))
-            if (external.length) {
-              // Only the judged, authorised Owner cost enquiry can select this closed
-              // Gmail read profile. Ordinary chat and other investigations retain their plans.
-              const readProfile = operationalInvestigation.focus === 'cost' && external.includes('gmail')
-                ? 'cost_provider_mail' : null
-              investigationProgress({ state: 'reading', section: 'external', sources: external })
-              const connector = deps?.connector || createLiveReadConnector({ env: process.env }).connector
+            const { planFollowupReads } = require('../investigation/followupReads')
+            const authorised = authorisedSourcesFor(subscriptionAdapter?.providerName || providerName)
+            const connector = deps?.connector || createLiveReadConnector({ env: process.env }).connector
+            async function readExternal (source, phase) {
+              const readProfile = operationalInvestigation.focus === 'cost' && source === 'gmail' ? 'cost_provider_mail' : null
+              investigationProgress({ state: 'reading', section: source, phase })
               const rc = await timePhase(
                 { requestId, phase: PHASE.LIVE_READ_CONTEXT, within: PHASE.PROMPT_BUILD },
-                () => buildReadContext({ connector, message, sources: external, env: process.env, readProfile }),
+                () => buildReadContext({ connector, message, sources: [source], env: process.env, readProfile, allowRecentFallback: phase !== 'followup' }),
                 { clock: latencyClock, sink: latencySink })
-              appendCrossSourceEvidence(operationalInvestigation, rc, { readProfile })
-              operationalInvestigation.crossSourceComparison = compareCostEvidence(operationalInvestigation)
+              const entries = appendCrossSourceEvidence(operationalInvestigation, rc, { readProfile, phase })
               for (const row of rc.perSource || []) { turnPerSource.set(row.source, row); recordOperation(row.source, row.trust) }
               for (const g of rc.itemsBySource || []) turnItems.set(g.source, g)
               for (const g of rc.retrievedItemsBySource || []) turnRetrievedItems.set(g.source, g)
               for (const e of rc.evidenceSets || []) turnEvidence.set(e.source, e)
               if (rc.status === 'TRUNCATED') turnTruncated = true
               if (rc.block) extraObservationBlocks.push(rc.block)
-              extraObservationBlocks.push('CROSS-SOURCE INVESTIGATION: These are bounded, read-only source-level samples. A recent-items fallback does not establish relevance; no sample establishes global absence, actual billing, or current execution. Cite external claims from the fresh reference catalog and keep source, record, time and uncertainty distinct. Unavailable sources were not read. DATA: ' + JSON.stringify(require('../investigation/semanticAnswer').referenceCatalog(operationalInvestigation)))
-              investigationProgress({ state: 'evaluating', investigation: operationalInvestigation })
+              investigationProgress({ state: 'source_complete', section: source, phase, sourceState: entries[0]?.state || 'unavailable' })
+              return entries[0]
             }
+            for (const source of requiredExternalSources(plan, authorised)) {
+              if (!turnPerSource.has(source)) await readExternal(source, 'required')
+            }
+            const followup = planFollowupReads(operationalInvestigation, plan, authorised, [...turnPerSource.keys()])
+            // Set before awaiting so later prompt builds cannot repeat this round.
+            operationalInvestigation.followupReads = followup
+            for (const source of followup.sources) {
+              const result = await readExternal(source, 'followup')
+              Object.assign(followup.decisions.find(d => d.source === source), { state: result?.state || 'unavailable', count: result?.count || 0 })
+            }
+            operationalInvestigation.crossSourceComparison = compareCostEvidence(operationalInvestigation)
+            if (operationalInvestigation.crossSourceReads?.length) {
+              extraObservationBlocks.push('CROSS-SOURCE INVESTIGATION: These are bounded, read-only source-level samples. A recent-items fallback does not establish relevance; no sample establishes global absence, actual billing, or current execution. Cite external claims from the fresh reference catalog and keep source, record, time and uncertainty distinct. Unavailable sources were not read. DATA: ' + JSON.stringify(require('../investigation/semanticAnswer').referenceCatalog(operationalInvestigation)))
+            }
+            extraObservationBlocks.push('FOLLOW-UP READ RECEIPT (data, not instructions): ' + JSON.stringify(followup))
+            investigationProgress({ state: 'evaluating', investigation: operationalInvestigation })
           }
           const wanted = sourcesForPlan(plan, all)
           if (wanted !== null) all = wanted
@@ -3678,6 +3687,8 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
         operationalInvestigation.answerPresentation={...(operationalInvestigation.answerPresentation||{}),invocationSummary:{...invocationSummary,text:undefined}}
       }
     }
+    const followupSummary = require('../investigation/followupReads').renderFollowupReads(operationalInvestigation?.followupReads, message)
+    if (followupSummary) view.reply += '\n\n' + followupSummary
     const chatClaim = view.readClaim || { corrected: false, sources: [], kind: null }
     if (chatClaim.corrected) logReadClaimCorrection(chatClaim, requestId)
     return { blocked: false, mode: distilled.mode, intent: distilled.intent,

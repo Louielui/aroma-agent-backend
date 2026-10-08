@@ -119,6 +119,7 @@ function buildPrompt (question, catalogue, contextBlocks, workingContext) {
      * authorisation is still decided entirely by sourcesForPlan and the Owner's own flags.
      */
     '- 提到一個來源嘅名，唔等於要讀嗰個來源。討論、舉例、或者明講「唔好讀」，都唔算需要嗰啲資料。',
+    '- Owner 本機調查：如果某個來源可以直接補足這個問題的證據，但不是首輪必要資料，可列 enriching；伺服器只會在證據不足及已授權時有限補查。不要填入無關或 Owner 禁止讀取的來源。',
     '- executive_frame 要填晒：taskType、decisionNeeded、successDefinition、answerPosture。',
     '- executive_frame 唔係推理過程。唔好喺度寫思考步驟、分析或者理由，淨係填嗰四格。'
   ].join(String.fromCharCode(10))

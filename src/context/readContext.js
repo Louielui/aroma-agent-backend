@@ -881,7 +881,7 @@ async function runStep (connector, source, step, caps) {
  * Build the block. PURE apart from the injected connector's read calls.
  * @returns {Promise<{block: string|null, status: string, perSource: object[]}>}
  */
-async function buildReadContext ({ connector, message, sources = [], env = process.env, now, caps = CAPS, logSink, operation = null, args = null, readProfile = null } = {}) {
+async function buildReadContext ({ connector, message, sources = [], env = process.env, now, caps = CAPS, logSink, operation = null, args = null, readProfile = null, allowRecentFallback = true } = {}) {
   if (sources.includes('xiangxiang_operations')) caps = { ...caps, maxItemsPerSource: 7, maxItemChars: 16000, maxLineChars: 16500, maxTotalChars: 52000 }
   const asOf = now || new Date().toISOString()
   if (!connector || typeof connector.read !== 'function' || sources.length === 0) {
@@ -982,7 +982,7 @@ async function buildReadContext ({ connector, message, sources = [], env = proce
 
       // Keyword miss → recent-items fallback (still a READ OK, clearly labelled).
       let usedFallback = false
-      if (step.results.length === 0 && plan.fallback) {
+      if (step.results.length === 0 && plan.fallback && allowRecentFallback) {
         const fb = await runStep(connector, source, plan.fallback, caps)
         if (!fb.unavailable && fb.results.length > 0) { step = fb; usedFallback = true }
       }

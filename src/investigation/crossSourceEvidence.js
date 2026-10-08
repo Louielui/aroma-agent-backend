@@ -13,13 +13,13 @@ function requiredExternalSources (plan, authorised) {
     .map(f => f.operation))]
 }
 
-function appendCrossSourceEvidence (report, read, { readProfile = null } = {}) {
+function appendCrossSourceEvidence (report, read, { readProfile = null, phase = 'required' } = {}) {
   if (!report?.readOnly || !Array.isArray(report.sections)) return []
   const groups = new Map((read?.itemsBySource || []).map(g => [g.source, g]))
   const scopes = new Map((read?.evidenceSets || []).map(e => [e.source, e]))
   const entries = []
   for (const status of read?.perSource || []) {
-    if (!SOURCE_LEVEL.has(status.source)) continue
+    if (!SOURCE_LEVEL.has(status.source) || report.crossSourceReads?.some(r => r.source === status.source)) continue
     const source = status.source
     const live = status.trust === 'live'
     const group = groups.get(source)
@@ -45,11 +45,11 @@ function appendCrossSourceEvidence (report, read, { readProfile = null } = {}) {
     report.sections.push(section)
     report.plan.sources.push(section.section)
     report.gaps.push({ section: section.section, state: section.state, sourceId: section.sourceId, coverage: section.coverage })
-    entries.push({ source, state: live ? 'sampled' : 'unavailable', count: records.length,
+    entries.push({ source, phase, state: live ? (records.length ? 'sampled' : 'empty') : 'unavailable', count: records.length,
       ...(source === 'gmail' && readProfile === 'cost_provider_mail' ? { searchProfile: readProfile } : {}),
       usedFallback: status.usedFallback === true, durationMs: Number.isFinite(status.durationMs) ? status.durationMs : null })
   }
-  report.crossSourceReads = entries
+  report.crossSourceReads = [...(report.crossSourceReads || []), ...entries]
   return entries
 }
 
@@ -94,7 +94,7 @@ function compareCostEvidence (report) {
     }
   }
   const links = allLinks.slice(0, 6)
-  return { version: 1, state: mailRead.state !== 'sampled' ? 'mail_unavailable'
+  return { version: 1, state: !['sampled', 'empty'].includes(mailRead.state) ? 'mail_unavailable'
     : !mail.length ? 'empty_sample' : !calls.length ? 'local_invocations_unavailable'
       : links.length ? 'possible_identifier_link' : 'no_shared_identifier_in_sample',
   mailSelection: mailRead.usedFallback ? 'recency_fallback' : mailRead.searchProfile === 'cost_provider_mail' ? 'provider_cost_search' : 'question_search',

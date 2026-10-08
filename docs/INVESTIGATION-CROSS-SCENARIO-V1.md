@@ -27,3 +27,34 @@ The subsequent provider-cost mail profile changes only a required, authorised Gm
 Loaded `83d21336385b2bb2dec3bc1314fdb5c7e2d6412b` completed the exact mixed-source Owner enquiry in 125,712 ms; saved receipt `115c50e9-18a1-4864-bb09-3c7d04607fdb` recorded four cost-profile Gmail candidates without recency fallback, 24 local invocations (23 with measured usage), no shared ID and `billingConfirmed:false`. One subject said “Aroma Bistro is out of credits”; two other samples were scheduling/product messages. This confirms that the search can retrieve a relevant lead while still producing noisy candidates. The initial live reply reported the sample count and billing gap, but did not call out that subject. A following change surfaces only cost-bearing subjects with message identity/date as possible leads, never as charge proof.
 
 Loaded `53a60ce5b34027837af1756c66a3a3ea4403f4f7` repeated the exact enquiry in 117,494 ms; saved receipt `0033a257-661a-4ed4-8a45-19c96309e0cb` contained four targeted Gmail candidates without fallback and 24 local invocations (23 with measured usage). The saved comparison included the dated “Aroma Bistro is out of credits” message as a `possible` lead with `provesCharge:false`; the Owner reply displayed its subject and message ID while preserving the unconnected billing gap and no-charge-proof wording. The search remains a bounded, partially connected investigation feature, not a billing integration or exhaustive mailbox audit.
+
+
+## Bounded enriching-source continuation (2026-10-08)
+
+Owner local investigations now execute required reads first, then one continuation
+round when the evidence report has gaps or contradictions. The server intersects
+the judged plan's enriching Gmail/Drive/Calendar/GitHub sources with the active
+provider's existing read permissions. At most two additional sources are read;
+already-attempted sources are skipped. No additional planning model call, repeated
+source read or automatic retry is introduced. Follow-up keyword misses do not
+fall back to unrelated recent entries.
+
+The saved report contains `followupReads` with the trigger, original gap sections,
+selected sources, skip reasons and actual outcomes. Required and follow-up evidence
+accumulate rather than overwrite each other. Empty searches, unavailable sources,
+unauthorised sources and sources omitted by the bound remain distinguishable.
+A sample or successful supplementary read does not resolve billing, causality or
+same-failure verification gaps by itself. The final answer and archive include the
+bounded follow-up receipt. Polling shows the actual source being checked and a
+separate zero-match message in Chinese and English.
+
+Validation: 161 targeted tests passed, including cost/mail, failed development/GitHub,
+and local email-follow-up/mail failure followed by Drive. Browser tests cover the
+real polling UI at desktop Chinese and mobile English widths, zero-match transition,
+no page errors and no horizontal overflow. These are controlled connector fixtures,
+not proof of live provider access. Live acceptance is recorded separately at delivery.
+
+Scope remains partial: this continuation belongs to Owner local investigations
+that include `xiangxiang_operations`; standalone email enquiries retain their
+existing route. It does not introduce management actions, an unlimited research
+loop, global mailbox coverage, billing integration or same-failure runtime verification.

@@ -1218,7 +1218,7 @@
 
   // A typing indicator the moment a message is sent — never a silent wait.
   function investigationSource (name) {
-    var names = { configuration: t('investigation.configuration'), schedules: t('investigation.schedules'), work: t('investigation.work'), history: t('investigation.history'), execution: t('investigation.execution'), usage: t('investigation.usage'), billing: t('investigation.billing') }
+    var names = { gmail: 'Gmail', drive: 'Google Drive', calendar: 'Calendar', github: 'GitHub', external_gmail: 'Gmail', external_drive: 'Google Drive', external_calendar: 'Calendar', external_github: 'GitHub', configuration: t('investigation.configuration'), schedules: t('investigation.schedules'), work: t('investigation.work'), history: t('investigation.history'), execution: t('investigation.execution'), usage: t('investigation.usage'), billing: t('investigation.billing') }
     return names[name] || t('investigation.operations')
   }
   function renderInvestigation (turnEl, report, investigationId, approvalId) {
@@ -1331,7 +1331,8 @@
       if (!run) return
       var last = run.events && run.events[run.events.length - 1]
       if (run.state === 'planning') stage.textContent = t('investigation.planning')
-      else if (run.state === 'reading') stage.textContent = t('investigation.reading', { source: investigationSource(last && last.section) })
+      else if (run.state === 'reading') stage.textContent = last && last.phase === 'followup' ? t('investigation.supplementing', { source: investigationSource(last.section) }) : t('investigation.reading', { source: investigationSource(last && last.section) })
+      else if (run.state === 'source_complete' && last && last.sourceState === 'empty') stage.textContent = t('investigation.sourceEmpty', { source: investigationSource(last.section) })
       else if (run.state === 'source_complete') stage.textContent = last && ['missing', 'unavailable', 'unconnected'].includes(last.sourceState) ? t('investigation.sourceGap', { source: investigationSource(last.section) }) : t('investigation.sourceChecked', { source: investigationSource(last && last.section) })
       else if (run.state === 'evaluating') stage.textContent = t('investigation.evaluating')
       else if (run.state === 'semantic_review') stage.textContent = t('investigation.semanticReview')

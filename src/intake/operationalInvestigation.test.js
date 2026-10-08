@@ -2,7 +2,7 @@
 const test = require('node:test'), assert = require('node:assert/strict')
 const { processIntake } = require('./intakeService')
 
-async function turn (t, { allowed = true, question = '之前有什麼會導致不停扣 credit？', focus = null, failed = false, verdict = 'allow_final', judgment = null, semanticCallModel = undefined, workEvidence = false, unavailableFact = false, extraFacts = [], previousInvestigation = null, reference = null, history = [], investigationAnswer = undefined, semanticDecision = 'supported', evidenceSections = null, fastPath = false, taskType = 'diagnose', sources = ['xiangxiang_operations'], externalUnavailable = false, requestedCapability = null } = {}) {
+async function turn (t, { allowed = true, question = '之前有什麼會導致不停扣 credit？', focus = null, failed = false, verdict = 'allow_final', judgment = null, semanticCallModel = undefined, workEvidence = false, unavailableFact = false, extraFacts = [], previousInvestigation = null, reference = null, history = [], investigationAnswer = undefined, semanticDecision = 'supported', evidenceSections = null, fastPath = false, taskType = 'diagnose', sources = ['xiangxiang_operations'], externalUnavailable = false, externalEmpty = false, requestedCapability = null } = {}) {
   const old = { ...process.env }
   t.after(() => { for (const k of Object.keys(process.env)) if (!(k in old)) delete process.env[k]; Object.assign(process.env, old) })
   Object.assign(process.env, { CHAT_BACKEND: 'codex-subscription', GOAL_DECOMPOSER: 'on', READ_ACCESS: 'on', CONTEXT_XIANGXIANG_OPERATIONS: 'on', XIANGXIANG_MEMORY: 'on', TURN_ROUTER: 'on', A4_KNOWLEDGE_ROUTING: 'on', MULTI_AI_ROUTER: 'off', DECISION_RECALL: 'off', CONVERSATION_RECALL: 'off' })
@@ -16,6 +16,8 @@ async function turn (t, { allowed = true, question = '之前有什麼會導致�
   let recall = 0
   const fixtureRead = async (source, method, params) => {
     reads.push(source === 'gmail' ? { source, method, params } : { source, method })
+    if (source !== 'xiangxiang_operations' && externalEmpty) return { results: [] }
+    if (source === 'github' || source === 'drive') return { results: [{source, sourceId:source + ':one', title:'Related investigation record', content:'Historical evidence only', trust:'live', retrievedAt:'2026-10-08T01:00:00Z'}] }
     if (source === 'gmail') {
       if (externalUnavailable) throw Error('mail connector unavailable')
       return {results:[{source,sourceId:'mail:one',title:'Provider usage notice',retrievedAt:'2026-10-07T20:00:00Z',content:'A usage notice was sent; this does not prove a charge.',trust:'live',fields:{}}]}
@@ -348,4 +350,54 @@ test('an exhausted operational scope reports the gap without repeated subscripti
   assert.equal(x.calls.filter(c => c.schema !== 'goal_plan').length, 1)
   assert.equal(x.reads.length, 1)
   assert.equal(x.result.investigation.plan.automaticModelRetries, 0)
+})
+
+
+test('cost evidence gaps trigger one authorised enriching Gmail read without charge inference', async t => {
+  const x = await turn(t, { focus:'cost', sources:['xiangxiang_operations','gmail'],
+    extraFacts:[{id:'f2',need:'Provider billing notice',operation:'gmail',entity:null,fields:[],necessity:'enriching'}] })
+  const report = x.result.investigation
+  assert.deepEqual(report.followupReads.sources, ['gmail'])
+  assert.equal(report.followupReads.decisions[0].state, 'sampled')
+  assert.equal(report.crossSourceReads[0].phase, 'followup')
+  assert.equal(report.billingConfirmed, false)
+  assert.ok(report.gaps.some(g=>g.section==='billing'))
+  assert.equal(x.reads.filter(r=>r.method==='searchMessages').length, 1)
+  assert.ok(x.events.some(e=>e.phase==='followup'&&e.section==='gmail'&&e.state==='reading'))
+  assert.match(x.result.reply, /補查紀錄/)
+  assert.deepEqual(x.result.tasks, [])
+  assert.equal(x.result.replyForArchive, x.result.reply)
+})
+
+test('development failure supplements GitHub without claiming the current failure is repaired', async t => {
+  const x = await turn(t, { focus:'work_failure', workEvidence:true, sources:['xiangxiang_operations','github'],
+    question:'Why did development fail? Check related changes if needed.',
+    extraFacts:[{id:'f2',need:'Related changes',operation:'github',entity:null,fields:[],necessity:'enriching'}] })
+  assert.deepEqual(x.result.investigation.followupReads.sources, ['github'])
+  assert.equal(x.result.investigation.crossSourceReads[0].source, 'github')
+  assert.ok(x.result.investigation.gaps.some(g=>g.section==='same_failure_current_version_verification'))
+  assert.deepEqual(x.result.tasks, [])
+})
+
+test('local email follow-up investigation retains required source failure and continues to a planned alternative', async t => {
+  const x = await turn(t, { focus:'general', sources:['xiangxiang_operations','gmail','drive'], externalUnavailable:true,
+    question:'Check the local email follow-up work and related mail; consult documents if needed.',
+    extraFacts:[{id:'f2',need:'Mail thread',operation:'gmail',entity:null,fields:[],necessity:'required'},
+      {id:'f3',need:'Related document',operation:'drive',entity:null,fields:[],necessity:'enriching'}] })
+  assert.deepEqual(x.result.investigation.crossSourceReads.map(r=>[r.source,r.phase,r.state]),
+    [['gmail','required','unavailable'],['drive','followup','sampled']])
+  assert.deepEqual(x.result.investigation.followupReads.sources,['drive'])
+  assert.deepEqual(x.result.tasks, [])
+})
+
+test('empty follow-up search stops without recency fallback and differs from failed or unauthorized reads', async t => {
+  const facts=[{id:'f2',need:'Related mail',operation:'gmail',entity:null,fields:[],necessity:'enriching'}]
+  const x=await turn(t,{focus:'general',sources:['xiangxiang_operations','gmail'],externalEmpty:true,extraFacts:facts,evidenceSections:[{section:'history',sourceId:'history:sample',state:'partial',records:[]}]})
+  assert.equal(x.reads.filter(r=>r.source==='gmail').length,1)
+  assert.equal(x.result.investigation.crossSourceReads[0].state,'empty')
+  assert.ok(x.events.some(e=>e.sourceState==='empty'))
+  assert.match(x.result.reply,/搜尋無命中/)
+  const denied=await turn(t,{focus:'cost',extraFacts:facts})
+  assert.equal(denied.result.investigation.followupReads.decisions[0].reason,'not_authorized')
+  assert.equal(denied.reads.some(r=>r.source==='gmail'),false)
 })

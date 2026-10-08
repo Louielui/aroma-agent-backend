@@ -73,3 +73,39 @@ test('bilingual desktop and mobile investigation approves once, shows saved cita
     }
   } finally { await browser.close() }
 })
+
+
+test('live progress names the follow-up source and distinguishes a zero-match search in both languages', { skip: process.platform !== 'win32', timeout: 45000 }, async () => {
+  const browser = await require('playwright-core').chromium.launch({ channel:'msedge', headless:true })
+  try {
+    for (const [lang,width] of [['zh',1280],['en',390]]) {
+      const context=await browser.newContext({viewport:{width,height:900}})
+      let state='reading', release
+      const pending=new Promise(resolve=>{release=resolve})
+      const errors=[]
+      await context.route('**/*',async route=>{
+        const p=new URL(route.request().url()).pathname
+        const json=x=>route.fulfill({contentType:'application/json',body:JSON.stringify(x)})
+        if(p==='/demo') return route.fulfill({contentType:'text/html',body:pageHtml(lang)})
+        if(p==='/api/v1/demo/models') return json({...modelCatalogue(),central:{model:'claude-sonnet',effort:'medium'},selection:{mode:'central',revision:0,effective:{model:'claude-sonnet',effort:'medium'}}})
+        if(p==='/api/v1/demo/intake') {await pending; return json({mode:'chat',reply:'Done',tasks:[]})}
+        if(p.startsWith('/api/v1/demo/investigations/')) return json({run:{state,events:[{state,section:'gmail',phase:'followup',sourceState:state==='source_complete'?'empty':null}]}})
+        if(p==='/api/v1/conversations') return json({ok:true,conversations:[]})
+        if(p==='/api/v1/demo/greeting') return json({line:'Fixture'})
+        if(p==='/api/v1/demo/version') return json({build:'investigation-fixture'})
+        return json({ok:true,entries:[],sections:[]})
+      })
+      const page=await context.newPage();page.on('pageerror',e=>errors.push(e.message))
+      try {
+        await page.goto('http://127.0.0.1:19091/demo')
+        await page.locator('#msg').fill('Check local history and related mail')
+        await page.locator('#send').click()
+        await page.getByText(lang==='zh'?'證據仍不足，正在補查：Gmail…':'Evidence is incomplete; checking Gmail next…',{exact:true}).waitFor()
+        state='source_complete'
+        await page.getByText(lang==='zh'?'Gmail 已查，這次搜尋沒有命中':'Gmail checked; no matches in this search',{exact:true}).waitFor()
+        assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth))
+        assert.deepEqual(errors,[])
+      } finally {release();await context.close()}
+    }
+  } finally {await browser.close()}
+})

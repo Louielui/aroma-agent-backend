@@ -185,7 +185,8 @@ function goalPlanSchema () {
              *
              * So the model declares it, and the judge still applies redundancy arithmetic on
              * top — a required fact whose fields are all obtainable elsewhere is dropped
-             * regardless of what it called itself. Only `required` facts become reads.
+             * regardless of what it called itself. Required facts initiate reads; Owner local investigations may also read
+             * authorised enriching facts in one bounded round when evidence remains incomplete.
              */
             necessity: {
               type: 'string',
