@@ -59,3 +59,17 @@ test('mixed-source findings disclose that the deterministic summary omits other 
  assert.match(mixed.text,/Other sources named in the question are outside this evidence/)
  assert.deepEqual(mixed.references,[{sourceId:'billing:fresh',recordId:null,fields:{state:'unconnected'}}])
 })
+
+test('sampled Gmail does not become an omitted source because an enriching fact has no operation',()=>{
+ const cost=report('cost',[section('billing','billing:fresh',[],{state:'unconnected'})],{
+  crossSourceReads:[{source:'gmail',state:'sampled',count:4}]
+ })
+ const mixed=renderSourceBoundFindings(cost,{message:'Check local usage and provider email',plan:{facts:[
+  {operation:'xiangxiang_operations',necessity:'required'},
+  {operation:'gmail',necessity:'required'},
+  {operation:null,necessity:'enriching'}
+ ]}})
+ assert.equal(mixed.otherSourcesNotVerified,undefined)
+ assert.doesNotMatch(mixed.text,/Other sources named in the question are outside this evidence/)
+ assert.match(mixed.text,/charges.*unconfirmed/i)
+})

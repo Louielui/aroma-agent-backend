@@ -38,7 +38,8 @@ function renderSourceBoundFindings(report,{message='',plan=null}={}){
  if(report?.readOnly!==true||!Array.isArray(report.sections))return null
  const scoped=result=>{
   if(!result||!Array.isArray(plan?.facts))return result
-  const outside=plan.facts.filter(f=>f.operation!=='xiangxiang_operations')
+  // A fact with no resolved operation is not a named, omitted source.
+  const outside=plan.facts.filter(f=>f.operation&&f.operation!=='xiangxiang_operations')
   if(!outside.length||outside.every(f=>report.crossSourceReads?.some(r=>r.source===f.operation&&r.state==='sampled')))return result
   return {...result,text:result.text+'\n\n'+t('investigation.otherSourcesNotVerified',{},localeFor(message)),otherSourcesNotVerified:true}
  }
