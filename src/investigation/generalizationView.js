@@ -16,6 +16,8 @@ function renderGeneralization(report,message='') {
  const zh=zhFor(message),e=report.evidenceModel,lines=[]
  const correlated=require('./workCorrelation').renderWorkCorrelation(report,message)
  if(correlated)lines.push(correlated)
+ const chain=require('./repairChainView').renderRepairChain(report.workCorrelation?.repairChain,message)
+ if(chain)lines.push(chain)
  const state=n=>({CONFIRMED:zh?'已確認':'confirmed',SUPPORTED:zh?'有來源支持':'supported',CANDIDATE:zh?'候選線索':'candidate',CONTRADICTED:zh?'資料矛盾':'contradicted',UNKNOWN:zh?'未知':'unknown',UNAVAILABLE:zh?'來源無法讀取':'unavailable'}[n]||n)
  const refs=a=>a?.sourceId?(zh?'來源：':'source: ')+safe(a.sourceId)+(a.recordId?' / '+safe(a.recordId):''):''
  if(report.focus==='work_failure'&&!e.contradictions.length) {

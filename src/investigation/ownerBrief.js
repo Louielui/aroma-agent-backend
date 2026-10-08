@@ -13,7 +13,7 @@ function reasonText (reason, locale) {
 // Presentation only: retain complete receipts and detailed prose in the saved
 // report. The brief never reads, selects sources, upgrades grades or proves repair.
 function ownerBrief (report, { message = '', findings } = {}) {
-  if (report?.readOnly !== true || report.continuity || report.evidenceModel?.contradictions?.length ||
+  if (report?.readOnly !== true || report.continuity || report.workCorrelation?.repairChain?.stages.some(s=>s.state==='CONTRADICTED') || report.evidenceModel?.contradictions?.length ||
       report.contradictions?.length || findings?.kind !== 'work_failure' || !findings.references?.length) return null
   if (require('./generalRouter').requiredSourceCoverage(report).length) return null
   // A broader external enquiry can contribute facts beyond the failed-work
@@ -32,7 +32,8 @@ function ownerBrief (report, { message = '', findings } = {}) {
     lines.push(reads.some(r => r.state === 'sampled') ? t('investigation.ownerRevisionRead', {}, locale) : t('investigation.ownerRevisionUnavailable', {}, locale))
   }
   if (report.routing?.unmappedFacts?.length || findings.otherSourcesNotVerified) lines.push(t('investigation.ownerMissingSource', {}, locale))
-  lines.push(t('investigation.ownerRecommendation', {}, locale))
+  if(report.workCorrelation?.repairChain)lines.push(require('./repairChainView').nextEvidence(report.workCorrelation.repairChain,locale))
+  else lines.push(t('investigation.ownerRecommendation', {}, locale))
   return { text: lines.join('\n\n'), references: findings.references, kind: 'source_bound_owner_brief', locale, modelProseUsed: false }
 }
 

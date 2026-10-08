@@ -6,7 +6,7 @@ const sha='a'.repeat(40),other='b'.repeat(40)
 const tests={total:3,passed:3,failed:0,exitCode:0,skipped:0,cancelled:0}
 const failed={sourceId:'failed',kind:'worker/adoptions',workRunId:'work',action:'adopt',state:'failed',reason:'source_dirty',at:'2026-10-07T10:00:00Z'}
 const adopted={sourceId:'adopted',kind:'worker/adoptions',workRunId:'work',action:'adopt',state:'completed',appliedToLive:true,commit:sha,loadedCommit:sha,tests,sourceFilesComplete:true,sourceFiles:[{path:'registered.js',candidateHash:'c'.repeat(64),currentHash:'c'.repeat(64)}],at:'2026-10-07T11:00:00Z'}
-const report=(records,boot=sha)=>({focus:'work_failure',readOnly:true,sections:[{section:'work',sourceId:'work:receipt',state:'ok',latestFailureId:'failed',records},{section:'configuration',sourceId:'config:receipt',state:'ok',records:[{role:'central_brain_default',bootCommit:boot}]}]})
+const report=(records,boot=sha)=>({focus:'work_failure',readOnly:true,sections:[{section:'work',sourceId:'work:receipt',state:'ok',retrievedAt:new Date().toISOString(),latestFailureId:'failed',records},{section:'configuration',sourceId:'config:receipt',state:'ok',retrievedAt:new Date().toISOString(),records:[{role:'central_brain_default',bootCommit:boot}]}]})
 test('same work identity, complete passing tests and loaded commit prove adoption prerequisite recovery only',()=>{
  const r=report([failed,adopted]);r.workCorrelation=correlateWork(r)
  assert.equal(r.workCorrelation.operationRecovery,'CONFIRMED')

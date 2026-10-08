@@ -39,6 +39,22 @@ async function turn (t, { allowed = true, question = '之前有什麼會導致�
   return { result, events, calls, reads, recall }
 }
 
+test('bilingual intake saves the exact repair-chain gap without claiming an unrelated successful task is the fix',async t=>{
+ for(const question of ['上一個開發任務為什麼失敗？現在修好了嗎？','What caused the previous development task to fail, and has it actually been fixed?']){
+  const x=await turn(t,{question,focus:'work_failure',fastPath:true,investigationEvidence:['work_failure','source_revision','test_results','repair_verification'],evidenceSections:[
+   {section:'work',sourceId:'work:chain',state:'partial',latestFailureId:'failed',retrievedAt:new Date().toISOString(),records:[{sourceId:'failed',kind:'worker/project-tasks',state:'failed',reason:'source_dirty'},
+    {sourceId:'unrelated',kind:'worker/project-runs',state:'completed',tests:{total:3,passed:3,failed:0,exitCode:0,skipped:0,cancelled:0}}]},
+   {section:'configuration',sourceId:'config:chain',state:'ok',retrievedAt:new Date().toISOString(),records:[{sourceId:'backend',bootCommit:'a'.repeat(40)}]}]})
+  const c=x.result.investigation.workCorrelation.repairChain
+  assert.equal(c.targetId,'failed');assert.equal(c.firstGap,'linked_correction');assert.equal(c.conclusion,'not_established')
+  assert.equal(c.stages.find(s=>s.key==='passing_tests').state,'UNKNOWN')
+  assert.match(x.result.reply,/明確編號關聯|explicitly linked/)
+  assert.match(x.result.investigation.answerDetails,/修復證據鏈|Repair evidence chain/)
+  assert.equal(x.result.investigation.evidenceModel.assertions.find(a=>a.facet==='repair_chain_linked_correction').state,'UNKNOWN')
+  assert.deepEqual(x.result.tasks,[]);assert.deepEqual(x.reads,[{source:'xiangxiang_operations',method:'readInvestigation'}])
+ }
+})
+
 test('fresh source-bound failure answer skips only the unused main answer model call', async t => {
   const x = await turn(t, { fastPath: true, focus: 'work_failure', workEvidence: true, previousInvestigation:{state:'absent'},
     question: 'Why did the previous development task fail; is it fixed now?' })

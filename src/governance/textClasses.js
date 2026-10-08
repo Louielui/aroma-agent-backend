@@ -77,6 +77,7 @@ const CLASS = Object.freeze({
 const FILE_CLASS = Object.freeze({
   'investigation/ownerBrief.js': CLASS.INTERFACE,
   'investigation/workCorrelation.js': CLASS.INTERFACE, // Receipt-bound bilingual explanation; identities are compared without language matching.
+  'investigation/repairChainView.js': CLASS.INTERFACE, // Fixed bilingual stage labels, never source routing.
   'investigation/enquiryOffer.js': CLASS.MODEL,
   // Backward-compatible report focus reads historical question vocabulary;
   // translating it would change old receipt presentation, never source routing.

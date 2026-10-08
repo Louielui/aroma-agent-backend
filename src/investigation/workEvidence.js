@@ -9,6 +9,18 @@ const at = v => typeof v === 'string' && Number.isFinite(Date.parse(v)) ? v : nu
 const sha = v => typeof v === 'string' && /^[a-f0-9]{40,64}$/i.test(v) ? v : null
 const code = v => typeof v === 'string' && /^[a-z][a-z0-9_]{0,79}$/.test(v) ? v : null
 const id = v => typeof v === 'string' && /^[a-f0-9-]{36}$/i.test(v) ? v : null
+const hash = value => crypto.createHash('sha256').update(value).digest('hex')
+function testWitness (v, expected) {
+  // Hash-bound host sandbox results only. Never forward stdout, paths to the
+  // sandbox, source bodies, or a model's assertion that a test succeeded.
+  if (v?.engine !== 'windows-sandbox-offline-v1' || !/^[a-f0-9]{64}$/.test(v.evidenceHash || '') ||
+      !expected.length || expected.some(f => !/^[a-f0-9]{64}$/.test(f.hash || '')) ||
+      new Set(expected.map(f=>f.path)).size !== expected.length ||
+      !['noExternalInterfaces','hostReadDenied','hostWriteDenied','readonlyInputDenied','readonlyToolsDenied','loopbackDenied','ipv6LoopbackDenied','internetDenied','cleanIdentity','secretsAbsent'].every(k=>v.boundary?.[k]===true) ||
+      !v.inputHashes || Object.keys(v.inputHashes).length !== expected.length ||
+      expected.some(f => v.inputHashes[f.path] !== f.hash)) return null
+  return { evidenceHash:v.evidenceHash, inputHash:hash(JSON.stringify(expected.slice().sort((a,b)=>a.path.localeCompare(b.path)))), at:at(v.at) }
+}
 function tests (v) {
   if (!v || typeof v !== 'object') return null
   return Object.fromEntries(['total', 'passed', 'failed', 'exitCode', 'skipped', 'cancelled'].map(k => [k, Number.isInteger(v[k]) ? v[k] : null]))
@@ -27,13 +39,29 @@ function projectWorkRecord (d, { kind, readSource = () => null } = {}) {
       comparison: currentHash ? currentHash === candidateHash ? 'matches_candidate' : currentHash === sha(f.sha256) ? 'matches_original' : 'different' : 'unavailable' }
   })
   const diagnostic = d.failureDiagnostic
+  const acceptance = (Array.isArray(evidence.acceptanceFiles) ? evidence.acceptanceFiles : []).slice(0,30)
+    .filter(f => typeof f.path === 'string' && /^acceptance\/[a-zA-Z0-9_.-]+\.(?:js|cjs)$/.test(f.path) && /^[a-f0-9]{64}$/.test(f.sha256 || '')).map(f=>({path:f.path,sha256:f.sha256}))
+  const dependencies = (Array.isArray(evidence.dependencyFiles) ? evidence.dependencyFiles : []).slice(0,READABLE_SOURCE_FILES.length).filter(f => READABLE_SOURCE_FILES.includes(f.path)).map(f => {
+    let currentHash = null
+    try { const body=readSource(f.path);if(typeof body==='string')currentHash=hash(body) } catch (_) {}
+    return {path:f.path,originalHash:sha(f.sha256),currentHash}
+  })
+  const complete = sources.length > 0 && sources.length === evidence.sourceFiles?.length && acceptance.length > 0 &&
+    acceptance.length === evidence.acceptanceFiles?.length && dependencies.length === (evidence.dependencyFiles?.length || 0)
+  const fixed = [...acceptance.map(f=>({path:f.path,hash:f.sha256})),...dependencies.map(f=>({path:f.path,hash:f.originalHash}))]
+  const baselineInput = [...sources.map(f=>({path:f.path,hash:f.originalHash})),...fixed]
+  const candidateInput = [...sources.map(f=>({path:f.path,hash:f.candidateHash})),...fixed]
+  const testBinding = complete ? { protectedTestsHash:hash(JSON.stringify(acceptance.slice().sort((a,b)=>a.path.localeCompare(b.path)))),
+    baseline:testWitness(result.baseline,baselineInput),candidate:testWitness(d.tests || result.tests,candidateInput),
+    dependenciesMatch:dependencies.every(f=>f.originalHash === f.currentHash && /^[a-f0-9]{64}$/.test(f.currentHash || '')) } : null
   return { kind, name: text(d.input?.goal || d.workOrder?.goal || d.message, 240), goal: text(d.input?.goal || d.workOrder?.goal || d.message, 240), state: code(d.status || d.state),
     at: at(d.updatedAt || d.finishedAt || d.startedAt || d.createdAt), startedAt: at(d.startedAt || d.createdAt), finishedAt: at(d.finishedAt), reason: code(d.reason || d.error),
     model: text(d.model || d.execution?.model || result.model || metadata.find(s => s.model)?.model), effort: text(d.effort || result.effort || d.draftEffort), reviewModel: text(d.review?.model || d.acceptanceReview?.model),
-    recipe: text(d.workOrder?.recipe || d.executableRecipe), taskRunId: id(d.taskRunId), workRunId: id(d.workRunId), requestId: id(d.requestId), action: code(d.action),
+    recipe: text(d.workOrder?.recipe || d.executableRecipe), registeredTaskId:id(/^registered-task-(.+)$/.exec(d.workOrder?.recipe || '')?.[1]), taskRunId: id(d.taskRunId), workRunId: id(d.workRunId), requestId: id(d.requestId), action: code(d.action),
     sourceRevision: sha(evidence.revision || d.input?.bootCommit), commit: sha(d.commit), loadedCommit: sha(d.loaded?.bootCommit), sourceFiles: sources,
     sourceFilesComplete: Array.isArray(evidence.sourceFiles) && evidence.sourceFiles.length > 0 && sources.length === evidence.sourceFiles.length,
     tests: tests(d.tests || result.tests), baseline: tests(result.baseline), reviewVerdict: code(d.review?.verdict || d.acceptanceReview?.verdict),
+    testBinding,
     appliedToLive: typeof d.appliedToLive === 'boolean' ? d.appliedToLive : typeof result.appliedToLive === 'boolean' ? result.appliedToLive : null,
     failureDiagnostic: diagnostic ? { exitCode: Number.isInteger(diagnostic.exitCode) ? diagnostic.exitCode : null, subtype: code(diagnostic.subtype) } : null,
     steps: metadata, currentRunningState: 'unknown', fixedInCurrentVersion: null }
@@ -43,11 +71,11 @@ function selectWorkSample (records, limit = 5) {
   const recent = records.slice().sort((a,b) => String(b.at || '').localeCompare(String(a.at || '')))
   const failed = recent.find(r => ['failed', 'timed_out', 'needs_attention'].includes(r.state) && /project|repair|adoption/.test(r.kind || ''))
   const picked = failed ? [failed] : []
-  const linked = r => picked.some(p => p.workRunId === r.sourceId || p.taskRunId === r.sourceId || r.workRunId === p.sourceId || r.taskRunId === p.sourceId)
+  const linked = r => picked.some(p => ['workRunId','taskRunId','registeredTaskId'].some(field => p[field] === r.sourceId || r[field] === p.sourceId))
   for (let i = 0; i < 3; i++) for (const r of recent) if (!picked.includes(r) && linked(r) && picked.length < limit) picked.push(r)
   const sibling = r => failed && ((failed.workRunId && failed.workRunId === r.workRunId) || (failed.taskRunId && failed.taskRunId === r.taskRunId))
   for (const r of recent) if (!picked.includes(r) && sibling(r) && picked.length < limit) picked.push(r)
   for (const r of recent.filter(r => r.kind === 'worker/project-runs' || r.kind === 'worker/adoptions').concat(recent)) if (!picked.includes(r) && picked.length < limit) picked.push(r)
   return { records: picked, selection: 'latest_failure_explicit_links_and_recent_work', omitted: Math.max(0, records.length - picked.length), latestFailureId: failed?.sourceId || null }
 }
-module.exports = { projectWorkRecord, selectWorkSample, READABLE_SOURCE_FILES }
+module.exports = { projectWorkRecord, selectWorkSample, READABLE_SOURCE_FILES, testWitness }

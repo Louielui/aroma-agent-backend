@@ -60,7 +60,18 @@ function buildEvidenceState(report) {
     }
   }
   coverage.push(...require('./generalRouter').requiredSourceCoverage(report))
+  const chain=report.workCorrelation?.repairChain
+  if(chain?.readOnly===true)for(const stage of chain.stages){
+    const sources=(report.sections||[]).filter(s=>stage.references.some(r=>r.sourceId===s.sourceId))
+    const records=sources.flatMap(s=>(s.records||[]).filter(r=>stage.references.some(ref=>ref.sourceId===s.sourceId&&ref.recordId===identity(r))))
+    const earliest=values=>values.map(date).filter(Boolean).sort()[0]||null
+    const retrievedAt=earliest(sources.map(s=>s.retrievedAt))
+    assertions.push({id:'e'+(assertions.length+1),subject:'work:'+chain.targetId,sourceId:stage.references[0]?.sourceId||null,recordId:chain.targetId,
+      facet:'repair_chain_'+stage.key,temporalScope:stage.key==='current_version'||stage.key==='registered_regression'?'current_source':stage.key==='live_failure_verification'?'current_runtime':'historical_execution',
+      state:stage.state,value:['UNKNOWN','UNAVAILABLE'].includes(stage.state)?null:stage.reason,observedAt:['current_version','registered_regression'].includes(stage.key)?retrievedAt:earliest(records.map(r=>r.at)),retrievedAt,references:stage.references})
+  }
   const contradictions=[],transitions=[],byKey=new Map()
+  for(const a of assertions.filter(a=>a.state==='CONTRADICTED'))contradictions.push({subject:a.subject,facet:a.facet,observations:[a.id],reason:'derived_chain_conflict'})
   for(const a of assertions) {
     if(['UNKNOWN','UNAVAILABLE'].includes(a.state)) continue
     const key=a.subject+':'+a.facet+':'+a.temporalScope
