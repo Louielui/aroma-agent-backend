@@ -1990,7 +1990,7 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
         if (!useSourceBoundDirectAnswer(gpt.providerName === 'claude' ? CLAUDE : OPENAI, gpt)) {
           const gptFormat = answerPlanFormat()
           gptResult = await timePhase(
-            { requestId, phase: PHASE.MODEL_CALL, role: ROLE.MAIN, provider: OPENAI, attempt: 1 },
+            { requestId, phase: PHASE.MODEL_CALL, role: ROLE.MAIN, provider: gpt.providerName === 'claude' ? CLAUDE : OPENAI, attempt: 1 },
             () => gpt.complete(gptPrompt, { invocationPhase:'answer', system: effSystem, maxTokens, temperature: 0.3, ...(gptFormat ? { responseFormat: gptFormat } : {}) }),
             { clock: latencyClock, sink: latencySink })
         }

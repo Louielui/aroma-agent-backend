@@ -466,8 +466,9 @@ test('development paraphrases stop after one exact revision probe, retain unknow
   for (const question of ['上次改程式為何中斷？現在正常了嗎？', '之前開發失敗的原因找到了嗎，能確認已解決嗎？',
     'Why did our last code change stop, and is the issue resolved in the running version?',
     'Investigate the earlier development failure and tell me whether the fix has been verified.']) {
+   for (const operation of ['development_record', 'github']) {
     const x = await turn(t, { question, focus: 'work_failure', fastPath: true, sources: ['xiangxiang_operations', 'github'], captureLocalParams: true,
-      extraFacts: [{ id:'f2', need:'Additional development history', operation:'development_record', necessity:'enriching', entity:null, fields:[] }],
+      extraFacts: [{ id:'f2', need:'Additional development history', operation, necessity:'enriching', entity:null, fields:[] }],
       evidenceSections: [{ section:'work', sourceId:'work:one', state:'partial', latestFailureId:'failed-run', records:[{ sourceId:'failed-run', state:'failed', reason:'source_dirty', sourceRevision:'a'.repeat(40) }] }] })
     assert.equal(x.calls.filter(c => c.schema !== 'goal_plan').length, 0)
     assert.equal(x.reads.filter(r => r.source === 'github').length, 1)
@@ -486,6 +487,7 @@ test('development paraphrases stop after one exact revision probe, retain unknow
     assert.doesNotMatch(JSON.stringify(perf), /Additional development history|source_dirty|Related investigation record/)
     assert.equal(x.result.replyForArchive, x.result.reply)
     assert.deepEqual(x.result.tasks, [])
+   }
   }
 })
 

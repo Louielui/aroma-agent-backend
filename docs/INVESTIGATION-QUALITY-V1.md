@@ -9,8 +9,10 @@ unused answer/review calls from one additional provably bounded presentation.
 
 A fresh work-failure investigation may use the existing fixed-answer guard after
 one GitHub follow-up pinned to the exact target source revision. All required facts
-must still use local operations. The only permitted extra plan fact is enriching
-development_record evidence, whose unavailable integration remains a stated gap.
+must still use local operations. Extra plan facts may only name enriching GitHub
+or development_record evidence; the latter's unavailable integration remains a
+stated gap. Both names describe the same revision-only continuation, never a
+broader repository or test-results search.
 Required external facts, arbitrary GitHub searches, unresolved required facts,
 continuity, ambiguous records, conflicting assertion evidence, actions and general
 investigations retain the model/review path. A revision sample is not repair proof.

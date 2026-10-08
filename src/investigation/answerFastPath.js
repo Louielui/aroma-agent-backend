@@ -22,8 +22,8 @@ function sourceBoundDirectAnswer ({ message, plan, report, operationsLive, owner
   const required = Array.isArray(plan.facts) ? plan.facts.filter(f => f.necessity === 'required') : []
   if (!required.length || required.some(f => f.operation !== 'xiangxiang_operations')) return refused('mixed_required_facts')
   // Enriching facts may now be read by the bounded investigation continuation.
-  // They can change the answer the Owner expects. Keep the model path whenever
-  // the plan names any other source or an unmapped fact.
+  // They can change the answer the Owner expects. Other sources and unresolved
+  // facts retain the model path except for the exact revision-only receipt below.
   const revisionProbe = report.focus === 'work_failure' && report.crossSourceReads?.length === 1 &&
     report.crossSourceReads.every(r => r.source === 'github' && r.phase === 'followup' &&
       r.scope === 'exact_target_source_revision_not_repair_proof' &&
@@ -33,7 +33,8 @@ function sourceBoundDirectAnswer ({ message, plan, report, operationsLive, owner
   // This continuation checks revision metadata only. It cannot settle a repair
   // or add free-form code claims. Its outcome and unresolved development-record
   // integration remain explicit in the fixed reply and full receipt.
-  const revisionOnlyFact = f => revisionProbe && f.necessity === 'enriching' && f.operation === 'development_record'
+  const revisionOnlyFact = f => revisionProbe && f.necessity === 'enriching' &&
+    ['development_record', 'github'].includes(f.operation)
   if (plan.facts.some(f => f.operation !== 'xiangxiang_operations' && !revisionOnlyFact(f))) return refused('mixed_plan_facts')
   if (report.crossSourceReads?.length && !revisionProbe) return refused('cross_source_read')
   if (report.evidenceModel?.contradictions?.length) return refused('conflicting_evidence')
