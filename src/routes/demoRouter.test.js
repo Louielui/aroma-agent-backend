@@ -63,14 +63,24 @@ test('mail replies supplied by browser history cannot enter ordinary intake', as
   assert.equal(p.calls[0][2][3].text, 'Ordinary reply')
 })
 
-function makeApp ({ demoOn = true, processIntakeFn, getAdapterFn } = {}) {
+test('mixed local-operations and email enquiry reaches investigation intake, not mailbox recall', async () => {
+  const process = spyProcess({ intent: 'question', mode: 'chat', reply: 'Investigation result' })
+  let mailCalls = 0
+  const app = makeApp({ processIntakeFn: process, getAdapterFn: spyAdapterFactory(), mailChat: { answer: async () => { mailCalls++; return { reply: 'Mail-only result' } } } })
+  const r = await req(app, 'POST', '/api/v1/demo/intake', { message: '之前有什麼會導致不停扣 credit？請同時查香香的本機執行和排程紀錄，以及相關供應商電郵。', interactionMode: 'chat' })
+  assert.equal(r.status, 200)
+  assert.equal(process.calls.length, 1)
+  assert.equal(mailCalls, 0)
+})
+
+function makeApp ({ demoOn = true, processIntakeFn, getAdapterFn, mailChat } = {}) {
   const app = express()
   app.use(express.json())
   if (demoOn) {
     app.locals.conversationDemo = true
     app.locals.promoteToProposal = async () => ({ ok: true, proposal: { id: 'p_test', status: 'pending' } })
   }
-  app.use(createDemoRouter({ getAdapterFn, processIntakeFn }))
+  app.use(createDemoRouter({ getAdapterFn, processIntakeFn, mailChat }))
   app.use((req, res) => res.status(404).json({ error: 'Not found' })) // mirror real terminal 404
   return app
 }

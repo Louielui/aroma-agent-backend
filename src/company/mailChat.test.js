@@ -52,6 +52,11 @@ test('natural historical mail intent and scoped follow-up stay in the transient 
   assert.equal(parseMailRequest('寄出電郵通知供應商上次承諾'), null)
   assert.equal(parseMailRequest('What was in my personal email last Friday?'), null)
 })
+test('explicit local-operations plus mail investigation bypasses the single-mailbox recall shortcut', () => {
+  assert.equal(parseMailRequest('之前有什麼會導致不停扣 credit？請同時查香香的本機執行和排程紀錄，以及我收到的相關供應商電郵。'), null)
+  assert.equal(parseMailRequest('Check Xiangxiang local execution records and related provider emails to investigate past credit use.'), null)
+  assert.equal(parseMailRequest('上次行政部電郵原話是甚麼？').mode, 'recall')
+})
 test('natural recall renders current originals and approved decision with hash/date citations without another model', async () => {
   let models = 0; let recalled
   const chat = createMailChat({ mailbox: {}, memory: { recall: async (actor, query) => {

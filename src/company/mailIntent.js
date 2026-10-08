@@ -1,6 +1,14 @@
 'use strict'
+// The historical-mail shortcut answers from one mailbox. An explicit request to
+// investigate Xiangxiang's local operations AND mail needs the ordinary Goal Gate
+// instead, where both authorised sources and their gaps can be evaluated together.
+function asksForLocalOperationsAndMail (message) {
+  if (typeof message !== 'string' || !/(?:電郵|郵件|邮件|信箱|\b(?:e-?mail|gmail|mailbox)\b)/i.test(message)) return false
+  return /(?:香香|xiangxiang|本機|\blocal\b)[^。!?？\n]{0,35}(?:執行|运行|排程|工作|設定|设置|紀錄|记录|用量|呼叫|\b(?:execution|runs?|schedules?|jobs?|settings?|configs?|usage|calls?)\b)/i.test(message)
+}
 function parseMailRequest (message, history = []) {
   if (typeof message !== 'string' || /不要|唔好|別讀|例如|如果|假設|寄出|發送|发送|轉寄|删除|刪除|幫我寄|帮我寄|do not|example|send|delete|forward/i.test(message)) return null
+  if (asksForLocalOperationsAndMail(message)) return null
   if (/私人|個人|我的(?:gmail|電郵|郵件)|\b(?:personal|my (?:gmail|e-?mail))\b/i.test(message)) return null
   const value = message.trim().replace(/^香香[，,\s]*/, '').replace(/^(?:請|请|幫我|帮我)\s*/, '')
   const memory = /^(?:查看|搜尋|搜索)?行政部(?:電郵|郵件)?(?:記憶|待辦)(?:\s*[:：]\s*(.*))?[。？?]?$/u.exec(value)
