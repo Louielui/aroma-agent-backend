@@ -45,5 +45,6 @@ unconnected and investigation remains read-only.
 
 Latency is measured per attempt, preflight and provider wait; summed call time is
 not presented as request wall time. Live acceptance must measure the real enquiry
-before claiming any speed improvement. This chapter does not skip evidence review
-or change model selection to appear faster.
+before claiming any speed improvement. The later shared finding layer skips an
+unused semantic review only when a fixed source-bound answer is available; it
+does not change model selection or the review of other enquiries.

@@ -38,7 +38,7 @@ test('actual Owner credit answer and archive retain source-bound call evidence w
  assert.deepEqual(x.result.tasks,[])
 })
 
-test('withheld model prose cannot erase concise observed credit evidence or appear in the answer',async t=>{
+test('cost findings skip an unused semantic review and still keep unsupported prose out of the answer',async t=>{
  const evidenceSections=[
   {section:'execution',sourceId:'execution:fresh',state:'partial',records:[{sourceId:'invocation:memory',role:'memory_completion',state:'succeeded',modelResultObserved:true,actualModel:'claude-sonnet-5-5',startedAt:'2026-10-08T01:10:19.069Z',usage:{outputTokens:149},usageBasis:'provider_result_model_usage',evidenceBasis:'owner_bridge_invocation_ledger'}]},
   {section:'schedules',sourceId:'schedules:fresh',state:'ok',records:[{sourceId:'codex-automation:memory',name:'Memory follow-up',state:'PAUSED'}]},
@@ -50,37 +50,37 @@ test('withheld model prose cannot erase concise observed credit evidence or appe
  assert.match(x.result.reply,/Memory follow-up.*paused/is)
  assert.match(x.result.reply,/charges and their cause remain unconfirmed/)
  assert.doesNotMatch(x.result.reply,/caused the charges|No usable semantic review|Recent verifiable model calls/)
- assert.equal(x.result.investigation.semanticReview.accepted.length,0)
- assert.equal(x.result.investigation.semanticReview.withheld[0].reason,'unsupported')
+ assert.equal(x.result.investigation.semanticReview,undefined)
+ assert.equal(x.calls.filter(c=>c.schema==='investigation_semantic_review').length,0)
+ assert.equal(x.result.investigation.answerPresentation.reviewSkipped,'deterministic_verified_findings')
  assert.equal(x.result.investigation.answerPresentation.modelProseUsed,false)
  assert.equal(x.result.replyForArchive,x.result.reply)
 })
 
-test('cost investigation sends one bounded source catalog instead of repeating full operational receipts',async t=>{
+test('deterministic cost answer omits the unused scalar review catalog and oversized raw receipts',async t=>{
  const large='receipt detail '.repeat(2000)
  const evidenceSections=[
   {section:'work',sourceId:'work:large',state:'partial',records:[{sourceId:'run:one',state:'failed',reason:'source_dirty',goal:'Inspect credit use',sourceFiles:[{path:large}]}]},
   {section:'billing',sourceId:'billing:gap',state:'unconnected',records:[]}
  ]
  const x=await turn(t,{focus:'cost',evidenceSections})
- const answer=x.calls.find(c=>c.schema==='intake_answer_plan')||x.calls.find(c=>c.p.includes('FRESH SEMANTIC REFERENCE CATALOG:'))
+ const answer=x.calls.find(c=>c.schema==='distill_with_cost_investigation')
  assert.ok(answer,'The answer receives source identities')
- assert.match(answer.p,/work:large/)
- assert.match(answer.p,/billing:gap/)
- assert.match(answer.p,/unconnected/)
+ assert.doesNotMatch(answer.p,/FRESH SEMANTIC REFERENCE CATALOG:/)
  assert.doesNotMatch(answer.p,/receipt detail receipt detail/,'Unrelated oversized raw receipt stays out of the model prompt')
  assert.ok(answer.p.length<30000,'The cost-specific context stays bounded')
  assert.equal(x.result.investigation.sections[0].records[0].sourceFiles[0].path,large,'The full receipt remains available for server-side verification')
 })
 
-test('cost investigation requests source-bound claims without a second unused Answer Plan', async t => {
+test('cost investigation does not request either unused semantic claims or an Answer Plan', async t => {
  const cost = await turn(t, {focus:'cost'})
- const costCall = cost.calls.find(c => c.format?.schema?.properties?.investigationAnswer)
+ const costCall = cost.calls.find(c => c.schema==='distill_with_cost_investigation')
  assert.ok(costCall)
  assert.equal(costCall.schema,'distill_with_cost_investigation')
  assert.equal(costCall.format.schema.properties.answerPlan,undefined)
  assert.equal(costCall.format.schema.required.includes('answerPlan'),false)
- assert.ok(costCall.format.schema.properties.investigationAnswer)
+ assert.equal(costCall.format.schema.properties.investigationAnswer,undefined)
+ assert.equal(cost.calls.filter(c=>c.schema==='investigation_semantic_review').length,0)
  assert.equal(cost.result.investigation.readOnly,true)
  assert.equal(cost.result.investigation.billingConfirmed,false)
  const other = await turn(t,{focus:'background',question:'What background jobs use which models?'})
@@ -170,7 +170,10 @@ test('an English Owner investigation reaches the final reply with its source-bou
   assert.match(x.result.reply,/source_dirty/)
   assert.match(x.result.reply,/not.*confirm/i)
   assert.doesNotMatch(x.result.reply,/扣款原因/)
-  assert.equal(x.result.investigation.answerPresentation.kind,'source_bound_operational_brief')
+  assert.equal(x.result.investigation.answerPresentation.kind,'source_bound_work_findings')
+  assert.equal(x.result.investigation.answerPresentation.findings.references[0].recordId,'failed-run')
+  assert.equal(x.calls.filter(c=>c.schema==='investigation_semantic_review').length,0)
+  assert.equal(x.calls.find(c=>c.schema==='distill_with_answer_plan').format.schema.properties.investigationAnswer,undefined)
   assert.equal(x.calls.filter(c=>c.schema!=='goal_plan').length,1)
 })
 

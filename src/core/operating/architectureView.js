@@ -53,6 +53,11 @@ function buildArchitectureHtml () {
     { id: 'knowledge', state: 'partial', title: t('architecture.knowledgeTitle'), purpose: t('architecture.knowledgePurpose'), component: t('architecture.knowledgeComponent'), current: t('architecture.knowledgeCurrent', { drive: 'Aroma Base', pack: 'Knowledge Context Pack' }), next: t('architecture.knowledgeNext'), evidence: 'src/context/driveContext.js; src/context/driveScope.js; src/context/toolGateway.js' },
     { id: 'approval', state: 'partial', title: t('architecture.approvalTitle'), purpose: t('architecture.approvalPurpose'), component: t('architecture.approvalComponent'), current: t('architecture.approvalCurrent'), next: t('architecture.approvalNext'), evidence: 'src/governance/ownerAuth.js; src/company/; docs/COMPANY-ACCESS.md' }
   ]
+  const investigationRow = rows.find(row => row.id === 'operational-investigation')
+  investigationRow.component += ' / shared read-only source-bound findings / conditional semantic review'
+  investigationRow.current += ' ' + t('investigation.findingsCurrent')
+  investigationRow.next += ' ' + t('investigation.findingsNext')
+  investigationRow.evidence += '; src/investigation/sourceBoundFindings.js; src/investigation/sourceBoundFindings.test.js; docs/INVESTIGATION-SOURCE-BOUND-V1.md'
   const cards = rows.map(row => `<article class="card" data-component="${escape(row.id)}" data-state="${escape(row.state)}">
     <div class="card-heading"><h2>${escape(row.title)}</h2><span class="badge ${escape(row.state)}">${escape(labels[row.state])}</span></div>
     <p class="purpose">${escape(row.purpose)}</p><dl><dt>${escape(labels.component)}</dt><dd>${escape(row.component)}</dd>
