@@ -2,7 +2,7 @@
 const test = require('node:test'), assert = require('node:assert/strict')
 const { processIntake } = require('./intakeService')
 
-async function turn (t, { allowed = true, question = '之前有什麼會導致不停扣 credit？', focus = null, failed = false, verdict = 'allow_final', judgment = null, semanticCallModel = undefined, workEvidence = false, unavailableFact = false, previousInvestigation = null, reference = null, history = [], investigationAnswer = undefined, semanticDecision = 'supported', evidenceSections = null } = {}) {
+async function turn (t, { allowed = true, question = '之前有什麼會導致不停扣 credit？', focus = null, failed = false, verdict = 'allow_final', judgment = null, semanticCallModel = undefined, workEvidence = false, unavailableFact = false, previousInvestigation = null, reference = null, history = [], investigationAnswer = undefined, semanticDecision = 'supported', evidenceSections = null, fastPath = false, taskType = 'diagnose' } = {}) {
   const old = { ...process.env }
   t.after(() => { for (const k of Object.keys(process.env)) if (!(k in old)) delete process.env[k]; Object.assign(process.env, old) })
   Object.assign(process.env, { CHAT_BACKEND: 'codex-subscription', GOAL_DECOMPOSER: 'on', READ_ACCESS: 'on', CONTEXT_XIANGXIANG_OPERATIONS: 'on', XIANGXIANG_MEMORY: 'on', TURN_ROUTER: 'on', A4_KNOWLEDGE_ROUTING: 'on', MULTI_AI_ROUTER: 'off', DECISION_RECALL: 'off', CONVERSATION_RECALL: 'off' })
@@ -10,7 +10,7 @@ async function turn (t, { allowed = true, question = '之前有什麼會導致�
   const a = { providerName: 'claude', preflight: async () => {}, complete: async (p, options = {}) => {
     calls.push({ p, schema: options.responseFormat?.name, format: options.responseFormat })
     if (options.responseFormat?.name === 'investigation_semantic_review') return {billing:'claude-subscription',model:'claude-opus-5-5',text:JSON.stringify({reviews:[{id:'c1',decision:semanticDecision,reason:'matches_reference'}]})}
-    if (options.responseFormat?.name === 'goal_plan') return { billing:'claude-subscription', model:'claude-opus-5-5', text:JSON.stringify({question_restated:question,investigation_focus:focus,investigation_reference:reference,facts:[{id:'f1',need:'Investigate own previous usage and work',operation:'xiangxiang_operations',entity:null,fields:[],necessity:'required'},...(unavailableFact?[{id:'f2',need:'Runtime regression for the same failure',operation:null,entity:null,fields:[],necessity:'required'}]:[])],joins:[]}) }
+    if (options.responseFormat?.name === 'goal_plan') return { billing:'claude-subscription', model:'claude-opus-5-5', text:JSON.stringify({question_restated:question,executive_frame:fastPath?{taskType,decisionNeeded:true,successDefinition:'Explain the observed record and remaining uncertainty.',answerPosture:'evidence_first'}:undefined,investigation_focus:focus,investigation_reference:reference,facts:[{id:'f1',need:'Investigate own previous usage and work',operation:'xiangxiang_operations',entity:null,fields:[],necessity:'required'},...(unavailableFact?[{id:'f2',need:'Runtime regression for the same failure',operation:null,entity:null,fields:[],necessity:'required'}]:[])],joins:[]}) }
     return { billing: 'claude-subscription', model: 'claude-opus-5-5', text: JSON.stringify({ mode: 'chat', intent: 'question', reply: '已找到排程設定，但實際扣款原因未確認。', nextRead: null, answerPlan: null, executiveJudgment: judgment, investigationAnswer }) }
   } }
   let recall = 0
@@ -28,6 +28,45 @@ async function turn (t, { allowed = true, question = '之前有什麼會導致�
   })
   return { result, events, calls, reads, recall }
 }
+
+test('fresh source-bound failure answer skips only the unused main answer model call', async t => {
+  const x = await turn(t, { fastPath: true, focus: 'work_failure', workEvidence: true,
+    question: 'Why did the previous development task fail; is it fixed now?' })
+  assert.equal(x.calls.filter(c => c.schema !== 'goal_plan').length, 0)
+  assert.match(x.result.reply, /source_dirty/)
+  assert.match(x.result.reply, /not.*confirm/i)
+  assert.equal(x.result.replyForArchive, x.result.reply)
+  assert.equal(x.result.investigation.answerPresentation.answerCallSkipped, true)
+  assert.equal(x.result.investigation.answerPresentation.modelProseUsed, false)
+  assert.deepEqual(x.result.tasks, [])
+})
+
+test('fresh source-bound cost answer skips unused model but retains exact receipts and billing gap', async t => {
+  const sections = [
+    { section:'execution', sourceId:'execution:live', state:'partial', records:[{ sourceId:'invocation:one',role:'memory_completion',state:'succeeded',modelResultObserved:true,actualModel:'claude-sonnet-5-5',startedAt:'2026-10-08T01:10:19.069Z',usage:{outputTokens:149},usageBasis:'provider_result_model_usage',evidenceBasis:'owner_bridge_invocation_ledger' }] },
+    { section:'billing', sourceId:'billing:gap', state:'unconnected', records:[] }
+  ]
+  const x = await turn(t, { fastPath: true, focus: 'cost', evidenceSections: sections })
+  assert.equal(x.calls.filter(c => c.schema !== 'goal_plan').length, 0)
+  assert.match(x.result.reply, /149 token/)
+  assert.match(x.result.reply, /扣款原因未確認/)
+  assert.equal(x.result.investigation.answerPresentation.findings.references[0].recordId, 'invocation:one')
+  assert.equal(x.result.investigation.answerPresentation.answerCallSkipped, true)
+  assert.equal(x.result.replyForArchive, x.result.reply)
+})
+
+test('fast path refuses action intent, missing verification operation, continuity and unavailable evidence', async t => {
+  for (const options of [
+    { fastPath:true, taskType:'act', focus:'work_failure', workEvidence:true },
+    { fastPath:true, focus:'work_failure', workEvidence:true, unavailableFact:true },
+    { fastPath:true, focus:'work_failure', workEvidence:true, previousInvestigation:{state:'available'} },
+    { fastPath:true, focus:'work_failure', failed:true }
+  ]) {
+    const x = await turn(t, options)
+    assert.equal(x.calls.filter(c => c.schema !== 'goal_plan').length, 1)
+    assert.notEqual(x.result.investigation?.answerPresentation?.answerCallSkipped, true)
+  }
+})
 
 test('actual Owner credit answer and archive retain source-bound call evidence with no billing inference',async t=>{
  const evidenceSections=[{section:'execution',sourceId:'execution:abc',state:'partial',evidenceState:'confirmed',records:[{sourceId:'invocation:one',invocationId:'one',role:'memory_completion',state:'succeeded',modelResultObserved:true,actualModel:'claude-sonnet-5-5',startedAt:'2026-10-07T20:00:00Z',usage:{inputTokens:13,outputTokens:4},usageBasis:'provider_result_model_usage',durationMs:2500,evidenceBasis:'owner_bridge_invocation_ledger'}]}]

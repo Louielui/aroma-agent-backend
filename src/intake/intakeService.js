@@ -1886,6 +1886,29 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
     } catch (_) { /* accounting must never become a response failure */ }
   }
 
+  function useSourceBoundDirectAnswer (providerName, providerAdapter) {
+    const direct = require('../investigation/answerFastPath').sourceBoundDirectAnswer({
+      message, plan: goalPlanObserved, report: operationalInvestigation,
+      operationsLive: modelDirectedLiveOperations.has('xiangxiang_operations'),
+      ownerInvestigation: opts.ownerInvestigation === true, subscriptionMode,
+      interactionMode: opts.interactionMode, previousInvestigation: opts.previousInvestigation
+    })
+    if (!direct) return false
+    // Keep the established chat guards, read gates and archive path below. No
+    // model result is fabricated: answer-call provenance remains absent.
+    distilled = { mode: 'chat', intent: 'question', reply: direct.reply,
+      nextRead: null, answerPlan: null, tasks: [], reasons: [], offer: '' }
+    operationalInvestigation.answerPresentation = direct.presentation
+    activeProvider = providerName
+    activeAdapter = providerAdapter
+    tel.answerCallSkipped = 'deterministic_verified_findings'
+    tel.readContextUsed = true
+    tel.readContextSources = ['xiangxiang_operations']
+    tel.replyCitesContext = true
+    investigationProgress({ state: 'evaluating', investigation: operationalInvestigation })
+    return true
+  }
+
   if (primaryProvider === OPENAI) {
     const gpt = subscriptionAdapter || (opts && opts.openaiAdapter) || createOpenAIAdapterIfConfigured(process.env)
     if (!gpt) {
@@ -1896,11 +1919,13 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
         // The prompt is built first on purpose: building it performs the read, and the
         // read is what decides whether a plan is wanted.
         const gptPrompt = await buildPromptFor(OPENAI)
-        const gptFormat = answerPlanFormat()
-        gptResult = await timePhase(
-          { requestId, phase: PHASE.MODEL_CALL, role: ROLE.MAIN, provider: OPENAI, attempt: 1 },
-          () => gpt.complete(gptPrompt, { invocationPhase:'answer', system: effSystem, maxTokens, temperature: 0.3, ...(gptFormat ? { responseFormat: gptFormat } : {}) }),
-          { clock: latencyClock, sink: latencySink })
+        if (!useSourceBoundDirectAnswer(gpt.providerName === 'claude' ? CLAUDE : OPENAI, gpt)) {
+          const gptFormat = answerPlanFormat()
+          gptResult = await timePhase(
+            { requestId, phase: PHASE.MODEL_CALL, role: ROLE.MAIN, provider: OPENAI, attempt: 1 },
+            () => gpt.complete(gptPrompt, { invocationPhase:'answer', system: effSystem, maxTokens, temperature: 0.3, ...(gptFormat ? { responseFormat: gptFormat } : {}) }),
+            { clock: latencyClock, sink: latencySink })
+        }
       } catch (err) {
         // Content-free, but no longer blind: the adapter's allowlisted diagnostics
         if (subscriptionMode) throw (err instanceof SubscriptionError ? err : new SubscriptionError())
@@ -1942,27 +1967,29 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
       // the read, and the read is what decides whether an Answer Plan is wanted. Asking
       // that question before this line is what made the whole layer unreachable.
       const claudePrompt = await buildPromptFor(CLAUDE)
-      const claudeFormat = answerPlanFormat()
-      // L1: role-tagged so MODEL_CALL_COUNT is countable from telemetry, not inferred.
-      llmResult = await timePhase(
-        { requestId, phase: PHASE.MODEL_CALL, role: ROLE.MAIN, provider: CLAUDE, attempt: 1 },
-        () => adapter.complete(claudePrompt, {
-          invocationPhase:'answer',
-          system: effSystem,
-          maxTokens,
-          temperature: 0.3,
-          ...(claudeFormat ? { responseFormat: claudeFormat } : {})
-        }),
-        { clock: latencyClock, sink: latencySink })
+      if (!useSourceBoundDirectAnswer(CLAUDE, adapter)) {
+        const claudeFormat = answerPlanFormat()
+        // L1: role-tagged so MODEL_CALL_COUNT is countable from telemetry, not inferred.
+        llmResult = await timePhase(
+          { requestId, phase: PHASE.MODEL_CALL, role: ROLE.MAIN, provider: CLAUDE, attempt: 1 },
+          () => adapter.complete(claudePrompt, {
+            invocationPhase:'answer',
+            system: effSystem,
+            maxTokens,
+            temperature: 0.3,
+            ...(claudeFormat ? { responseFormat: claudeFormat } : {})
+          }),
+          { clock: latencyClock, sink: latencySink })
+      }
     } catch (err) {
       // Upstream provider/adapter failure → typed, safe error. Provider message is
       // kept only on .cause (server-side classification), never surfaced to client.
       throw new IntakeUpstreamError({ correlationId: requestId, cause: err })
     }
     // Same rule for the Claude attempt: recorded before the parse can throw.
-    noteProvider('claude', llmResult)
-    // Claude produced the answer — either as primary, or as the fallback after GPT failed
-    // or failed to parse. Either way it is now the active provider for the rest of the turn.
+    if (llmResult) noteProvider('claude', llmResult)
+    // Claude is the active provider for any later verification or reasoning.
+    // A direct source-bound reply has no main answer result or model provenance.
     activeProvider = CLAUDE
     activeAdapter = adapter
     tel.fallbackUsed = (primaryProvider === OPENAI)
@@ -3582,10 +3609,10 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
         // source-bound answer. No unused free-form draft or review is requested.
         // The complete source receipts stay in the saved investigation.
         view.reply = costFindings.text
-        operationalInvestigation.answerPresentation = { kind: 'source_bound_cost_findings', locale: /[\u3400-\u9fff]/.test(message) ? 'zh' : 'en', modelProseUsed: false, reviewSkipped: 'deterministic_verified_findings', costFindings: { ...costFindings, text: undefined }, findings: { ...costFindings, text: undefined } }
+        operationalInvestigation.answerPresentation = { kind: 'source_bound_cost_findings', locale: /[\u3400-\u9fff]/.test(message) ? 'zh' : 'en', modelProseUsed: false, reviewSkipped: 'deterministic_verified_findings', ...(tel.answerCallSkipped ? { answerCallSkipped: true } : {}), costFindings: { ...costFindings, text: undefined }, findings: { ...costFindings, text: undefined } }
       } else if(findings?.kind==='work_failure'){
         view.reply=findings.text
-        operationalInvestigation.answerPresentation={kind:'source_bound_work_findings',locale:/[\u3400-\u9fff]/.test(message)?'zh':'en',modelProseUsed:false,reviewSkipped:'deterministic_verified_findings',findings:{...findings,text:undefined}}
+        operationalInvestigation.answerPresentation={kind:'source_bound_work_findings',locale:/[\u3400-\u9fff]/.test(message)?'zh':'en',modelProseUsed:false,reviewSkipped:'deterministic_verified_findings',...(tel.answerCallSkipped ? {answerCallSkipped:true} : {}),findings:{...findings,text:undefined}}
       } else if (reviewedReply) {
         view.reply = runtimeSummary ? runtimeSummary.text + '\n\n' + reviewedReply : reviewedReply
         operationalInvestigation.answerPresentation = { kind: 'source_bound_semantic_review', locale: /[\u3400-\u9fff]/.test(message) ? 'zh' : 'en', modelProseUsed: true, machineEntailmentProven: false }

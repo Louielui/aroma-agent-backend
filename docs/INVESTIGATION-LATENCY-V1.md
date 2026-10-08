@@ -19,3 +19,22 @@ may still consume subscription usage before an abort. The bridge has its own
 single-flight and provider latency behavior; a client abort is best-effort.
 Real response-time improvement needs a new-version live measurement, with the
 same question and its invocation receipts, after loading the service.
+
+## Source-bound answer call
+
+A fresh Owner investigation can skip the main answer call only after the Goal
+Decomposer supplies a usable evidence-first or provisional diagnosis/retrieval
+frame, all required facts map to the authorised Xiangxiang operations source,
+that source returns readable records, and the server can render a cost or
+development-failure answer with exact receipt references. The saved response
+retains its source references and uncertainty. It records that the answer call
+was skipped; it does not claim an answer model produced the fixed text.
+
+Missing frames, mixed-source requirements, requested actions or capabilities,
+follow-up comparisons, unavailable records, background inventories and general
+semantic investigations still use the established answer path. Final knowledge
+and source-intent gates remain in place. This removes the observed redundant
+main call, not all provider calls: intent classification, goal decomposition and
+final gates may still use the selected subscription. New-version timing and
+quality must be measured live rather than inferred from the earlier 70-second
+sample.
