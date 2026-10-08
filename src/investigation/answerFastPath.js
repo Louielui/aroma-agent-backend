@@ -8,7 +8,10 @@ const { renderInvocationSummary } = require('./invocationBrief')
 // model call. A missing or ambiguous plan falls back to the normal pipeline.
 function sourceBoundDirectAnswer ({ message, plan, report, operationsLive, ownerInvestigation, subscriptionMode, interactionMode, previousInvestigation, onDecision }) {
   const refused = reason => { onDecision?.(reason); return null }
-  if (!ownerInvestigation || !subscriptionMode || interactionMode !== 'chat' || !operationsLive || previousInvestigation) return refused('outside_fresh_owner_read')
+  // The production continuity lookup returns {state:'absent'} for a new
+  // conversation. It is a sentinel, not a prior investigation.
+  const priorMayMatter = previousInvestigation && previousInvestigation.state !== 'absent'
+  if (!ownerInvestigation || !subscriptionMode || interactionMode !== 'chat' || !operationsLive || priorMayMatter) return refused('outside_fresh_owner_read')
   if (!report || report.readOnly !== true || report.continuity || !plan || plan.investigationReference || plan.investigationFocus !== report.focus) return refused('report_or_focus_mismatch')
   if (plan.requestedCapability || plan.requestedCapabilityImplementation) return refused('capability_requested')
   const frame = plan.executiveFrame

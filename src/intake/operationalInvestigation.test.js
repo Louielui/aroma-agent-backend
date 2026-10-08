@@ -30,7 +30,7 @@ async function turn (t, { allowed = true, question = '之前有什麼會導致�
 }
 
 test('fresh source-bound failure answer skips only the unused main answer model call', async t => {
-  const x = await turn(t, { fastPath: true, focus: 'work_failure', workEvidence: true,
+  const x = await turn(t, { fastPath: true, focus: 'work_failure', workEvidence: true, previousInvestigation:{state:'absent'},
     question: 'Why did the previous development task fail; is it fixed now?' })
   assert.equal(x.calls.filter(c => c.schema !== 'goal_plan').length, 0)
   assert.match(x.result.reply, /source_dirty/)
