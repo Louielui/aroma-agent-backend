@@ -54,6 +54,17 @@ displays a count of withheld statements. A usable interpretation is not evidence
 that a schedule caused a charge, that charges stopped, or that an unrelated
 successful task repaired the same failed task.
 
+For cost enquiries with uniquely identified receipts, the main answer instead
+leads with a compact deterministic finding set: one completed Owner-bridge model
+call with actual model and reported output tokens, one sampled current schedule
+definition, and the billing-coverage gap. Each displayed field is saved with its
+source and record ID; duplicate identities, failed calls, unknown values and
+untrusted Markdown are excluded. The model's accepted and withheld prose remains
+in expandable evidence, but rejected prose cannot replace or contaminate the
+main answer. Detailed call counters remain in the receipt rather than filling
+the chat with a six-row dump. If no such fields exist, the guarded fallback
+remains. This is bounded evidence of usage and configuration, not charge proof.
+
 ## Remaining boundaries
 
 - Vendor billing and execution-to-charge attribution remain unconnected.

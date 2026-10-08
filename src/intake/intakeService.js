@@ -3562,7 +3562,14 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
       operationalInvestigation.semanticReview = review
       const reviewedReply = semanticView.renderSemanticAnswer(review, { message })
       const runtimeSummary = require('../investigation/operationalBrief').renderRuntimeSummary(operationalInvestigation, { message })
-      if (reviewedReply) {
+      const costFindings = require('../investigation/costFindings').renderCostFindings(operationalInvestigation, { message })
+      if (costFindings) {
+        // A sampled call and a current schedule definition are useful answers
+        // even when free-form prose fails review. Keep rejected prose out of both
+        // the visible reply and archive; the full review stays in the receipt.
+        view.reply = costFindings.text
+        operationalInvestigation.answerPresentation = { kind: 'source_bound_cost_findings', locale: /[\u3400-\u9fff]/.test(message) ? 'zh' : 'en', modelProseUsed: false, costFindings: { ...costFindings, text: undefined } }
+      } else if (reviewedReply) {
         view.reply = runtimeSummary ? runtimeSummary.text + '\n\n' + reviewedReply : reviewedReply
         operationalInvestigation.answerPresentation = { kind: 'source_bound_semantic_review', locale: /[\u3400-\u9fff]/.test(message) ? 'zh' : 'en', modelProseUsed: true, machineEntailmentProven: false }
       } else if (draft || !operationalBrief) {
@@ -3571,7 +3578,7 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
       if (runtimeSummary) operationalInvestigation.answerPresentation.runtimeSummary = { ...runtimeSummary, text: undefined }
       const invocationSummary=require('../investigation/invocationBrief').renderInvocationSummary(operationalInvestigation,{message})
       if(invocationSummary){
-        view.reply=invocationSummary.text+'\n\n'+view.reply
+        if (!costFindings) view.reply=invocationSummary.text+'\n\n'+view.reply
         operationalInvestigation.answerPresentation={...(operationalInvestigation.answerPresentation||{}),invocationSummary:{...invocationSummary,text:undefined}}
       }
     }

@@ -30,11 +30,30 @@ async function turn (t, { allowed = true, question = '之前有什麼會導致�
 }
 
 test('actual Owner credit answer and archive retain source-bound call evidence with no billing inference',async t=>{
- const evidenceSections=[{section:'execution',sourceId:'execution:abc',state:'partial',evidenceState:'confirmed',records:[{sourceId:'invocation:one',invocationId:'one',role:'memory_completion',state:'succeeded',modelResultObserved:true,actualModel:'claude-sonnet-5-5',startedAt:'2026-10-07T20:00:00Z',usage:{inputTokens:13,outputTokens:4},durationMs:2500,evidenceBasis:'owner_bridge_invocation_ledger'}]}]
+ const evidenceSections=[{section:'execution',sourceId:'execution:abc',state:'partial',evidenceState:'confirmed',records:[{sourceId:'invocation:one',invocationId:'one',role:'memory_completion',state:'succeeded',modelResultObserved:true,actualModel:'claude-sonnet-5-5',startedAt:'2026-10-07T20:00:00Z',usage:{inputTokens:13,outputTokens:4},usageBasis:'provider_result_model_usage',durationMs:2500,evidenceBasis:'owner_bridge_invocation_ledger'}]}]
  const x=await turn(t,{question:'Which calls consumed tokens and credits?',focus:'cost',evidenceSections})
- assert.match(x.result.reply,/claude-sonnet-5-5/);assert.match(x.result.reply,/direct input 13.*output 4/);assert.match(x.result.reply,/charges.*unconfirmed/)
+ assert.match(x.result.reply,/claude-sonnet-5-5/);assert.match(x.result.reply,/4 output tokens/);assert.match(x.result.reply,/charges.*unconfirmed/)
  assert.equal(x.result.replyForArchive,x.result.reply);assert.equal(x.result.investigation.answerPresentation.invocationSummary.references[0].recordId,'invocation:one')
+ assert.equal(x.result.investigation.answerPresentation.costFindings.references[0].recordId,'invocation:one')
  assert.deepEqual(x.result.tasks,[])
+})
+
+test('withheld model prose cannot erase concise observed credit evidence or appear in the answer',async t=>{
+ const evidenceSections=[
+  {section:'execution',sourceId:'execution:fresh',state:'partial',records:[{sourceId:'invocation:memory',role:'memory_completion',state:'succeeded',modelResultObserved:true,actualModel:'claude-sonnet-5-5',startedAt:'2026-10-08T01:10:19.069Z',usage:{outputTokens:149},usageBasis:'provider_result_model_usage',evidenceBasis:'owner_bridge_invocation_ledger'}]},
+  {section:'schedules',sourceId:'schedules:fresh',state:'ok',records:[{sourceId:'codex-automation:memory',name:'Memory follow-up',state:'PAUSED'}]},
+  {section:'billing',sourceId:'billing:fresh',state:'unconnected',records:[]}
+ ]
+ const investigationAnswer={claims:[{id:'c1',text:'The Memory follow-up schedule caused the charges.',kind:'observation',evidenceState:'confirmed',temporalScope:'current',references:[{sourceId:'schedules:fresh',recordId:'codex-automation:memory',field:'name',value:'Memory follow-up'}]}]}
+ const x=await turn(t,{question:'Which background task consumed my credits?',focus:'cost',evidenceSections,investigationAnswer,semanticDecision:'unsupported'})
+ assert.match(x.result.reply,/claude-sonnet-5-5.*149 output tokens/s)
+ assert.match(x.result.reply,/Memory follow-up.*paused/is)
+ assert.match(x.result.reply,/charges and their cause remain unconfirmed/)
+ assert.doesNotMatch(x.result.reply,/caused the charges|No usable semantic review|Recent verifiable model calls/)
+ assert.equal(x.result.investigation.semanticReview.accepted.length,0)
+ assert.equal(x.result.investigation.semanticReview.withheld[0].reason,'unsupported')
+ assert.equal(x.result.investigation.answerPresentation.modelProseUsed,false)
+ assert.equal(x.result.replyForArchive,x.result.reply)
 })
 
 test('cost investigation sends one bounded source catalog instead of repeating full operational receipts',async t=>{

@@ -35,9 +35,13 @@ The authenticated loopback `/invocation-metadata` endpoint accepts only `{}` and
 works independently of occupied inference lanes. Investigation reads session and
 invocation receipts concurrently with separate failure states. Exact request IDs
 group observed phases; similar names/times/models never establish attribution.
-The cost answer always shows a bounded bilingual receipt summary, including when
-model prose omits it. The saved answer contains the identical summary. Billing
-remains unconnected and investigation remains read-only.
+The cost answer now leads with a bounded bilingual set of receipt findings,
+including when model prose is rejected. It reports an observed completed call,
+the selected model and output-token field, a sampled current schedule definition,
+and the unconnected billing gap when those receipts exist. The detailed recent
+call summary and separate provider counters stay in the saved investigation
+record. The archived answer matches the visible answer. Billing remains
+unconnected and investigation remains read-only.
 
 Latency is measured per attempt, preflight and provider wait; summed call time is
 not presented as request wall time. Live acceptance must measure the real enquiry

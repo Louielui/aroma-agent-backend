@@ -1228,6 +1228,12 @@
     if (report.unverifiedJudgmentOmitted) details.appendChild(el('p', 'wait-note', t('investigation.judgmentOmitted')))
     var readStates = { ok: t('investigation.ok'), partial: t('investigation.partial'), missing: t('investigation.missing'), unavailable: t('investigation.unavailable'), unconnected: t('investigation.unconnected') }
     var levels = { confirmed: t('investigation.confirmed'), supported: t('investigation.supported'), possible: t('investigation.possible'), not_established: t('investigation.notEstablished') }
+    if (report.answerPresentation && report.answerPresentation.costFindings && report.answerPresentation.costFindings.references) {
+      var costRefs = el('details')
+      costRefs.appendChild(el('summary', '', t('investigation.costEvidence')))
+      costRefs.appendChild(el('pre', '', JSON.stringify(report.answerPresentation.costFindings.references, null, 2)))
+      details.appendChild(costRefs)
+    }
     if (report.semanticReview) {
       var semantic = el('section', 'investigation-semantic')
       semantic.appendChild(el('strong', '', t('investigation.semanticTitle')))
