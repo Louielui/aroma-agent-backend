@@ -25,7 +25,7 @@ function createWorkReader ({ workerRoot, repoRoot, activity = () => [], clock = 
       let names
       try { const dir=path.join(root,folder);if (fs.lstatSync(dir).isSymbolicLink() || fs.realpathSync.native(dir).toLowerCase()!==dir.toLowerCase()) throw Error('redirected_directory');names=fs.readdirSync(dir).filter(n=>ID.test(n)).sort() } catch(e) {coverage.push({kind:'worker/'+folder,state:e.code==='ENOENT'?'missing':'unavailable',scanned:0,failed:null,omitted:null});continue}
       let failed=0
-      for(const name of names.slice(0,250)) try { const d=JSON.parse(readAt(root,path.join(folder,name),2*1024*1024));records.push({sourceId:name.slice(0,-5),...projectWorkRecord(d,{kind:'worker/'+folder,readSource:n=>readAt(repo,n,512*1024)})}) } catch(_){failed++}
+      for(const name of names.slice(0,250)) try { const d=JSON.parse(readAt(root,path.join(folder,name),2*1024*1024));records.push({sourceId:name.slice(0,-5),...projectWorkRecord(d,{kind:'worker/'+folder,recordId:name.slice(0,-5),readSource:n=>readAt(repo,n,512*1024)})}) } catch(_){failed++}
       coverage.push({kind:'worker/'+folder,state:failed||names.length>250?'partial':'ok',scanned:Math.min(names.length,250),failed,omitted:Math.max(0,names.length-250)})
     }
     let workflows=[]

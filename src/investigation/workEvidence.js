@@ -25,7 +25,7 @@ function tests (v) {
   if (!v || typeof v !== 'object') return null
   return Object.fromEntries(['total', 'passed', 'failed', 'exitCode', 'skipped', 'cancelled'].map(k => [k, Number.isInteger(v[k]) ? v[k] : null]))
 }
-function projectWorkRecord (d, { kind, readSource = () => null } = {}) {
+function projectWorkRecord (d, { kind, recordId, readSource = () => null } = {}) {
   const evidence = d.source?.evidence || d.snapshot?.evidence || {}, result = d.coding || d.result || {}
   const rawSteps = Array.isArray(d.steps) ? d.steps : Array.isArray(d.events) ? d.events : []
   const metadata = rawSteps.slice(-4).map(s => ({ id: code(s.stage || s.id || s.key), state: code(s.status || s.state), at: at(s.at), reason: code(s.facts?.reason || s.error), model: text(s.facts?.model || s.model), verdict: code(s.facts?.verdict || s.verdict) }))
@@ -62,6 +62,7 @@ function projectWorkRecord (d, { kind, readSource = () => null } = {}) {
     sourceFilesComplete: Array.isArray(evidence.sourceFiles) && evidence.sourceFiles.length > 0 && sources.length === evidence.sourceFiles.length,
     tests: tests(d.tests || result.tests), baseline: tests(result.baseline), reviewVerdict: code(d.review?.verdict || d.acceptanceReview?.verdict),
     testBinding,
+    workerRuns: recordId === d.id && /^worker\/(project-tasks|project-runs|runs)$/.test(kind || '') && Array.isArray(d.workerRuns) ? d.workerRuns.slice(-20).map(r => require('./workerInvocation').projectRun(r, kind.slice(7), recordId)).filter(Boolean) : [],
     repairOf:id(d.repairOf || d.accepted?.repairOf),
     liveBaseline:require('../core/projectWork/liveVerification').project(d.liveBaseline || d.accepted?.liveBaseline),
     liveVerification:require('../core/projectWork/liveVerification').project(d.liveVerification),

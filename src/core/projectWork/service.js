@@ -7,7 +7,7 @@ const browserEvidence = require('../../workers/execution/browserEvidence')
 const ACTIVE = new Set(['awaiting_approval', 'queued', 'checking', 'coding', 'reviewing'])
 const ERRORS = new Set(['source_changed', 'source_dirty', 'source_sensitive', 'source_unavailable', 'approval_unavailable', 'not_enabled', 'worker_busy', 'worker_cancelled', 'baseline_not_red', 'acceptance_failed', 'subscription_limit_reached', 'subscription_model_unavailable', 'subscription_unavailable', 'sandbox_stop_unconfirmed', 'sandbox_recovery_or_work_pending', 'provider_not_ready', 'invalid_worker_result', 'worker_no_changes', 'claude_unavailable', 'claude_max_turns', 'claude_invalid_structured_output', 'worker_timeout', 'visual_evidence_unavailable', 'invalid_visual_review', 'accepted_evidence_changed'])
 const owner = actor => { if (actor?.id !== 'owner' || actor.role !== 'owner') throw Error('permission_denied') }
-function createProjectWork ({ source, providers, store, enabled, observeLive = null, onEvent = () => {}, approvals = createOwnerApprovalStore(), resolveRecipe = recipe, catalogueRecipes = () => Object.values(RECIPES) }) {
+function createProjectWork ({ source, providers, store, enabled, invocationLedger, observeLive = null, onEvent = () => {}, approvals = createOwnerApprovalStore(), resolveRecipe = recipe, catalogueRecipes = () => Object.values(RECIPES) }) {
   const sessions = new Map(), controllers = new Map()
   let busy = false, pending = Promise.resolve()
   const all = () => store.all()
@@ -51,6 +51,9 @@ function createProjectWork ({ source, providers, store, enabled, observeLive = n
     } finally { busy = false }
   }
   async function execute (r, snapshot, signal) {
+    try { return await require('../../investigation/workerInvocation').withWorkerRun({ ledger: invocationLedger, record: r, kind: 'project-runs', save: row => store.save(row) }, () => executeObserved(r, snapshot, signal)) } finally { busy = false; controllers.delete(r.id) }
+  }
+  async function executeObserved (r, snapshot, signal) {
     const WORK_ORDER = resolveRecipe(r.workOrder.recipe).workOrder
     try {
       r.state = 'checking'; record(r, 'checking')
@@ -66,7 +69,7 @@ function createProjectWork ({ source, providers, store, enabled, observeLive = n
       for (let attempt = 1; attempt <= 2; attempt++) {
         if (signal.aborted) throw Error('worker_cancelled')
         if (attempt > 1) { r.state = 'coding'; record(r, 'repairing_visual', { attempt, previousPatchHash: reviewRepair.patchHash }) }
-        const coding = await providers.codeOrder({ order: snapshot.order, signal, verify: () => source.verify(snapshot, signal), emit: (stage, facts) => record(r, stage, facts), ...(reviewRepair ? { reviewRepair } : {}) })
+        const coding = await require('../../investigation/workerInvocation').withWorkerPhase('development', attempt, () => providers.codeOrder({ order: snapshot.order, signal, verify: () => source.verify(snapshot, signal), emit: (stage, facts) => record(r, stage, facts), ...(reviewRepair ? { reviewRepair } : {}) }))
         await source.verify(snapshot, signal)
         if (WORK_ORDER.effort && (!Array.isArray(coding?.changes) || JSON.stringify(coding.changes.map(c => c.file).sort()) !== JSON.stringify(WORK_ORDER.allowedFiles.slice().sort()) ||
             coding.changes.some(c => c.before !== snapshot.order.files[c.file] || typeof c.after !== 'string' || !c.after || c.before === c.after || digest(c.before) !== c.beforeHash || digest(c.after) !== c.afterHash) || digest(JSON.stringify(coding.changes)) !== coding.patchHash)) throw Error('invalid_worker_result')
@@ -78,7 +81,7 @@ function createProjectWork ({ source, providers, store, enabled, observeLive = n
         r.result = coding
         if (signal.aborted) throw Error('worker_cancelled')
         r.state = 'reviewing'; record(r, 'reviewing')
-        r.review = await providers.reviewOrder({ workOrder: WORK_ORDER, ...coding }, { signal, emit: (stage, facts) => record(r, stage, facts) })
+        r.review = await require('../../investigation/workerInvocation').withWorkerPhase('review', attempt, () => providers.reviewOrder({ workOrder: WORK_ORDER, ...coding }, { signal, emit: (stage, facts) => record(r, stage, facts) }))
         if (signal.aborted) throw Error('worker_cancelled')
         await source.verify(snapshot, signal)
         if (!['pass', 'changes_requested'].includes(r.review?.verdict)) throw Error('invalid_worker_result')
@@ -101,7 +104,7 @@ function createProjectWork ({ source, providers, store, enabled, observeLive = n
         stdoutBytes: Number.isInteger(e.safeDiagnostics.stdoutBytes) ? e.safeDiagnostics.stdoutBytes : null, stderrBytes: Number.isInteger(e.safeDiagnostics.stderrBytes) ? e.safeDiagnostics.stderrBytes : null }
       r.state = signal.aborted ? 'cancelled' : 'failed'; r.reason = ERRORS.has(e.code || e.message) ? (e.code || e.message) : 'worker_unavailable'; r.finishedAt = new Date().toISOString()
       record(r, r.state, { reason: r.reason, appliedToLive: false })
-    } finally { busy = false; controllers.delete(r.id) }
+    }
   }
   function approve (actor, input) {
     owner(actor)

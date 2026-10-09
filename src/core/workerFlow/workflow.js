@@ -14,7 +14,7 @@ const WORK_ORDER = Object.freeze({ recipe: 'duration-v1', version: 1, capability
   testCommand: ['node', '--test', '--test-reporter=tap', 'duration.test.js'], scope: 'offline_windows_sandbox_disposable_fixture',
   providers: ['codex', 'claude'], approval: 'owner_explicit', billing: 'subscriptions_no_api_fallback' })
 
-function createWorkflow ({ dir, providers, enabled, onEvent = () => {} }) {
+function createWorkflow ({ dir, providers, enabled, invocationLedger, onEvent = () => {} }) {
   let busy = false; let pending = Promise.resolve()
   fs.mkdirSync(dir, { recursive: true })
   const save = run => {
@@ -33,6 +33,9 @@ function createWorkflow ({ dir, providers, enabled, onEvent = () => {} }) {
     try { onEvent({ id: run.id, stage, at: run.events[run.events.length - 1].at, state: run.state, recipe: run.workOrder.recipe, facts }) } catch (_) { /* The memory outbox reports persistence failures separately. */ }
   }
   async function execute (run, reviewOnly = false) {
+    try { return await require('../../investigation/workerInvocation').withWorkerRun({ ledger: invocationLedger, record: run, kind: 'runs', save: save }, () => executeObserved(run, reviewOnly)) } finally { busy = false }
+  }
+  async function executeObserved (run, reviewOnly = false) {
     try {
       run.state = 'checking'; record(run, 'checking')
       if (!reviewOnly && providers.isolation) { const isolation = await providers.isolation(); if (!isolation.ready) throw Error(isolation.reason || 'sandbox_unavailable'); run.isolation = isolation }
@@ -44,14 +47,14 @@ function createWorkflow ({ dir, providers, enabled, onEvent = () => {} }) {
       }
       if (!run.coding || !Number.isInteger(run.coding.tests?.exitCode) || typeof run.coding.after !== 'string') throw Error('invalid_worker_result')
       run.state = 'reviewing'; record(run, 'reviewing', { provider: 'claude' })
-      run.review = await providers.review({ workOrder: run.workOrder, ...run.coding })
+      run.review = await require('../../investigation/workerInvocation').withWorkerPhase('review', 1, () => providers.review({ workOrder: run.workOrder, ...run.coding }))
       if (!run.review || !['pass', 'changes_requested'].includes(run.review.verdict) || !Array.isArray(run.review.findings)) throw Error('invalid_worker_result')
       run.state = run.coding.tests.exitCode === 0 && run.review.verdict === 'pass' ? 'completed' : 'needs_attention'
       record(run, run.state)
     } catch (e) {
       run.state = 'failed'; run.error = SAFE_ERRORS.has(e.code || e.message) ? (e.code || e.message) : 'worker_unavailable'
       try { record(run, 'failed', { error: run.error }) } catch (_) { /* A failed audit write never permits another step. */ }
-    } finally { busy = false }
+    }
   }
   function start (input) {
     if (!enabled()) throw Error('not_enabled')

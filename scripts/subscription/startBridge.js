@@ -27,6 +27,7 @@ function main () {
   const workerRoot = path.join(process.env.LOCALAPPDATA || process.env.TEMP, 'AromaXiangXiang', 'worker-flow')
   const configuredRoot = env.XIANGXIANG_WORKER_WORKSPACE_ROOT
   const workspaceRoot = configuredRoot && path.isAbsolute(configuredRoot) ? configuredRoot : path.join(require('node:os').homedir(), 'Documents', 'AromaXiangXiang', 'worker-workspaces')
+  const invocationLedger = require('../../src/investigation/invocations').createOwnerInvocationLedger()
   const workerProviders = createProviders({ executable: chatExecutable, root: workspaceRoot, allowCredits: env.CODEX_CHAT_ALLOW_CREDITS === 'true' })
   // The new switch enables only this fixed recipe within the existing sandbox
   // worker lane. Other execution lanes still conflict through the shared matrix.
@@ -34,7 +35,7 @@ function main () {
     develop: env.DEVELOP_DISPATCH, agent: env.AGENT_BRIDGE, computer: env.COMPUTER_OPERATOR }).workerAuthorized
   const memoryRuntime = env.XIANGXIANG_MEMORY === 'on' ? require('../../src/memory/runtime').createRuntime({ engine: require('../../src/memory/hindsight').createHindsight({ env }),
     dir: path.join(env.AROMA_DATA_DIR || path.join(repo, 'data'), 'memory-outbox') }) : null
-  const workerFlow = createWorkflow({ dir: path.join(workerRoot, 'runs'), providers: workerProviders, enabled,
+  const workerFlow = createWorkflow({ dir: path.join(workerRoot, 'runs'), providers: workerProviders, enabled, invocationLedger,
     onEvent: value => memoryRuntime && memoryRuntime.event('worker', value.id + ':' + value.stage + ':' + value.at, JSON.stringify(value), 'measured_result', value.at) })
   const taskStore = require('../../src/core/operating/runStore').createRunStore({ dir: path.join(workerRoot, 'project-tasks'), workflow: 'project_task' })
   const taskRegistry = require('../../src/core/projectTasks/contract').createRegistry(taskStore)
@@ -42,7 +43,7 @@ function main () {
   const projectSource = require('../../src/core/projectWork/source').createSource({ root: repo, resolveRecipe })
   const observeLive = require('../../src/core/projectWork/liveVerification').createClient({token:env.HUB_TOKEN || process.env.HUB_TOKEN})
   const projectWork = require('../../src/core/projectWork/service').createProjectWork({
-    source: projectSource, providers: workerProviders, enabled, observeLive, resolveRecipe, catalogueRecipes: taskRegistry.catalogue,
+    source: projectSource, providers: workerProviders, enabled, invocationLedger, observeLive, resolveRecipe, catalogueRecipes: taskRegistry.catalogue,
     store: require('../../src/core/operating/runStore').createRunStore({ dir: path.join(workerRoot, 'project-runs'), workflow: 'project_work' }),
     onEvent: value => memoryRuntime && memoryRuntime.event('worker', 'project-work:' + value.id + ':' + value.stage + ':' + value.at, JSON.stringify(value), 'measured_result', value.at) })
   const repairClient = { executable: chatExecutable, cwd, allowCredits: env.CODEX_CHAT_ALLOW_CREDITS === 'true' }
@@ -58,7 +59,7 @@ function main () {
     loader: require('../../src/core/projectWork/adoptionLoader').createLoader({ root: repo, resolveRecipe }),
     onEvent: value => memoryRuntime && memoryRuntime.event('worker', 'project-adoption:' + value.id + ':' + value.stage + ':' + value.at, JSON.stringify(value), 'measured_result', value.at) })
   const codexClient = require('../../src/subscription/codexClient')
-  const projectTasks = require('../../src/core/projectTasks/service').createTasks({ store: taskStore, enabled,
+  const projectTasks = require('../../src/core/projectTasks/service').createTasks({ store: taskStore, enabled, invocationLedger,
     sourceFor: definition => require('../../src/core/projectWork/source').createSource({ root: repo, resolveRecipe: id => { if (id !== definition.workOrder.recipe) throw Error('invalid_request'); return definition } }),
     provider: require('../../src/core/projectTasks/provider').createDraftProvider({ client: codexClient, options: repairClient }),
     review: (packet, options) => workerProviders.reviewAcceptance(packet, options), prepareWork: input => projectWork.prepare({ id: 'owner', role: 'owner' }, input),
@@ -69,7 +70,7 @@ function main () {
   const server = createBridge({ backgroundModel: require('../../src/subscription/chatModels').DEFAULT_BRAIN_MODEL, token: env.CODEX_CHAT_BRIDGE_TOKEN, clientOptions: { executable: chatExecutable, cwd, allowCredits: env.CODEX_CHAT_ALLOW_CREDITS === 'true' }, memoryClientOptions: { executable, cwd, allowCredits: env.CODEX_CHAT_ALLOW_CREDITS === 'true' }, workerFlow, workerProviders, websiteEnabled: env.XIANGXIANG_WEBSITE_FLOW === 'on', memoryEnabled: env.XIANGXIANG_MEMORY === 'on',
     memoryStore: require('../../src/memory/structuredStore').createStructuredStore({ local: true }),
     schedulerReader: require('../../src/home/schedulerWitness').readWindowsSchedulerWitness,
-    invocationLedger: require('../../src/investigation/invocations').createOwnerInvocationLedger(),
+    invocationLedger,
     taskPlanSource: require('../../src/core/taskPlanner/source').createSource({ root: repo }), codeSourceFactory: bootCommit => createOwnerCodeSource(repo, bootCommit), codeRepair, projectWork, projectAdoption, projectTasks,
     workReader: require('../../src/investigation/workRecords').createWorkReader({ workerRoot, repoRoot: repo, activity: () => {
       const draft=require('../../src/core/projectTasks/provider'),reviewArgs=require('../../src/core/workerFlow/providers').claudeArgs()

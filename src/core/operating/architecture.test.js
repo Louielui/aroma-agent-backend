@@ -30,7 +30,7 @@ test('architecture page is owner-gated, distinguishes pilot memory, and does not
   assert.match(html, /外部執行與用量證據已部分接通/)
   assert.match(html, /新執行的電郵分析、電郵索引、記憶索引及整理/)
   assert.match(html, /主程序保存結果後回報的狀態與模型成功回覆分開/)
-  assert.match(html, /開發 worker 至逐次呼叫、外部排程觸發及供應商帳單／額度仍未接通/)
+  assert.match(html, /外部排程觸發及供應商帳單／額度仍未接通/)
   assert.match(html, /外部背景工作完整盤點及實際帳單仍未接通/)
   assert.match(html, /不等同實際運行路徑已修好/)
   assert.match(html, /缺口補查已接入/)

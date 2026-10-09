@@ -46,7 +46,7 @@ host ordinals >1, not total retries across missing history. A failed/interrupted
 call can consume unobserved tokens. Last-turn and cumulative usage are not added
 as if they were full invocation counters. Billing remains unconnected.
 
-This slice does not link development workers, external schedules or third-party
+The subsequent WORKER-EXECUTION-EVIDENCE-V1 slice links newly registered development workers. This mail/memory slice does not link external schedules or third-party
 apps, add jobs, change intervals/models/quotas, or grant new management rights.
 
 ## Acceptance

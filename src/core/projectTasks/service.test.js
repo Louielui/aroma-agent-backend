@@ -5,6 +5,21 @@ const { createMemoryRunStore } = require('../operating/runStore'), { createOwner
 const OWNER = { id: 'owner', role: 'owner' }, HEAD = 'a'.repeat(40)
 const generated = { testCode: "const test=require('node:test'),assert=require('node:assert/strict');test('first',()=>assert.equal(1,1));test('second',()=>assert.equal(2,2));test('third',()=>assert.equal(3,3));", expectedTests: 3 }
 
+test('registered draft execution links model calls but never implies test execution or implementation', async t => {
+  const fs = require('node:fs'), os = require('node:os'), path = require('node:path'), receipts = require('../../investigation/workerInvocation')
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'draft-receipt-')); t.after(() => fs.rmSync(dir, { recursive: true, force: true }))
+  const ledger = require('../../investigation/invocations').createInvocationLedger({ file: path.join(dir, 'ledger.json') })
+  const f = fixture({ invocationLedger: ledger,
+    provider: { preflight: async () => ({ model: 'gpt-6.1-sol', billing: 'chatgpt-subscription' }), complete: () => receipts.observeWorkerCall({ model: 'gpt-6.1-sol', effort: 'medium' }, async () => ({ model: 'gpt-6.1-sol', billing: 'chatgpt-subscription', text: JSON.stringify(generated) })) },
+    review: () => receipts.observeWorkerCall({ model: 'sonnet', effort: 'medium' }, async () => ({ model: 'claude-sonnet-5-5', verdict: 'pass', billing: 'claude-subscription' })) })
+  const value = await f.ready(), rows = ledger.read().records
+  assert.equal(value.run.state, 'awaiting_approval'); assert.equal(value.run.workRunId, null)
+  assert.equal(value.run.workerRuns.length, 1); assert.equal(rows.length, 2)
+  assert.deepEqual(rows.map(r => r.workerPhase).sort(), ['review', 'test_draft'])
+  assert.ok(rows.every(r => r.workerTrace.kind === 'project-tasks' && r.workerTrace.recordId === value.run.id && r.workerOutcome.state === 'awaiting_approval'))
+  assert.equal(f.calls.includes('prepare'), false)
+  assert.throws(() => f.service.start(OWNER, { ...f.input, workerTrace: rows[0].workerTrace }), /invalid_request/)
+})
 test('invalid drafts retain a safe precise validation reason without retaining rejected source', async () => {
   for (const [text, reason] of [
     ['not-json-sensitive-marker', 'json'],

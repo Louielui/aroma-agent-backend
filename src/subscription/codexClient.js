@@ -272,6 +272,10 @@ function imageInputs (images) {
   })
 }
 async function complete (options, input) {
+  return require('../investigation/workerInvocation').observeWorkerCall({ model: input.model || MODEL, effort: input.effort || 'low', dispatchBasis: 'provider_turn_start' }, onDispatch =>
+    completeUnobserved({ ...options, onDispatch: () => { onDispatch(); options.onDispatch?.() } }, input))
+}
+async function completeUnobserved (options, input) {
   const images = imageInputs(input.images)
   const model = input.model === undefined ? MODEL : input.model
   if (!isChatModel(model)) throw new SubscriptionError('subscription_model_unavailable')

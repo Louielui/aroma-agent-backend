@@ -29,6 +29,19 @@ function fixture (options = {}) {
   const prepare = () => flow.prepare(OWNER, { bootCommit: HEAD, projectId: PROJECT, recipe: RECIPE, requestId: randomUUID() })
   return { flow, prepare, store, events, drift: () => { changed = true }, calls: () => [codeCalls, reviewCalls] }
 }
+test('project execution records providers only after existing approval and retains unapplied candidate state', async t => {
+  const fs = require('node:fs'), path = require('node:path'), os = require('node:os'), observer = require('../../investigation/workerInvocation')
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'project-receipts-')); t.after(() => fs.rmSync(dir, { recursive: true, force: true }))
+  const ledger = require('../../investigation/invocations').createInvocationLedger({ file: path.join(dir, 'ledger.json') })
+  const f = fixture({ invocationLedger: ledger, code: async () => { await observer.observeWorkerCall({ model: 'gpt-6.1-sol', effort: 'high' }, async () => ({ model: 'gpt-6.1-sol', billing: 'chatgpt-subscription' })); throw Error('acceptance_failed') } })
+  const p = await f.prepare(); assert.equal(ledger.read().records.length, 0); assert.equal(p.run.workerRuns, undefined)
+  f.flow.approve(OWNER, { id: p.approval.id, hash: p.approval.hash, nonce: p.approval.nonce }); await f.flow.settled()
+  const r = f.flow.get(OWNER, p.run.id), call = ledger.read().records[0]
+  assert.equal(r.state, 'failed'); assert.equal(r.reason, 'acceptance_failed'); assert.equal(r.appliedToLive, false)
+  assert.equal(call.state, 'succeeded'); assert.equal(call.workerOutcome.state, 'failed')
+  assert.equal(call.workerTrace.recordId, r.id); assert.equal(call.workerTrace.kind, 'project-runs'); assert.equal(call.workerPhase, 'development')
+  assert.equal(f.flow.isActive(), false); assert.deepEqual(f.calls(), [1, 0])
+})
 test('current-source work order needs a bound single-use approval and returns one terminal result', async () => {
   const f = fixture(), p = await f.prepare(); assert.equal(p.run.state, 'awaiting_approval'); assert.deepEqual(f.calls(), [0, 0])
   f.flow.approve(OWNER, { id: p.approval.id, hash: p.approval.hash, nonce: p.approval.nonce }); await f.flow.settled()
