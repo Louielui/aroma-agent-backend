@@ -1,6 +1,6 @@
 'use strict'
 const {t}=require('../i18n/t')
-const {currentActivity}=require('./evidenceState')
+const {currentActivity,currentFact}=require('./evidenceState')
 const code=v=>'`'+String(v).replace(/[`\\\r\n]/g,' ').slice(0,240)+'`'
 function workflowTitle(role,locale){
  switch(role){
@@ -40,25 +40,39 @@ function renderRuntimeSummary(report,{message=''}={}){
  const readable=name=>report.sections.filter(s=>s.section===name&&['ok','partial'].includes(s.state)&&s.sourceId)
  const configuration=readable('configuration'),schedules=readable('schedules'),lines=[],references=[]
  let ambiguous=0
- const bind=(s,r)=>references.push({sourceId:s.sourceId,recordId:r.sourceId,fields:{role:r.role||null,currentRunningState:r.currentRunningState||'unknown',model:r.model??null,modelBasis:r.modelBasis||null,evidenceBasis:r.evidenceBasis||null,usesModel:r.usesModel??null,at:r.at||null}})
+ const bind=(s,r)=>references.push({sourceId:s.sourceId,recordId:r.sourceId,fields:{role:r.role||null,currentRunningState:r.currentRunningState||'unknown',model:r.model??null,modelBasis:r.modelBasis||null,evidenceBasis:r.evidenceBasis||null,usesModel:r.usesModel??null,at:r.at||null,...Object.fromEntries(['enabled','scheduled','configuredModel','configuredEffort','observationState','enablementState','modelObservedAt'].filter(k=>Object.hasOwn(r,k)).map(k=>[k,r[k]]))}})
  const value=v=>v?code(v):t('investigation.briefNotRecorded',{},locale)
+ const fact=(s,r,key,fallback)=>report.evidenceModel?currentFact(report,s.sourceId,r.sourceId,key)||{state:'UNKNOWN',value:null}:{state:fallback===null||fallback===undefined?'UNKNOWN':'CONFIRMED',value:fallback}
+ const unavailable=()=>t('investigation.runtimeEvidenceUnavailable',{},locale)
+ const enablement=(s,r)=>{const a=fact(s,r,'enabled',typeof r.enabled==='boolean'?r.enabled:r.scheduled);return a.state==='CONFIRMED'?a.value===true?t('investigation.runtimeEnabled',{},locale):t('investigation.runtimeDisabledEnablement',{},locale):a.state==='UNAVAILABLE'?unavailable():t('investigation.runtimeEnablementUnknown',{},locale)}
  for(const role of ['mail_sync','mail_analysis','mail_index','memory_index','memory_outbox','memory_consolidation','memory_completion']){
   const id=(role==='memory_completion'?'bridge:':'backend:')+role
   const matches=configuration.flatMap(s=>(s.records||[]).filter(r=>r.role===role&&r.sourceId===id&&r.evidenceBasis==='live_process_snapshot').map(r=>({s,r})))
   if(matches.length>1){ambiguous++;continue}
   if(!matches.length)continue
-  const {s,r}=matches[0],model=r.usesModel===false?t('investigation.briefNoModel',{},locale):['bridge_route_configuration','in_flight_request_selection'].includes(r.modelBasis)?value(r.model):t('investigation.briefNotRecorded',{},locale)
-  const basis=r.modelBasis==='in_flight_request_selection'?t('investigation.runtimeSelectedModel',{},locale):t('investigation.runtimeConfiguredModel',{},locale)
-  lines.push('- '+t('investigation.runtimeRow',{role:backgroundTitle(role,locale),state:runningTitle(currentActivity(report,s.sourceId,r.sourceId,r.currentRunningState),locale),basis,model,at:value(r.at)},locale));bind(s,r)
+  const {s,r}=matches[0],configured=Object.hasOwn(r,'configuredModel')?r.configuredModel:r.modelBasis==='bridge_route_configuration'?r.model:null
+  const a=fact(s,r,'configured_model',r.usesModel===false?'no_model':configured)
+  const model=a.state==='CONFIRMED'?a.value==='no_model'?t('investigation.briefNoModel',{},locale):value(a.value):a.state==='UNAVAILABLE'?unavailable():t('investigation.briefNotRecorded',{},locale)
+  const selected=r.modelBasis==='in_flight_request_selection'?fact(s,r,'selected_request_model',r.currentRunningState==='active'?r.model:null):null
+  const request=selected?t('investigation.runtimeRequestDetail',{model:selected.state==='CONFIRMED'?value(selected.value):selected.state==='UNAVAILABLE'?unavailable():t('investigation.briefNotRecorded',{},locale)},locale):''
+  lines.push('- '+t('investigation.runtimeRow',{role:backgroundTitle(role,locale),state:runningTitle(currentActivity(report,s.sourceId,r.sourceId,r.currentRunningState),locale),enabled:enablement(s,r),basis:t('investigation.runtimeConfiguredModel',{},locale),model,request,at:value(r.at)},locale));bind(s,r)
  }
  const recall=schedules.flatMap(s=>(s.records||[]).filter(r=>r.sourceId==='AromaXiangXiang-ErrandRecall'&&r.executionKind==='deterministic_food_recall_check'&&r.usesModel===false).map(r=>({s,r})))
  if(recall.length>1)ambiguous++
  else if(recall.length===1){
-  const {s,r}=recall[0],installed=r.state==='INSTALLED'?t('investigation.runtimeInstalled',{},locale):r.state==='NOT_INSTALLED'?t('investigation.notInstalled',{},locale):t('investigation.runtimeUnknown',{},locale)
-  lines.push('- '+t('investigation.runtimeRecallRow',{installed,state:runningTitle(currentActivity(report,s.sourceId,r.sourceId,r.currentRunningState),locale),model:t('investigation.briefNoModel',{},locale),at:value(r.at)},locale));bind(s,r)
+  const {s,r}=recall[0],installed=['INSTALLED','DISABLED'].includes(r.state)?t('investigation.runtimeInstalled',{},locale):r.state==='NOT_INSTALLED'?t('investigation.notInstalled',{},locale):t('investigation.runtimeUnknown',{},locale)
+  lines.push('- '+t('investigation.runtimeRecallRow',{installed,enabled:enablement(s,r),state:runningTitle(currentActivity(report,s.sourceId,r.sourceId,r.currentRunningState),locale),model:t('investigation.briefNoModel',{},locale),at:value(r.at)},locale));bind(s,r)
  }
  if(!lines.length&&!ambiguous)return null
- const text=[t('investigation.runtimeInventory',{},locale),lines.join('\n'),...(ambiguous?[t('investigation.runtimeAmbiguous',{count:ambiguous},locale)]:[]),t('investigation.runtimeInventoryBoundary',{},locale)].filter(Boolean).join('\n\n')
+ const history=readable('execution').flatMap(s=>(s.records||[]).filter(r=>r.role==='memory_completion'&&r.evidenceBasis==='owner_bridge_invocation_ledger'&&typeof r.sourceId==='string').map(r=>({s,r})))
+ const observedHistory=history.filter(({r})=>history.filter(x=>x.r.sourceId===r.sourceId).length===1&&r.state==='succeeded'&&r.modelResultObserved===true&&typeof r.actualModel==='string'&&Number.isFinite(Date.parse(r.startedAt))&&Number.isFinite(Date.parse(r.finishedAt)))
+  .sort((a,b)=>Date.parse(b.r.finishedAt)-Date.parse(a.r.finishedAt)).slice(0,2)
+ const historicalLines=[]
+ for(const{s,r}of observedHistory){
+  historicalLines.push('- '+t('investigation.runtimeHistoricalRow',{model:value(r.actualModel),started:value(r.startedAt),finished:value(r.finishedAt)},locale))
+  references.push({sourceId:s.sourceId,recordId:r.sourceId,fields:{role:r.role,state:r.state,actualModel:r.actualModel,modelResultObserved:r.modelResultObserved,startedAt:r.startedAt,finishedAt:r.finishedAt,evidenceBasis:r.evidenceBasis}})
+ }
+ const text=[t('investigation.runtimeInventory',{},locale),lines.join('\n'),...(ambiguous?[t('investigation.runtimeAmbiguous',{count:ambiguous},locale)]:[]),t('investigation.runtimeInventoryBoundary',{},locale),...(historicalLines.length?[t('investigation.runtimeHistoricalTitle',{},locale),historicalLines.join('\n'),t('investigation.runtimeHistoricalBoundary',{},locale)]:[])].filter(Boolean).join('\n\n')
  return {version:1,text,references,ambiguousRows:ambiguous,scope:'registered_live_process_receipts_not_complete_worker_inventory'}
 }
 // The legacy prose-name gate is built for Cantonese answers with Latin entity

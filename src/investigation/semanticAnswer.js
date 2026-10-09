@@ -68,6 +68,11 @@ function bindClaim(c,report){
    if(['history','usage'].includes(section.section)&&c.evidenceState==='confirmed')return{reason:'grade_overclaim'}
    const temporal=['configuration','schedules'].includes(section.section)?'current':'historical'
    if(c.temporalScope!==temporal)return{reason:'time_overclaim'}
+   if(['configuration','schedules'].includes(section.section)&&report.evidenceModel){
+    const facet={enabled:'enabled',scheduled:'enabled',configuredModel:'configured_model',currentRunningState:'running',model:record.modelBasis==='in_flight_request_selection'?'selected_request_model':'configured_model'}[ref.field]
+    if(facet&&require('./evidenceState').currentFact(report,section.sourceId,ref.recordId,facet)?.state!=='CONFIRMED')return{reason:'runtime_not_established'}
+    if(['unavailable','unconnected'].includes(record.observationState))return{reason:'runtime_not_established'}
+   }
    if(ref.field==='currentRunningState' && report.evidenceModel?.assertions.some(a=>a.sourceId===section.sourceId&&a.recordId===ref.recordId&&a.facet==='running'&&['UNKNOWN','UNAVAILABLE','CONTRADICTED'].includes(a.state)))return{reason:'runtime_not_established'}
    if(report.contradictions?.some(x=>x.sourceId===section.sourceId&&x.recordId===ref.recordId))return{reason:'conflicting_record'}
   }

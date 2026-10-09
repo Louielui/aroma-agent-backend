@@ -12,23 +12,29 @@ function buildEvidenceState(report) {
     const id=identity(r)
     const observedAt=['current_configuration','current_enablement','current_source'].includes(time)?date(s.retrievedAt):date(r?.at||r?.startedAt||r?.lastStartedAt||r?.originalDate)
     const references=fields.filter(f=>r&&Object.hasOwn(r,f)).map(field=>({sourceId:s.sourceId,recordId:id,field,value:r[field]}))
-    const liveAge=date(s.retrievedAt)&&date(r?.at)?Date.parse(s.retrievedAt)-Date.parse(r.at):null
-    const fresh=time!=='current_runtime'||(liveAge!==null&&liveAge>=-5000&&liveAge<=300000)
-    const state=!readable(s)?'UNAVAILABLE':!known(value)||!fresh?'UNKNOWN':grade
+    const liveAt=facet==='configured_model'&&r?.modelObservedAt?r.modelObservedAt:r?.at
+    const liveAge=date(s.retrievedAt)&&date(liveAt)?Date.parse(s.retrievedAt)-Date.parse(liveAt):null
+    const liveBound=time==='current_runtime'||(r?.evidenceBasis==='live_process_snapshot'&&['current_configuration','current_enablement'].includes(time))
+    const fresh=!liveBound||(liveAge!==null&&liveAge>=-5000&&liveAge<=300000)
+    const unavailable=!readable(s)||['unavailable','unconnected'].includes(r?.observationState)||(facet==='enabled'&&['unavailable','unconnected'].includes(r?.enablementState))
+    const state=unavailable?'UNAVAILABLE':!known(value)||!fresh?'UNKNOWN':grade
     assertions.push({id:'e'+(assertions.length+1),subject:s.section+':'+(id||'source'),sourceId:s.sourceId||null,recordId:id,
       facet,temporalScope:time,state,value:state==='UNKNOWN'||state==='UNAVAILABLE'?null:value,observedAt,retrievedAt:date(s.retrievedAt),references})
   }
   for(const s of report.sections||[]) {
     coverage.push({section:s.section,sourceId:s.sourceId,state:readable(s)?(s.records?.length?'SUPPORTED':'UNKNOWN'):'UNAVAILABLE',scope:s.coverage||'bounded_source_receipt',retrievedAt:date(s.retrievedAt)})
+    for(const[role,state]of Object.entries(s.runtimeCoverage||{}))if(['unavailable','unconnected'].includes(state))coverage.push({section:'runtime_'+role,sourceId:s.sourceId,recordId:null,state:'UNAVAILABLE',scope:'registered_runtime_subsource',retrievedAt:date(s.retrievedAt)})
     if(!readable(s)){add(s,null,'source_access','unknown',null);continue}
     for(const r of s.records||[]) {
       if(!identity(r))continue
       if(['configuration','schedules'].includes(s.section)) {
-        add(s,r,'configured_model','current_configuration',r.usesModel===false?'no_model':r.model,'CONFIRMED',['model','usesModel','modelBasis'])
+        const model=Object.hasOwn(r,'configuredModel')?r.configuredModel:r.modelBasis==='in_flight_request_selection'?null:r.model
+        add(s,r,'configured_model','current_configuration',r.usesModel===false?'no_model':model,'CONFIRMED',['configuredModel','configuredEffort','model','usesModel','modelBasis','modelObservedAt'])
         let enabled=typeof r.enabled==='boolean'?r.enabled:typeof r.scheduled==='boolean'?r.scheduled:r.state==='ACTIVE'?true:r.state==='PAUSED'||r.state==='NOT_INSTALLED'?false:null
         add(s,r,'enabled','current_enablement',enabled,'CONFIRMED',['enabled','scheduled','state'])
         const witness=r.evidenceBasis==='live_process_snapshot'||r.executionKind==='deterministic_food_recall_check'
         add(s,r,'running','current_runtime',witness?r.currentRunningState:null,'CONFIRMED',['currentRunningState','evidenceBasis','executionKind','at'])
+        if(r.modelBasis==='in_flight_request_selection')add(s,r,'selected_request_model','current_runtime',witness&&r.currentRunningState==='active'?r.model:null,'CONFIRMED',['model','modelBasis','currentRunningState','at','startedAt'])
         if(r.bootCommit)add(s,r,'loaded_revision','current_configuration',r.bootCommit,'CONFIRMED',['bootCommit','bootedAt'])
       } else if(s.section==='execution') {
         add(s,r,'execution_state','historical_execution',r.state||((r.lastStartedAt||r.lastCompletedAt)?'execution_recorded':null),'CONFIRMED',['state','lastStartedAt','lastCompletedAt','startedAt','finishedAt'])
@@ -89,7 +95,14 @@ function buildEvidenceState(report) {
 }
 function currentActivity(report,sourceId,recordId,legacyValue) {
   if(!report?.evidenceModel)return legacyValue
-  const a=report.evidenceModel.assertions.find(a=>a.sourceId===sourceId&&a.recordId===recordId&&['running','workflow_occupancy'].includes(a.facet))
+  const a=currentFact(report,sourceId,recordId,'running')||currentFact(report,sourceId,recordId,'workflow_occupancy')
   return a?.state==='CONFIRMED'?a.value:'unknown'
 }
-module.exports={STATES,buildEvidenceState,currentActivity}
+function currentFact(report,sourceId,recordId,facet){
+ const rows=(report?.evidenceModel?.assertions||[]).filter(a=>a.sourceId===sourceId&&a.recordId===recordId&&a.facet===facet)
+ const latest=rows.sort((a,b)=>String(b.observedAt||'').localeCompare(String(a.observedAt||'')))[0]
+ if(!latest)return null
+ const same=rows.filter(a=>a.observedAt===latest.observedAt)
+ return same.some(a=>a.state!=='CONFIRMED'||JSON.stringify(a.value)!==JSON.stringify(latest.value))?{state:same.some(a=>a.state==='UNAVAILABLE')?'UNAVAILABLE':'UNKNOWN',value:null}:latest
+}
+module.exports={STATES,buildEvidenceState,currentActivity,currentFact}

@@ -53,6 +53,7 @@ function createBridge ({ token, clientOptions, memoryClientOptions = clientOptio
     return {state:'partial',bootCommit:require('../governance/bootCommit').BOOT_COMMIT,retrievedAt:at,scheduler,provesCharge:false,records:['chat_completion','memory_completion'].map(role=>{
       const active=activeCalls.get(role),model=active?.model || (role==='memory_completion' ? backgroundModel : null)
       return {sourceId:'bridge:'+role,role,at,model,effort:active?.effort || (role==='memory_completion' ? 'low' : null),
+        configuredModel:role==='memory_completion' ? backgroundModel : null,configuredEffort:role==='memory_completion' ? 'low' : null,
         provider:model ? isClaudeModel(model) ? 'claude' : 'gpt' : null,
         enabled:role==='memory_completion' ? memoryEnabled : true,currentRunningState:active?'active':'idle',
         startedAt:active?.startedAt || null,evidenceBasis:'live_process_snapshot',modelBasis:active?'in_flight_request_selection':'bridge_route_configuration'}
