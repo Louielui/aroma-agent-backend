@@ -55,7 +55,7 @@ function buildEvidenceState(report) {
         add(s,r,'registered_file_comparison','current_source',r.sourceFiles?.some(f=>f.currentHash)?r.sourceFiles:null,'CONFIRMED',['sourceFiles'])
         if(r.model)add(s,r,'executed_model','historical_execution',r.model,'CONFIRMED',['model'])
       } else if(s.section==='history') add(s,r,'historical_statement','historical_statement',r.title,'SUPPORTED',['title','at'])
-      else if(s.section==='usage') add(s,r,'estimated_usage','historical_execution',r.estimated_tokens,'SUPPORTED',['estimated_tokens','at'])
+      else if(s.section==='usage'&&r.evidenceBasis!=='official_subscription_account_metadata') add(s,r,'estimated_usage','historical_execution',r.estimated_tokens,'SUPPORTED',['estimated_tokens','at'])
       else if(s.section.startsWith('external_')) add(s,r,'source_statement','historical_statement',r.title||r.content,'SUPPORTED',['title','content','originalDate'])
     }
     if(s.section==='work') for(const w of s.workflows||[]) {
@@ -74,6 +74,19 @@ function buildEvidenceState(report) {
       facet:'execution_usage_'+facet,temporalScope:'historical_execution',state,value:['UNKNOWN','UNAVAILABLE','CONTRADICTED'].includes(state)?null:values[facet]??null,observedAt:date(c.finishedAt||c.usageAt||c.startedAt),retrievedAt:retrieved,references:refs})
   }
   for(const gap of report.executionUsage?.gaps||[])assertions.push({id:'e'+(assertions.length+1),subject:'execution_usage:'+gap.recordId,sourceId:gap.references[0]?.sourceId||null,recordId:gap.recordId,facet:'execution_usage_identity',temporalScope:'historical_execution',state:gap.state,value:null,observedAt:null,retrievedAt:null,references:gap.references.flatMap(ref=>Object.entries(ref.fields).map(([field,value])=>({sourceId:ref.sourceId,recordId:ref.recordId,field,value})))})
+  const subscription=report.executionUsage?.subscriptionEvidence
+  if(subscription&&subscription.state!=='UNKNOWN'){
+    const refs=subscription.references||[],receipt=subscription.receipt
+    const put=(subject,facet,value,state,at)=>assertions.push({id:'e'+(assertions.length+1),subject:'subscription:'+subject,sourceId:refs[0]?.sourceId||null,recordId:refs[0]?.recordId||null,facet,temporalScope:'account_snapshot',state,value:['UNKNOWN','UNAVAILABLE','CONTRADICTED'].includes(state)?null:value,observedAt:at||null,retrievedAt:at||null,references:refs})
+    if(subscription.state==='CONTRADICTED')put('gpt','account_snapshot',null,'CONTRADICTED',null)
+    else if(!receipt)put('gpt','account_snapshot',null,'UNAVAILABLE',null)
+    for(const b of receipt?.quota?.buckets||[])for(const [kind,w]of [['primary',b.primary],['secondary',b.secondary]])if(w)for(const [key,facet]of [['usedPercent','quota_used_percent'],['remainingPercent','quota_remaining_percent'],['resetsAt','quota_reset_at']])put('gpt:'+b.id+':'+kind,facet,w[key],w[key]===null?'UNKNOWN':'CONFIRMED',receipt.quota.retrievedAt)
+    for(const b of receipt?.quota?.buckets||[])put('gpt:'+b.id,'credit_balance',b.credits?.balance??null,b.credits?.balance===null||b.credits?.balance===undefined?'UNKNOWN':'CONFIRMED',receipt.quota.retrievedAt)
+    const tokens=receipt?.activity?.summary?.lifetimeTokens??null
+    put('gpt','account_lifetime_tokens',tokens,tokens===null?'UNKNOWN':'CONFIRMED',receipt?.activity?.retrievedAt)
+    put('claude','remaining_quota',null,'UNAVAILABLE',null)
+    put('gpt','account_to_job_charge',null,'UNKNOWN',null)
+  }
   const chain=report.workCorrelation?.repairChain
   if(chain?.readOnly===true)for(const stage of chain.stages){
     const sources=(report.sections||[]).filter(s=>stage.references.some(r=>r.sourceId===s.sourceId))

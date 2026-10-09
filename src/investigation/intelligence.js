@@ -28,7 +28,10 @@ function evaluateInvestigation ({ goal = '', focus = null, sections = [] } = {})
         const matched = schedules?.records?.find(task => task.sourceId === 'codex-automation:' + r.declaredAutomationId)
         if (matched) add(s, r, 'candidate_link', 'possible', 'historical', { name: matched.name, scheduleSourceId: schedules.sourceId, basis: 'user_declared_heartbeat_id_only' })
       } else if (s.section === 'history') add(s, r, 'historical_statement', 'supported', 'historical', { title: r.title })
-      else if (s.section === 'usage') add(s, r, 'estimated_usage', 'supported', 'historical', { model: r.model, estimated_tokens: r.estimated_tokens })
+      else if (s.section === 'usage') {
+        if(r.evidenceBasis==='official_subscription_account_metadata') add(s,r,'account_snapshot_recorded','supported','current',{provider:r.provider,at:r.at,scope:'account_not_xiangxiang_only',provesCharge:false})
+        else add(s, r, 'estimated_usage', 'supported', 'historical', { model: r.model, estimated_tokens: r.estimated_tokens })
+      }
       else if (s.section === 'work') {
         add(s, r, 'work_recorded', 'confirmed', 'historical', { state: r.state, model: r.model, reviewModel: r.reviewModel, goal: r.goal, sourceRevision: r.sourceRevision, workRunId: r.workRunId, taskRunId: r.taskRunId, appliedToLive: r.appliedToLive })
         if (r.reason || ['failed', 'timed_out', 'needs_attention'].includes(r.state)) add(s, r, 'work_failure_observed', 'confirmed', 'historical', { reason: r.reason ?? null, state: r.state, steps: r.steps, failureDiagnostic: r.failureDiagnostic })

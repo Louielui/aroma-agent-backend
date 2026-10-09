@@ -114,7 +114,7 @@ function buildExecutionUsage(report){
   return {source,state,observedRecords:state==='UNAVAILABLE'?null:count??receipts.reduce((n,s)=>n+(s.records?.length||0),0),complete:false,references,
    receipts:sources.map(s=>({sourceId:s.sourceId,retrievedAt:s.retrievedAt||null,state:s.state,coverage:sub==='sessions'?s.sessionCoverage||s.coverage||null:sub==='invocations'?s.invocationCoverage||null:s.coverage||null,omitted:s.omitted??null}))}
  })
- return {version:1,readOnly:true,inventoryComplete:false,inventory,chains,duplicateReceipts,conflictingReceipts,gaps,billingState,billingConfirmed:false,
+ return {version:1,readOnly:true,inventoryComplete:false,inventory,chains,duplicateReceipts,conflictingReceipts,gaps,billingState,billingConfirmed:false,subscriptionEvidence:require('./subscriptionEvidence').buildSubscriptionEvidence(sections),
   accountUsageTotal:null,subscriptionCreditUsed:null,scope:'registered_source_samples_not_all_external_work_or_account_totals'}
 }
 module.exports={buildExecutionUsage}

@@ -61,6 +61,7 @@ function createXiangxiangOperationsReadAdapter (options = {}) {
   const executionReader = options.executionReader || (isTestProcess() ? null : () => require('../../adapters/CodexSubscriptionAdapter').localRequest('/execution-metadata', {}, env,AbortSignal.timeout(10000)))
   const invocationReader = options.invocationReader || (isTestProcess() ? null : () => require('../../adapters/CodexSubscriptionAdapter').localRequest('/invocation-metadata', {}, env,AbortSignal.timeout(10000)))
   const workReader = options.workReader || (isTestProcess() ? null : () => require('../../adapters/CodexSubscriptionAdapter').localRequest('/work-metadata', {}, env,AbortSignal.timeout(10000)))
+  const subscriptionReader = options.subscriptionReader || (isTestProcess() ? null : () => require('../../adapters/CodexSubscriptionAdapter').localRequest('/subscription-metadata', {}, env,AbortSignal.timeout(30000)))
   async function section (name, query, runtime) {
     try {
       if (name === 'billing') return { state: 'unconnected', evidenceState: 'not_established', records: [], provesCharge: false, note: 'No provider billing ledger or execution-to-charge correlation is connected. Actual charges and their causes are NOT ESTABLISHED.' }
@@ -122,10 +123,19 @@ function createXiangxiangOperationsReadAdapter (options = {}) {
         return { ...bounded(rows, query), evidenceState: 'supported', note: 'Historical conversation statements, not independent truth or present state. Partial search cannot establish absence. No Codex conversation history is connected.' }
       }
       if (name === 'usage') {
-        const d = readJson(path.join(dataDir, 'aroma-truth.json'), 16 * 1024 * 1024)
-        if (!Array.isArray(d.llm_usage)) throw Error('usage_invalid')
-        const rows = d.llm_usage.slice(-LIMIT).map(r => ({ sourceId: small(r.id), model: small(r.model), at: date(r.at), estimated_tokens: Number.isFinite(r.estimated_tokens) ? r.estimated_tokens : null, request_count: Number.isFinite(r.request_count) ? r.request_count : null }))
-        return { state: d.llm_usage.length > LIMIT ? 'partial' : 'ok', evidenceState: 'supported', records: rows, omitted: Math.max(0, d.llm_usage.length - LIMIT), provesCharge: false, note: 'Legacy local usage sample. May contain test/old records and has no provider billing correlation. Estimated tokens are not credits or charges; subscription activity is not fully covered.' }
+        let legacy
+        try {
+          const d = readJson(path.join(dataDir, 'aroma-truth.json'), 16 * 1024 * 1024)
+          if (!Array.isArray(d.llm_usage)) throw Error('usage_invalid')
+          legacy={state:d.llm_usage.length>LIMIT?'partial':'ok',records:d.llm_usage.slice(-LIMIT).map(r=>({sourceId:small(r.id),model:small(r.model),at:date(r.at),estimated_tokens:Number.isFinite(r.estimated_tokens)?r.estimated_tokens:null,request_count:Number.isFinite(r.request_count)?r.request_count:null})),omitted:Math.max(0,d.llm_usage.length-LIMIT)}
+        }catch(e){legacy={state:e.code==='ENOENT'?'missing':'unavailable',records:[],omitted:null}}
+        if(!subscriptionReader)return {...legacy,evidenceState:legacy.records.length?'supported':'not_established',provesCharge:false,note:'Legacy local usage sample. Estimates are not provider tokens, credits or charges; subscription account activity is unconnected.'}
+        let subscription
+        try {subscription=await subscriptionReader();if(!['ok','partial','unavailable','unconnected'].includes(subscription?.state)||!Array.isArray(subscription.records))throw Error('invalid_receipt')}
+        catch(_){subscription={state:'unavailable',records:[],coverage:{codexQuota:'unavailable',codexActivity:'unavailable',claudeQuota:'unconnected',billing:'unconnected'}}}
+        const records=[...subscription.records,...legacy.records]
+        return {state:records.length?'partial':subscription.state,evidenceState:records.length?'supported':'not_established',records,omitted:legacy.omitted,provesCharge:false,
+          coverage:{legacy:legacy.state,subscription:subscription.state,...subscription.coverage},note:'Official subscription account snapshots and legacy estimates have separate scopes. Do not sum them with invocation/session counters. Account quota is not a charge or per-job allocation; Claude automated quota and provider billing remain unconnected.'}
       }
       throw Error('unknown_section')
     } catch (e) { return { state: e.code === 'ENOENT' ? 'missing' : 'unavailable', evidenceState: 'not_established', records: [], note: 'Source could not be inspected; this is not an empty result.' } }

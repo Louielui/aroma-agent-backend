@@ -4,6 +4,8 @@ const inline=v=>'`'+String(v).replace(/[^a-zA-Z0-9_.:\/-]/g,'').slice(0,160)+'`'
 function renderExecutionUsage(report,{message=''}={}){
  if(report?.readOnly!==true||report.focus!=='cost'||!report.executionUsage)return null
  const e=report.executionUsage,locale=/[\u3400-\u9fff]/.test(message)?'zh':'en',lines=[],references=[],chosen=[]
+ const subscription=require('./subscriptionEvidenceView').renderSubscriptionEvidence(e.subscriptionEvidence,locale)
+ if(subscription){lines.push(subscription.text);references.push(...subscription.references)}
  const unknown=t('investigation.briefNotRecorded',{},locale)
  const counterWords={input:()=>t('investigation.usageCounter.input',{},locale),output:()=>t('investigation.usageCounter.output',{},locale),total:()=>t('investigation.usageCounter.total',{},locale),cacheRead:()=>t('investigation.usageCounter.cacheRead',{},locale),cacheCreate:()=>t('investigation.usageCounter.cacheCreate',{},locale),reasoning:()=>t('investigation.usageCounter.reasoning',{},locale)}
  const sourceWords={bridge_invocations:()=>t('investigation.usageSource.bridgeInvocations',{},locale),codex_sessions:()=>t('investigation.usageSource.codexSessions',{},locale),worker_records:()=>t('investigation.usageSource.workerRecords',{},locale),scheduler_definitions:()=>t('investigation.usageSource.schedulerDefinitions',{},locale)}
@@ -28,7 +30,7 @@ function renderExecutionUsage(report,{message=''}={}){
    else for(const m of c.usageModels)lines.push('  '+t('investigation.executionUsageModel',{provider:inline(m.provider),model:inline(m.model),count:m.receiptCount,usage:counters(m.subtotal,m),scope:m.subtotal?t('investigation.executionUsageSubtotal',{},locale):t('investigation.executionUsageLastTurn',{},locale)},locale))
   }
  }
- if(!chosen.length)return null
+ if(!chosen.length&&!subscription)return null
  for(const x of e.inventory)references.push(...x.references)
  const inventory=e.inventory.map(x=>(sourceWords[x.source]?.()||unknown)+': '+(x.state==='UNAVAILABLE'?t('investigation.executionUsageUnavailable',{},locale):x.observedRecords===null?unknown:x.observedRecords)).join(locale==='zh'?'；':'; ')
  return {version:1,text:[t('investigation.executionUsageTitle',{},locale),inventory,lines.join('\n'),t('investigation.executionUsageBoundary',{shown:chosen.length,total:e.chains.length,duplicates:e.duplicateReceipts,conflicts:e.conflictingReceipts},locale)].join('\n\n'),references,scope:e.scope,modelProseUsed:false}

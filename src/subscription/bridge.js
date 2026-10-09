@@ -30,7 +30,7 @@ function validateInput (input) {
   return input
 }
 
-function createBridge ({ token, clientOptions, memoryClientOptions = clientOptions, completeFn = complete, claudeFn = require('./claudeClient').complete, claudeCheckFn = require('./claudeClient').checkSubscription, claudeModelsFn = require('./claudeClient').listModels, backgroundModel = null, checkFn = checkSubscription, modelsFn = listSubscriptionModels, workerFlow = null, workerProviders = null, websiteEnabled = false, memoryEnabled = false, memoryStore = null, codeSourceFactory = null, taskPlanSource = null, codeRepair = null, projectWork = null, projectAdoption = null, projectTasks = null, executionReader = null, workReader = null, schedulerReader = null, invocationLedger = null, findWebsiteFn = require('./websiteClient').findWebsite }) {
+function createBridge ({ token, clientOptions, memoryClientOptions = clientOptions, completeFn = complete, claudeFn = require('./claudeClient').complete, claudeCheckFn = require('./claudeClient').checkSubscription, claudeModelsFn = require('./claudeClient').listModels, backgroundModel = null, checkFn = checkSubscription, modelsFn = listSubscriptionModels, subscriptionFn = require('./subscriptionEvidence').readCodexEvidence, workerFlow = null, workerProviders = null, websiteEnabled = false, memoryEnabled = false, memoryStore = null, codeSourceFactory = null, taskPlanSource = null, codeRepair = null, projectWork = null, projectAdoption = null, projectTasks = null, executionReader = null, workReader = null, schedulerReader = null, invocationLedger = null, findWebsiteFn = require('./websiteClient').findWebsite }) {
   if (!validToken(token)) throw new Error('bridge requires a 256-bit local token')
   let busy = false; let memoryBusy = false
   const activeCalls = new Map()
@@ -64,6 +64,16 @@ function createBridge ({ token, clientOptions, memoryClientOptions = clientOptio
   const memorySession = createSession(memoryClientOptions)
   const catalogueSession = createSession({ ...clientOptions, timeoutMs: 20000 })
   let cataloguePending = null, catalogueController = null
+  const subscriptionSession = createSession({ ...clientOptions, timeoutMs: 20000 })
+  let subscriptionPending = null, subscriptionController = null
+  function readSubscription () {
+    if (!subscriptionPending) {
+      subscriptionController = new AbortController()
+      const options = { ...clientOptions, session: subscriptionSession, signal: AbortSignal.any([subscriptionController.signal, AbortSignal.timeout(25000)]) }
+      subscriptionPending = Promise.resolve().then(() => subscriptionFn(options)).finally(() => { subscriptionPending = null; subscriptionController = null })
+    }
+    return subscriptionPending
+  }
   function readCatalogue () {
     if (!cataloguePending) {
       catalogueController = new AbortController()
@@ -80,10 +90,10 @@ function createBridge ({ token, clientOptions, memoryClientOptions = clientOptio
       if (!res.destroyed) { res.writeHead(status, { 'content-type': 'application/json', 'cache-control': 'no-store' }); res.end(JSON.stringify(body)) }
     }
     if (!authenticated(req.headers.authorization, token) || req.headers.origin) { reply(401, { code: 'subscription_unavailable' }); req.resume(); return }
-    if (req.method !== 'POST' || !['/complete', '/status', '/models', '/workers', '/website', '/v1/chat/completions', '/memory-store', '/code-diagnosis-source', '/task-plan-source', '/code-repair', '/project-work', '/project-adoption', '/project-tasks', '/execution-metadata', '/work-metadata', '/runtime-metadata', '/invocation-metadata','/work-outcome'].includes(req.url)) { reply(404, { code: 'subscription_unavailable' }); req.resume(); return }
+    if (req.method !== 'POST' || !['/complete', '/status', '/models', '/workers', '/website', '/v1/chat/completions', '/memory-store', '/code-diagnosis-source', '/task-plan-source', '/code-repair', '/project-work', '/project-adoption', '/project-tasks', '/execution-metadata', '/work-metadata', '/runtime-metadata', '/invocation-metadata','/work-outcome','/subscription-metadata'].includes(req.url)) { reply(404, { code: 'subscription_unavailable' }); req.resume(); return }
     const isMemory = req.url === '/v1/chat/completions'
     const isStore = req.url === '/memory-store'||req.url==='/work-outcome'
-    const isCatalogue = req.url === '/models' || req.url === '/execution-metadata' || req.url === '/work-metadata' || req.url === '/runtime-metadata' || req.url === '/invocation-metadata'
+    const isCatalogue = req.url === '/models' || req.url === '/execution-metadata' || req.url === '/work-metadata' || req.url === '/runtime-metadata' || req.url === '/invocation-metadata' || req.url === '/subscription-metadata'
     // Closed account metadata uses its own single-flight session. Reading it
     // neither acquires nor releases the execution lane or dispatches a turn.
     if (!isStore && !isCatalogue && ((isMemory ? memoryBusy : busy) || (!isMemory && req.url !== '/project-tasks' && projectTasks?.isActive()) || (!isMemory && req.url !== '/code-repair' && codeRepair?.isActive()) || (!isMemory && !['/project-work', '/project-adoption', '/project-tasks'].includes(req.url) && projectWork?.isActive()) || (!isMemory && req.url !== '/workers' && workerFlow?.isActive?.()) || (!isMemory && !['/project-adoption', '/project-work', '/project-tasks'].includes(req.url) && projectAdoption?.isActive()))) { reply(503, { code: 'subscription_unavailable' }); req.resume(); return }
@@ -106,6 +116,9 @@ function createBridge ({ token, clientOptions, memoryClientOptions = clientOptio
         const {validWorkTrace,validOutcome}=require('../investigation/workTrace')
         if(!input||Array.isArray(input)||Object.keys(input).sort().join(',')!=='outcome,workTrace'||!validWorkTrace(input.workTrace)||!validOutcome(input.outcome)){reply(400,{code:'subscription_invalid_output'});return}
         reply(200,{recorded:invocationLedger?.workOutcome(input.workTrace,input.outcome)===true})
+      }else if (req.url === '/subscription-metadata') {
+        if (!input || typeof input !== 'object' || Array.isArray(input) || Object.keys(input).length) { reply(400,{code:'context_unavailable'}); return }
+        try { reply(200,await readSubscription()) } catch (_) { reply(503,{code:'context_unavailable'}) }
       }else if (req.url === '/invocation-metadata') {
         if (!input || typeof input !== 'object' || Array.isArray(input) || Object.keys(input).length) { reply(400,{code:'context_unavailable'}); return }
         reply(200,invocationLedger ? invocationLedger.read() : {state:'unconnected',records:[],provesCharge:false})
@@ -208,7 +221,7 @@ function createBridge ({ token, clientOptions, memoryClientOptions = clientOptio
     } finally { if (isMemory) memoryBusy = false; else if (!isStore && !isCatalogue) busy = false }
   })
   server.requestTimeout = 150000
-  server.on('close', () => { catalogueController?.abort(); catalogueSession.close(); session.close(); memorySession.close() })
+  server.on('close', () => { subscriptionController?.abort(); subscriptionSession.close(); catalogueController?.abort(); catalogueSession.close(); session.close(); memorySession.close() })
   server.headersTimeout = 10000
   return server
 }
