@@ -78,6 +78,7 @@ function evaluateInvestigation ({ goal = '', focus = null, sections = [] } = {})
   report.workCorrelation = require('./workCorrelation').correlateWork(report)
   report.executionUsage = require('./executionUsage').buildExecutionUsage(report)
   report.evidenceModel = require('./evidenceState').buildEvidenceState(report)
+  report.costAssessment = require('./costAssessment').buildCostAssessment(report)
   return report
 }
 module.exports = { evaluateInvestigation }

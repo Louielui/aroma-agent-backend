@@ -83,7 +83,7 @@ function buildExecutionUsage(report){
   chains.push({kind:group.kind,workKind:group.workKind,jobId:group.jobId,identity:group.identity,recordId:workerGroup||group.kind==='background_work'?runs[0]?.recordId:null,observedRuns:workerGroup||group.kind==='background_work'?runs.length:null,observedRetryRuns:workerGroup||group.kind==='background_work'?runs.filter(r=>r.attempt>1).length:null,runs,canonicalEvidenceState:workerConflict?'CONTRADICTED':linkedWorker.length?'SUPPORTED':'UNKNOWN',canonicalRecordState:workerGroup?(linkedWorker.length&&!workerConflict?label(linkedWorker[0].r.state):null):null,canonicalRecordObserved:linkedWorker.length>0,observedAttempts:group.rows.length,observedDispatches,successfulResults,retryCount:null,phases,
    startedAt:group.rows.map(({r})=>r.startedAt).sort()[0],finishedAt:group.rows.map(({r})=>date(r.finishedAt)).filter(Boolean).sort().at(-1)||null,
    executionState:observedDispatches?'CONFIRMED':'UNKNOWN',modelState:successfulResults?'CONFIRMED':'UNKNOWN',usageState:usageConflict?'CONTRADICTED':!usageModels.length?'UNKNOWN':usageComplete?'CONFIRMED':'SUPPORTED',
-   usageComplete,unknownUsageCalls,usageModels,billingState,correlationState:usageConflict?'CONTRADICTED':usageModels.length?'CONFIRMED':'UNKNOWN',requestCoverageComplete:false,references})
+   usageComplete,unknownUsageCalls,usageModels,billingState,correlationState:usageConflict?'CONTRADICTED':usageModels.length&&group.kind!=='bridge_lane'?'CONFIRMED':'UNKNOWN',requestCoverageComplete:false,references})
  }
  for(const[id,rows]of sessions){
   const dated=rows.filter(({r})=>date(r.usageAt)).sort((a,b)=>Date.parse(b.r.usageAt)-Date.parse(a.r.usageAt)),selected=dated[0]||rows[0]

@@ -17,6 +17,8 @@ function renderCostFindings(report,{message=''}={}){
  if(report?.readOnly!==true||report.focus!=='cost'||!Array.isArray(report.sections))return null
  const locale=localeFor(message),sections=unique(report.sections.filter(s=>s&&typeof s.sourceId==='string'),s=>s.sourceId)
  const references=[],lines=[]
+ const assessment=require('./costAssessmentView').renderCostAssessment(report.costAssessment,locale)
+ if(assessment){lines.push(assessment.text);references.push(...assessment.references)}
  const execution=sections.filter(s=>s.section==='execution'&&readable(s))
  const observed=unique(execution.flatMap(s=>(s.records||[]).filter(r=>r&&typeof r.sourceId==='string').map(r=>({s,r}))),x=>x.r.sourceId)
   .filter(({r})=>r.evidenceBasis==='owner_bridge_invocation_ledger'&&r.usageBasis==='provider_result_model_usage'&&r.state==='succeeded'&&r.modelResultObserved===true&&['memory_completion','chat_completion'].includes(r.role)&&safeModel(r.actualModel)&&safeTime(r.startedAt)&&Number.isSafeInteger(r.usage?.outputTokens)&&r.usage.outputTokens>=0)
