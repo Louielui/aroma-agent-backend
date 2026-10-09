@@ -45,3 +45,15 @@ test('unrecorded work diagnostics and test outcomes stay unknown rather than bec
   assert.equal(r.currentRunningState, 'unknown')
   assert.equal(r.sourceRevision, null)
 })
+
+test('recent fixed-fixture work is not displaced by older project and adoption records', () => {
+  const rows = [
+    {sourceId:'failed',kind:'worker/project-tasks',state:'failed',at:'2026-10-01',workRunId:'related'},
+    {sourceId:'related',kind:'worker/project-runs',state:'cancelled',at:'2026-10-02'},
+    ...Array.from({length:4},(_,i)=>({sourceId:'old-'+i,kind:i%2?'worker/adoptions':'worker/project-runs',state:'completed',at:'2026-10-03'})),
+    {sourceId:'new-fixture',kind:'worker/runs',state:'completed',at:'2026-10-09'}
+  ]
+  const sample=selectWorkSample(rows)
+  assert.deepEqual(sample.records.slice(0,3).map(r=>r.sourceId),['failed','related','new-fixture'])
+  assert.equal(sample.records.length,5);assert.equal(sample.omitted,2)
+})

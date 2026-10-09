@@ -79,7 +79,9 @@ function selectWorkSample (records, limit = 5) {
   for (let i = 0; i < 3; i++) for (const r of recent) if (!picked.includes(r) && linked(r) && picked.length < limit) picked.push(r)
   const sibling = r => failed && ((failed.workRunId && failed.workRunId === r.workRunId) || (failed.taskRunId && failed.taskRunId === r.taskRunId))
   for (const r of recent) if (!picked.includes(r) && sibling(r) && picked.length < limit) picked.push(r)
-  for (const r of recent.filter(r => r.kind === 'worker/project-runs' || r.kind === 'worker/adoptions').concat(recent)) if (!picked.includes(r) && picked.length < limit) picked.push(r)
+  // After retaining the failure chain, fill by recency across all registered
+  // kinds. Older project/adoption rows must not hide a newly completed fixture.
+  for (const r of recent) if (!picked.includes(r) && picked.length < limit) picked.push(r)
   return { records: picked, selection: 'latest_failure_explicit_links_and_recent_work', omitted: Math.max(0, records.length - picked.length), latestFailureId: failed?.sourceId || null }
 }
 module.exports = { projectWorkRecord, selectWorkSample, READABLE_SOURCE_FILES, testWitness }

@@ -26,3 +26,18 @@ deployment. Missing sampled canonical records remain unknown.
 Coverage is partial and bounded. Controlled code repair, legacy workers, website
 workers, external application execution and provider billing are unconnected.
 The receipt lane adds no management permissions and initiates no background work.
+
+## Measured subscription acceptance, 2026-10-09
+
+Fixed offline work record `1b81065d-804c-499b-8224-b0d63fd2ea6b`, host run
+`bebac5d3-452f-499d-8abd-c6aa0e277b0f`: the baseline failed all five protected
+tests; the Codex candidate passed all five and Claude review returned pass.
+Both actual provider calls stored canonical worker identities and usage receipts;
+the host saved completed separately. The fixture was not adopted into live code.
+This verifies this fixed recipe only, not every registered task or visual review.
+
+Acceptance exposed sample starvation: older project/adoption records hid the
+latest fixed-fixture record. Selection now preserves the latest failure and its
+explicit links, then fills remaining slots by recency across all registered kinds.
+The bounded sample can still omit records; missing canonical evidence remains
+unknown. Provider token counters still do not prove billing or credit deductions.
