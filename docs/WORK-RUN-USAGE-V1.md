@@ -58,3 +58,10 @@ failures, cloud/nonlocal destinations and duplicate headers. Verify read-only
 investigation consumes the saved receipts in both languages with exact sources,
 unknown coverage and unconfirmed billing. Loaded natural background receipts
 are checked separately; offline evidence does not stand in for runtime proof.
+
+Loaded acceptance exposed a separate lane failure: a request to investigate
+mail work containing "model reply" selected email drafting before investigation.
+The zero-context router now recognizes an opening investigation act in Chinese
+or English before correspondence vocabulary. Actual correspondence instructions
+retain their lane; no execution permission is added. The regression uses the
+unforced HTTP intake route, not an explicit chat-mode override.
