@@ -49,6 +49,8 @@ test('cost findings lead with bilingual assessment and source-bound read-only ne
   const view=renderCostFindings(r,{message})
   assert.match(view.text.split('\n')[0],/成本調查結論|Cost investigation conclusion/)
   assert.match(view.text,/帳戶額度消耗.*未確認|account quota consumption.*not confirmed/)
+  assert.doesNotMatch(view.text,/⟦\?/)
+  assert.match(view.text,/補查建議|read-only follow-up recommendations/)
   assert.ok(view.references.some(x=>x.recordId==='invocation:one'))
  }
  assert.ok(r.costAssessment.recommendations.every(x=>x.readOnly===true))
@@ -74,6 +76,12 @@ test('fresh activity uses configured model; conflicts cannot confirm current act
  assert.equal(conflict.costAssessment.activities.length,1)
  assert.equal(conflict.costAssessment.activities[0].running.value,null)
  assert.equal(conflict.costAssessment.activities[0].running.state,'UNKNOWN')
+ for(const currentRunningState of ['disabled','not_installed']){
+  const stopped=report([section('schedules',[{sourceId:'task',currentRunningState,executionKind:'deterministic_food_recall_check',usesModel:false,scheduled:false,at}])])
+  const view=renderCostFindings(stopped,{message:'Which jobs consume quota?'})
+  assert.match(view.text,new RegExp(currentRunningState==='disabled'?'disabled':'not installed'))
+  assert.match(view.text,/no model used/)
+ }
 })
 test('session totals and partial last-turn usage cannot establish full job or quota consumption',()=>{
  const r=report([section('execution',[call('one',{usageBasis:'provider_last_turn_usage'}),{sourceId:'codex-session:session',sessionId:'session',evidenceBasis:'owner_codex_session_metadata',usageBasis:'latest_recorded_cumulative_session_snapshot_not_sum',usageAt:at,usage:{total_tokens:100},lastStartedAt:at}]),section('usage',[],'unavailable'),section('billing',[],'unavailable')])

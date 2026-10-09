@@ -18,7 +18,7 @@ function renderCostFindings(report,{message=''}={}){
  const locale=localeFor(message),sections=unique(report.sections.filter(s=>s&&typeof s.sourceId==='string'),s=>s.sourceId)
  const references=[],lines=[]
  const assessment=require('./costAssessmentView').renderCostAssessment(report.costAssessment,locale)
- if(assessment){lines.push(assessment.text);references.push(...assessment.references)}
+ if(assessment)lines.push(assessment.text)
  const execution=sections.filter(s=>s.section==='execution'&&readable(s))
  const observed=unique(execution.flatMap(s=>(s.records||[]).filter(r=>r&&typeof r.sourceId==='string').map(r=>({s,r}))),x=>x.r.sourceId)
   .filter(({r})=>r.evidenceBasis==='owner_bridge_invocation_ledger'&&r.usageBasis==='provider_result_model_usage'&&r.state==='succeeded'&&r.modelResultObserved===true&&['memory_completion','chat_completion'].includes(r.role)&&safeModel(r.actualModel)&&safeTime(r.startedAt)&&Number.isSafeInteger(r.usage?.outputTokens)&&r.usage.outputTokens>=0)
@@ -45,6 +45,7 @@ function renderCostFindings(report,{message=''}={}){
  }else if(lines.length&&report.billingConfirmed!==true)lines.push(t('investigation.costUnverified',{},locale))
  const chain=require('./executionUsageView').renderExecutionUsage(report,{message})
  if(chain){lines.push(chain.text);references.push(...chain.references)}
+ if(assessment)references.push(...assessment.references)
  if(!lines.length)return null
  return {version:1,text:lines.join('\n\n'),references,scope:'bounded_receipts_not_billing',modelProseUsed:false}
 }
