@@ -26,7 +26,7 @@ test('goal-based routes select distinct fixed source sections and intersect auth
  const route=(focus,sources=['xiangxiang_operations'],need=[])=>investigationRoute({investigationFocus:focus,investigationEvidence:need,facts:[{operation:'xiangxiang_operations',necessity:'required'},{operation:'github',necessity:'required'},{operation:null,id:'f3',need:'Provider bill'}]},sources)
  assert.deepEqual(route('work_failure').localSections,['work','configuration'])
  assert.deepEqual(route('background').localSections,['configuration','schedules','execution','work'])
- assert.deepEqual(route('cost').localSections,['execution','configuration','schedules','usage','billing'])
+ assert.deepEqual(route('cost').localSections,['execution','work','configuration','schedules','usage','billing'])
  assert.deepEqual(route('work_failure',[]).requiredSources,[])
  assert.equal(route('work_failure').decisions.find(x=>x.source==='github').authorized,false)
  assert.equal(route('work_failure').unmappedFacts[0].status,'UNKNOWN')

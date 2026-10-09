@@ -75,6 +75,7 @@ function createXiangxiangOperationsReadAdapter (options = {}) {
         const records=[...invocations.records,...sessions.records]
         return {state:records.length?'partial':invocations.state==='unavailable'||sessions.state==='unavailable'?'unavailable':'unconnected',records,evidenceState:records.length?'confirmed':'not_established',provesCharge:false,
           coverage:{sessions:sessions.state,invocations:invocations.state},invocationCoverage:{startedAt:invocations.coverageStartedAt??null,retained:invocations.retained??null,omitted:invocations.omitted??null},
+          sessionCoverage:sessions.coverage||null,
           note:[invocations.note||'Invocation coverage unavailable.',sessions.note||'Session records are a separate bounded source.','Do not sum session snapshots with invocation usage. Shared time or model is not a task identity or billing link.'].join(' ')}
       }
       if (name === 'configuration') {

@@ -41,6 +41,8 @@ function renderCostFindings(report,{message=''}={}){
   references.push({sourceId:billing[0].sourceId,recordId:null,fields:{state:'unconnected'}})
   lines.push(t('investigation.costBillingGap',{},locale))
  }else if(lines.length&&report.billingConfirmed!==true)lines.push(t('investigation.costUnverified',{},locale))
+ const chain=require('./executionUsageView').renderExecutionUsage(report,{message})
+ if(chain){lines.push(chain.text);references.push(...chain.references)}
  if(!lines.length)return null
  return {version:1,text:lines.join('\n\n'),references,scope:'bounded_receipts_not_billing',modelProseUsed:false}
 }

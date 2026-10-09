@@ -3,13 +3,13 @@
 const NEEDS = Object.freeze({
   configuration:['configuration'], enablement:['configuration','schedules'],
   live_runtime:['configuration','schedules','work'], execution_history:['execution'],
-  work_failure:['work'], source_revision:['work','configuration'],
+  work_failure:['work'], work_history:['work'], source_revision:['work','configuration'],
   test_results:['work'], repair_verification:['work','configuration'],
   history:['history'], usage:['execution','usage'], billing:['billing'],
   correspondence:[], documents:[], code_history:[], events:[]
 })
 const BASE = Object.freeze({
-  cost:['execution_history','configuration','enablement','usage','billing'],
+  cost:['execution_history','work_history','configuration','enablement','usage','billing'],
   work_failure:['work_failure','source_revision','test_results','repair_verification'],
   background:['configuration','enablement','execution_history','live_runtime'],
   general:[]

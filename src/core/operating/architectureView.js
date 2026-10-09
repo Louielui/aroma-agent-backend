@@ -60,6 +60,8 @@ function buildArchitectureHtml () {
   investigationRow.current += ' ' + t('investigation.repairChainCurrent')
   investigationRow.current += ' ' + t('investigation.liveVerificationCurrent')
   investigationRow.current += ' ' + t('investigation.backgroundGeneralizationCurrent')
+  investigationRow.current += ' ' + t('investigation.executionUsageCurrent')
+  investigationRow.evidence += '; docs/EXTERNAL-EXECUTION-USAGE-V1.md'
   investigationRow.evidence += '; docs/INVESTIGATION-BACKGROUND-GENERALIZATION-V1.md'
   investigationRow.component += ' / required-source access coverage without fabricated citations / authorized equivalent fallback / bilingual empty-versus-unavailable evidence'
   investigationRow.evidence += '; docs/INVESTIGATION-GENERALIZATION-ACCEPTANCE-V1.md'

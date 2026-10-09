@@ -25,6 +25,10 @@ test('execution metadata is scoped, strips private text and takes one cumulative
   assert.equal(r.records[0].usage.total_tokens, 100)
   assert.equal(r.records[0].model, 'gpt-6.1-sol')
   assert.equal(r.records[0].lastCompletedAt, '2026-10-07T02:00:00Z')
+  assert.equal(r.records[0].startedTurns, 1)
+  assert.equal(r.records[0].completedTurns, 1)
+  assert.equal(r.records[0].turnIdentityComplete, true)
+  assert.equal(r.records[0].modelBasis, 'latest_context_not_per_call_model')
   assert.equal(r.provesCharge, false)
   assert.ok(!JSON.stringify(r).includes('SECRET'))
   assert.equal(r.coverage.excludedWorkspaceFiles, 1)
@@ -35,10 +39,18 @@ test('large session sampling and malformed lines retain unknown coverage instead
   const r = await f.read({ maxFileBytes: 900 })
   assert.equal(r.state, 'partial')
   assert.equal(r.records[0].completeFile, false)
+  assert.equal(r.records[0].turnIdentityComplete, false)
   assert.equal(r.records[0].usage.total_tokens, 300)
   assert.equal(r.coverage.sampledFiles, 1)
   fs.appendFileSync(path.join(f.root, 'sessions/2026/10/07/large-session.jsonl'), '{invalid}\n')
   assert.ok((await f.read()).coverage.invalidLines > 0)
+})
+
+test('duplicate turn events count once and events without identity leave count completeness unknown', async t => {
+  const f=fixture(t)
+  f.write('counted', [event('task_started',{turn_id:'one'}),event('task_started',{turn_id:'one'}),event('task_complete',{turn_id:'one'}),event('task_complete',{turn_id:'one'}),event('task_started')])
+  const row=(await f.read()).records[0]
+  assert.equal(row.startedTurns,1);assert.equal(row.completedTurns,1);assert.equal(row.turnIdentityComplete,false)
 })
 test('missing execution source and redirected roots fail closed without arbitrary file access', async t => {
   const f = fixture(t)

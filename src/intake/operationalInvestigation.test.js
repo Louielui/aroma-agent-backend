@@ -440,6 +440,23 @@ test('development Chinese and English share evidence route, same-failure checks 
  assert.deepEqual(routes[0],routes[1])
 })
 
+test('bilingual intake routes work plus execution and archives exact usage linkage without charging claims or extra model calls',async t=>{
+ for(const question of ['哪些工作用了多少 token？實際扣 credit 已確認嗎？','Which jobs used how many tokens, and are actual credit charges confirmed?']){
+  const sections=[{section:'execution',sourceId:'execution:live',state:'partial',records:[{sourceId:'invocation:one',invocationId:'one',requestId:'12345678-1234-4234-8234-123456789012',linkBasis:'host_request_identity',role:'chat_completion',phase:'answer',state:'succeeded',startedAt:'2026-10-08T01:10:18.000Z',finishedAt:'2026-10-08T01:10:19.000Z',modelResultObserved:true,actualModel:'claude-sonnet-5-5',billingRoute:'claude-subscription',usage:{inputTokens:10,outputTokens:4},usageBasis:'provider_result_model_usage',evidenceBasis:'owner_bridge_invocation_ledger'}]},
+   {section:'work',sourceId:'work:live',state:'partial',records:[{sourceId:'worker-one',kind:'worker/project-runs',state:'completed'}]},
+   {section:'billing',sourceId:'billing:gap',state:'unconnected',records:[]}]
+  const x=await turn(t,{question,focus:'cost',fastPath:true,evidenceSections:sections,captureLocalParams:true})
+  const r=x.result.investigation,c=r.executionUsage.chains[0]
+  assert.ok(r.routing.localSections.includes('work'));assert.ok(x.reads[0].params.sections.includes('work'))
+  assert.equal(c.successfulResults,1);assert.equal(c.usageState,'CONFIRMED');assert.equal(c.billingState,'UNAVAILABLE')
+  assert.deepEqual(c.usageModels[0].subtotal,{inputTokens:10,outputTokens:4})
+  assert.match(x.result.reply,/執行與用量|Execution and usage/);assert.match(x.result.reply,/未確認|not confirmed/)
+  assert.equal(x.calls.filter(c=>c.schema!=='goal_plan').length,0);assert.deepEqual(x.result.tasks,[])
+  assert.equal(x.result.replyForArchive,x.result.reply)
+  assert.ok(r.answerPresentation.findings.references.some(ref=>ref.recordId==='invocation:one'))
+ }
+})
+
 test('unmapped development evidence triggers the same bounded exact revision read in Chinese and English',async t=>{
  for(const question of ['之前的任務修好了嗎？','Has the previous task actually been fixed?']) {
   const revision='a'.repeat(40)

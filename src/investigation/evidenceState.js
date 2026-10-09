@@ -66,6 +66,14 @@ function buildEvidenceState(report) {
     }
   }
   coverage.push(...require('./generalRouter').requiredSourceCoverage(report))
+  for(const c of report.executionUsage?.chains||[])for(const [facet,state]of Object.entries({execution:c.executionState,model:c.modelState,usage:c.usageState,correlation:c.correlationState,billing:c.billingState})){
+    const refs=c.references.flatMap(ref=>Object.entries(ref.fields).map(([field,value])=>({sourceId:ref.sourceId,recordId:ref.recordId,field,value})))
+    const values={execution:{attempts:c.observedAttempts??null,dispatches:c.observedDispatches??null,results:c.successfulResults??null,startedTurns:c.observedStartedTurns??null,completedTurns:c.observedCompletedTurns??null,recordedState:c.recordedState??null},model:c.references.filter(r=>r.fields.modelResultObserved===true&&r.fields.state==='succeeded').map(r=>r.fields.actualModel).filter(Boolean),usage:{models:c.usageModels,cumulativeUsage:c.cumulativeUsage??null,complete:c.usageComplete===true},correlation:c.identity}
+    const retrieved=(report.sections||[]).filter(s=>c.references.some(r=>r.sourceId===s.sourceId)).map(s=>date(s.retrievedAt)).filter(Boolean).sort()[0]||null
+    assertions.push({id:'e'+(assertions.length+1),subject:'execution_usage:'+c.kind+':'+(c.jobId||c.references[0]?.recordId),sourceId:refs[0]?.sourceId||null,recordId:c.jobId||c.references[0]?.recordId,
+      facet:'execution_usage_'+facet,temporalScope:'historical_execution',state,value:['UNKNOWN','UNAVAILABLE','CONTRADICTED'].includes(state)?null:values[facet]??null,observedAt:date(c.finishedAt||c.usageAt||c.startedAt),retrievedAt:retrieved,references:refs})
+  }
+  for(const gap of report.executionUsage?.gaps||[])assertions.push({id:'e'+(assertions.length+1),subject:'execution_usage:'+gap.recordId,sourceId:gap.references[0]?.sourceId||null,recordId:gap.recordId,facet:'execution_usage_identity',temporalScope:'historical_execution',state:gap.state,value:null,observedAt:null,retrievedAt:null,references:gap.references.flatMap(ref=>Object.entries(ref.fields).map(([field,value])=>({sourceId:ref.sourceId,recordId:ref.recordId,field,value})))})
   const chain=report.workCorrelation?.repairChain
   if(chain?.readOnly===true)for(const stage of chain.stages){
     const sources=(report.sections||[]).filter(s=>stage.references.some(r=>r.sourceId===s.sourceId))

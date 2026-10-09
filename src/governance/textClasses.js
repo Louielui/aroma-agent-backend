@@ -86,6 +86,7 @@ const FILE_CLASS = Object.freeze({
   'investigation/semanticView.js': CLASS.INTERFACE, // Reviewed statement presentation, separated from model contracts.
   'investigation/invocationBrief.js': CLASS.INTERFACE, // Receipt-bound call summary; no model prompt or intent routing.
   'investigation/costFindings.js': CLASS.INTERFACE, // Receipt-bound cost presentation; no model prompt, routing or new reads.
+  'investigation/executionUsageView.js': CLASS.INTERFACE, // Fixed receipt-bound usage presentation; no source routing or model prompts.
   'investigation/sourceBoundFindings.js': CLASS.INTERFACE, // Shared receipt-bound presentation; no source choice or new reads.
   'investigation/generalizationView.js': CLASS.INTERFACE, // Assertion-bound bilingual presentation only.
   'investigation/followupReads.js': CLASS.INTERFACE, // All Chinese is receipt presentation; source selection uses fixed enums, not prose.

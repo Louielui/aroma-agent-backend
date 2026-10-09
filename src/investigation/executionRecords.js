@@ -64,16 +64,21 @@ function createExecutionReader ({ sessionRoot, workspaceRoots = [], clock = () =
         // Index slicing is linear even for huge message/image lines. An unanchored
         // end-of-line regex can backtrack quadratically over those private lines.
         const chunks = completeFile ? [headText] : [headText.slice(0, headText.lastIndexOf('\n') + 1), tailText.includes('\n') ? tailText.slice(tailText.indexOf('\n') + 1) : '']
-        const row = { sourceId: 'codex-session:' + meta.payload.id, sessionId: meta.payload.id, recordedAt: stamp(meta.timestamp), at: stamp(meta.timestamp), model: null, effort: null, lastStartedAt: null, lastCompletedAt: null, usage: null, usageAt: null, usageBasis: 'latest_recorded_cumulative_session_snapshot_not_sum', declaredAutomationId: null, triggerVerified: false, completeFile, provesCharge: false }
+        const row = { sourceId: 'codex-session:' + meta.payload.id, sessionId: meta.payload.id, recordedAt: stamp(meta.timestamp), at: stamp(meta.timestamp), model: null, modelBasis:'latest_context_not_per_call_model', evidenceBasis:'owner_codex_session_metadata', effort: null, lastStartedAt: null, lastCompletedAt: null, usage: null, usageAt: null, usageBasis: 'latest_recorded_cumulative_session_snapshot_not_sum', declaredAutomationId: null, triggerVerified: false, completeFile, provesCharge: false }
+        const startedTurns=new Set(),completedTurns=new Set();let turnIdentityComplete=true
         for (const line of chunks.join('\n').split('\n')) {
           if (!line.trim()) continue
           let data
-          try { data = JSON.parse(line) } catch (_) { coverage.invalidLines++; continue }
+          try { data = JSON.parse(line) } catch (_) { coverage.invalidLines++;turnIdentityComplete=false;continue }
           const p = data.payload || {}, at = stamp(data.timestamp)
           if (at && (!row.at || at > row.at)) row.at = at
           if (data.type === 'turn_context') { if (label(p.model)) row.model = p.model; if (label(p.effort)) row.effort = p.effort }
           if (data.type === 'event_msg' && p.type === 'task_started' && at) row.lastStartedAt = at
           if (data.type === 'event_msg' && p.type === 'task_complete' && at) row.lastCompletedAt = at
+          if(data.type==='event_msg'&&['task_started','task_complete'].includes(p.type)&&at){
+            const turn=label(p.turn_id);if(!turn)turnIdentityComplete=false
+            else (p.type==='task_started'?startedTurns:completedTurns).add(turn)
+          }
           if (data.type === 'event_msg' && p.type === 'token_count' && at) {
             const usage = usageSnapshot(p.info?.total_token_usage)
             if (usage && (!row.usageAt || at >= row.usageAt)) { row.usage = usage; row.usageAt = at }
@@ -89,6 +94,7 @@ function createExecutionReader ({ sessionRoot, workspaceRoots = [], clock = () =
           }
         }
         row.sha256 = crypto.createHash('sha256').update(head.subarray(0, headRead)).update(tail ? tail.subarray(0, tailRead) : '').digest('hex')
+        row.startedTurns=startedTurns.size;row.completedTurns=completedTurns.size;row.turnIdentityComplete=turnIdentityComplete&&completeFile
         row.hashScope = completeFile ? 'complete_file' : 'sampled_prefix_and_tail'
         records.push(row)
       } catch (_) { coverage.failedFiles++ } finally { if (fd !== undefined) fs.closeSync(fd) }
