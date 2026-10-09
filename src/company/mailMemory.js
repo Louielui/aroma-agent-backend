@@ -2,6 +2,7 @@
 const { createHash } = require('node:crypto')
 const { stableId } = require('../memory/governed')
 const { exclusionReason } = require('../memory/capturePolicy')
+const {createWorkTrace,withWorkTrace,reportWorkOutcome}=require('../investigation/workTrace')
 const OWNER = Object.freeze({ owner: true })
 const digest = value => createHash('sha256').update(JSON.stringify(value)).digest('hex')
 const isMail = row => row?.source?.kind?.startsWith('admin_mail_') === true
@@ -170,7 +171,7 @@ function createMailMemory ({ store, mailbox, analyzer = null, engine = null, clo
     if (analyzing) throw Error('mail_analysis_busy')
     if (background && (indexAttemptActive || semantic.busy())) return { state: 'deferred', reason: 'semantic_index_active' }
     analyzing = true
-    let record; let verify
+    let record; let verify; let workTrace
     try {
       if (!background) await semantic.cancel()
       const detailView = await detail(actor, id); record = detailView.record; verify = guard(actor)
@@ -182,31 +183,36 @@ function createMailMemory ({ store, mailbox, analyzer = null, engine = null, clo
         body: m.text.slice(0, 6000), partial: m.details.bodyTruncated || m.details.bodyState !== 'available' || m.text.length > 6000 }))
       const input = { evidence, partialThread: ordered.length > evidence.length,
         decision: record.approval ? { text: record.text, status: record.status, taskState: record.details.taskState, decidedAt: record.decidedAt } : null }
-      const result = await analyzer.analyze(input)
+      workTrace=createWorkTrace('mail_analysis',JSON.stringify([record.id,input]),'analysis',1,record.id)
+      const previous=record.details.analysis?.workTrace
+      if(previous?.workId===workTrace.workId&&Number.isSafeInteger(previous.attempt)&&previous.attempt<Number.MAX_SAFE_INTEGER)workTrace.attempt=previous.attempt+1
+      const result = await withWorkTrace(workTrace,()=>analyzer.analyze(input))
       // Validate even injected adapters: the source-bound service owns persistence.
       const clean = require('./mailAnalysis').validate(result, evidence)
       if (mailbox.check) await mailbox.check(actor)
-      return await serial(async () => {
+      const completed = await serial(async () => {
         verify(); if (!allowed()) throw Error('mail_memory_paused')
         const current = await store.get(id)
         if (current.version !== record.version) throw Error('revision_conflict')
-        current.details.analysis = { ...clean, state: 'ready', at: clock(), model: result.model || null,
+        current.details.analysis = { ...clean, state: 'ready', at: clock(), model: result.model || null,workTrace,
           partial: input.partialThread || evidence.some(m => m.partial),
           evidence: ordered.slice(-3).map(m => ({ id: m.source.id, hash: m.details.hash })) }
         current.updatedAt = clock(); current.version++
         await commit([{ expected: record.version, row: current }], 'mail_analysis_suggested'); verify()
         return { state: 'ready', id }
       })
+      await reportWorkOutcome(workTrace,'ready');return completed
     } catch (e) {
       if (record && verify && e.message !== 'mail_analysis_yielded') await serial(async () => {
         verify(); if (!allowed()) return
         const current = await store.get(id)
         if (current.version !== record.version) return
         const reason = ['subscription_limit_reached', 'subscription_login_required'].includes(e.code || e.message) ? (e.code || e.message) : 'analysis_unavailable'
-        current.details.analysis = { state: 'failed', at: clock(), reason,
+        current.details.analysis = { state: 'failed', at: clock(), reason,...(workTrace?{workTrace}:{}),
           retryAt: new Date(Date.parse(clock()) + (reason.startsWith('subscription_') ? 3600000 : 1800000)).toISOString() }
         current.updatedAt = clock(); current.version++
         await commit([{ expected: record.version, row: current }], 'mail_analysis_failed')
+        await reportWorkOutcome(workTrace,'failed')
       }).catch(() => {})
       throw e
     } finally {

@@ -7,7 +7,7 @@ function renderExecutionUsage(report,{message=''}={}){
  const unknown=t('investigation.briefNotRecorded',{},locale)
  const counterWords={input:()=>t('investigation.usageCounter.input',{},locale),output:()=>t('investigation.usageCounter.output',{},locale),total:()=>t('investigation.usageCounter.total',{},locale),cacheRead:()=>t('investigation.usageCounter.cacheRead',{},locale),cacheCreate:()=>t('investigation.usageCounter.cacheCreate',{},locale),reasoning:()=>t('investigation.usageCounter.reasoning',{},locale)}
  const sourceWords={bridge_invocations:()=>t('investigation.usageSource.bridgeInvocations',{},locale),codex_sessions:()=>t('investigation.usageSource.codexSessions',{},locale),worker_records:()=>t('investigation.usageSource.workerRecords',{},locale),scheduler_definitions:()=>t('investigation.usageSource.schedulerDefinitions',{},locale)}
- for(const kind of ['host_request','bridge_lane','codex_session','worker_record']){const c=e.chains.find(x=>x.kind===kind);if(c)chosen.push(c)}
+ for(const kind of ['background_work','host_request','bridge_lane','codex_session','worker_record']){const c=e.chains.find(x=>x.kind===kind);if(c&&chosen.length<4)chosen.push(c)}
  for(const c of e.chains)if(!chosen.includes(c)&&chosen.length<4)chosen.push(c)
  const counterNames={inputTokens:'input',input_tokens:'input',outputTokens:'output',output_tokens:'output',totalTokens:'total',total_tokens:'total',cacheReadInputTokens:'cacheRead',cachedInputTokens:'cacheRead',cached_input_tokens:'cacheRead',cacheCreationInputTokens:'cacheCreate',cache_write_input_tokens:'cacheCreate',reasoningOutputTokens:'reasoning',reasoning_output_tokens:'reasoning'}
  const counters=(v,m)=>v?Object.entries(v).map(([k,n])=>(counterWords[counterNames[k]]?.()||unknown)+': '+(n===null?unknown:n)+(m&&m.counterCoverage[k]<m.receiptCount?' ('+m.counterCoverage[k]+'/'+m.receiptCount+')':'')).join(', '):unknown
@@ -17,6 +17,11 @@ function renderExecutionUsage(report,{message=''}={}){
   if(c.kind==='codex_session')lines.push('- '+t('investigation.executionUsageSession',{id:identity,started:c.observedStartedTurns??unknown,completed:c.observedCompletedTurns??unknown,usage:counters(c.cumulativeUsage),at:c.usageAt?inline(c.usageAt):unknown},locale))
   else if(c.kind==='worker_record')lines.push('- '+t('investigation.executionUsageWorker',{id:identity,state:c.executionState==='CONTRADICTED'?t('investigation.executionUsageRecordConflict',{},locale):c.recordedState?inline(c.recordedState):unknown},locale))
   else {
+   if(c.kind==='background_work'){
+    const names={mail_analysis:()=>t('investigation.workMailAnalysis',{},locale),mail_index:()=>t('investigation.workMailIndex',{},locale),memory_index:()=>t('investigation.workMemoryIndex',{},locale),memory_consolidation:()=>t('investigation.workMemoryConsolidation',{},locale)}
+    const outcomes=c.runs.map(r=>inline(r.runId)+': '+(r.outcomeState==='CONTRADICTED'?t('investigation.executionUsageRecordConflict',{},locale):r.hostOutcome?inline(r.hostOutcome.state):unknown)).join('; ')
+    lines.push(t('investigation.executionUsageWork',{kind:names[c.workKind]?.()||unknown,runs:c.observedRuns,retries:c.observedRetryRuns,record:c.recordId?inline(c.recordId):unknown,outcomes},locale))
+   }
    lines.push('- '+t('investigation.executionUsageCalls',{id:identity,attempts:c.observedAttempts,dispatched:c.observedDispatches,results:c.successfulResults,unknown:c.unknownUsageCalls,start:c.startedAt?inline(c.startedAt):unknown,end:c.finishedAt?inline(c.finishedAt):unknown},locale))
    if(c.usageState==='CONTRADICTED')lines.push('  '+t('investigation.executionUsageConflict',{},locale))
    else for(const m of c.usageModels)lines.push('  '+t('investigation.executionUsageModel',{provider:inline(m.provider),model:inline(m.model),count:m.receiptCount,usage:counters(m.subtotal,m),scope:m.subtotal?t('investigation.executionUsageSubtotal',{},locale):t('investigation.executionUsageLastTurn',{},locale)},locale))

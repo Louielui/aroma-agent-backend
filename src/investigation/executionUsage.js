@@ -3,13 +3,14 @@
 // provider prices or account totals. Each counter keeps its original scope.
 const {projectUsage}=require('./invocations')
 const {UUID}=require('./invocationContext')
+const {validWorkTrace}=require('./workTrace')
 const readable=s=>['ok','partial'].includes(s?.state)
 const date=v=>typeof v==='string'&&Number.isFinite(Date.parse(v))?v:null
 const label=v=>typeof v==='string'&&/^[a-z0-9_.:-]{1,160}$/i.test(v)?v:null
 const number=v=>Number.isSafeInteger(v)&&v>=0?v:null
 const canonical=v=>JSON.stringify(v,(key,value)=>value&&typeof value==='object'&&!Array.isArray(value)?Object.fromEntries(Object.entries(value).sort(([a],[b])=>a.localeCompare(b))):value)
 const reference=(s,r,fields)=>({sourceId:s.sourceId,recordId:r.sourceId,fields:Object.fromEntries(fields.filter(k=>Object.hasOwn(r,k)).map(k=>[k,r[k]]))})
-const CALL_FIELDS=['invocationId','requestId','linkBasis','role','phase','state','startedAt','dispatchedAt','finishedAt','actualModel','modelResultObserved','billingRoute','usage','usageByModel','usageBasis']
+const CALL_FIELDS=['invocationId','requestId','workTrace','workOutcome','linkBasis','role','phase','state','startedAt','dispatchedAt','finishedAt','actualModel','modelResultObserved','billingRoute','usage','usageByModel','usageBasis']
 const SESSION_FIELDS=['sessionId','lastStartedAt','lastCompletedAt','usage','usageAt','usageBasis','startedTurns','completedTurns','turnIdentityComplete','completeFile']
 function buildExecutionUsage(report){
  const sections=report.sections||[],execution=sections.filter(s=>s.section==='execution'&&readable(s)),work=sections.filter(s=>s.section==='work'&&readable(s))
@@ -23,21 +24,28 @@ function buildExecutionUsage(report){
    const rows=sessions.get(r.sessionId)||[];rows.push({s,r});sessions.set(r.sessionId,rows)
   }
  }
- const groups=new Map(),uniqueCalls=[]
+ const groups=new Map(),uniqueCalls=[],runIdentities=new Map(),invalidRuns=new Set()
+ for(const rows of calls.values())for(const {r} of rows)if(validWorkTrace(r.workTrace)&&r.linkBasis==='host_work_identity'){
+  const signature=canonical(r.workTrace),id=r.workTrace.runId
+  if(runIdentities.has(id)&&runIdentities.get(id)!==signature)invalidRuns.add(id)
+  runIdentities.set(id,signature)
+ }
  for(const[id,rows]of calls){
   const signatures=new Set(rows.map(({r})=>canonical(Object.fromEntries(CALL_FIELDS.filter(k=>Object.hasOwn(r,k)).map(k=>[k,r[k]])))))
   if(signatures.size!==1){conflictingReceipts++;gaps.push({kind:'conflicting_invocation',recordId:'invocation:'+id,state:'CONTRADICTED',references:rows.map(({s,r})=>reference(s,r,CALL_FIELDS))});continue}
   duplicateReceipts+=rows.length-1;const {s,r}=rows[0];uniqueCalls.push(r)
+  if(validWorkTrace(r.workTrace)&&invalidRuns.has(r.workTrace.runId)){gaps.push({kind:'conflicting_work_run',recordId:r.sourceId,state:'CONTRADICTED',references:rows.map(({s,r})=>reference(s,r,CALL_FIELDS))});continue}
+  const workLinked=validWorkTrace(r.workTrace)&&r.linkBasis==='host_work_identity'
   const linked=UUID.test(r.requestId||'')&&r.linkBasis==='host_request_identity'
-  const key=linked?'request:'+r.requestId:'lane:'+id
-  if(!groups.has(key))groups.set(key,{kind:linked?'host_request':'bridge_lane',jobId:linked?r.requestId:null,identity:linked?'exact_host_request_id':'unlinked_lane_call',rows:[]})
+  const key=workLinked?r.workTrace.workId:linked?'request:'+r.requestId:'lane:'+id
+  if(!groups.has(key))groups.set(key,{kind:workLinked?'background_work':linked?'host_request':'bridge_lane',workKind:workLinked?r.workTrace.kind:null,jobId:workLinked?r.workTrace.workId:linked?r.requestId:null,identity:workLinked?'exact_host_work_and_run_id':linked?'exact_host_request_id':'unlinked_lane_call',rows:[]})
   groups.get(key).rows.push({s,r})
  }
  for(const group of groups.values()){
   const models=new Map();let successfulResults=0,observedDispatches=0,unknownUsageCalls=0,usageConflict=false
   const references=[],phases=[]
   for(const{s,r}of group.rows){
-   references.push(reference(s,r,CALL_FIELDS));phases.push({invocationId:r.invocationId,phase:label(r.phase),state:label(r.state)})
+   references.push(reference(s,r,CALL_FIELDS));phases.push({invocationId:r.invocationId,phase:label(r.workTrace?.phase||r.phase),state:label(r.state),runId:r.workTrace?.runId||null})
    const success=r.state==='succeeded'&&r.modelResultObserved===true&&label(r.actualModel)&&date(r.finishedAt)&&Date.parse(r.finishedAt)>=Date.parse(r.startedAt)
    if(success)successfulResults++
    if(success||date(r.dispatchedAt))observedDispatches++
@@ -61,7 +69,12 @@ function buildExecutionUsage(report){
   }
   const usageModels=[...models.values()].map(m=>({...m,bases:[...m.bases],subtotal:m.bases.size===1&&m.bases.has('provider_result_model_usage')?m.subtotal:null}))
   const usageComplete=unknownUsageCalls===0&&usageModels.length>0&&usageModels.every(m=>m.subtotal!==null&&Object.values(m.counterCoverage).every(n=>n===m.receiptCount)&&Object.values(m.subtotal).every(n=>n!==null))&&!usageConflict
-  chains.push({kind:group.kind,jobId:group.jobId,identity:group.identity,observedAttempts:group.rows.length,observedDispatches,successfulResults,retryCount:null,phases,
+  const runs=[...new Map(group.rows.filter(({r})=>validWorkTrace(r.workTrace)).map(({r})=>[r.workTrace.runId,r.workTrace])).values()].map(trace=>{
+   const outcomes=group.rows.filter(({r})=>r.workTrace?.runId===trace.runId).map(({r})=>r.workOutcome).filter(o=>o?.basis==='host_checkpoint_report'&&date(o.at)&&['ready','saved','raw_only','done','empty','unconfirmed','failed','yielded'].includes(o.state))
+   const conflicting=new Set(outcomes.map(canonical)).size>1
+   return {...trace,outcomeState:conflicting?'CONTRADICTED':outcomes.length?'SUPPORTED':'UNKNOWN',hostOutcome:conflicting?null:outcomes[0]||null}
+  })
+  chains.push({kind:group.kind,workKind:group.workKind,jobId:group.jobId,identity:group.identity,recordId:group.kind==='background_work'?runs[0]?.recordId:null,observedRuns:group.kind==='background_work'?runs.length:null,observedRetryRuns:group.kind==='background_work'?runs.filter(r=>r.attempt>1).length:null,runs,observedAttempts:group.rows.length,observedDispatches,successfulResults,retryCount:null,phases,
    startedAt:group.rows.map(({r})=>r.startedAt).sort()[0],finishedAt:group.rows.map(({r})=>date(r.finishedAt)).filter(Boolean).sort().at(-1)||null,
    executionState:observedDispatches?'CONFIRMED':'UNKNOWN',modelState:successfulResults?'CONFIRMED':'UNKNOWN',usageState:usageConflict?'CONTRADICTED':!usageModels.length?'UNKNOWN':usageComplete?'CONFIRMED':'SUPPORTED',
    usageComplete,unknownUsageCalls,usageModels,billingState,correlationState:usageConflict?'CONTRADICTED':usageModels.length?'CONFIRMED':'UNKNOWN',requestCoverageComplete:false,references})

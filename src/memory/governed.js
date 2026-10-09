@@ -1,4 +1,5 @@
 'use strict'
+const {createWorkTrace,withWorkTrace,reportWorkOutcome}=require('../investigation/workTrace')
 const { randomUUID, createHash, randomBytes, timingSafeEqual } = require('node:crypto')
 const { exclusionReason } = require('./capturePolicy')
 const { ID } = require('./hindsight')
@@ -170,7 +171,7 @@ function createGateway({ store, engine, clock = () => new Date().toISOString() }
   async function runIndex(actor, id) {
     owner(actor); const row = await get(actor, id)
     if (!row || !current(row) || !engine) throw Error('not_indexable')
-    const expected = row.version; let result
+    const expected = row.version; let result;let workTrace=null
     const attempts = row.index.attempts + 1
     const sourceReason = sourceOnlyReason(row.text)
     if (sourceReason) {
@@ -180,7 +181,10 @@ function createGateway({ store, engine, clock = () => new Date().toISOString() }
       const client = engine.forScope(row.scope)
       // A previous timeout may have completed upstream. Reconcile before any write.
       let d = client.get ? await client.get(row.id) : null
-      if (!d || d.text !== row.text) d = await (client.retainAutomatic ? client.retainAutomatic(row.id, row.text, row.source) : client.retain(row.id, row.text))
+      if (!d || d.text !== row.text){
+        workTrace=createWorkTrace('memory_index',JSON.stringify([row.id,row.text]),'extraction',attempts,row.id)
+        d=await withWorkTrace(workTrace,()=>client.retainAutomatic ? client.retainAutomatic(row.id, row.text, row.source) : client.retain(row.id, row.text))
+      }
       if (!Number.isInteger(d?.facts) || d.facts < 0) throw Error('memory_unconfirmed')
       result = { state: d.facts > 0 ? 'saved' : 'raw_only', facts: d.facts, attempts,
         reason: d.facts > 0 ? null : 'no_extracted_facts', checkedAt: clock(), nextRetryAt: null }
@@ -191,12 +195,14 @@ function createGateway({ store, engine, clock = () => new Date().toISOString() }
       result = { state: 'unconfirmed', facts: null, attempts, reason, checkedAt: clock(),
         nextRetryAt: retryable && attempts < 3 ? new Date(Date.parse(clock()) + delay).toISOString() : null }
     }
+    if(workTrace)result={...result,workTrace}
     if (row.index.rebuildId) result = { ...result, rebuildId: row.index.rebuildId, queuedAt: row.index.queuedAt }
     // Never replace a newer approval, archive or supersession when an index call finishes late.
     const latest = await get(actor, id)
     if (latest.version !== expected) return latest
     latest.index = result; latest.version++; latest.updatedAt = clock()
     await store.commit([{ expected, row: latest }], { op: 'index', actor: actor.id, at: clock() })
+    if(workTrace)await reportWorkOutcome(workTrace,result.state)
     return latest
   }
   async function index(actor, id) {
@@ -293,12 +299,13 @@ function createGateway({ store, engine, clock = () => new Date().toISOString() }
     if (!require('./consolidationPolicy').eligible(source)) throw Error('not_consolidatable')
     if (['done', 'empty'].includes(source.details.consolidation?.state)) return source.details.consolidation
     const attempts = (source.details.consolidation?.attempts || 0) + 1
-    const state = { state: 'running', attempts, checkedAt: clock(), nextRetryAt: null, error: null, candidateIds: [] }
+    const workTrace=createWorkTrace('memory_consolidation',JSON.stringify([source.id,evidenceHash(source)]),'consolidation',attempts,source.id)
+    const state = { state: 'running', attempts, checkedAt: clock(), nextRetryAt: null, error: null, candidateIds: [],workTrace }
     await store.commit([{ expected: source.version, row: { ...source, version: source.version + 1, details: { ...source.details, consolidation: state } } }], { op: 'consolidation_started', actor: actor.id, at: clock() })
     try {
       const existing = (await list(actor, { scope: source.scope })).filter(r => current(r) && r.approval?.kind === 'owner' && ['preference','decision','semantic'].includes(r.type)).slice(-40)
-      const result = await engine.forScope(source.scope).consolidate({ id: source.id, text: source.text, source: source.source },
-        existing.map(r => ({ id: r.id, kind: r.details.category || r.type, subject: r.subject, text: r.text.slice(0,2000) })))
+      const result = await withWorkTrace(workTrace,()=>engine.forScope(source.scope).consolidate({ id: source.id, text: source.text, source: source.source },
+        existing.map(r => ({ id: r.id, kind: r.details.category || r.type, subject: r.subject, text: r.text.slice(0,2000) }))))
       const plans = require('./consolidationPolicy').validate(result, source, existing)
       const drafts = []
       for (const plan of plans) {
@@ -322,7 +329,7 @@ function createGateway({ store, engine, clock = () => new Date().toISOString() }
         const resultState = { ...state, state: drafts.length ? 'done' : 'empty', checkedAt: clock(), candidateIds: drafts.map(r => r.id) }
         const changes = [{ expected: latest.version, row: { ...latest, version: latest.version + 1, details: { ...latest.details, consolidation: resultState } } }]
         for (const row of drafts) if (!await store.get(row.id)) changes.push({ expected: 0, row })
-        try { await store.commit(changes, { op: 'consolidated', actor: actor.id, at: clock() }); return resultState }
+        try { await store.commit(changes, { op: 'consolidated', actor: actor.id, at: clock() });await reportWorkOutcome(workTrace,resultState.state); return resultState }
         catch (e) { if (e.message !== 'revision_conflict' || retry === 2) throw e }
       }
     } catch (e) {
@@ -330,6 +337,7 @@ function createGateway({ store, engine, clock = () => new Date().toISOString() }
       const failed = { ...state, state: 'failed', error, checkedAt: clock(), nextRetryAt: attempts < 3 ? new Date(Date.parse(clock()) + attempts * 300000).toISOString() : null }
       const latest = await get(actor, id)
       await store.commit([{ expected: latest.version, row: { ...latest, version: latest.version + 1, details: { ...latest.details, consolidation: failed } } }], { op: 'consolidation_failed', actor: actor.id, at: clock(), reason: error })
+      await reportWorkOutcome(workTrace,'failed')
       return failed
     }
   }

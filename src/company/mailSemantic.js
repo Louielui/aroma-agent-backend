@@ -5,6 +5,7 @@ const { ID, validText } = require('../memory/hindsight')
 const { exclusionReason } = require('../memory/capturePolicy')
 const { sourceOnlyReason } = require('../memory/indexPolicy')
 const { createMailState } = require('./mailState')
+const {createWorkTrace,withWorkTrace,reportWorkOutcome}=require('../investigation/workTrace')
 const hash = value => createHash('sha256').update(value).digest('hex')
 const message = row => row?.source?.kind === 'admin_mail_message'
 const thread = row => row?.source?.kind === 'admin_mail_thread'
@@ -313,17 +314,21 @@ function createMailSemantic ({ store, mailbox, engine, clock, allowed, serial, s
           owningThread.details.mailbox !== account()) return { state: 'changed' }
       const contentHash = row.details.hash
       const documentId = stableId('admin-mail-index:' + account() + ':' + row.id + ':' + contentHash)
-      const text = sourceText(row); let index
+      const text = sourceText(row); let index;let workTrace=null
       {
         const configured = client(); if (!configured) return { state: 'not_connected' }
         const adapter = configured.withSignal ? configured.withSignal(abort.signal) : configured
         try {
           verify(); const old = adapter.get ? await adapter.get(documentId) : null; verify()
-          const result = old?.text === text ? old : await adapter.retainAutomatic(documentId, text,
-            { ...row.source, canonicalId: row.id, mailbox: account(), contentHash, attribution: 'external_claim' })
+          let result=old
+          if(old?.text!==text){
+            workTrace=createWorkTrace('mail_index',JSON.stringify([row.id,contentHash]),'extraction',(row.index?.attempts||0)+1,row.id)
+            result=await withWorkTrace(workTrace,()=>adapter.retainAutomatic(documentId, text,
+              { ...row.source, canonicalId: row.id, mailbox: account(), contentHash, attribution: 'external_claim' }))
+          }
           verify()
           if (result?.id !== documentId || result.text !== text || !Number.isInteger(result.facts) || result.facts < 0) throw Error('memory_unconfirmed')
-          index = { state: result.facts ? 'saved' : 'raw_only', reason: result.facts ? null : 'no_extracted_facts', facts: result.facts,
+          index = { state: result.facts ? 'saved' : 'raw_only', reason: result.facts ? null : 'no_extracted_facts', facts: result.facts,...(workTrace?{workTrace}:{}),
             attempts: (row.index?.attempts || 0) + 1, checkedAt: clock(), contentHash, documentId, nextRetryAt: null,
             partial: row.details.bodyTruncated || row.text.length > 24000 }
           lastError = null
@@ -338,7 +343,7 @@ function createMailSemantic ({ store, mailbox, engine, clock, allowed, serial, s
           }
           verify(); const attempts = (row.index?.attempts || 0) + 1; const reason = retryReason(e)
           const delay = reason === 'memory_rate_limited' ? 900000 : reason === 'memory_timeout' ? 300000 : Math.min(1800000, 30000 * 2 ** Math.min(attempts - 1, 6))
-          index = { state: 'unconfirmed', reason, facts: null, attempts, checkedAt: clock(), contentHash, documentId,
+          index = { state: 'unconfirmed', reason, facts: null, attempts, checkedAt: clock(), contentHash, documentId,...(workTrace?{workTrace}:{}),
             nextRetryAt: attempts < 3 ? new Date(Date.parse(clock()) + delay).toISOString() : null }; lastError = reason
           connectionState = 'unavailable'; connectionCheckedAt = clock()
           // Provider quota is a mailbox-wide durable circuit. A source revision or
@@ -351,7 +356,9 @@ function createMailSemantic ({ store, mailbox, engine, clock, allowed, serial, s
       }
       if (started !== generation || abort.signal.aborted) return { state: 'yielded' }
       if (mailbox.check) await mailbox.check(actor)
-      return await saveIndex(row, index, owningThread, verify, started)
+      const completed=await saveIndex(row, index, owningThread, verify, started)
+      if(completed.state===index.state&&workTrace)await reportWorkOutcome(workTrace,index.state)
+      return completed
     } finally { indexing = false; abort = null }
   }
   function indexNext (actor) {

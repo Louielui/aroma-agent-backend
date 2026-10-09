@@ -17,9 +17,10 @@ function createHindsight ({ env = process.env, transport = fencedFetch('hindsigh
   }
   async function call (path, method = 'GET', body, timeout = 5000, absent = false) {
     const c = config()
+    const workHeader=require('../investigation/workTrace').encodeWorkTrace(require('../investigation/workTrace').currentWorkTrace(),env.CODEX_CHAT_BRIDGE_TOKEN)
     try {
       const res = await transport(c.url + path, { method, redirect: 'error', signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(timeout)]) : AbortSignal.timeout(timeout),
-        headers: { authorization: 'Bearer ' + env.HINDSIGHT_TOKEN, 'content-type': 'application/json' }, ...(body ? { body: JSON.stringify(body) } : {}) })
+        headers: { authorization: 'Bearer ' + env.HINDSIGHT_TOKEN, 'content-type': 'application/json',...(workHeader?{'x-xiangxiang-work-trace':workHeader}:{}) }, ...(body ? { body: JSON.stringify(body) } : {}) })
       if (res.status === 404 && absent) return null
       if (!res.ok) throw Error(res.status === 429 ? 'memory_rate_limited' : [401, 403].includes(res.status) ? 'memory_unauthorized' : [400, 422].includes(res.status) ? 'memory_invalid_request' : 'memory_unavailable')
       const raw = await res.text(); if (raw.length > 1000000) throw Error('memory_invalid_result')

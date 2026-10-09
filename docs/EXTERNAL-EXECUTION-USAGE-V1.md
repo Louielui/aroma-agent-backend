@@ -8,8 +8,9 @@ models or connect account billing. No provider prices are used.
 
 Bridge invocation IDs identify attempts. Only validated host request IDs with the
 host identity basis group phases. Multiple phases are not proof of retries.
-Identical receipts count once; conflicting identities are withheld. Unlinked
-memory calls remain lane calls, not named emails, schedules or workers.
+Identical receipts count once; conflicting identities are withheld. New host
+mail/memory work traces are described in WORK-RUN-USAGE-V1.md. Unlinked memory
+calls remain lane calls, not named emails, schedules or workers.
 
 Codex session IDs identify registered project sessions. Unique turn identifiers
 provide observed start/completion counts. Sampled files, invalid lines or missing

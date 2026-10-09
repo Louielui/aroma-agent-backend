@@ -22,6 +22,6 @@ Object.assign(env, {
   HINDSIGHT_API_RERANKER_PROVIDER: 'local', HINDSIGHT_API_RERANKER_LOCAL_MODEL: 'cross-encoder/mmarco-mMiniLMv2-L12-H384-v1',
   HINDSIGHT_API_WORKER_ID: 'xiangxiang-memory-local', HF_HUB_DISABLE_TELEMETRY: '1', DO_NOT_TRACK: '1'
 })
-const child = spawn('C:/Aroma/hindsight-runtime/Scripts/hindsight-api.exe', ['--host', '127.0.0.1', '--port', '8888', '--log-level', 'warning'], { cwd: 'C:/Aroma/hindsight-runtime', env, windowsHide: true, stdio: 'inherit' })
+const child = spawn('C:/Aroma/hindsight-runtime/Scripts/python.exe', [path.join(__dirname,'work_trace_runtime.py'), '--host', '127.0.0.1', '--port', '8888', '--workers', '1', '--log-level', 'warning'], { cwd: 'C:/Aroma/hindsight-runtime', env, windowsHide: true, stdio: 'inherit' })
 child.on('exit', code => { process.exitCode = code || 0 })
 child.on('error', () => { console.error('Hindsight runtime failed to start.'); process.exitCode = 1 })

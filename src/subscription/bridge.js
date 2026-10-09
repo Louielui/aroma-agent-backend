@@ -16,8 +16,9 @@ function authenticated (header, token) {
 }
 function validateInput (input) {
   if (!input || typeof input !== 'object' || Array.isArray(input)) throw new SubscriptionError('subscription_invalid_output')
-  if (Object.keys(input).some(k => !['prompt', 'system', 'schema', 'effort', 'model', 'images', 'trace'].includes(k))) throw new SubscriptionError('subscription_invalid_output')
+  if (Object.keys(input).some(k => !['prompt', 'system', 'schema', 'effort', 'model', 'images', 'trace', 'workTrace'].includes(k))) throw new SubscriptionError('subscription_invalid_output')
   if (input.trace !== undefined && !require('../investigation/invocationContext').validTrace(input.trace)) throw new SubscriptionError('subscription_invalid_output')
+  if (input.workTrace !== undefined && !require('../investigation/workTrace').validWorkTrace(input.workTrace)) throw new SubscriptionError('subscription_invalid_output')
   if (input.images !== undefined) {
     try { require('../chat/imageAttachments').validateImages(input.images) } catch (_) { throw new SubscriptionError('subscription_invalid_output') }
   }
@@ -35,8 +36,8 @@ function createBridge ({ token, clientOptions, memoryClientOptions = clientOptio
   const activeCalls = new Map()
   async function observedCall (role, fn, options, body) {
     activeCalls.set(role,{model:body.model || null,effort:body.effort || null,startedAt:new Date().toISOString()})
-    const id=invocationLedger?.begin({role,model:body.model,effort:body.effort,trace:body.trace})
-    const {trace,...providerBody}=body
+    const id=invocationLedger?.begin({role,model:body.model,effort:body.effort,trace:body.trace,workTrace:body.workTrace})
+    const {trace,workTrace,...providerBody}=body
     try {
       const result=await fn({...options,onDispatch:()=>invocationLedger?.dispatched(id)},providerBody)
       invocationLedger?.finish(id,result)
@@ -79,9 +80,9 @@ function createBridge ({ token, clientOptions, memoryClientOptions = clientOptio
       if (!res.destroyed) { res.writeHead(status, { 'content-type': 'application/json', 'cache-control': 'no-store' }); res.end(JSON.stringify(body)) }
     }
     if (!authenticated(req.headers.authorization, token) || req.headers.origin) { reply(401, { code: 'subscription_unavailable' }); req.resume(); return }
-    if (req.method !== 'POST' || !['/complete', '/status', '/models', '/workers', '/website', '/v1/chat/completions', '/memory-store', '/code-diagnosis-source', '/task-plan-source', '/code-repair', '/project-work', '/project-adoption', '/project-tasks', '/execution-metadata', '/work-metadata', '/runtime-metadata', '/invocation-metadata'].includes(req.url)) { reply(404, { code: 'subscription_unavailable' }); req.resume(); return }
+    if (req.method !== 'POST' || !['/complete', '/status', '/models', '/workers', '/website', '/v1/chat/completions', '/memory-store', '/code-diagnosis-source', '/task-plan-source', '/code-repair', '/project-work', '/project-adoption', '/project-tasks', '/execution-metadata', '/work-metadata', '/runtime-metadata', '/invocation-metadata','/work-outcome'].includes(req.url)) { reply(404, { code: 'subscription_unavailable' }); req.resume(); return }
     const isMemory = req.url === '/v1/chat/completions'
-    const isStore = req.url === '/memory-store'
+    const isStore = req.url === '/memory-store'||req.url==='/work-outcome'
     const isCatalogue = req.url === '/models' || req.url === '/execution-metadata' || req.url === '/work-metadata' || req.url === '/runtime-metadata' || req.url === '/invocation-metadata'
     // Closed account metadata uses its own single-flight session. Reading it
     // neither acquires nor releases the execution lane or dispatches a turn.
@@ -101,7 +102,11 @@ function createBridge ({ token, clientOptions, memoryClientOptions = clientOptio
       }
       let input
       try { input = JSON.parse(Buffer.concat(chunks).toString('utf8')) } catch (_) { reply(400, { code: 'subscription_invalid_output' }); return }
-      if (req.url === '/invocation-metadata') {
+      if(req.url==='/work-outcome'){
+        const {validWorkTrace,validOutcome}=require('../investigation/workTrace')
+        if(!input||Array.isArray(input)||Object.keys(input).sort().join(',')!=='outcome,workTrace'||!validWorkTrace(input.workTrace)||!validOutcome(input.outcome)){reply(400,{code:'subscription_invalid_output'});return}
+        reply(200,{recorded:invocationLedger?.workOutcome(input.workTrace,input.outcome)===true})
+      }else if (req.url === '/invocation-metadata') {
         if (!input || typeof input !== 'object' || Array.isArray(input) || Object.keys(input).length) { reply(400,{code:'context_unavailable'}); return }
         reply(200,invocationLedger ? invocationLedger.read() : {state:'unconnected',records:[],provesCharge:false})
       } else if (req.url === '/runtime-metadata') {
@@ -173,7 +178,8 @@ function createBridge ({ token, clientOptions, memoryClientOptions = clientOptio
         if (!memoryEnabled) { reply(503, { code: 'subscription_unavailable' }); return }
         reply(200, await require('./memoryCompletion').memoryCompletion(options, input, (opts,body) => {
           const routed = backgroundModel === DEFAULT_BRAIN_MODEL ? {...body,model:DEFAULT_BRAIN_MODEL} : body
-          return observedCall('memory_completion',isClaudeModel(routed.model)?claudeFn:completeFn,opts,routed)
+          const workTrace = require('../investigation/workTrace').decodeWorkTrace(req.headers['x-xiangxiang-work-trace'], token)
+          return observedCall('memory_completion',isClaudeModel(routed.model)?claudeFn:completeFn,opts,{...routed,...(workTrace?{workTrace}:{})})
         }))
       } else if (req.url === '/website') {
         if (!websiteEnabled) { reply(503, { code: 'subscription_unavailable' }); return }
