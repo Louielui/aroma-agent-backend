@@ -79,6 +79,7 @@ function evaluateInvestigation ({ goal = '', focus = null, sections = [] } = {})
   report.executionUsage = require('./executionUsage').buildExecutionUsage(report)
   report.evidenceModel = require('./evidenceState').buildEvidenceState(report)
   report.costAssessment = require('./costAssessment').buildCostAssessment(report)
+  report.decisionAdvice = require('./decisionAdvice').buildDecisionAdvice(report)
   return report
 }
 module.exports = { evaluateInvestigation }

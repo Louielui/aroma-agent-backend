@@ -87,6 +87,7 @@ const FILE_CLASS = Object.freeze({
   'investigation/invocationBrief.js': CLASS.INTERFACE, // Receipt-bound call summary; no model prompt or intent routing.
   'investigation/costFindings.js': CLASS.INTERFACE, // Receipt-bound cost presentation; no model prompt, routing or new reads.
   'investigation/costAssessmentView.js': CLASS.INTERFACE, // Fixed receipt-bound conclusion, no source routing or prompts.
+  'investigation/decisionAdviceView.js': CLASS.INTERFACE, // Fixed bilingual options over bounded evidence, no authority or prompts.
   'investigation/executionUsageView.js': CLASS.INTERFACE, // Fixed receipt-bound usage presentation; no source routing or model prompts.
   'investigation/subscriptionEvidenceView.js': CLASS.INTERFACE, // Fixed account receipt presentation; no model or routing instructions.
   'investigation/sourceBoundFindings.js': CLASS.INTERFACE, // Shared receipt-bound presentation; no source choice or new reads.

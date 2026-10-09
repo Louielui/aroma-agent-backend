@@ -55,6 +55,29 @@ test('bilingual intake saves the exact repair-chain gap without claiming an unre
  }
 })
 
+test('decision advice reaches the actual bilingual cost intake without added calls or actions', async t => {
+ for(const question of ['根據剛才的用量調查，你建議怎樣減少不必要的消耗？','Based on the usage investigation, what do you recommend to reduce unnecessary consumption?']){
+  const call={sourceId:'invocation:advice',invocationId:'advice',requestId:'12345678-1234-4234-8234-123456789012',linkBasis:'host_request_identity',role:'chat_completion',phase:'answer',state:'succeeded',startedAt:'2026-10-08T01:00:00Z',finishedAt:'2026-10-08T01:00:01Z',actualModel:'claude-opus-5-5',modelResultObserved:true,billingRoute:'claude-subscription',usageBasis:'provider_result_model_usage',usage:{inputTokens:10,outputTokens:4},evidenceBasis:'owner_bridge_invocation_ledger'}
+  const x=await turn(t,{question,focus:'cost',fastPath:true,evidenceSections:[{section:'execution',sourceId:'execution:advice',state:'partial',records:[call]},{section:'billing',sourceId:'billing:advice',state:'unconnected',records:[]}]})
+  assert.match(x.result.reply,/建議怎樣處理|Recommended next steps/)
+  assert.match(x.result.reply,/預期效果|Expected benefit/)
+  assert.match(x.result.reply,/代價|Tradeoff/)
+  assert.equal(x.result.investigation.decisionAdvice.preferred,'review_observed_usage')
+  assert.ok(x.result.investigation.answerPresentation.decisionAdvice.references.some(r=>r.recordId==='invocation:advice'))
+  assert.equal(x.calls.filter(c=>c.schema!=='goal_plan').length,0)
+  assert.equal(x.result.reply,x.result.replyForArchive)
+  assert.deepEqual(x.result.tasks,[])
+  assert.deepEqual(x.reads,[{source:'xiangxiang_operations',method:'readInvestigation'}])
+ }
+})
+test('decision advice survives the concise failed-task brief and keeps exact identity',async t=>{
+ const x=await turn(t,{fastPath:true,focus:'work_failure',evidenceSections:[{section:'work',sourceId:'work:advice',state:'partial',latestFailureId:'failed',records:[{sourceId:'failed',state:'failed',reason:'source_dirty'}]}]})
+ assert.match(x.result.reply,/建議怎樣處理/)
+ assert.equal(x.result.investigation.decisionAdvice.preferred,'verify_same_failure')
+ assert.deepEqual(x.result.investigation.decisionAdvice.options[0].targets,['failed'])
+ assert.equal(x.calls.filter(c=>c.schema!=='goal_plan').length,0)
+ assert.deepEqual(x.result.tasks,[])
+})
 test('fresh source-bound failure answer skips only the unused main answer model call', async t => {
   const x = await turn(t, { fastPath: true, focus: 'work_failure', workEvidence: true, previousInvestigation:{state:'absent'},
     question: 'Why did the previous development task fail; is it fixed now?' })

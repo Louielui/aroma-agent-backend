@@ -64,6 +64,9 @@ function buildArchitectureHtml () {
   investigationRow.current += ' ' + t('investigation.workerReceiptCurrent', { verifiedDate: '2026-10-09' })
   investigationRow.current += ' ' + t('investigation.subscriptionCurrent')
   investigationRow.current += ' ' + t('investigation.costAssessmentCurrent')
+  investigationRow.current += ' ' + t('investigation.adviceCurrent')
+  investigationRow.next += ' ' + t('investigation.adviceNext')
+  investigationRow.evidence += '; src/investigation/decisionAdvice.js; src/investigation/decisionAdvice.test.js; docs/INVESTIGATION-DECISION-ADVICE-V1.md'
   investigationRow.evidence += '; src/investigation/costAssessment.js; src/investigation/costAssessment.test.js; docs/COST-EVIDENCE-ASSESSMENT-V1.md'
   investigationRow.evidence += '; src/subscription/subscriptionEvidence.js; docs/SUBSCRIPTION-QUOTA-EVIDENCE-V1.md'
   investigationRow.component += ' / canonical registered worker run identities / host-only provider receipts / separate model and host outcomes / no billing inference'

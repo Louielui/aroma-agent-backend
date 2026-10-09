@@ -3734,6 +3734,15 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
         operationalInvestigation.answerPresentation = { ...operationalInvestigation.answerPresentation, ownerBrief: { ...brief, text: undefined } }
         view.reply = brief.text
       }
+      // Rebuild after continuity, cross-source reads and final evidence grading.
+      // Recommendations are visible even when the concise work brief replaces
+      // detailed findings. They add no model calls, reads or dispatch authority.
+      operationalInvestigation.decisionAdvice = require('../investigation/decisionAdvice').buildDecisionAdvice(operationalInvestigation)
+      const advice = require('../investigation/decisionAdviceView').renderDecisionAdvice(operationalInvestigation.decisionAdvice, { message })
+      if (advice && classifyDemoOutcome({ mode: distilled.mode, intent: distilled.intent }).outcome !== 'clarification') {
+        view.reply += '\n\n' + advice.text
+        operationalInvestigation.answerPresentation = { ...operationalInvestigation.answerPresentation, decisionAdvice: { ...advice, text: undefined } }
+      }
       operationalInvestigation.performance = { version: 1, totalMs: Math.max(0, Math.round(intakeElapsed())), phases: latencyRecords,
         mainAnswerSkipped: !!tel.answerCallSkipped, semanticReviewCalls: operationalInvestigation.semanticReview?.calls || 0,
         accounting: 'nested_prompt_phases_not_additive; provider_ledger_is_call_count_authority' }
