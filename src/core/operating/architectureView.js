@@ -54,7 +54,7 @@ function buildArchitectureHtml () {
     { id: 'approval', state: 'partial', title: t('architecture.approvalTitle'), purpose: t('architecture.approvalPurpose'), component: t('architecture.approvalComponent'), current: t('architecture.approvalCurrent'), next: t('architecture.approvalNext'), evidence: 'src/governance/ownerAuth.js; src/company/; docs/COMPANY-ACCESS.md' }
   ]
   const investigationRow = rows.find(row => row.id === 'operational-investigation')
-  rows.push({id:'action-gateway',state:'partial',title:t('actions.title'),purpose:t('actions.intro'),component:'Closed scheduler catalogue / Owner approval / fixed Windows adapter / durable target lock / read-back / inverse proposal',current:t('actions.current'),next:t('actions.next'),evidence:'src/actions/; docs/ACTION-GATEWAY-V1.md; /action-center; /api/v1/scheduler-actions'})
+  rows.push({id:'action-gateway',state:'partial',title:t('actions.title'),purpose:t('actions.intro'),component:'Closed scheduler catalogue / conversation and saved investigation binding / Owner approval / fixed Windows adapter / durable target lock / read-back / inverse proposal',current:t('actions.current'),next:t('actions.next'),evidence:'src/actions/; docs/ACTION-GATEWAY-V1.md; /action-center; /api/v1/scheduler-actions; /api/v1/demo/scheduler-actions'})
   investigationRow.current += ' ' + t('investigation.qualityCurrent')
   investigationRow.current += ' ' + t('investigation.accessCoverageCurrent')
   investigationRow.current += ' ' + t('investigation.generalizationAcceptanceCurrent')

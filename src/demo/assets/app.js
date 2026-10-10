@@ -1152,7 +1152,7 @@
     tEl.appendChild(body)
     c.thread.appendChild(tEl)
     if (c === active) scroll()   // never yank the view to a conversation he is not reading
-    return { root: tEl, body: body }
+    return { root: tEl, body: body, conversation: c }
   }
   function addUser (text, conv) {
     var tEl = turn('user', conv)
@@ -1222,9 +1222,7 @@
     return names[name] || t('investigation.operations')
   }
   function renderInvestigation (turnEl, report, investigationId, approvalId) {
-    if (report.focus === 'background') {
-      var actionLink = el('a', '', t('actions.title')); actionLink.href = '/action-center'; turnEl.body.appendChild(actionLink)
-    }
+    if (report.focus === 'background' && investigationId && report.persistenceState !== 'unavailable') renderSchedulerChat(turnEl, investigationId)
     if (report.persistenceState === 'unavailable') addMeta(turnEl.body, t('investigation.notSaved'))
     var details = el('details', 'investigation-evidence')
     details.appendChild(el('summary', '', t('investigation.title')))
@@ -1319,6 +1317,62 @@
         else prepare()
       })
     }
+  }
+  function renderSchedulerChat (turnEl, investigationId) {
+    var conv = turnEl.conversation, context = { conversationId: conv.cid, investigationId: investigationId }
+    var panel = el('section', 'scheduler-chat'), status = el('p', 'work-activity-state'), content = el('div'), busy = false
+    status.setAttribute('role', 'status'); status.setAttribute('aria-live', 'polite')
+    panel.appendChild(el('h3', '', t('actions.chatTitle'))); panel.appendChild(status); panel.appendChild(content); turnEl.body.appendChild(panel)
+    function call (body) {
+      return fetch('/api/v1/demo/scheduler-actions', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(Object.assign({}, body, context)) })
+        .then(function (r) { return r.json().then(function (v) { if (!r.ok || v.error) throw Error(v.error || 'action_unavailable'); return v }) })
+    }
+    function button (host, label, task) {
+      var b = el('button', 'ghost', label); b.type = 'button'; b.addEventListener('click', function () { if (conv !== active || busy) return; work(task) }); host.appendChild(b)
+    }
+    function work (task) {
+      if (busy) return; busy = true; status.textContent = t('actions.busy'); panel.classList.add('work-activity', 'is-working'); panel.setAttribute('aria-busy', 'true')
+      panel.querySelectorAll('button').forEach(function (b) { b.disabled = true })
+      return Promise.resolve().then(task).catch(function () { status.textContent = t('actions.failure') }).finally(function () {
+        busy = false; panel.classList.remove('is-working'); panel.setAttribute('aria-busy', 'false'); panel.querySelectorAll('button').forEach(function (b) { b.disabled = false })
+      })
+    }
+    function show (r) {
+      clear(content); status.textContent = ''
+      content.appendChild(el('strong', '', r.target.taskPath + r.target.taskName))
+      content.appendChild(el('p', '', r.capability === 'scheduler.pause' ? t('actions.pauseAction') : t('actions.resumeAction')))
+      content.appendChild(el('p', '', t('actions.impact'))); content.appendChild(el('p', '', t('actions.rollback')))
+      var pending = r.state === 'awaiting_approval', verified = r.state === 'verified'
+      content.appendChild(el('p', '', verified ? t('actions.verified') : pending ? (r.nonce ? t('actions.pending') : t('actions.expired')) : t('actions.failure')))
+      if (verified && r.after && r.after.at) content.appendChild(el('p','meta',t('actions.checkedAt',{at:new Date(r.after.at).toLocaleString()})))
+      if (r.before) content.appendChild(el('p', '', (r.before.enabled ? t('actions.enabled') : t('actions.disabled')) + ' → ' + (r.after ? (r.after.enabled ? t('actions.enabled') : t('actions.disabled')) : t('actions.unavailable'))))
+      if (pending && r.nonce) button(content, t('actions.approve'), function () {
+        if (!window.confirm(t('actions.confirm') + '\n' + r.target.taskPath + r.target.taskName + '\n' + (r.capability === 'scheduler.pause' ? t('actions.pauseAction') : t('actions.resumeAction')))) return
+        status.textContent = t('actions.executing')
+        var pollActive=true, poll = setInterval(function () { call({op:'get',id:r.id}).then(function(v){if(pollActive && v.run && v.run.state==='executing')status.textContent=v.run.timeline.some(function(e){return e.phase==='readback_started'})?t('actions.readback'):t('actions.executing')}).catch(function(){}) },1500)
+        return call({op:'approve',id:r.id,hash:r.hash,nonce:r.nonce}).then(function(v){pollActive=false;show(v.run)}).finally(function(){pollActive=false;clearInterval(poll)})
+      })
+      if (verified) button(content, t('actions.restore'), function () { return call({op:'restore',id:r.id}).then(function(v){show(v.run)}) })
+      if (pending && !r.nonce) button(content, t('actions.inspect'), inspect)
+      button(content, t('actions.refresh'), function () { return call({op:'get',id:r.id}).then(function(v){show(v.run)}) })
+      var details=el('details'), facts=el('pre');facts.textContent=JSON.stringify({investigationId:investigationId,expected:r.expected,hash:r.hash,timeline:r.timeline},null,2)
+      details.appendChild(el('summary','',t('actions.evidence')));details.appendChild(facts);content.appendChild(details)
+    }
+    function inspect () {
+      return call({op:'inspect'}).then(function(v){
+        clear(content);status.textContent='';content.appendChild(el('p','',t('actions.unknown')))
+        v.inspection.observations.forEach(function(o){
+          var row=el('div','scheduler-target');row.appendChild(el('strong','',o.target.taskPath+o.target.taskName));content.appendChild(row)
+          row.appendChild(el('p','',o.state==='CONFIRMED'?(o.snapshot.enabled?t('actions.enabled'):t('actions.disabled')):t('actions.unavailable')))
+          if(o.state==='CONFIRMED'&&((o.snapshot.runtime==='Ready'&&o.snapshot.enabled)||(o.snapshot.runtime==='Disabled'&&!o.snapshot.enabled)))button(row,o.snapshot.enabled?t('actions.pause'):t('actions.resume'),function(){return call({op:'prepare',targetId:o.target.id,action:o.snapshot.enabled?'scheduler.pause':'scheduler.resume'}).then(function(v){show(v.run)})})
+        })
+      })
+    }
+    work(function(){return call({op:'list'}).then(function(v){
+      status.textContent=''
+      if(v.runs.length){var runs=v.runs.slice().sort(function(a,b){return Date.parse(a.timeline[0].at)-Date.parse(b.timeline[0].at)});show(runs[runs.length-1]);var history=el('details');history.appendChild(el('summary','',t('actions.history')));runs.forEach(function(r){button(history,r.target.taskName+' · '+(r.state==='verified'?t('actions.verified'):r.state==='awaiting_approval'?t('actions.pending'):t('actions.failure')),function(){return call({op:'get',id:r.id}).then(function(v){show(v.run)})})});content.appendChild(history)}
+      else {content.appendChild(el('p','',t('actions.unknown')));button(content,t('actions.inspect'),inspect)}
+    })})
   }
   function loadInvestigation (turnEl, id) {
     fetch('/api/v1/demo/investigations/' + encodeURIComponent(id), { credentials: 'same-origin' })

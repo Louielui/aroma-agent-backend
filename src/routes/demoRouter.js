@@ -214,7 +214,7 @@ function buildWorkRequestResolution ({ req, message, offerDecision, conversation
   return null
 }
 
-function createDemoRouter ({ getAdapterFn = getAdapterForLane, processIntakeFn = processIntake, conversationStore = INERT_CONVERSATION_STORE, readBacklogFn = null, backlogTimeoutMs = 2500, errandStoreFn = null, operatingManager = null, memoryJournal = null, mailChat = null, liveContext = null, developmentPlan = null, codeDiagnosis = null, codeRepair = null, chatWork = null, taskPlanner = null, taskDialogue = null, imageAdapterFn = selection => {
+function createDemoRouter ({ getAdapterFn = getAdapterForLane, processIntakeFn = processIntake, conversationStore = INERT_CONVERSATION_STORE, readBacklogFn = null, backlogTimeoutMs = 2500, errandStoreFn = null, operatingManager = null, memoryJournal = null, mailChat = null, liveContext = null, developmentPlan = null, codeDiagnosis = null, codeRepair = null, chatWork = null, taskPlanner = null, taskDialogue = null, schedulerChat = null, imageAdapterFn = selection => {
   if (process.env.CHAT_BACKEND !== 'codex-subscription') throw Error('image_chat_unavailable')
   return new (require('../adapters/CodexSubscriptionAdapter').CodexSubscriptionAdapter)(selection)
 }, modelCenter = null, planningRevision = require('../governance/bootCommit').BOOT_COMMIT, modelsFn = async () => new (require('../adapters/CodexSubscriptionAdapter').CodexSubscriptionAdapter)().models() } = {}) {
@@ -568,6 +568,13 @@ function createDemoRouter ({ getAdapterFn = getAdapterForLane, processIntakeFn =
       // navigation labels and chat history are not requests to read a mailbox.
       // A semantic topic change returns null and preserves ordinary mail routing.
       const planningLane = !contextCard && !req.body.attachSection && (!req.body.interactionMode || req.body.interactionMode === 'chat')
+      if (planningLane && schedulerChat && schedulerChat.candidate(message)) {
+        if (!require('../core/operating/chatRequest').sameOrigin(req)) return res.status(403).json({ error:'same_origin_required' })
+        try {
+          const answer=await schedulerChat.start({message,conversationId:req.body.conversationId,requestId:req.body.websiteRequestId || req.body.workflowRequestId})
+          if(answer){emit('scheduler_proposal',200,null);return res.set('Cache-Control','no-store').json(answer)}
+        }catch(_){return res.status(409).json({error:{message:t('actions.failure'),retryable:false}})}
+      }
       if (planningLane && taskDialogue && taskDialogue.candidate(message, req.body.conversationId)) {
         if (!require('../core/operating/chatRequest').sameOrigin(req)) return res.status(403).json({ error: 'same_origin_required' })
         const allowed = ['message', 'conversationId', 'workflowRequestId', 'websiteRequestId', 'history', 'providerHint', 'previousLane', 'chatLevel', 'chatModel', 'interactionMode']

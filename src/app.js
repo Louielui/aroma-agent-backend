@@ -1228,6 +1228,11 @@ function createApp (options = {}) {
   app.use('/action-center', requireOwner)
   app.use('/api/v1/scheduler-actions', requireOwner)
   app.use(require('./actions/routes').createRouter())
+  const schedulerChat = require('./actions/chat').createChatGateway({
+    request: b => require('./adapters/CodexSubscriptionAdapter').localRequest('/scheduler-action', b, process.env, AbortSignal.timeout(60000)),
+    receipts: require('./investigation/receipts').createReceipts(), conversations: capturedConversationStore
+  })
+  app.use(require('./actions/chatRoutes').createChatRouter({chat:schedulerChat}))
   app.use('/api/v1/model-center', requireOwner)
   app.use(require('./modelCenter/routes').createModelCenterRouter({ center: modelCenter, catalogue: brainCatalogue }))
   app.use('/api/v1/topic-workspaces', requireOwner, require('./topics/routes').createTopicRouter({
@@ -1241,6 +1246,7 @@ function createApp (options = {}) {
   }) : null)
   app.locals.operationsBackgroundReader = require('./investigation/runtimeEvidence').createBackendRuntimeReader({mailMemory:companyMailMemory,mailScheduler,memory:governedMemory}).read
   app.use(createDemoRouter({
+    schedulerChat,
     modelCenter,
     liveContext,
     taskPlanner,

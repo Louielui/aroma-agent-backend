@@ -1015,3 +1015,10 @@ button[disabled] { opacity: .45; cursor: default; }
 .investigation-source:last-child { border-bottom: 0; }
 .investigation-source p { margin: 4px 0; }
 .investigation-source pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 280px; overflow-y: auto; font-size: var(--small-size); }
+.scheduler-chat { margin:16px 0; padding:16px; border:1px solid var(--line); border-radius:12px; overflow-wrap:anywhere; }
+.scheduler-chat h3 { margin:0 0 8px; }
+.scheduler-chat .work-activity-state:empty { display:none; }
+.turn.bot:has(.scheduler-chat) .body { flex:1; min-width:0; }
+.scheduler-chat button { margin:6px 8px 6px 0; white-space:normal; }
+.scheduler-chat pre { white-space:pre-wrap; overflow-wrap:anywhere; max-height:220px; overflow:auto; font-size:var(--small-size); }
+.scheduler-target { padding:12px 0; border-top:1px solid var(--line); }

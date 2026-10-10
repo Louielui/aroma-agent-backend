@@ -8,7 +8,7 @@ function createRouter ({request=b=>require('../adapters/CodexSubscriptionAdapter
   router.get('/api/v1/scheduler-actions',(req,res)=>call(res,{op:'list'}))
   router.post('/api/v1/scheduler-actions',(req,res)=>{
     if(!sameOrigin(req))return res.status(403).json({error:'same_origin_required'})
-    if(!req.is('application/json')||!validInput(req.body))return res.status(400).json({error:'invalid_request'})
+    if(!req.is('application/json')||!validInput(req.body)||req.body.op.startsWith('chat_'))return res.status(400).json({error:'invalid_request'})
     return call(res,req.body)
   })
   return router

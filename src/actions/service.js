@@ -2,7 +2,7 @@
 const { randomUUID } = require('node:crypto')
 const { TARGETS, hash, target, validInput } = require('./contract')
 function createGateway ({ store = require('./store').createStore(), scheduler = require('./windowsScheduler').createScheduler(), approvals = require('../agent/ownerApprovalStore').createOwnerApprovalStore(), now = () => Date.now() } = {}) {
-  const sessions=new Map(), busy=new Set()
+  const sessions=new Map(), tickets=new Map(), busy=new Set()
   const record = (r,phase,facts={}) => {r.timeline.push({at:new Date(now()).toISOString(),phase,actor:'owner',...facts});store.save(r)}
   const view = r => {if(!r)return null;const v=structuredClone(r);delete v.nonce;return v}
   const matching = (r,id) => r?.targetId === id && r.taskName===target(id).taskName && r.taskPath===target(id).taskPath
@@ -13,7 +13,7 @@ function createGateway ({ store = require('./store').createStore(), scheduler = 
     for(const t of TARGETS){try{const o=await scheduler.read(t.id);if(!current(o))throw Error('invalid_scheduler_receipt');r.observations.push({target:t,source:'Windows Task Scheduler fresh exact read',state:'CONFIRMED',snapshot:o})}catch(_){r.observations.push({target:t,state:'UNAVAILABLE'})}}
     record(r,'investigated',{duplicateState:'UNKNOWN'});return view(r)
   }
-  async function prepare ({inspectionId,targetId,action}, restoreOf=null) {
+  async function prepare ({inspectionId,targetId,action}, restoreOf=null, context=null) {
     target(targetId);const inspection=store.get(inspectionId), row=inspection?.observations?.find(o=>o.target.id===targetId)
     if(inspection?.state!=='inspected'||row?.state!=='CONFIRMED'||!current(row.snapshot))throw Error('investigation_stale')
     const before=await scheduler.read(targetId), enabled=action==='scheduler.resume'
@@ -22,17 +22,20 @@ function createGateway ({ store = require('./store').createStore(), scheduler = 
     if(before.enabled===enabled)throw Error('already_in_requested_state')
     const r={id:randomUUID(),state:'awaiting_approval',timeline:[],target:target(targetId),capability:action,expected:before,desiredEnabled:enabled,inspectionId,restoreOf,previousState:before.enabled,expiresAt:now()+600000,proposedBy:'owner-request',worker:'fixed-windows-scheduler',model:null,
       rollback:{capability:before.enabled?'scheduler.resume':'scheduler.pause',targetId,requiresFreshApproval:true},impact:'future_triggers_only_no_running_process_termination',duplicateState:'UNKNOWN'}
-    r.hash=hash({target:r.target,capability:action,expected:before,desiredEnabled:enabled,inspectionId,restoreOf,expiresAt:r.expiresAt})
+    if(context)r.context=structuredClone(context)
+    r.hash=proposalHash(r)
     const sessionId=approvals.createSession();sessions.set(r.id,sessionId)
     if(!approvals.seal({workOrder:{approvalId:r.id,hash:r.hash},proposalId:r.id}).ok)throw Error('approval_unavailable')
     const nonce=approvals.issueNonce({approvalId:r.id,workOrderHash:r.hash,sessionId})
+    tickets.set(r.id,nonce)
     record(r,'recommended',{inspectionId,hash:r.hash});return {...view(r),nonce}
   }
   async function approve (b) {
     const r=store.get(b.id), sessionId=sessions.get(b.id),sealed=approvals.loadSealed(b.id)
     if(!r||r.state!=='awaiting_approval'||r.expiresAt<=now()||!sealed.ok||!approvals.validSession(sessionId)||!approvals.consumeNonce({nonce:b.nonce,approvalId:b.id,displayedHash:b.hash,sessionId}).ok||r.hash!==b.hash||sealed.record.workOrder.hash!==r.hash)throw Error('approval_unavailable')
-    const expectedHash=hash({target:r.target,capability:r.capability,expected:r.expected,desiredEnabled:r.desiredEnabled,inspectionId:r.inspectionId,restoreOf:r.restoreOf,expiresAt:r.expiresAt})
+    const expectedHash=proposalHash(r)
     if(r.hash!==expectedHash)throw Error('approval_unavailable')
+    tickets.delete(r.id)
     if(busy.has(r.target.id))throw Error('target_locked')
     const release=store.lock(r.target.id);busy.add(r.target.id)
     try {
@@ -53,15 +56,29 @@ function createGateway ({ store = require('./store').createStore(), scheduler = 
       record(r,'failed',{reason:r.reason});return view(r)
     } finally {busy.delete(r.target.id);release()}
   }
-  async function restore (id) {
+  async function restore (id,context=null) {
     const old=store.get(id);if(old?.state!=='verified')throw Error('rollback_unavailable')
     const i=await inspect(),o=i.observations.find(o=>o.target.id===old.target.id)
     if(o?.state!=='CONFIRMED'||o.snapshot.definitionHash!==old.after.definitionHash||o.snapshot.enabled!==old.after.enabled)throw Error('target_changed')
-    return prepare({inspectionId:i.id,targetId:old.target.id,action:old.rollback.capability},id)
+    return prepare({inspectionId:i.id,targetId:old.target.id,action:old.rollback.capability},id,context)
   }
+  function proposalHash(r){return hash({target:r.target,capability:r.capability,expected:r.expected,desiredEnabled:r.desiredEnabled,inspectionId:r.inspectionId,restoreOf:r.restoreOf,expiresAt:r.expiresAt,...(r.context?{context:r.context}:{})})}
+  function chatView(r){const v=view(r);if(v?.state==='awaiting_approval'&&v.expiresAt>now()&&approvals.validSession(sessions.get(v.id))&&approvals.loadSealed(v.id).ok&&tickets.has(v.id))v.nonce=tickets.get(v.id);return v}
   async function handle (actor,b) {
     if(actor?.id!=='owner'||actor.role!=='owner')throw Error('owner_required')
     if(!validInput(b))throw Error('invalid_request')
+    if(b.op.startsWith('chat_')){
+      const op=b.op.slice(5),context={conversationId:b.context.conversationId,investigationId:b.context.investigationId}
+      if(op==='list')return {runs:store.list().filter(r=>r.context&&hash(r.context)===hash(context)).map(chatView)}
+      if(op==='prepare')return {run:await prepare(b,null,context)}
+      const r=store.get(b.id)
+      if(!r?.context||hash(r.context)!==hash(context))throw Error('approval_unavailable')
+      if(op==='get')return {run:chatView(r)}
+      if(op==='approve'){tickets.delete(b.id);return {run:await approve(b)}}
+      return {run:await restore(b.id,context)}
+    }
+    // A chat-bound proposal cannot be executed or restored from the generic center.
+    if(['approve','restore'].includes(b.op)&&store.get(b.id)?.context)throw Error('approval_unavailable')
     if(b.op==='inspect')return {inspection:await inspect()}
     if(b.op==='list')return {targets:TARGETS,runs:store.list().map(view),duplicateState:'UNKNOWN'}
     if(b.op==='get')return {run:view(store.get(b.id))}
