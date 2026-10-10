@@ -109,12 +109,31 @@ function createGapService ({ store = createMemoryRunStore(), conversations, revi
     const result = await approve(actor, { id: r.id, conversationId: id, hash: r.proposalHash }, message)
     return { lane: 'chat', mode: 'chat', reply: receiptReply(result.run), capabilityGapRunId: r.id, capabilityGapResolution: result.run, historySaved: true, servedBy: null }
   }
+  function developmentPlan (r) {
+    let plan = planner.get(OWNER, r.taskPlanRunId)
+    const visited = new Set([r.taskPlanRunId])
+    while (plan?.updatedPlanRunId) {
+      const id = plan.updatedPlanRunId
+      if (!ID.test(id) || visited.has(id) || visited.size >= 16) throw Error('capability_unverified')
+      const next = planner.get(OWNER, id)
+      // A replan is an explicit Owner operation. Follow its saved link only
+      // when it retains this exact business goal and registered scope. The new
+      // plan still needs its own coding approval and loaded adoption proof.
+      if (!next || next.id !== id || next.conversationId !== r.conversationId || plan.conversationId !== r.conversationId ||
+          next.profile !== r.proposal.scope?.profile || next.profile !== plan.profile || next.message !== plan.message ||
+          next.model !== plan.model || next.effort !== plan.effort || !plan.dialogue || !next.dialogue ||
+          JSON.stringify(next.dialogue.ownerRequests) !== JSON.stringify(plan.dialogue.ownerRequests) ||
+          JSON.stringify(next.dialogue.proposals) !== JSON.stringify(plan.dialogue.proposals)) throw Error('capability_unverified')
+      visited.add(id); plan = next
+    }
+    return plan
+  }
   function get (actor, id) {
     owner(actor); const r = checked(id)
     if (r.taskPlanRunId && planner) {
       try {
-        const plan = planner.get(OWNER, r.taskPlanRunId)
-        r.development = plan ? { state: plan.execution?.state || plan.state, workRunId: plan.execution?.workRunId || plan.workRunId || null } : { state: 'unavailable', workRunId: null }
+        const plan = developmentPlan(r)
+        r.development = plan ? { state: plan.execution?.state || plan.state, workRunId: plan.execution?.workRunId || plan.workRunId || null, taskPlanRunId: plan.id || r.taskPlanRunId } : { state: 'unavailable', workRunId: null }
       } catch (_) { r.development = { state: 'unavailable', workRunId: null } }
     }
     return { ...view(r), scopeRefreshAvailable:r.state === 'awaiting_scope_registration' && !!registeredScope(r.gap,r.originalGoal,2) && !r.replacementRunId,
@@ -178,7 +197,7 @@ function createGapService ({ store = createMemoryRunStore(), conversations, revi
       throw Error('resume_unconfirmed')
     }
     if (!r.taskPlanRunId || !planner || typeof resumeOriginal !== 'function') throw Error('capability_unverified')
-    const plan = planner.get(OWNER, r.taskPlanRunId), workRunId = plan?.execution?.workRunId || plan?.workRunId
+    const plan = developmentPlan(r), workRunId = plan?.execution?.workRunId || plan?.workRunId
     if (!ID.test(workRunId || '') || plan?.execution?.state !== 'completed') throw Error('capability_unverified')
     const proof = await verifyLoaded({ workRunId, scope: r.proposal.scope })
     if (!proof || proof.state !== 'verified' || !/^[a-f0-9]{40}$/.test(proof.bootCommit || '') || proof.bootCommit === r.revision || proof.workRunId !== workRunId) throw Error('capability_unverified')

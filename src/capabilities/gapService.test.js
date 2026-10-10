@@ -68,6 +68,27 @@ test('registered Context gaps hand off once to committed-source planning, never 
   assert.equal(f.starts[0].model,'claude-opus-5-5'); assert.equal(f.starts[0].effort,'medium'); assert.equal(f.reads(),0)
   await assert.rejects(f.resume(r),/capability_unverified/)
 })
+test('an Owner-requested replacement plan preserves the gap and permits continuation only after its exact loaded work',async()=>{
+  const workRunId=randomUUID(),f=fixture({proof:{state:'verified',workRunId,bootCommit:NEW}}),plans=new Map()
+  f.dependencies.planner.start=(actor,input)=>{
+    const row={...input,id:randomUUID(),profile:'context',state:'failed',reason:'subscription_login_required'}
+    plans.set(row.id,row);return row
+  }
+  f.dependencies.planner.get=(actor,id)=>plans.get(id)
+  const r=f.offer(gap('no_mapped_operation','aroma_system.read'),'核對原本查詢結果'),approved=await f.approve(r)
+  const original=plans.get(approved.run.taskPlanRunId),next={...original,id:randomUUID(),state:'completed',reason:null,execution:{state:'completed',workRunId}}
+  original.updatedPlanRunId=next.id;plans.set(next.id,next)
+  assert.equal((await f.service.status(OWNER,r.id)).development.taskPlanRunId,next.id)
+  assert.equal((await f.service.status(OWNER,r.id)).resumeAvailable,true)
+  for(const patch of [{conversationId:randomUUID()},{profile:'interface'},{message:'Unrelated change'},{model:'gpt-6.1-sol'},{dialogue:{...next.dialogue,ownerRequests:['Replace goal']}}]){
+    plans.set(next.id,{...next,...patch});assert.equal((await f.service.status(OWNER,r.id)).resumeAvailable,false)
+    await assert.rejects(f.resume(r),/capability_unverified/)
+  }
+  plans.set(next.id,{...next,updatedPlanRunId:original.id});assert.equal((await f.service.status(OWNER,r.id)).resumeAvailable,false)
+  plans.set(next.id,next)
+  const resumed=await f.resume(r);assert.equal(resumed.run.state,'completed');assert.equal(f.reads(),1)
+  assert.equal(f.starts.length,0)
+})
 test('a report gap seals the original Winnipeg day and passes it to continuation after a day changes',async()=>{
   const workRunId=randomUUID(),f=fixture({plan:{execution:{state:'completed',workRunId}},proof:{state:'verified',workRunId,bootCommit:NEW}})
   f.dependencies.planner.start=(actor,input)=>({id:randomUUID(),profile:'seven_shifts'})

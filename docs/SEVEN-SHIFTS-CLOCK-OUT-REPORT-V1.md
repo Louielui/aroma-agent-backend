@@ -29,6 +29,11 @@ The host query/report wiring is not evidence of worker-developed code or a loade
 adoption. Those claims require actual planner, test, worker, review and adoption
 receipts. No fixture or directly implemented code may stand in for them.
 
+An Owner-requested replan after a failed login remains attached to the original
+gap. Continuation follows only saved replacement links retaining the conversation,
+scope, model, effort and sealed requests. Cycles or a changed goal are rejected;
+the replacement still requires its own exact coding approval and loaded proof.
+
 References:
 - [List Time Punches](https://developers.7shifts.com/reference/gettimepunches)
 - [Retrieve User](https://developers.7shifts.com/reference/getuser)
