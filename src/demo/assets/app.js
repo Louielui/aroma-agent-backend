@@ -1222,6 +1222,9 @@
     return names[name] || t('investigation.operations')
   }
   function renderInvestigation (turnEl, report, investigationId, approvalId) {
+    if (report.focus === 'background') {
+      var actionLink = el('a', '', t('actions.title')); actionLink.href = '/action-center'; turnEl.body.appendChild(actionLink)
+    }
     if (report.persistenceState === 'unavailable') addMeta(turnEl.body, t('investigation.notSaved'))
     var details = el('details', 'investigation-evidence')
     details.appendChild(el('summary', '', t('investigation.title')))
