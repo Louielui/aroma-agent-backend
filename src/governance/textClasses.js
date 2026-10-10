@@ -75,6 +75,9 @@ const CLASS = Object.freeze({
  * the test checks COVERAGE (is every such file listed), never the number.
  */
 const FILE_CLASS = Object.freeze({
+  'capabilities/gapContract.js': CLASS.INTERFACE,
+  'capabilities/gapService.js': CLASS.MATCHING,
+  'intake/readObligationGap.js': CLASS.INTERFACE,
   'investigation/ownerBrief.js': CLASS.INTERFACE,
   'actions/view.js': CLASS.INTERFACE,
     'actions/chat.js': CLASS.INTERFACE,

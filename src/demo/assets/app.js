@@ -1089,6 +1089,7 @@
           } else {
             var tEl = addBot(text, c)
             if (m[i] && m[i].taskPlanRunId) renderTaskPlan(tEl, m[i].taskPlanRunId)
+            if (m[i] && m[i].capabilityGapRunId) renderCapabilityGap(tEl, m[i].capabilityGapRunId, null, c)
             if (m[i] && m[i].investigationRunId) loadInvestigation(tEl, m[i].investigationRunId)
             if (m[i] && m[i].projectWorkRunId) renderProjectWork(tEl, m[i].projectWorkRunId, null)
             if (m[i] && m[i].operatingRunId) renderOperatingRun(tEl, m[i].operatingRunId)
@@ -1596,6 +1597,58 @@
     function unavailable () { readable = false; tick(); stop() }
     tick()
     return { update: update, unavailable: unavailable }
+  }
+  function renderCapabilityGap (turn, runId, initial, conv) {
+    if (!/^[a-f0-9-]{36}$/i.test(runId || '')) return
+    var card = el('div', 'project-work-card'), content = el('div'), nested = el('div'), busy = false, loading = false, childId = null, resumeId = null
+    card.dataset.capabilityGap = runId; turn.body.appendChild(card); card.appendChild(content); card.appendChild(nested)
+    async function request (body) {
+      var controller = new AbortController(), timer = setTimeout(function () { controller.abort() }, body && body.op === 'resume' ? 180000 : 15000)
+      try {
+        var response = await fetch('/api/v1/capability-gaps' + (body ? '' : '/' + encodeURIComponent(runId)), {method:body?'POST':'GET',credentials:'same-origin',redirect:'error',signal:controller.signal,headers:body?{'content-type':'application/json'}:{},body:body?JSON.stringify(body):undefined})
+        var value = await response.json(); if (!response.ok || value.error) throw Error(value.error || 'unavailable'); return value
+      } finally { clearTimeout(timer) }
+    }
+    function draw (r) {
+      var stateText = {awaiting_approval:t('gap.awaitingApproval'),awaiting_scope_registration:t('gap.awaitingScopeRegistration'),development_planning:t('gap.developmentPlanning'),handoff_pending:t('gap.handoffPending'),needs_attention:t('gap.needsAttention'),resuming:t('gap.resuming'),completed:t('gap.completed')}
+      content.replaceChildren(); content.appendChild(el('h3','',t('gap.title'))); content.appendChild(el('p','meta',stateText[r.state] || t('gap.needsAttention')))
+      content.appendChild(el('strong','',t('gap.original'))); content.appendChild(el('p','',r.originalGoal)); content.appendChild(el('p','',r.proposal.diagnosis))
+      var details = el('details'), summary = el('summary','',t('gap.solution')), steps = el('ol'); details.appendChild(summary)
+      r.proposal.steps.forEach(function (s) { steps.appendChild(el('li','',s)) }); details.appendChild(steps); content.appendChild(details)
+      content.appendChild(el('p','meta',r.proposal.impact)); content.appendChild(el('p','meta',r.proposal.risk))
+      if (!r.proposal.scope) content.appendChild(el('p','meta',t('gap.scopePending')))
+      else { content.appendChild(el('p','meta',t('gap.scopeRegistered'))); content.appendChild(el('code','',r.proposal.scope.files.join(', '))) }
+      function button (label, op) {
+        var b = el('button','',label); b.type = 'button'; b.disabled = busy
+        b.addEventListener('click', async function () {
+          if (busy || conv !== active) return
+          if (op === 'approve' && !window.confirm(t('gap.approvalConfirm') + '\n\n' + r.originalGoal + '\n' + r.proposal.steps.join('\n') + '\n\n' + r.proposal.impact + '\n' + r.proposal.risk + '\n' + (r.proposal.scope ? r.proposal.scope.files.join(', ') : t('gap.scopePending')))) return
+          busy = true; b.disabled = true
+          try {
+            var body = {op:op,id:runId,conversationId:conv.cid,hash:r.proposalHash}
+            if (op === 'resume') { resumeId = resumeId || crypto.randomUUID(); body.requestId = resumeId }
+            var value = await request(body); busy = false; draw(value.run)
+            if (value.run.taskPlanRunId && !value.run.resumeResult) setTimeout(load,1000)
+          } catch (e) { content.appendChild(el('p','meta',e.message === 'capability_unverified' ? t('gap.unverified') : t('gap.failed'))) }
+          finally { busy = false; b.disabled = false }
+        }); content.appendChild(b)
+      }
+      if (r.state === 'awaiting_approval') button(t('gap.approve'),'approve')
+      if (r.resumeAvailable === true && !r.resumeResult) button(t('gap.resume'),'resume')
+      else if (r.development && r.development.state === 'completed' && !r.resumeResult) content.appendChild(el('p','meta',t('gap.unverified')))
+      if (r.taskPlanRunId && childId !== r.taskPlanRunId) { nested.replaceChildren(); childId = r.taskPlanRunId; renderTaskPlan({body:nested},childId) }
+      var log = el('details'); log.appendChild(el('summary','',t('gap.details'))); log.appendChild(el('pre','',JSON.stringify({needs:r.proposal.needs,criteria:r.proposal.criteria,task:r.developmentTask,steps:r.steps},null,2))); content.appendChild(log)
+      if (r.resumeResult) content.appendChild(el('p','',r.resumeResult.reply))
+    }
+    async function load () {
+      if (!card.isConnected || conv !== active || document.visibilityState === 'hidden' || busy || loading) return
+      loading = true
+      try { var v = await request(); if (busy || conv !== active || !card.isConnected) return; draw(v.run); if (v.run.taskPlanRunId && !v.run.resumeResult) setTimeout(load,10000) }
+      catch (_) { content.appendChild(el('p','meta',t('gap.failed'))) }
+      finally { loading = false }
+    }
+    if (initial) draw(initial)
+    load()
   }
   function renderTaskPlan (turn, runId) {
     if (!/^[a-f0-9-]{36}$/i.test(runId || '')) return
@@ -2196,6 +2249,10 @@
     if (status >= 500 || (res.error && !res.blocked)) {
       return addError(errorLine(res), conv)
     }
+    if (res.capabilityGapRunId) {
+      var gapTurn = addBot(res.reply, conv); renderCapabilityGap(gapTurn,res.capabilityGapRunId,res.capabilityGapResolution,conv); return gapTurn
+    }
+    if (res.capabilityGapPersistence === 'unavailable') addError(t('gap.failed'),conv)
     if (res.investigation) {
       var investigationTurn = addBot(res.reply, conv)
       renderInvestigation(investigationTurn, res.investigation, res.investigationRunId)

@@ -1247,7 +1247,22 @@ function createApp (options = {}) {
     receipts: require('./core/operating/runStore').createRunStore({ dir: path.join(require('./store/dataDir').resolveDataDir(), 'dialogue-requests'), workflow: 'dialogue_request' })
   }) : null)
   app.locals.operationsBackgroundReader = require('./investigation/runtimeEvidence').createBackendRuntimeReader({mailMemory:companyMailMemory,mailScheduler,memory:governedMemory}).read
+  const capabilityGaps = opts.capabilityGaps || require('./capabilities/gapService').createGapService({
+    store: require('./core/operating/runStore').createRunStore({dir:path.join(require('./store/dataDir').resolveDataDir(),'capability-gap-runs'), workflow:'capability_gap'}),
+    conversations: capturedConversationStore, revision: BOOT_COMMIT, planner: taskPlanner,
+    verifyLoaded: async ({workRunId}) => {
+      const records = require('./core/operating/runStore').createRunStore({workflow:'project_adoption'}).all()
+      return require('./capabilities/gapService').loadedProof(records,workRunId,BOOT_COMMIT)
+    },
+    resumeOriginal: async ({message,conversationId,model,effort,requestId}) => {
+      const adapter = new (require('./adapters/CodexSubscriptionAdapter').CodexSubscriptionAdapter)({model,effort})
+      return require('./intake/intakeService').processIntake(message,adapter,[],{requestId,interactionMode:'chat',demo:true,viaRoute:'demo'})
+    }
+  })
+  app.use('/api/v1/capability-gaps', requireOwner)
+  app.use(require('./capabilities/gapRoutes').createGapRouter({service:capabilityGaps}))
   app.use(createDemoRouter({
+    capabilityGaps,
     schedulerChat,
     modelCenter,
     liveContext,

@@ -214,7 +214,7 @@ function buildWorkRequestResolution ({ req, message, offerDecision, conversation
   return null
 }
 
-function createDemoRouter ({ getAdapterFn = getAdapterForLane, processIntakeFn = processIntake, conversationStore = INERT_CONVERSATION_STORE, readBacklogFn = null, backlogTimeoutMs = 2500, errandStoreFn = null, operatingManager = null, memoryJournal = null, mailChat = null, liveContext = null, developmentPlan = null, codeDiagnosis = null, codeRepair = null, chatWork = null, taskPlanner = null, taskDialogue = null, schedulerChat = null, imageAdapterFn = selection => {
+function createDemoRouter ({ getAdapterFn = getAdapterForLane, processIntakeFn = processIntake, conversationStore = INERT_CONVERSATION_STORE, readBacklogFn = null, backlogTimeoutMs = 2500, errandStoreFn = null, operatingManager = null, memoryJournal = null, mailChat = null, liveContext = null, developmentPlan = null, codeDiagnosis = null, codeRepair = null, chatWork = null, taskPlanner = null, taskDialogue = null, schedulerChat = null, capabilityGaps = null, imageAdapterFn = selection => {
   if (process.env.CHAT_BACKEND !== 'codex-subscription') throw Error('image_chat_unavailable')
   return new (require('../adapters/CodexSubscriptionAdapter').CodexSubscriptionAdapter)(selection)
 }, modelCenter = null, planningRevision = require('../governance/bootCommit').BOOT_COMMIT, modelsFn = async () => new (require('../adapters/CodexSubscriptionAdapter').CodexSubscriptionAdapter)().models() } = {}) {
@@ -510,7 +510,7 @@ function createDemoRouter ({ getAdapterFn = getAdapterForLane, processIntakeFn =
   // race a topic-changing intake. The lock lasts until the handler settles.
   const intakeTurns=new Set()
   const serializedIntake=handler=>async(req,res)=>{
-    const id=req.body?.conversationId,locked=!!schedulerChat&&isValidConversationId(id)
+    const id=req.body?.conversationId,locked=!!(schedulerChat || capabilityGaps)&&isValidConversationId(id)
     if(locked&&intakeTurns.has(id))return res.status(409).json({error:{code:'conversation_busy',message:t('actions.continuationBusy'),retryable:true}})
     if(locked)intakeTurns.add(id)
     try{return await handler(req,res)}finally{if(locked)intakeTurns.delete(id)}
@@ -577,6 +577,13 @@ function createDemoRouter ({ getAdapterFn = getAdapterForLane, processIntakeFn =
       // navigation labels and chat history are not requests to read a mailbox.
       // A semantic topic change returns null and preserves ordinary mail routing.
       const planningLane = !contextCard && !req.body.attachSection && (!req.body.interactionMode || req.body.interactionMode === 'chat')
+      if (planningLane && capabilityGaps && capabilityGaps.candidate(message, req.body.conversationId)) {
+        if (!require('../core/operating/chatRequest').sameOrigin(req)) return res.status(403).json({ error: 'same_origin_required' })
+        const allowed = ['message','conversationId','workflowRequestId','websiteRequestId','history','providerHint','previousLane','chatLevel','chatModel','interactionMode']
+        if (Object.keys(req.body).some(k => !allowed.includes(k))) return res.status(400).json({ error: 'invalid_request' })
+        try { return res.set('Cache-Control','no-store').json(await capabilityGaps.confirm({id:'owner',role:'owner'}, message, req.body.conversationId)) }
+        catch (_) { return res.status(409).json({ error: { message: t('gap.failed'), retryable: false } }) }
+      }
       if (planningLane && schedulerChat && schedulerChat.candidate(message,req.body.conversationId,req.body.websiteRequestId || req.body.workflowRequestId)) {
         if (!require('../core/operating/chatRequest').sameOrigin(req)) return res.status(403).json({ error:'same_origin_required' })
         const allowed=['message','conversationId','workflowRequestId','websiteRequestId','history','providerHint','previousLane','chatLevel','chatModel','interactionMode']
@@ -950,6 +957,13 @@ function createDemoRouter ({ getAdapterFn = getAdapterForLane, processIntakeFn =
         let result
         try { result = await processIntakeFn(message, adapter, history || [], opts) }
         catch (e) { if (investigationStarted) { try { investigationReceipts.finish(investigationId, null, true) } catch (_) {} } throw e }
+        if (interactionMode === 'chat' && result?.capabilityGap && capabilityGaps && isValidConversationId(req.body.conversationId)) {
+          try {
+            const run = capabilityGaps.offer({id:'owner',role:'owner'}, { conversationId:req.body.conversationId, requestId:correlationId, message,
+              gap:result.capabilityGap, model:req.body.chatModel || require('../subscription/chatModels').DEFAULT_BRAIN_MODEL, effort:require('../intake/chatSpeed').profileFor(req.body.chatLevel || 'medium').effort })
+            result.capabilityGapRunId = run.id; result.capabilityGapResolution = run
+          } catch (_) { result.capabilityGapPersistence = 'unavailable' }
+        }
         if (result?.investigation) result.investigation.persistenceState = investigationStarted && !investigationSaveFailed ? 'saved' : 'unavailable'
         if (investigationStarted && !investigationSaveFailed) {
           try { investigationReceipts.finish(investigationId, result) } catch (_) { investigationSaveFailed = true }
@@ -1204,6 +1218,7 @@ function createDemoRouter ({ getAdapterFn = getAdapterForLane, processIntakeFn =
                 userText: message,
                 replyText: shown,
                 investigationRunId: withOffer.investigationRunId || null,
+                capabilityGapRunId: withOffer.capabilityGapRunId || null,
                 planningOffer: planningLane ? planContinuation.makeOffer(message, withOffer.mode, conversationStore.get?.(conversationId)?.messages?.at(-1)?.planningOffer, planningRevision) : null,
                 servedBy: (telemetry && typeof telemetry.model === 'string' && telemetry.model) ? telemetry.model : null
               })

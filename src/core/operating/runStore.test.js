@@ -31,11 +31,11 @@ test('briefing commands exclude quoted examples, compound operations and negatio
   for (const message of ['不要整理今日營運簡報', '請解釋「今日營運簡報」', '今日營運簡報並寄給同事', '上星期營運簡報', '供應商要求：今日營運簡報']) assert.equal(isBriefingRequest(message), false, message)
 })
 
-test('all four workflows default to separate durable stores, preserving legacy briefing and explicit directories', t => {
+test('workflow defaults remain separate, preserving legacy briefing and capability gap receipts', t => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'workflow-adoption-')), previous = process.env.AROMA_DATA_DIR
   process.env.AROMA_DATA_DIR = dir
   t.after(() => { if (previous === undefined) delete process.env.AROMA_DATA_DIR; else process.env.AROMA_DATA_DIR = previous; assert.ok(path.resolve(dir).startsWith(path.resolve(os.tmpdir()) + path.sep)); fs.rmSync(dir, { recursive: true, force: true }) })
-  const workflows = { daily_briefing: 'manager-runs', development_proposal: 'development-plan-runs', code_diagnosis: 'code-diagnosis-runs', code_repair: 'code-repair-runs' }
+  const workflows = { daily_briefing: 'manager-runs', development_proposal: 'development-plan-runs', code_diagnosis: 'code-diagnosis-runs', code_repair: 'code-repair-runs', capability_gap: 'capability-gap-runs' }
   const rows = Object.keys(workflows).map(workflow => ({ id: randomUUID(), workflow, steps: [], sections: [], state: 'completed' }))
   for (const row of rows) createRunStore({ workflow: row.workflow }).save(row)
   for (const row of rows) {

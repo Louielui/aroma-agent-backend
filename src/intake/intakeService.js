@@ -2182,6 +2182,7 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
   // ══════════════════════════════════════════════════════════════════════════
   let initialObligation = null
   let terminalReadGap = null
+  const gapForTurn = () => require('../capabilities/gapContract').detectGap({ reason: terminalReadGap, plan: goalPlanObserved, state: investigationObserved })
   /**
    * ⛔ X4.4 — A SECOND, SEPARATE REASON A TURN MAY NOT STOP YET. NOT A4'S.
    *
@@ -3526,6 +3527,7 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
     if (claim.corrected) logReadClaimCorrection(claim, requestId)
     return {
       blocked: false, mode: 'chat', talkOnly: true, interactionMode: 'chat',
+      ...(gapForTurn() && { capabilityGap: gapForTurn() }),
       ...(operationalInvestigation && { investigation: operationalInvestigation }),
       reply: view.reply, replyForArchive: guarded.reply, readClaimCorrected: claim.corrected,
       decision: null, tasks: [], risks: [], next_step: '', requestId
@@ -3785,6 +3787,7 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
     const chatClaim = view.readClaim || { corrected: false, sources: [], kind: null }
     if (chatClaim.corrected) logReadClaimCorrection(chatClaim, requestId)
     return { blocked: false, mode: distilled.mode, intent: distilled.intent,
+      ...(gapForTurn() && { capabilityGap: gapForTurn() }),
       ...(operationalInvestigation && { investigation: operationalInvestigation }),
       ...(demo && { demoOutcome: classifyDemoOutcome({ mode: distilled.mode, intent: distilled.intent }).outcome, contextCardWarnings: ctx.warnings }),
       reply: view.reply, replyForArchive: operationalInvestigation?.readOnly === true ? view.reply : guarded.reply, readClaimCorrected: chatClaim.corrected,
