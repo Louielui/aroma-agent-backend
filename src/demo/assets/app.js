@@ -1610,6 +1610,7 @@
       } finally { clearTimeout(timer) }
     }
     function draw (r) {
+      if (/^[a-f0-9-]{36}$/i.test(r.id || '')) { runId = r.id; card.dataset.capabilityGap = runId }
       var stateText = {awaiting_approval:t('gap.awaitingApproval'),awaiting_scope_registration:t('gap.awaitingScopeRegistration'),development_planning:t('gap.developmentPlanning'),handoff_pending:t('gap.handoffPending'),needs_attention:t('gap.needsAttention'),resuming:t('gap.resuming'),completed:t('gap.completed')}
       content.replaceChildren(); content.appendChild(el('h3','',t('gap.title'))); content.appendChild(el('p','meta',stateText[r.state] || t('gap.needsAttention')))
       content.appendChild(el('strong','',t('gap.original'))); content.appendChild(el('p','',r.originalGoal)); content.appendChild(el('p','',r.proposal.diagnosis))
@@ -1634,6 +1635,7 @@
         }); content.appendChild(b)
       }
       if (r.state === 'awaiting_approval') button(t('gap.approve'),'approve')
+      if (r.scopeRefreshAvailable === true) button(t('gap.refreshScope'),'refreshScope')
       if (r.resumeAvailable === true && !r.resumeResult) button(t('gap.resume'),'resume')
       else if (r.development && r.development.state === 'completed' && !r.resumeResult) content.appendChild(el('p','meta',t('gap.unverified')))
       if (r.taskPlanRunId && childId !== r.taskPlanRunId) { nested.replaceChildren(); childId = r.taskPlanRunId; renderTaskPlan({body:nested},childId) }
@@ -1643,7 +1645,7 @@
     async function load () {
       if (!card.isConnected || conv !== active || document.visibilityState === 'hidden' || busy || loading) return
       loading = true
-      try { var v = await request(); if (busy || conv !== active || !card.isConnected) return; draw(v.run); if (v.run.taskPlanRunId && !v.run.resumeResult) setTimeout(load,10000) }
+      try { var v = await request(); if (busy || conv !== active || !card.isConnected) return; if (/^[a-f0-9-]{36}$/i.test(v.run.replacementRunId || '')) { runId = v.run.replacementRunId; v = await request(); if (busy || conv !== active || !card.isConnected) return }; draw(v.run); if (v.run.taskPlanRunId && !v.run.resumeResult) setTimeout(load,10000) }
       catch (_) { content.appendChild(el('p','meta',t('gap.failed'))) }
       finally { loading = false }
     }

@@ -24,7 +24,8 @@ try {
       $adoptionNames = @($adoptionRecord.after.PSObject.Properties.Name)
       $adoptionContextSet = @('src/context/contextResult.js','src/context/toolGateway.js')
       $adoptionInterfaceSet = @('src/demo/assets/sidebar.js','src/demo/assets/sidebar.css')
-      if ($adoptionNames.Count -lt 1 -or $adoptionNames.Count -gt 2 -or (@($adoptionNames | Where-Object { $_ -cnotin $adoptionContextSet }).Count -ne 0 -and @($adoptionNames | Where-Object { $_ -cnotin $adoptionInterfaceSet }).Count -ne 0)) { throw 'UnexpectedSourceSet' }
+      $adoptionSevenSet = @('src/context/adapters/sevenShiftsRead.js')
+      if ($adoptionNames.Count -lt 1 -or $adoptionNames.Count -gt 2 -or (@($adoptionNames | Where-Object { $_ -cnotin $adoptionContextSet }).Count -ne 0 -and @($adoptionNames | Where-Object { $_ -cnotin $adoptionInterfaceSet }).Count -ne 0 -and @($adoptionNames | Where-Object { $_ -cnotin $adoptionSevenSet }).Count -ne 0)) { throw 'UnexpectedSourceSet' }
       $adoptionValidator = Join-Path $adoptionRepository 'scripts/subscription/validateRegisteredReload.cjs'
       $adoptionValidatorSource = (Get-Content -LiteralPath $adoptionValidator -Raw -Encoding UTF8).Replace("`r`n","`n")
       $adoptionValidatorCommitted = ((& git --no-replace-objects -C $adoptionRepository show ($adoptionRecord.commit + ':scripts/subscription/validateRegisteredReload.cjs')) -join "`n") + "`n"

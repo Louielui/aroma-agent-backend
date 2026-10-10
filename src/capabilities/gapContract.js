@@ -32,13 +32,14 @@ function validGap (g) {
     ['implemented', 'not_implemented', 'unknown'].includes(g.implementation) && Array.isArray(g.facts) && g.facts.length <= 8 &&
     g.facts.every(f => keys(f, ['need', 'operation', 'state']) && text(f.need, 1000) && (f.operation === null || text(f.operation, 160)) && STATES.includes(f.state))
 }
-// Only the existing fixed Context profile can be proposed here. External names,
-// model-selected files, unavailable credentials and permissions never qualify.
-function registeredScope (gap) {
-  return gap.kind === 'unmapped_read' && gap.capability === 'aroma_system.read'
-    ? { profile: 'context', files: [...require('../core/taskPlanner/contract').PROFILES.context] } : null
+// Only host-registered fixed profiles can be proposed here. Model-selected files,
+// unavailable credentials and permissions never grant a development scope.
+function registeredScope (gap, goal, version = 1) {
+  if (gap.kind === 'unmapped_read' && gap.capability === 'aroma_system.read') return { profile:'context', files:[...require('../core/taskPlanner/contract').PROFILES.context] }
+  if (version === 2 && gap.kind === 'unmapped_read' && (gap.capability === null || gap.capability === 'seven_shifts.read')) return require('./scopeRegistry').scopeForGoal(goal)
+  return null
 }
-function proposalFor (goal, gap, language) {
+function proposalFor (goal, gap, language, version = 1) {
   const zh = language === 'zh', needs = gap.facts.map(f => f.need)
   const diagnosis = {
     unmapped_read: zh ? '本輪未找到所需資料的已登記讀取操作；連線及權限是否足夠仍待核對。' : 'No registered read operation matched this turn. Connection and permission adequacy remain unverified.',
@@ -48,18 +49,18 @@ function proposalFor (goal, gap, language) {
     verification_unavailable: zh ? '資料需求核對不可用；先恢復核對流程。' : 'The evidence-requirement check is unavailable and must be restored first.',
     unknown: zh ? '所需證據不足，尚未確認缺口根因。' : 'Required evidence is missing; the cause of the gap is not established.'
   }[gap.kind]
-  const scope = registeredScope(gap)
+  const scope = registeredScope(gap, goal, version)
   return {
     goal, needs, diagnosis,
     steps: zh ? [
       '核對上述資料需求、現有能力登記、連線及本輪讀取授權，先區分缺功能、路由問題與讀取失敗。',
       gap.kind === 'not_authorised' ? '列明缺少的授權及最小讀取範圍，交由 Owner 決定；不自動開權限。' : gap.kind === 'source_unavailable' || gap.kind === 'verification_unavailable' ? '先定位並恢復已存在的讀取或核對流程；只有證據確認需要改程式才提出開發。' : '已有來源時補讀取轉接或路由；沒有來源時先提出唯讀整合及所需授權，API 與 scope 必須另行核實。',
-      scope ? '在已登記 Context 檔案範圍內規劃修正，沿用受保護測試及現有開發、審閱、採納流程。' : '建立保留原要求與驗收條件的開發交接草稿；登記固定修改範圍後才可派工。',
+      scope ? scope.profile === 'seven_shifts' ? '在已登記 7shifts 唯讀檔案範圍內規劃補強；保留原要求，打卡批核不在此開發範圍。沿用受保護測試、審閱及採納流程。' : '在已登記 Context 檔案範圍內規劃修正，沿用受保護測試及現有開發、審閱、採納流程。' : '建立保留原要求與驗收條件的開發交接草稿；登記固定修改範圍後才可派工。',
       '以原要求驗證讀取結果，成功後接續原問題；業務寫入仍需獨立批准。'
     ] : [
       'Check the listed evidence needs, registered capabilities, connection and turn-level read authority; distinguish missing implementation, routing and read failure.',
       gap.kind === 'not_authorised' ? 'Describe the minimum missing read authorisation for Owner review; never grant it automatically.' : gap.kind === 'source_unavailable' || gap.kind === 'verification_unavailable' ? 'Diagnose and restore the existing reader or verification path before proposing code changes.' : 'Reuse an existing reader or route where possible; otherwise propose a read-only integration and verify its API and scopes separately.',
-      scope ? 'Plan within the registered Context files and reuse protected tests, development review and adoption.' : 'Create a development handoff draft preserving the request and acceptance criteria; register a fixed scope before dispatch.',
+      scope ? scope.profile === 'seven_shifts' ? 'Plan within the registered GET-only 7shifts reader file, retaining the original request. Punch approval is outside this scope. Reuse protected tests, review and adoption.' : 'Plan within the registered Context files and reuse protected tests, development review and adoption.' : 'Create a development handoff draft preserving the request and acceptance criteria; register a fixed scope before dispatch.',
       'Verify the reader against the original request, then continue it. Business writes require separate approval.'
     ],
     criteria: zh ? ['用原要求取得可核實的資料，說明來源、查詢範圍及不足。', '中英文使用同一缺口判斷；讀取失敗不誤報未實作。', '未批准不派工；不新增憑證、權限或業務寫入；回覆不聲稱未完成的工作已成功。'] : ['Obtain verifiable evidence for the original request, showing sources, scope and gaps.', 'Use the same gap states in English and Chinese; a read failure is not missing implementation.', 'No dispatch before approval, no new credentials or privileges or business writes, and no unverified completion claims.'],

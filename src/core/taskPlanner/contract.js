@@ -1,15 +1,17 @@
 'use strict'
 const { createHash } = require('node:crypto')
 const PROFILES = Object.freeze({
+  seven_shifts: require('../../capabilities/scopeRegistry').SEVEN_FILES,
   context: Object.freeze(['src/context/contextResult.js', 'src/context/toolGateway.js']),
   interface: Object.freeze(['src/demo/assets/sidebar.js', 'src/demo/assets/sidebar.css']),
   chat: require('../projectTasks/chatProfile').CHAT_FILES
 })
-const READ_PROFILES = Object.freeze({ ...PROFILES, interface: Object.freeze([...PROFILES.interface, 'src/demo/assets/index.html', 'src/demo/assets/app.js', 'src/demo/assets/app.css']) })
+const READ_PROFILES = Object.freeze({ ...PROFILES, seven_shifts: Object.freeze([...PROFILES.seven_shifts, ...require('../../capabilities/scopeRegistry').SEVEN_DEPENDENCIES]), interface: Object.freeze([...PROFILES.interface, 'src/demo/assets/index.html', 'src/demo/assets/app.js', 'src/demo/assets/app.css']) })
 const hash = value => createHash('sha256').update(value).digest('hex')
 const exact = (v, keys) => !!v && typeof v === 'object' && !Array.isArray(v) && Object.keys(v).sort().join(',') === keys.slice().sort().join(',')
 function classify (message) {
   if (typeof message !== 'string' || !message.trim() || message.length > 1500) return null
+  if (message.trim() === 'plan Imagine seven_shifts reader improvements') return { profile:'seven_shifts' }
   // An explicit current-message planning request, never instructions in history.
   const improvement = message.trim().match(/^(?:(?:香香|Imagine|Xiangxiang)[，,：:\s]*)?(?:請)?幫我(?:改善|改良|修正|開發|新增)(.+)$/iu)
   // Established exact repair commands retain their existing Owner approval lane.

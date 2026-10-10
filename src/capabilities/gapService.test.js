@@ -12,7 +12,7 @@ function fixture (options = {}) {
   const planner = {start:(a,v)=>{ starts.push(v); return {id:randomUUID(),profile:'context'} },get:()=>options.plan || null}
   const dependencies = {store,conversations,revision:REV,planner,now:()=>time,verifyLoaded:async()=>options.proof || null,resumeOriginal:async v=>{reads++; if(options.wait)await options.wait; return options.result || {mode:'chat',reply:'Fresh read result.',tasks:[],decision:null} }}
   const service = createGapService(dependencies), cid = randomUUID()
-  function offer (g = gap(), message = 'Find employee clock-out times in 7shifts.') {
+  function offer (g = gap(), message = 'Find employee clock-out times in an unregistered workforce system.') {
     const r = service.offer(OWNER,{conversationId:cid,requestId:randomUUID(),message,gap:g,model:'claude-opus-5-5',effort:'medium'})
     conversations.appendTurn({id:cid,userText:message,replyText:'Proposal displayed',capabilityGapRunId:r.id})
     return r

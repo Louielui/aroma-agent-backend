@@ -1,5 +1,10 @@
 # Capability Gap Resolution v1
 
+Update: the later [development handoff slice](CAPABILITY-GAP-DEVELOPMENT-HANDOFF-V1.md)
+registers a fixed 7shifts reader profile with fresh approval for old pending tasks.
+The original slice below describes its earlier scope; live 7shifts connection
+acceptance remains incomplete.
+
 The intake reports a host-judged capability/evidence gap rather than an empty-turn
 failure. A saved proposal retains the original Owner request and required facts.
 The chat card shows the cause that is established, solution steps, acceptance,

@@ -22,7 +22,7 @@ function createGapService ({ store = createMemoryRunStore(), conversations, revi
   function checked (id) {
     if (!ID.test(id || '')) throw Error('invalid_request')
     const r = store.get(id)
-    if (!r || r.version !== 1 || !validGap(r.gap) || r.proposalHash !== seal(r) || JSON.stringify(r.proposal) !== JSON.stringify(proposalFor(r.originalGoal, r.gap, r.language))) throw Error('proposal_unavailable')
+    if (!r || ![1,2].includes(r.version) || !validGap(r.gap) || r.proposalHash !== seal(r) || JSON.stringify(r.proposal) !== JSON.stringify(proposalFor(r.originalGoal, r.gap, r.language,r.version))) throw Error('proposal_unavailable')
     return r
   }
   function latest (r) {
@@ -30,10 +30,10 @@ function createGapService ({ store = createMemoryRunStore(), conversations, revi
     if (last?.role !== 'assistant' || last.capabilityGapRunId !== r.id) throw Error('conversation_changed')
   }
   function view (r) {
-    return structuredClone({ id: r.id, version: 1, state: r.state, reason: r.reason || null, originalGoal: r.originalGoal, gap: r.gap,
+    return structuredClone({ id: r.id, version: r.version, state: r.state, reason: r.reason || null, originalGoal: r.originalGoal, gap: r.gap,
       proposal: r.proposal, proposalHash: r.proposalHash, revision: r.revision, conversationId: r.conversationId, createdAt: r.createdAt,
       taskPlanRunId: r.taskPlanRunId || null, developmentTask: r.developmentTask || null, steps: r.steps,
-      resumeResult: r.resumeResult || null, language: r.language })
+      resumeResult: r.resumeResult || null, replacementRunId:r.replacementRunId || null, language: r.language })
   }
   function offer (actor, input) {
     owner(actor)
@@ -42,8 +42,8 @@ function createGapService ({ store = createMemoryRunStore(), conversations, revi
     const identity = hash(input), prior = store.all().find(r => r.requestId === input.requestId)
     if (prior) { if (prior.identity !== identity) throw Error('request_conflict'); return view(checked(prior.id)) }
     const language = /[\u3400-\u9fff]/u.test(input.message) ? 'zh' : 'en'
-    const r = { id: randomUUID(), version: 1, workflow: 'capability_gap', requestId: input.requestId, identity, conversationId: input.conversationId,
-      originalGoal: input.message, gap: structuredClone(input.gap), proposal: proposalFor(input.message, input.gap, language), language, revision,
+    const r = { id: randomUUID(), version: 2, workflow: 'capability_gap', requestId: input.requestId, identity, conversationId: input.conversationId,
+      originalGoal: input.message, gap: structuredClone(input.gap), proposal: proposalFor(input.message, input.gap, language,2), language, revision,
       model: input.model, effort: input.effort, state: 'awaiting_approval', createdAt: new Date(now()).toISOString(), steps: [], sections: [] }
     r.proposalHash = seal(r); record(r, 'gap_observed', { kind: r.gap.kind }); record(r, 'proposal_prepared', { registeredScope: !!r.proposal.scope })
     return view(r)
@@ -66,10 +66,10 @@ function createGapService ({ store = createMemoryRunStore(), conversations, revi
     latest(r)
     if (r.approval) return { run: view(r), replayed: true }
     if (r.state !== 'awaiting_approval' || r.revision !== revision || now() - Date.parse(r.createdAt) >= TTL || now() < Date.parse(r.createdAt)) throw Error('proposal_stale')
-    const scope = registeredScope(r.gap)
+    const scope = registeredScope(r.gap,r.originalGoal,r.version)
     if (JSON.stringify(scope) !== JSON.stringify(r.proposal.scope)) throw Error('proposal_changed')
     r.approval = { hash: r.proposalHash, actor: 'owner', at: new Date(now()).toISOString(), permission: 'development_handoff_only' }
-    r.developmentTask = { id: uuidFor(hash([r.id, r.proposalHash, 'development'])), goal: r.originalGoal, steps: r.proposal.steps, criteria: r.proposal.criteria,
+    r.developmentTask = { id: uuidFor(hash([r.id, r.proposalHash, 'development'])), goal: scope ? require('./scopeRegistry').remediationGoal(scope,r.originalGoal) : r.originalGoal, steps: r.proposal.steps, criteria: r.proposal.criteria,
       scope, state: scope ? 'planning_pending' : 'awaiting_scope_registration', originalRequest: { conversationId: r.conversationId, goal: r.originalGoal },
       exclusions: ['new_credentials', 'new_permissions', 'business_writes', 'automatic_adoption', 'arbitrary_commands'] }
     r.state = scope ? 'handoff_pending' : 'awaiting_scope_registration'
@@ -79,9 +79,9 @@ function createGapService ({ store = createMemoryRunStore(), conversations, revi
         if (!planner) throw Error('planning_unavailable')
         // Scope is host-selected; the model still must inspect committed source.
         // This approval does not consume the later plan's coding or adoption approval.
-        const planningMessage = 'plan Imagine context read routing improvements'
+        const planningMessage = require('./scopeRegistry').planningMessage(scope)
         const context = require('../core/taskPlanner/dialogueContext').seal({version:1,profile:scope.profile,revision,conversationId:r.conversationId,
-          createdAt:new Date(now()).toISOString(),ownerRequests:[planningMessage,r.originalGoal],proposals:[JSON.stringify({diagnosis:r.proposal.diagnosis,steps:r.proposal.steps,criteria:r.proposal.criteria,scope})],language:r.language})
+          createdAt:new Date(now()).toISOString(),ownerRequests:[planningMessage,r.developmentTask.goal],proposals:[JSON.stringify({originalGoal:r.originalGoal,diagnosis:r.proposal.diagnosis,steps:r.proposal.steps,criteria:r.proposal.criteria,scope})],language:r.language})
         const dialogue = {context,contextDigest:context.digest,ownerRequests:context.ownerRequests,proposals:context.proposals,confirmation:message,language:r.language}
         const job = planner.start(OWNER, { message:planningMessage, dialogue, conversationId: r.conversationId,
           requestId: r.developmentTask.id, model: r.model, effort: r.effort })
@@ -112,7 +112,34 @@ function createGapService ({ store = createMemoryRunStore(), conversations, revi
         r.development = plan ? { state: plan.execution?.state || plan.state, workRunId: plan.execution?.workRunId || plan.workRunId || null } : { state: 'unavailable', workRunId: null }
       } catch (_) { r.development = { state: 'unavailable', workRunId: null } }
     }
-    return { ...view(r), ...(r.development ? { development: r.development } : {}) }
+    return { ...view(r), scopeRefreshAvailable:r.state === 'awaiting_scope_registration' && !!registeredScope(r.gap,r.originalGoal,2) && !r.replacementRunId,
+      ...(r.development ? { development: r.development } : {}) }
+  }
+  function refreshScope (actor, input) {
+    owner(actor)
+    if (!keys(input,['id','conversationId','hash']) || !isValidId(input.conversationId)) throw Error('invalid_request')
+    const old = checked(input.id)
+    if (old.conversationId !== input.conversationId || old.proposalHash !== input.hash) throw Error('proposal_changed')
+    const attachRefresh = row => append(row,row.language === 'zh' ? '更新補強方案' : 'Refresh remediation scope',row.language === 'zh' ? '固定唯讀開發範圍已登記。請核對新方案；舊批准不會套用到新增範圍。' : 'A fixed read-only development scope is now registered. Review the new proposal; prior approval does not cover the new scope.')
+    if (old.replacementRunId) {
+      const row = checked(old.replacementRunId)
+      if (row.conversationId !== old.conversationId || row.originalGoal !== old.originalGoal) throw Error('proposal_changed')
+      // A crash between saving the replacement and attaching its card is recoverable
+      // without any model call. Do not attach over a newer Owner conversation turn.
+      const last = conversations.get(old.conversationId)?.messages?.at(-1)
+      if (last?.role === 'assistant' && last.capabilityGapRunId === old.id) attachRefresh(row)
+      return {run:get(actor,row.id),replayed:true}
+    }
+    latest(old)
+    if (old.state !== 'awaiting_scope_registration' || !registeredScope(old.gap,old.originalGoal,2)) throw Error('scope_unavailable')
+    // New files/revision => a new proposal hash and NEW approval. Never upgrade
+    // the old receipt into authority or repeat paid planning after a lost response.
+    const next = offer(actor,{conversationId:old.conversationId,requestId:uuidFor(hash([old.id,old.proposalHash,revision,'scope-refresh'])),
+      message:old.originalGoal,gap:old.gap,model:old.model,effort:old.effort})
+    old.replacementRunId = next.id; record(old,'scope_proposal_refreshed',{replacementRunId:next.id,approvalTransferred:false})
+    const row = checked(next.id)
+    attachRefresh(row)
+    return {run:view(row)}
   }
   async function status (actor, id) {
     const v = get(actor, id)
@@ -167,6 +194,6 @@ function createGapService ({ store = createMemoryRunStore(), conversations, revi
     })()
     return work
   }
-  return { offer, approve, get, status, resume, candidate, confirm }
+  return { offer, approve, refreshScope, get, status, resume, candidate, confirm }
 }
 module.exports = { createGapService, confirmation, loadedProof }

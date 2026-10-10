@@ -4,7 +4,7 @@ const INSTRUCTION = 'Assess capability for the ENTIRE Owner request before propo
 function capabilities (profile) {
   return {
     editableFiles: [...PROFILES[profile]],
-    allowed: profile === 'interface' ? ['Rearrange existing navigation, menus and sidebar layout', 'Preserve existing destinations and handlers'] : profile === 'chat' ? ['Improve existing chat page layout and browser behavior using existing endpoints'] : ['Repair existing read-only context result and gateway behavior'],
+    allowed: profile === 'seven_shifts' ? ['Improve the existing fixed GET-only time-punch reader within its single editable file', 'Preserve company binding, bounded windows, safe failures, evidence coverage and existing authorisation'] : profile === 'interface' ? ['Rearrange existing navigation, menus and sidebar layout', 'Preserve existing destinations and handlers'] : profile === 'chat' ? ['Improve existing chat page layout and browser behavior using existing endpoints'] : ['Repair existing read-only context result and gateway behavior'],
     unavailable: ['New backend routes or durable storage outside the editable files', 'New source connectors or expanded source permissions', 'Changes to read-only dependencies or translation catalogues', 'Production business-data writes, sending mail, automatic adoption or deployment'],
     verification: {
       source: 'Exact editable allowlist and protected before/after file hashes; deterministic Node assertions of requested changes.',

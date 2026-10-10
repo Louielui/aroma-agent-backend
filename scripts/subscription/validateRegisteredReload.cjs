@@ -4,7 +4,7 @@ const { execFileSync } = require('node:child_process')
 const root = path.resolve(__dirname, '../..'), id = process.argv[2]
 assert.match(id || '', /^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/)
 // Verify required host code before importing it in the administrator process.
-for (const name of ['src/core/projectTasks/contract.js', 'src/core/projectWork/contract.js', 'src/core/operating/runStore.js', 'src/workers/execution/windowsSandbox.js', 'src/store/dataDir.js']) {
+for (const name of ['src/core/projectTasks/contract.js', 'src/capabilities/scopeRegistry.js', 'src/core/projectWork/contract.js', 'src/core/operating/runStore.js', 'src/workers/execution/windowsSandbox.js', 'src/store/dataDir.js']) {
   const file = path.join(root, name), st = fs.lstatSync(file)
   assert.ok(st.isFile() && !st.isSymbolicLink() && st.nlink === 1)
   assert.equal(fs.readFileSync(file, 'utf8').replace(/\r\n/g, '\n'), execFileSync('git', ['--no-replace-objects', '-C', root, 'show', 'HEAD:' + name], { windowsHide: true, encoding: 'utf8' }).replace(/\r\n/g, '\n'))

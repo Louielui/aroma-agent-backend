@@ -366,6 +366,7 @@ const capQuery = (q) => (q.length <= CAPS.maxQueryChars ? q : q.slice(0, CAPS.ma
  * routingGovernsReads.test.js fails if one ever does.
  */
 const INTENTS = Object.freeze([
+  { key: 'time_punch', method: null, cjk: ['7shifts', '7shift'], latin: ['7shifts', '7shift'], sources: ['seven_shifts'], heading: '7shifts 打卡紀錄', unit: '筆', noun: '打卡', defaultQuestion: '要查哪個員工及日期範圍？' },
   { key: 'invoice', method: 'listInvoices', cjk: ['發票', 'invoice'], latin: ['invoice', 'invoices', 'bill', 'bills'], sources: ['aroma_system'], heading: '最近發票', unit: '張', noun: '發票', defaultQuestion: '要我整理餐廳系統內全部待審批發票嗎？' },
   { key: 'purchase_order', method: 'listPurchaseOrders', cjk: ['採購單', '訂單', '入貨單', '採購'], latin: ['purchase order', 'purchase orders', 'po', 'pos'], sources: ['aroma_system'], heading: '採購單', unit: '張', noun: '採購單', defaultQuestion: '要我列出未收貨嘅採購單嗎？' },
   { key: 'daily_count', method: 'listDailyCounts', cjk: ['盤點', '點存', '點貨', '數貨'], latin: ['daily count', 'daily counts', 'stocktake', 'stock take', 'count', 'counts'], sources: ['aroma_system'], heading: '盤點紀錄', unit: '次', noun: '盤點', defaultQuestion: '要我睇邊個位置嘅盤點？' },
@@ -538,6 +539,17 @@ function planFor (source, { keywords = [], message = '', now, env = {}, caps = C
   // Intent is read from what the Owner actually typed; the keywords are the fallback for
   // callers that only have them (the extractor drops the very terms routing needs).
   const matchText = String(message || '') || keywords.join(' ')
+
+  if (source === 'seven_shifts') {
+    // An explicitly bounded date range or a disclosed seven-day recent window.
+    // The host chooses the query; model text cannot supply a URL, token or method.
+    const dates = matchText.match(/\b\d{4}-\d{2}-\d{2}\b/g) || []
+    if (dates.some(date => { const value = new Date(date + 'T00:00:00Z'); return !Number.isFinite(value.getTime()) || value.toISOString().slice(0,10) !== date })) return null
+    const end = dates.length ? new Date(dates[dates.length - 1] + 'T23:59:59.999Z') : new Date(now)
+    const start = dates.length ? new Date(dates[0] + 'T00:00:00Z') : new Date(end.getTime() - 7 * 86400000)
+    if (!Number.isFinite(start.getTime()) || !Number.isFinite(end.getTime())) return null
+    return {method:'listTimePunches',params:{timeMin:start.toISOString(),timeMax:end.toISOString()}}
+  }
 
   if (source === 'drive') {
     const recent = { method: 'listFiles', params: { pageSize: n, orderBy: 'modifiedTime desc' } }

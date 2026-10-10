@@ -12,7 +12,7 @@ function fixture(options={}){
     const b=opts.body?JSON.parse(opts.body):null;calls.push({url,body:b,credentials:opts.credentials,redirect:opts.redirect})
     if(!b&&options.waitRead)await options.waitRead
     if(b&&options.failWrite)throw Error('response lost')
-    if(b)row={...row,state:b.op==='approve'?'awaiting_scope_registration':'completed',...(b.op==='resume'?{resumeResult:{reply:'verified original result'}}:{})}
+    if(b)row=b.op==='refreshScope'&&options.refreshRow ? options.refreshRow : {...row,state:b.op==='approve'?'awaiting_scope_registration':'completed',...(b.op==='resume'?{resumeResult:{reply:'verified original result'}}:{})}
     return {ok:true,json:async()=>({run:row})}
   }}
   vm.runInNewContext(fn+';renderCapabilityGap({body},runId,initial,conv)',sandbox)
@@ -28,6 +28,15 @@ test('gap UI shows a readable original goal and safe text, asks for exact scope 
   const writes=f.calls.filter(c=>c.body);assert.equal(writes.length,1);assert.deepEqual(writes[0].body,{op:'approve',id:f.id,conversationId:f.cid,hash:'a'.repeat(64)})
   assert.equal(writes[0].credentials,'same-origin');assert.equal(writes[0].redirect,'error');assert.match(f.confirms[0],/gap.scopePending/)
   assert.ok(f.nodes().some(n=>n.textContent==='gap.awaitingScopeRegistration'));assert.equal(f.nested.length,0);assert.equal(f.button('gap.resume'),undefined)
+})
+
+test('refreshing a scope uses the new proposal id and hash for subsequent approval',async()=>{
+  const id=randomUUID(),newHash='b'.repeat(64),gap=detectGap({reason:'no_mapped_operation',state:{facts:[]}})
+  const next={id,state:'awaiting_approval',originalGoal:'Find 7shifts clock-out',proposal:proposalFor('Find 7shifts clock-out',gap,'en',2),proposalHash:newHash,steps:[]}
+  const f=fixture({row:{state:'awaiting_scope_registration',scopeRefreshAvailable:true},refreshRow:next});await f.flush()
+  await f.button('gap.refreshScope').events.click();assert.ok(f.button('gap.approve'))
+  await f.button('gap.approve').events.click()
+  const writes=f.calls.filter(c=>c.body);assert.equal(writes.length,2);assert.equal(writes[1].body.id,id);assert.equal(writes[1].body.hash,newHash)
 })
 test('cancelled confirmation, topic change and restored history never approve or execute automatically',async()=>{
   const cancel=fixture({cancel:true});await cancel.flush();await cancel.button('gap.approve').events.click();assert.equal(cancel.calls.filter(c=>c.body).length,0)
