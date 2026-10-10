@@ -97,7 +97,10 @@ proposal or lost bridge ticket cannot be implicitly rebound or auto-approved.
 
 After rendering the exact target, action, impact and rollback, the active visible
 UI acknowledges the proposal ID and sealed hash using `present`. This does not
-execute anything. Only the host's typed-confirmation path can use the internal
+execute anything. Repeated presentation of the same sealed proposal is idempotent:
+the live ticket, expiry, conversation and proposal hash are still checked, but
+re-rendering does not append another audit event or refresh its presentation time.
+Only the host's typed-confirmation path can use the internal
 `chat_approve_displayed`; the public chat and generic center refuse that operation.
 The bridge requires the matching presentation, still-live one-use ticket, sealed
 context/hash, fresh preflight and independent Windows read-back as before.

@@ -92,7 +92,9 @@ function createGateway ({ store = require('./store').createStore(), scheduler = 
         const live=chatView(r)
         if(!live.nonce||r.hash!==b.hash||proposalHash(r)!==r.hash)throw Error('approval_unavailable')
         if(op==='present'){
-          r.presentation={hash:r.hash,at:new Date(now()).toISOString()};record(r,'presented',{proposalHash:r.hash,context})
+          // Re-rendering the same sealed proposal is acknowledgement, never new authority.
+          // The live ticket, expiry, context and hash checks above still run on every call.
+          if(r.presentation?.hash!==r.hash){r.presentation={hash:r.hash,at:new Date(now()).toISOString()};record(r,'presented',{proposalHash:r.hash,context})}
           return {presented:true,id:r.id,hash:r.hash}
         }
         if(r.presentation?.hash!==r.hash)throw Error('presentation_required')

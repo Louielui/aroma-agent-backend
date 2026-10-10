@@ -96,3 +96,18 @@ test('lost bridge reply after dispatch reports uncertainty rather than falsely s
  const r=await chat.start({message:'I confirm the previous resume proposal',conversationId:f.cid,requestId:randomUUID()})
  assert.equal(f.writes(),1);assert.equal(r.actionContinuation.state,'outcome_unknown');assert.match(r.reply,/未確認|unconfirmed/);assert.doesNotMatch(r.reply,/尚未執行|Nothing executed/)
 })
+
+test('repeated display acknowledgement preserves the exact proposal and cannot refresh expired authority', async () => {
+ const f=fixture();await f.start('Resume ActionGatewayAcceptance');const p=await f.latest();await f.present(p)
+ const before=structuredClone(f.rows.get(p.id));f.tick(1000)
+ await Promise.all(Array.from({length:4},()=>f.present(p)))
+ assert.deepEqual(f.rows.get(p.id).timeline,before.timeline)
+ assert.deepEqual(f.rows.get(p.id).presentation,before.presentation)
+ assert.equal(f.writes(),0)
+ await assert.rejects(f.chat.handle({op:'present',conversationId:f.cid,investigationId:p.context.investigationId,id:p.id,hash:'0'.repeat(64)}),/approval_unavailable/)
+ await assert.rejects(f.chat.handle({op:'present',conversationId:randomUUID(),investigationId:p.context.investigationId,id:p.id,hash:p.hash}),/investigation_unavailable/)
+ f.tick(600001)
+ await assert.rejects(f.present(p),/approval_unavailable/)
+ assert.equal(f.writes(),0)
+ assert.deepEqual(f.rows.get(p.id).presentation,before.presentation)
+})
