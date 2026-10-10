@@ -26,6 +26,25 @@ test('schema rejects extra authority, invented quotes and tampered source hashes
   r.citations[0].quote = 'invented'; assert.equal(validateResult(r, p.evidence), false)
   p.evidence.files[0].content += 'changed'; assert.throws(() => validatePacket(p, 'context'), /context_unavailable/)
 })
+test('rejected planner output records the failing contract boundary without retaining model content or dispatching work', async () => {
+  const f = fixture({ complete: async () => ({ ...result(packet()), acceptanceChecks: Array(9).fill('A bounded check') }) })
+  const r = f.service.start(OWNER, f.input); await f.service.wait(r.id)
+  const saved = f.service.get(OWNER, r.id)
+  assert.equal(saved.reason, 'invalid_worker_result')
+  assert.deepEqual(saved.resultValidation, { valid: false, boundary: 'acceptanceChecks' })
+  assert.equal(saved.result, null); assert.equal(f.counts.model, 1); assert.equal(f.counts.prepare, 0)
+  assert.equal(JSON.stringify(saved).includes('A bounded check'), false)
+})
+test('planner provider schema and instructions expose the enforced size limits', () => {
+  const { SCHEMA, SYSTEM, resultValidation } = require('./contract')
+  for (const field of ['steps', 'acceptanceChecks', 'questions', 'risks', 'citations']) assert.equal(SCHEMA.properties[field].maxItems, 8)
+  assert.equal(SCHEMA.properties.goal.maxLength, 2000)
+  assert.match(SYSTEM, /at most 8/)
+  const p = packet(), r = result(p)
+  assert.deepEqual(resultValidation(r, p.evidence), { valid: true })
+  r.citations[0].endLine = 27
+  assert.deepEqual(resultValidation(r, p.evidence), { valid: false, boundary: 'citations' })
+})
 test('source-bound read-only plan requires independent preparation and never persists nonce', async () => {
   const f = fixture(), r = f.service.start(OWNER, f.input); await f.service.wait(r.id)
   const plan = f.service.get(OWNER, r.id); assert.equal(plan.state, 'completed'); assert.equal(plan.verification.testsExecuted, false); assert.equal(f.counts.prepare, 0); assert.equal(plan.executableRecipe, FAILURE_RECIPE)

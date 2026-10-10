@@ -1640,7 +1640,8 @@
       if (r.scopeRefreshAvailable === true) button(t('gap.refreshScope'),'refreshScope')
       if (r.resumeAvailable === true && !r.resumeResult) button(t('gap.resume'),'resume')
       else if (r.development && r.development.state === 'completed' && !r.resumeResult) content.appendChild(el('p','meta',t('gap.unverified')))
-      if (r.taskPlanRunId && childId !== r.taskPlanRunId) { nested.replaceChildren(); childId = r.taskPlanRunId; renderTaskPlan({body:nested},childId) }
+      var currentPlanId = r.development && r.development.taskPlanRunId || r.taskPlanRunId
+      if (currentPlanId && childId !== currentPlanId) { nested.replaceChildren(); childId = currentPlanId; renderTaskPlan({body:nested},childId) }
       var log = el('details'); log.appendChild(el('summary','',t('gap.details'))); log.appendChild(el('pre','',JSON.stringify({needs:r.proposal.needs,criteria:r.proposal.criteria,task:r.developmentTask,steps:r.steps},null,2))); content.appendChild(log)
       if (r.resumeResult) content.appendChild(el('p','',r.resumeResult.reply))
     }

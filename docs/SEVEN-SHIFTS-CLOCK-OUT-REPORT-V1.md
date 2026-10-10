@@ -34,6 +34,12 @@ gap. Continuation follows only saved replacement links retaining the conversatio
 scope, model, effort and sealed requests. Cycles or a changed goal are rejected;
 the replacement still requires its own exact coding approval and loaded proof.
 
+Rejected planning responses remain non-executable. The model schema now exposes
+the existing eight-item and text limits, and the planner records only the failing
+contract field, never the rejected model content. Citation spans and quotes still
+require independent source validation. This fixes the diagnostic gap; it does not
+establish why an older discarded response was rejected or prove reader acceptance.
+
 References:
 - [List Time Punches](https://developers.7shifts.com/reference/gettimepunches)
 - [Retrieve User](https://developers.7shifts.com/reference/getuser)

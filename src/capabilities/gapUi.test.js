@@ -58,3 +58,7 @@ test('registered planning embeds the existing progress card without coding comma
   let release;const waitRead=new Promise(r=>{release=r}),race=fixture({waitRead});await race.button('gap.approve').events.click();release();await race.flush()
   assert.ok(race.nodes().some(n=>n.textContent==='gap.awaitingScopeRegistration'));assert.equal(race.button('gap.approve'),undefined)
 })
+test('a restored gap displays its verified replacement plan rather than the failed original card',async()=>{
+  const oldId=randomUUID(),nextId=randomUUID(),f=fixture({history:true,row:{state:'development_planning',taskPlanRunId:oldId,development:{state:'coding',taskPlanRunId:nextId,workRunId:randomUUID()}}})
+  await f.flush();assert.deepEqual(f.nested,[nextId]);assert.equal(f.calls.filter(c=>c.body).length,0)
+})

@@ -1,6 +1,6 @@
 'use strict'
 const { randomUUID } = require('node:crypto'), { ID } = require('../operating/runStore')
-const { classify, SYSTEM, SCHEMA, validatePacket, validateResult, hash } = require('./contract')
+const { classify, SYSTEM, SCHEMA, validatePacket, validateResult, resultValidation, hash } = require('./contract')
 const { PROJECT, FAILURE_RECIPE } = require('../projectWork/contract')
 const { register } = require('../../capability/registry'), { registerAgent } = require('../../capability/agents')
 const { evaluate } = require('../../capability/policy'), { createDispatcher } = require('../../capability/dispatcher')
@@ -56,7 +56,8 @@ function createPlanner ({ source, provider, providerFor, store, bootCommit, prep
             const response = await step(() => runProvider.complete(JSON.stringify({ request: r.message, ...(r.dialogue ? { dialogue: r.dialogue } : {}), capabilities: require('./capabilities').capabilities(r.profile), evidence: numbered }), { system: require('../../design/uiDesign').systemFor(SYSTEM + ' ' + require('./capabilities').INSTRUCTION, r.profile), signal: c.abort.signal, responseFormat: { type: 'json_schema', name: 'task_plan', schema: SCHEMA } }))
             if (response?.model !== r.model || response.billing !== r.billing || typeof response.text !== 'string' || response.text.length > 40000) throw Error('invalid_worker_result')
             let result; try { result = JSON.parse(response.text) } catch (_) { throw Error('invalid_worker_result') }
-            if (!validateResult(result, evidence, { requireCapability: true, requireSelection: true })) throw Error('invalid_worker_result')
+            const validation = resultValidation(result, evidence, { requireCapability: true, requireSelection: true })
+            if (!validation.valid) { r.resultValidation = validation; record(r, 'result_rejected'); throw Error('invalid_worker_result') }
             return { ok: true, output: result, cost: null, latencyMs: response.latencyMs ?? null }
           } catch (e) { return { ok: false, error: safe(e), cost: null } }
         }
