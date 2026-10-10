@@ -77,7 +77,8 @@ const CLASS = Object.freeze({
 const FILE_CLASS = Object.freeze({
   'investigation/ownerBrief.js': CLASS.INTERFACE,
   'actions/view.js': CLASS.INTERFACE,
-  'actions/chat.js': CLASS.INTERFACE,
+    'actions/chat.js': CLASS.INTERFACE,
+    'actions/understanding.js': CLASS.MODEL, // Structured interpretation prompt and bounded input matching; no display strings.
   'investigation/workCorrelation.js': CLASS.INTERFACE, // Receipt-bound bilingual explanation; identities are compared without language matching.
   'investigation/repairChainView.js': CLASS.INTERFACE, // Fixed bilingual stage labels, never source routing.
   'investigation/enquiryOffer.js': CLASS.MODEL,

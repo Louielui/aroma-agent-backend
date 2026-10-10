@@ -577,12 +577,12 @@ function createDemoRouter ({ getAdapterFn = getAdapterForLane, processIntakeFn =
       // navigation labels and chat history are not requests to read a mailbox.
       // A semantic topic change returns null and preserves ordinary mail routing.
       const planningLane = !contextCard && !req.body.attachSection && (!req.body.interactionMode || req.body.interactionMode === 'chat')
-      if (planningLane && schedulerChat && schedulerChat.candidate(message,req.body.conversationId)) {
+      if (planningLane && schedulerChat && schedulerChat.candidate(message,req.body.conversationId,req.body.websiteRequestId || req.body.workflowRequestId)) {
         if (!require('../core/operating/chatRequest').sameOrigin(req)) return res.status(403).json({ error:'same_origin_required' })
         const allowed=['message','conversationId','workflowRequestId','websiteRequestId','history','providerHint','previousLane','chatLevel','chatModel','interactionMode']
         if(Object.keys(req.body).some(k=>!allowed.includes(k)))return res.status(400).json({error:'invalid_request'})
         try {
-          const answer=await schedulerChat.start({message,conversationId:req.body.conversationId,requestId:req.body.websiteRequestId || req.body.workflowRequestId})
+          const answer=await schedulerChat.start({message,conversationId:req.body.conversationId,requestId:req.body.websiteRequestId || req.body.workflowRequestId,model:req.body.chatModel,effort:req.body.chatLevel})
           if(answer){emit('scheduler_proposal',200,null);return res.set('Cache-Control','no-store').json(answer)}
         }catch(_){return res.status(409).json({error:{message:t('actions.failure'),retryable:false}})}
       }

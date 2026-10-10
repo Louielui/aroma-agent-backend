@@ -1230,6 +1230,7 @@ function createApp (options = {}) {
   app.use(require('./actions/routes').createRouter())
   const schedulerChat = require('./actions/chat').createChatGateway({
     request: b => require('./adapters/CodexSubscriptionAdapter').localRequest('/scheduler-action', b, process.env, AbortSignal.timeout(60000)),
+    ...(process.env.CHAT_BACKEND === 'codex-subscription' ? { providerFor: settings => new (require('./adapters/CodexSubscriptionAdapter').CodexSubscriptionAdapter)(settings) } : {}),
     receipts: require('./investigation/receipts').createReceipts(), conversations: capturedConversationStore
   })
   app.use(require('./actions/chatRoutes').createChatRouter({chat:schedulerChat}))

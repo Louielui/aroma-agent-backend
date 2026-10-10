@@ -114,3 +114,32 @@ state. Restore only prepares a new inverse, and repeated restore queries reuse a
 existing pending proposal. The inverse must be displayed and separately approved.
 Uncertain/failed actions cannot claim success or offer an automatic rollback.
 This continuation adds no targets, model calls, permissions or arbitrary commands.
+
+## Bounded natural-language capability selection
+
+The selected request brain can interpret colloquial Chinese/English requests to
+prepare a proposal, read a saved outcome or prepare an inverse. Exact initial
+commands and explicit displayed approval retain their deterministic paths.
+Other current scheduler turns use at most one bounded structured interpretation;
+there is no background interpretation, retry loop or fallback provider. Model
+unavailability is reported, not silently redirected to GPT.
+
+The interpreter receives only the current Owner text, fixed two-target catalogue
+and sole current server-held action identity/state. Browser history, other-topic
+content, mail, shell commands, nonce and billing guesses are never supplied.
+Quoted exact names bind to catalogue entries; references like "that job" can bind
+only to a unique action in the latest saved investigation. Multiple actions or a
+missing referent require clarification. Being the only enabled task is not proof
+of identity. A saved result remains historical verification, not current state.
+
+Interpretation is NOT approval. A semantic approval result only gives instructions
+for the existing exact confirmation or approval button. Prepare always rereads
+Windows and creates a sealed proposal; it never dispatches. A matching pending
+proposal is reused. Restore prepares a separately approved inverse. Existing
+preflight, locks, nonce expiry, independent read-back and audit stay authoritative.
+
+Durable understanding receipts bind request ID, text, conversation and chosen
+model/effort before inference. Completed replays reuse the response; interrupted
+requests cannot repeat inference or proposal creation. Topic changes fall through
+to ordinary intake without carrying scheduler approval. There is no new target,
+permission, service/process stop, arbitrary shell, Gmail or database adapter.
