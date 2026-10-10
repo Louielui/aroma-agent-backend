@@ -1,9 +1,10 @@
 'use strict'
 const express=require('express'), {sameOrigin}=require('../core/operating/chatRequest'), {validInput}=require('./contract')
 const ERRORS=new Set(['invalid_request','target_not_allowed','investigation_stale','task_not_idle','target_changed','already_in_requested_state','approval_unavailable','rollback_unavailable','target_locked','audit_unavailable'])
-function createRouter ({request=b=>require('../adapters/CodexSubscriptionAdapter').localRequest('/scheduler-action',b,process.env,AbortSignal.timeout(60000))}={}) {
+function createRouter ({request=b=>require('../adapters/CodexSubscriptionAdapter').localRequest('/scheduler-action',b,process.env,AbortSignal.timeout(60000)),health=()=>require('./executionHealth').readHealth()}={}) {
   const router=express.Router()
   router.get('/action-center',(req,res)=>res.set('Cache-Control','no-store').type('html').send(require('./view').page()))
+  router.get('/api/v1/execution-health',async(req,res)=>res.set('Cache-Control','no-store').json(await health()))
   const call=async(res,b)=>{try{res.set('Cache-Control','no-store').json(await request(b))}catch(e){res.status(409).json({error:ERRORS.has(e.message)?e.message:'action_unavailable'})}}
   router.get('/api/v1/scheduler-actions',(req,res)=>call(res,{op:'list'}))
   router.post('/api/v1/scheduler-actions',(req,res)=>{

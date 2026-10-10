@@ -41,7 +41,7 @@ function createChatGateway({request,receipts,conversations,providerFor,semanticT
   return {conversationId:b.conversationId,investigationId:b.investigationId}
  }
  async function handle(b){
-  const shapes={present:['op','conversationId','investigationId','id','hash'],recommend:['op','conversationId','investigationId'],prepare_recommended:['op','conversationId','investigationId','inspectionId','targetId'],inspect:['op','conversationId','investigationId'],list:['op','conversationId','investigationId'],get:['op','conversationId','investigationId','id'],prepare:['op','conversationId','investigationId','targetId','action'],approve:['op','conversationId','investigationId','id','hash','nonce'],restore:['op','conversationId','investigationId','id']}
+  const shapes={present:['op','conversationId','investigationId','id','hash'],recommend:['op','conversationId','investigationId'],prepare_recommended:['op','conversationId','investigationId','inspectionId','targetId'],inspect:['op','conversationId','investigationId'],list:['op','conversationId','investigationId'],get:['op','conversationId','investigationId','id'],reconcile:['op','conversationId','investigationId','id'],prepare:['op','conversationId','investigationId','targetId','action'],approve:['op','conversationId','investigationId','id','hash','nonce'],restore:['op','conversationId','investigationId','id']}
   if(!b||!Object.hasOwn(shapes,b.op)||Object.keys(b).sort().join(',')!==shapes[b.op].sort().join(','))throw Error('invalid_request')
   const context=contextOf(b)
   if(b.op==='inspect')return call({op:'inspect'})
@@ -86,6 +86,12 @@ function createChatGateway({request,receipts,conversations,providerFor,semanticT
     if(parsed.kind==='ambiguous')explain('actions.continuationExplicit')
     else if(live.length>1||leaves.length>1)explain('actions.continuationMultiple')
     else if(!run)explain('actions.continuationNoContext')
+    else if(parsed.kind==='status'&&['executing','outcome_unknown'].includes(run.state)){
+     const refreshed=(await call({op:'chat_reconcile',id:run.id,context})).run
+     explain('actions.continuationUncertain',refreshed)
+     result.reply+='\n'+({MATCHES_DESIRED:t('actions.readbackMatchesDesired'),DIFFERS_FROM_DESIRED:t('actions.readbackDiffersFromDesired'),DEFINITION_CHANGED:t('actions.readbackDefinitionChanged'),NOT_IDLE:t('actions.readbackNotIdle'),UNAVAILABLE:t('actions.readbackUnavailable')})[refreshed.currentReadback.state]
+     if(refreshed.currentReadback.snapshot)result.reply+='\n'+t('actions.checkedAt',{at:refreshed.currentReadback.snapshot.at})
+    }
     else if(parsed.kind==='status')explain(run.state==='verified'?'actions.continuationVerified':run.state==='awaiting_approval'?(run.expiresAt>now()?'actions.continuationPending':'actions.continuationExpired'):'actions.continuationUncertain',run)
     else if(parsed.kind==='restore'){
      if(run.state==='awaiting_approval')explain('actions.continuationPending',run)

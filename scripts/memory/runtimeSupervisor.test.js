@@ -5,6 +5,18 @@ const { createSupervisor } = require('./runtimeSupervisor')
 const fs = require('node:fs'), os = require('node:os'), path = require('node:path')
 const { acquireLease } = require('./supervisorLease')
 const down = { state: 'unavailable', reason: 'not_running', alive: false }
+
+test('owned child exit evidence survives recovery without inventing a crash cause', async () => {
+ let now=0,alive=true,dead=false,starts=0
+ const s=createSupervisor({component:'bridge',clock:()=>now,save:()=>{},probe:async()=>alive?{state:'ready',reason:null,alive:true}:down,
+  start:()=>{starts++;return {pid:123,running:()=>!dead,exitInfo:()=>({code:17,signal:null,errorCode:null})}}})
+ alive=false;await s.tick();alive=true;now+=10000;await s.tick()
+ dead=true;alive=false;now+=10000;await s.tick()
+ assert.equal(s.status().lastExit.code,17);assert.equal(s.status().lastExit.pid,123)
+ assert.equal(s.status().lastExit.cause,'not_established')
+ dead=false;alive=true;now+=10000;await s.tick()
+ assert.equal(s.status().state,'ready');assert.equal(s.status().lastExit.code,17);assert.equal(starts,2)
+})
 test('persistent recovery continues past three failures with bounded backoff and resets after healthy operation', async () => {
   let now = 0, starts = 0, healthy = false
   const child = () => ({ pid: 100 + starts, running: () => false })

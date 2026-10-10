@@ -13,11 +13,11 @@ function validInput (b) {
     if(b.op==='chat_recommend')return Object.keys(b).sort().join(',')==='context,op'&&validContext(b.context)
     if(b.op==='chat_prepare_recommended')return Object.keys(b).sort().join(',')==='context,inspectionId,op,targetId'&&validContext(b.context)&&ID.test(b.inspectionId||'')&&TARGETS.some(t=>t.id===b.targetId)
     const op=b.op.slice(5), rest={...b,op};delete rest.context
-    return ['list','get','prepare','approve','restore'].includes(op) && validContext(b.context) && validInput(rest)
+    return ['list','get','reconcile','prepare','approve','restore'].includes(op) && validContext(b.context) && validInput(rest)
   }
-  const shapes = { inspect: ['op'], list: ['op'], get: ['op','id'], prepare: ['op','inspectionId','targetId','action'], approve: ['op','id','hash','nonce'], restore: ['op','id'] }
+  const shapes = { inspect: ['op'], list: ['op'], get: ['op','id'], reconcile: ['op','id'], prepare: ['op','inspectionId','targetId','action'], approve: ['op','id','hash','nonce'], restore: ['op','id'] }
   return !!b && !Array.isArray(b) && Object.hasOwn(shapes,b.op) && Object.keys(b).sort().join(',') === shapes[b.op].sort().join(',') &&
-    (!['get','approve','restore'].includes(b.op) || ID.test(b.id || '')) && (!b.inspectionId || ID.test(b.inspectionId)) &&
+    (!['get','reconcile','approve','restore'].includes(b.op) || ID.test(b.id || '')) && (!b.inspectionId || ID.test(b.inspectionId)) &&
     (b.op !== 'prepare' || TARGETS.some(t => t.id === b.targetId) && ['scheduler.pause','scheduler.resume'].includes(b.action) && ID.test(b.inspectionId)) &&
     (b.op !== 'approve' || HASH.test(b.hash) && /^[a-f0-9]{48}$/.test(b.nonce))
 }

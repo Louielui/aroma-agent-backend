@@ -146,3 +146,26 @@ model/effort before inference. Completed replays reuse the response; interrupted
 requests cannot repeat inference or proposal creation. Topic changes fall through
 to ordinary intake without carrying scheduler approval. There is no new target,
 permission, service/process stop, arbitrary shell, Gmail or database adapter.
+
+## Execution reliability v1
+
+The Owner-only `/api/v1/execution-health` uses an authenticated five-second live
+probe on an independent bridge lane. It does not call a provider, inspect billing,
+write a scheduler or rely on the memory database. Cached supervisor ready records
+are diagnostics only: their heartbeat and both process IDs must be live and fresh.
+The chat composer and action center refresh this status while visible.
+
+The existing Owner-session supervisor records sanitized child exit code/signal,
+keeps the last observed exit through recovery, and persists graceful shutdown and
+probe failures. It restarts only its own child under the existing backoff policy;
+foreign listeners and live dependency failures are not restart targets. Hard kill
+of the supervisor itself cannot write a shutdown record or restart itself. Owner
+Startup remains the existing entry point; the earlier exit cause remains unknown.
+
+For a dispatched action whose reply or process was lost, `reconcile` is a closed,
+Owner-only read of that exact registered target. Chat status and the no-retry button
+expose MATCHES_DESIRED / DIFFERS_FROM_DESIRED / DEFINITION_CHANGED / NOT_IDLE /
+UNAVAILABLE. Every read is freshly timed and audited. The original outcome stays
+unknown: a current state match does not prove causality. Reconciliation neither
+replays execution, restores an approval ticket, removes a crash lock nor enables
+rollback. Definition drift, stale reads and unavailable sources stay explicit.

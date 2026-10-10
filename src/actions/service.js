@@ -67,6 +67,22 @@ function createGateway ({ store = require('./store').createStore(), scheduler = 
     if(o?.state!=='CONFIRMED'||o.snapshot.definitionHash!==old.after.definitionHash||o.snapshot.enabled!==old.after.enabled)throw Error('target_changed')
     return prepare({inspectionId:i.id,targetId:old.target.id,action:old.rollback.capability},id,context)
   }
+  async function reconcile(id){
+    const r=store.get(id)
+    if(!r||!['executing','outcome_unknown'].includes(r.state)||r.hash!==proposalHash(r)||!TARGETS.some(t=>t.id===r.target?.id)||r.timeline.filter(e=>e.phase==='dispatched').length!==1)throw Error('reconciliation_unavailable')
+    if(busy.has(r.target.id))throw Error('target_locked')
+    const evidence={at:new Date(now()).toISOString(),state:'UNAVAILABLE',provesOriginalExecution:false}
+    try{
+      const snapshot=await scheduler.read(r.target.id)
+      if(!current(snapshot))throw Error('invalid_scheduler_receipt')
+      evidence.snapshot=snapshot
+      evidence.state=snapshot.definitionHash!==r.expected.definitionHash?'DEFINITION_CHANGED':!idle(snapshot)?'NOT_IDLE':snapshot.enabled===r.desiredEnabled?'MATCHES_DESIRED':'DIFFERS_FROM_DESIRED'
+    }catch(_){}
+    // Current state does not prove who changed it or recover old approval.
+    // Preserve crash locks. This read cannot apply, release a lock or allow rollback.
+    r.state='outcome_unknown';r.currentReadback=evidence;record(r,'reconciled',{evidence})
+    return view(r)
+  }
   function proposalHash(r){return hash({target:r.target,capability:r.capability,expected:r.expected,desiredEnabled:r.desiredEnabled,inspectionId:r.inspectionId,restoreOf:r.restoreOf,expiresAt:r.expiresAt,...(r.context?{context:r.context}:{}),...(r.recommendation?{recommendation:r.recommendation}:{})})}
   async function verifyRecommendation(r){const i=await inspect(),a=require('./recommendations').assess(i,now()),v=a.recommendations.find(x=>x.targetId===r.target.id&&x.survivorId===r.recommendation.survivorId&&x.evidenceHash===r.recommendation.evidenceHash);if(!v)throw Error('target_changed')}
   function chatView(r){const v=view(r);if(v?.state==='awaiting_approval'&&v.expiresAt>now()&&approvals.validSession(sessions.get(v.id))&&approvals.loadSealed(v.id).ok&&tickets.has(v.id))v.nonce=tickets.get(v.id);return v}
@@ -88,6 +104,7 @@ function createGateway ({ store = require('./store').createStore(), scheduler = 
       const r=store.get(b.id)
       if(!r?.context||hash(r.context)!==hash(context))throw Error('approval_unavailable')
       if(op==='get')return {run:chatView(r)}
+      if(op==='reconcile')return {run:await reconcile(b.id)}
       if(op==='present'||op==='approve_displayed'){
         const live=chatView(r)
         if(!live.nonce||r.hash!==b.hash||proposalHash(r)!==r.hash)throw Error('approval_unavailable')
@@ -108,6 +125,7 @@ function createGateway ({ store = require('./store').createStore(), scheduler = 
     if(b.op==='inspect')return {inspection:await inspect()}
     if(b.op==='list')return {targets:TARGETS,runs:store.list().map(view),duplicateState:'UNKNOWN'}
     if(b.op==='get')return {run:view(store.get(b.id))}
+    if(b.op==='reconcile')return {run:await reconcile(b.id)}
     if(b.op==='prepare')return {run:await prepare(b)}
     if(b.op==='approve')return {run:await approve(b)}
     return {run:await restore(b.id)}

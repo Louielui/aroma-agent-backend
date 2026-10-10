@@ -5,12 +5,13 @@ const { acquireLease } = require('./supervisorLease')
 const { probeBridge, probeHindsight } = require('../../src/memory/serviceHealth')
 function startOwned({ entry, cwd, env = process.env, executable = process.execPath, launch = spawn, platform = process.platform }) {
   const processHandle = launch(executable, [entry], { cwd, env, windowsHide: true, stdio: 'ignore' })
-  let exited = false
-  processHandle.once('exit', () => { exited = true })
-  processHandle.once('error', () => { exited = true })
+  let exited = false, exit = null
+  processHandle.once('exit', (code, signal) => { exited = true; if(!exit)exit={code:Number.isInteger(code)?code:null,signal:['SIGTERM','SIGINT','SIGKILL','SIGABRT'].includes(signal)?signal:null,errorCode:null} })
+  processHandle.once('error', error => { exited = true; exit={code:null,signal:null,errorCode:['ENOENT','EACCES','EPERM'].includes(error?.code)?error.code:'spawn_failed'} })
   return {
     pid: processHandle.pid,
     running: () => !exited,
+    exitInfo: () => exit && { ...exit },
     async stop() {
       if (exited) return true
       if (!Number.isInteger(processHandle.pid)) return false
@@ -32,25 +33,32 @@ async function run(component) {
   const dir = path.join(process.env.LOCALAPPDATA || path.join(require('node:os').homedir(), 'AppData', 'Local'), 'AromaXiangXiang', 'memory-supervisors')
   const lease = acquireLease({ dir, component })
   if (!lease) return
-  let stopping = false
+  let stopping = false, stopReason = 'lease_lost'
   const pulse = setInterval(() => { try { if (!lease.renew()) stopping = true } catch (_) { stopping = true } }, 10000)
   const entry = component === 'bridge' ? path.join(repo, 'scripts', 'subscription', 'startBridge.js') : path.join(repo, 'scripts', 'memory', 'startHindsight.cjs')
-  const supervisor = createSupervisor({ component,
+  const save = value => {
+    const file = path.join(dir, component + '-status.json'), temp = file + '.' + process.pid + '.tmp'
+    fs.writeFileSync(temp, JSON.stringify(value), { mode: 0o600 }); fs.renameSync(temp, file)
+  }
+  let previous = null
+  try { previous=JSON.parse(fs.readFileSync(path.join(dir,component+'-status.json'),'utf8')) } catch (_) {}
+  const supervisor = createSupervisor({ component, previous,
     probe: async () => component === 'bridge' ? (await probeBridge({ env })).bridge : probeHindsight({ env }),
     start: () => startOwned({ entry, cwd: repo, env: { ...process.env, ...env } }),
-    save: value => {
-      const file = path.join(dir, component + '-status.json'), temp = file + '.' + process.pid + '.tmp'
-      fs.writeFileSync(temp, JSON.stringify(value), { mode: 0o600 }); fs.renameSync(temp, file)
-    } })
-  process.once('SIGINT', () => { stopping = true })
-  process.once('SIGTERM', () => { stopping = true })
+    save })
+  process.once('SIGINT', () => { stopping = true; stopReason='SIGINT' })
+  process.once('SIGTERM', () => { stopping = true; stopReason='SIGTERM' })
   try {
     while (!stopping) {
       if (!lease.renew()) break
       await supervisor.tick()
       if (!stopping) await new Promise(resolve => setTimeout(resolve, 10000))
     }
-  } finally { clearInterval(pulse); lease.release() }
+  } finally {
+    clearInterval(pulse)
+    try { if(lease.renew())save({...supervisor.status(),state:'unavailable',reason:'supervisor_stopped',checkedAt:new Date().toISOString(),supervisorStopReason:stopReason}) }
+    finally { lease.release() }
+  }
 }
 if (require.main === module) run(process.argv[2]).catch(() => { console.error('memory_supervisor_unavailable'); process.exitCode = 1 })
 module.exports = { run, startOwned }

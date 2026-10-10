@@ -1346,6 +1346,8 @@
       var pending = r.state === 'awaiting_approval', verified = r.state === 'verified'
       content.appendChild(el('p', '', verified ? t('actions.verified') : pending ? (r.nonce ? t('actions.pending') : t('actions.expired')) : t('actions.failure')))
       if (verified && r.after && r.after.at) content.appendChild(el('p','meta',t('actions.checkedAt',{at:new Date(r.after.at).toLocaleString()})))
+      if(r.currentReadback)content.appendChild(el('p','',({MATCHES_DESIRED:t('actions.readbackMatchesDesired'),DIFFERS_FROM_DESIRED:t('actions.readbackDiffersFromDesired'),DEFINITION_CHANGED:t('actions.readbackDefinitionChanged'),NOT_IDLE:t('actions.readbackNotIdle'),UNAVAILABLE:t('actions.readbackUnavailable')})[r.currentReadback.state]||t('actions.unavailable')))
+      if(['executing','outcome_unknown'].includes(r.state))button(content,t('actions.reconcile'),function(){return call({op:'reconcile',id:r.id}).then(function(v){return show(v.run)})})
       if (r.before) content.appendChild(el('p', '', (r.before.enabled ? t('actions.enabled') : t('actions.disabled')) + ' → ' + (r.after ? (r.after.enabled ? t('actions.enabled') : t('actions.disabled')) : t('actions.unavailable'))))
       if (pending && r.nonce) button(content, t('actions.approve'), function () {
         if (!window.confirm(t('actions.confirm') + '\n' + r.target.taskPath + r.target.taskName + '\n' + (r.capability === 'scheduler.pause' ? t('actions.pauseAction') : t('actions.resumeAction')))) return
@@ -3513,6 +3515,14 @@
     if (modelCenterLink) modelCenterLink.textContent = t('brain.title')
   }
   applyShellText()
+
+  var executionStatus=document.getElementById('execution-status'),executionChecking=false
+  function checkExecutionBridge(){
+    if(!executionStatus||executionChecking||document.hidden)return
+    executionChecking=true
+    fetch('/api/v1/execution-health',{credentials:'same-origin',cache:'no-store',signal:AbortSignal.timeout(7000)}).then(function(r){if(!r.ok)throw Error('unavailable');return r.json()}).then(function(h){executionStatus.textContent=h.state==='ready'?(h.supervisor&&h.supervisor.state==='starting'?t('actions.bridgeRecovering'):t('actions.bridgeReady')):t('actions.bridgeOffline')}).catch(function(){executionStatus.textContent=t('actions.bridgeOffline')}).finally(function(){executionChecking=false})
+  }
+  if(executionStatus){executionStatus.textContent=t('actions.bridgeChecking');checkExecutionBridge();setInterval(checkExecutionBridge,10000);document.addEventListener('visibilitychange',checkExecutionBridge)}
 
   bootHistory()
 

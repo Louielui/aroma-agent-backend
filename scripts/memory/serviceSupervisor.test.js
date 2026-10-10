@@ -1,6 +1,13 @@
 'use strict'
 const test = require('node:test'), assert = require('node:assert/strict'), { EventEmitter } = require('node:events')
 const { run, startOwned } = require('./serviceSupervisor.cjs')
+
+test('exit diagnostics record only closed codes and cannot expose command, stderr or credentials',()=>{
+ const child=Object.assign(new EventEmitter(),{pid:987}),owned=startOwned({entry:'fixture',cwd:'fixture',launch:()=>child})
+ child.emit('error',Object.assign(Error('secret'),{code:'EACCES'}));child.emit('exit',1,null)
+ assert.deepEqual(owned.exitInfo(),{code:null,signal:null,errorCode:'EACCES'});assert.equal(owned.running(),false)
+ assert.ok(!JSON.stringify(owned.exitInfo()).includes('secret'))
+})
 test('the entrypoint test fence prevents config reads and live startup', async () => {
   await assert.rejects(run('bridge'), /supervisor_test_fence/)
 })

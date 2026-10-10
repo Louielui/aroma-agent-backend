@@ -1227,6 +1227,7 @@ function createApp (options = {}) {
   app.use('/model-center', requireOwner)
   app.use('/action-center', requireOwner)
   app.use('/api/v1/scheduler-actions', requireOwner)
+  app.use('/api/v1/execution-health', requireOwner)
   app.use(require('./actions/routes').createRouter())
   const schedulerChat = require('./actions/chat').createChatGateway({
     request: b => require('./adapters/CodexSubscriptionAdapter').localRequest('/scheduler-action', b, process.env, AbortSignal.timeout(60000)),

@@ -82,6 +82,9 @@ test('a lost read-back never claims success or offers rollback',async()=>{
  const r=await f.start('確認剛才那個恢復方案');assert.equal(r.actionContinuation.state,'outcome_unknown');assert.equal(f.writes(),1)
  assert.match((await f.start('恢復剛才那個排程')).reply,/未確認|unconfirmed/);assert.equal(f.writes(),1)
  await f.start('確認剛才那個恢復方案');assert.equal(f.writes(),1)
+ f.scheduler.read=read
+ const recovered=await f.start('做完了嗎')
+ assert.equal(recovered.actionContinuation.state,'outcome_unknown');assert.match(recovered.reply,/目前狀態符合|Current Windows state matches/);assert.equal(f.writes(),1)
 })
 test('display acknowledgement cannot alter hashes or expose a nonce-free public approval',async()=>{
  const f=fixture();await f.start('Resume ActionGatewayAcceptance');const p=await f.latest(),c={conversationId:f.cid,investigationId:p.context.investigationId}
