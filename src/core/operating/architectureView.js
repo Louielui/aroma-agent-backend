@@ -68,7 +68,7 @@ function buildArchitectureHtml () {
   investigationRow.current += ' ' + t('investigation.progressCurrent')
   investigationRow.current += ' ' + t('investigation.memoryFailureCurrent')
   investigationRow.next += ' ' + t('investigation.memoryFailureNext')
-  investigationRow.evidence += '; src/investigation/memoryFailures.js; src/investigation/memoryFailures.test.js; docs/MEMORY-FAILURE-DIAGNOSIS-V1.md'
+  investigationRow.evidence += '; src/investigation/memoryFailures.js; src/investigation/memoryFailures.test.js; docs/MEMORY-FAILURE-DIAGNOSIS-V1.md; src/investigation/workProgress.test.js (bilingual raw-only and source-only count rendering)'
   investigationRow.next += ' ' + t('investigation.progressNext')
   investigationRow.evidence += '; src/investigation/workPurpose.js; src/investigation/workProgress.test.js; docs/WORK-PURPOSE-RESULTS-V1.md'
   investigationRow.next += ' ' + t('investigation.adviceNext')

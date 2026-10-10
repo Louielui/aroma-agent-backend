@@ -64,7 +64,7 @@ function renderWorkPurpose(value,{message='',failuresOnly=false}={}){
  }
  const counts={
   mail_analysis:c=>t('investigation.progressCountsMailAnalysis',c,locale),
-  memory_index:c=>t('investigation.progressCountsMemoryIndex',c,locale),
+  memory_index:c=>t('investigation.progressCountsMemoryIndex',{...c,rawOnly:c.raw_only,sourceOnly:c.source_only},locale),
   memory_consolidation:c=>t('investigation.progressCountsMemoryConsolidation',c,locale),
   memory_outbox:c=>t('investigation.progressCountsMemoryOutbox',c,locale)
  }

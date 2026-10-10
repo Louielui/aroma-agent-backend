@@ -65,6 +65,18 @@ test('fresh scoped counts produce bilingual purpose/results/remaining work witho
  assert.equal(r.executionAllowed,false)
  assert.equal(buildWorkPurpose(report(receipt({total:0,ready:0,pending:0,failed:0})),{now:Date.parse(at)}).jobs[0].progressState,'CONFIRMED')
 })
+test('memory index reports substitute real raw-only and source-only counts in both languages',()=>{
+ const progress={version:1,at,unit:'memory_record',scope:'active_general_memory_records',counts:{total:23,saved:3,raw_only:7,pending:1,unconfirmed:1,source_only:11,other:0}}
+ const r={sections:[{section:'configuration',state:'ok',sourceId:'configuration:local',records:[{sourceId:'backend:memory_index',role:'memory_index',at,evidenceBasis:'live_process_snapshot',progressState:'ok',progress}]}]}
+ const value=buildWorkPurpose(r,{now:Date.parse(at)})
+ for(const failuresOnly of [false,true])for(const message of ['記憶處理','Memory processing']){
+  const text=renderWorkPurpose(value,{message,failuresOnly}).text
+  assert.match(text,/只保存原文 7|7 raw-only/)
+  assert.match(text,/僅保留來源 11|11 source-only/)
+  assert.doesNotMatch(text,/\{[A-Za-z_]+\}/)
+ }
+})
+
 test('invalid, stale, inaccessible or conflicting counters never become zero or completion',()=>{
  for(const counts of [{total:3,ready:2,pending:2,failed:0},{total:3,ready:1,pending:2,failed:3},{total:3,ready:1,pending:-1,failed:0},{total:3,ready:1,pending:2,failed:'1'}])assert.equal(projectProgress('mail_analysis',receipt(counts)),null)
  const stale=buildWorkPurpose(report(),{now:Date.parse(at)+300001});assert.equal(stale.jobs[0].progressState,'UNKNOWN');assert.equal(stale.jobs[0].progress,null)
