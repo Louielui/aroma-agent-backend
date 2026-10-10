@@ -506,6 +506,15 @@ function createDemoRouter ({ getAdapterFn = getAdapterForLane, processIntakeFn =
     catch (_) { res.status(503).json({ code: 'subscription_unavailable' }) }
   })
 
+  // Serialize stored turns within a conversation so an action confirmation cannot
+  // race a topic-changing intake. The lock lasts until the handler settles.
+  const intakeTurns=new Set()
+  const serializedIntake=handler=>async(req,res)=>{
+    const id=req.body?.conversationId,locked=!!schedulerChat&&isValidConversationId(id)
+    if(locked&&intakeTurns.has(id))return res.status(409).json({error:{code:'conversation_busy',message:t('actions.continuationBusy'),retryable:true}})
+    if(locked)intakeTurns.add(id)
+    try{return await handler(req,res)}finally{if(locked)intakeTurns.delete(id)}
+  }
   // POST /api/v1/demo/intake — deterministic-mode intake (guarded).
   router.post(
     '/api/v1/demo/intake',
@@ -528,7 +537,7 @@ function createDemoRouter ({ getAdapterFn = getAdapterForLane, processIntakeFn =
       body('chatLevel').optional().isString().bail().isIn(['auto', 'none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra', 'fast', 'standard', 'deep']),
       body('chatModel').optional().custom(require('../subscription/chatModels').isBrainModel)
     ],
-    async (req, res) => {
+    serializedIntake(async (req, res) => {
       // Server-owned correlation id. A browser-supplied requestId is IGNORED.
       const correlationId = uuidv4()
       // OBSERVABILITY v1: exactly ONE outcome line per request — success, handled
@@ -568,8 +577,10 @@ function createDemoRouter ({ getAdapterFn = getAdapterForLane, processIntakeFn =
       // navigation labels and chat history are not requests to read a mailbox.
       // A semantic topic change returns null and preserves ordinary mail routing.
       const planningLane = !contextCard && !req.body.attachSection && (!req.body.interactionMode || req.body.interactionMode === 'chat')
-      if (planningLane && schedulerChat && schedulerChat.candidate(message)) {
+      if (planningLane && schedulerChat && schedulerChat.candidate(message,req.body.conversationId)) {
         if (!require('../core/operating/chatRequest').sameOrigin(req)) return res.status(403).json({ error:'same_origin_required' })
+        const allowed=['message','conversationId','workflowRequestId','websiteRequestId','history','providerHint','previousLane','chatLevel','chatModel','interactionMode']
+        if(Object.keys(req.body).some(k=>!allowed.includes(k)))return res.status(400).json({error:'invalid_request'})
         try {
           const answer=await schedulerChat.start({message,conversationId:req.body.conversationId,requestId:req.body.websiteRequestId || req.body.workflowRequestId})
           if(answer){emit('scheduler_proposal',200,null);return res.set('Cache-Control','no-store').json(answer)}
@@ -1239,7 +1250,7 @@ function createDemoRouter ({ getAdapterFn = getAdapterForLane, processIntakeFn =
         emit(telemetry.provider ? 'handled_error' : 'early_error', mapped.status, mapped.body && mapped.body.error && mapped.body.error.code)
         return res.status(mapped.status).json(mapped.body)
       }
-    }
+    })
   )
 
   return router

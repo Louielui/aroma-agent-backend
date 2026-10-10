@@ -1351,13 +1351,18 @@
         if (!window.confirm(t('actions.confirm') + '\n' + r.target.taskPath + r.target.taskName + '\n' + (r.capability === 'scheduler.pause' ? t('actions.pauseAction') : t('actions.resumeAction')))) return
         status.textContent = t('actions.executing')
         var pollActive=true, poll = setInterval(function () { call({op:'get',id:r.id}).then(function(v){if(pollActive && v.run && v.run.state==='executing')status.textContent=v.run.timeline.some(function(e){return e.phase==='readback_started'})?t('actions.readback'):t('actions.executing')}).catch(function(){}) },1500)
-        return call({op:'approve',id:r.id,hash:r.hash,nonce:r.nonce}).then(function(v){pollActive=false;show(v.run)}).finally(function(){pollActive=false;clearInterval(poll)})
+        return call({op:'approve',id:r.id,hash:r.hash,nonce:r.nonce}).then(function(v){pollActive=false;return show(v.run)}).finally(function(){pollActive=false;clearInterval(poll)})
       })
-      if (verified) button(content, t('actions.restore'), function () { return call({op:'restore',id:r.id}).then(function(v){show(v.run)}) })
+      if (verified) button(content, t('actions.restore'), function () { return call({op:'restore',id:r.id}).then(function(v){return show(v.run)}) })
       if (pending && !r.nonce) button(content, t('actions.inspect'), inspect)
-      button(content, t('actions.refresh'), function () { return call({op:'get',id:r.id}).then(function(v){show(v.run)}) })
+      button(content, t('actions.refresh'), function () { return call({op:'get',id:r.id}).then(function(v){return show(v.run)}) })
       var details=el('details'), facts=el('pre');facts.textContent=JSON.stringify({investigationId:investigationId,expected:r.expected,recommendation:r.recommendation||null,hash:r.hash,timeline:r.timeline},null,2)
       details.appendChild(el('summary','',t('actions.evidence')));details.appendChild(facts);content.appendChild(details)
+      // Acknowledge the exact rendered proposal. Only explicit typed approval of
+      // the sole current proposal can use this acknowledgement; rendering never executes.
+      if(pending&&r.nonce&&conv===active&&panel.isConnected&&document.visibilityState==='visible')return call({op:'present',id:r.id,hash:r.hash}).then(function(){
+        if(conv===active&&panel.isConnected)content.appendChild(el('p','meta',r.capability==='scheduler.pause'?t('actions.typedPauseHint'):t('actions.typedResumeHint')))
+      })
     }
     function inspect () {
       return call({op:'inspect'}).then(function(v){
@@ -1365,7 +1370,7 @@
         v.inspection.observations.forEach(function(o){
           var row=el('div','scheduler-target');row.appendChild(el('strong','',o.target.taskPath+o.target.taskName));content.appendChild(row)
           row.appendChild(el('p','',o.state==='CONFIRMED'?(o.snapshot.enabled?t('actions.enabled'):t('actions.disabled')):t('actions.unavailable')))
-          if(o.state==='CONFIRMED'&&((o.snapshot.runtime==='Ready'&&o.snapshot.enabled)||(o.snapshot.runtime==='Disabled'&&!o.snapshot.enabled)))button(row,o.snapshot.enabled?t('actions.pause'):t('actions.resume'),function(){return call({op:'prepare',targetId:o.target.id,action:o.snapshot.enabled?'scheduler.pause':'scheduler.resume'}).then(function(v){show(v.run)})})
+          if(o.state==='CONFIRMED'&&((o.snapshot.runtime==='Ready'&&o.snapshot.enabled)||(o.snapshot.runtime==='Disabled'&&!o.snapshot.enabled)))button(row,o.snapshot.enabled?t('actions.pause'):t('actions.resume'),function(){return call({op:'prepare',targetId:o.target.id,action:o.snapshot.enabled?'scheduler.pause':'scheduler.resume'}).then(function(v){return show(v.run)})})
         })
       })
     }
@@ -1377,7 +1382,7 @@
         content.appendChild(el('p','',t('actions.checkedAt',{at:new Date(a.at).toLocaleString()})))
         if(a.recommendations.length){a.recommendations.forEach(function(r){
           var row=el('div','scheduler-target');content.appendChild(row);row.appendChild(el('strong','',r.taskName));row.appendChild(el('p','',t('actions.recommendBasis',{survivor:r.survivorTaskName})));row.appendChild(el('p','',t('actions.executionUnknown')))
-          button(row,t('actions.prepareRecommended'),function(){return call({op:'prepare_recommended',inspectionId:a.inspectionId,targetId:r.targetId}).then(function(v){show(v.run)})})
+          button(row,t('actions.prepareRecommended'),function(){return call({op:'prepare_recommended',inspectionId:a.inspectionId,targetId:r.targetId}).then(function(v){return show(v.run)})})
         })}else content.appendChild(el('p','',a.sourceState==='UNAVAILABLE'?t('actions.evidenceMissing'):a.candidates.length?t('actions.overlapOnly'):t('actions.noRecommendation')))
         button(content,t('actions.reassess'),recommend)
         var manual=el('details');manual.appendChild(el('summary','',t('actions.manualChoice')));button(manual,t('actions.inspect'),inspect);content.appendChild(manual)
@@ -1386,7 +1391,7 @@
     }
     work(function(){return call({op:'list'}).then(function(v){
       status.textContent=''
-      if(v.runs.length){var runs=v.runs.slice().sort(function(a,b){return Date.parse(a.timeline[0].at)-Date.parse(b.timeline[0].at)});show(runs[runs.length-1]);var history=el('details');history.appendChild(el('summary','',t('actions.history')));runs.forEach(function(r){button(history,r.target.taskName+' · '+(r.state==='verified'?t('actions.verified'):r.state==='awaiting_approval'?t('actions.pending'):t('actions.failure')),function(){return call({op:'get',id:r.id}).then(function(v){show(v.run)})})});content.appendChild(history)}
+      if(v.runs.length){var runs=v.runs.slice().sort(function(a,b){return Date.parse(a.timeline[0].at)-Date.parse(b.timeline[0].at)});var shown=show(runs[runs.length-1]);var history=el('details');history.appendChild(el('summary','',t('actions.history')));runs.forEach(function(r){button(history,r.target.taskName+' · '+(r.state==='verified'?t('actions.verified'):r.state==='awaiting_approval'?t('actions.pending'):t('actions.failure')),function(){return call({op:'get',id:r.id}).then(function(v){return show(v.run)})})});content.appendChild(history);return shown}
       else return recommend()
     })})
   }
@@ -2193,6 +2198,11 @@
       var investigationTurn = addBot(res.reply, conv)
       renderInvestigation(investigationTurn, res.investigation, res.investigationRunId)
       return investigationTurn
+    }
+    if (res.actionContinuation && res.investigationRunId) {
+      var actionTurn=addBot(res.reply,conv)
+      renderSchedulerChat(actionTurn,res.investigationRunId)
+      return actionTurn
     }
     if (res.taskPlanRunId) {
       var taskTurn = addBot(res.reply, conv)

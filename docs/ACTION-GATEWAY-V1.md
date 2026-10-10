@@ -13,7 +13,8 @@ existence is not proof of duplication. Unavailable remains unavailable.
 2. Recommendation binds target, capability, original enabled state, exported task
    definition hash (only Settings.Enabled normalized), expiry and inverse action.
 3. Structured Owner approval, exact hash and one-use nonce. Restart invalidates
-   outstanding authority. Natural language and model output cannot approve.
+   outstanding authority. Model output cannot approve. Explicit Owner text can
+   confirm only the sole displayed current chat proposal through the same gateway.
 4. Durable target lock; approval and dispatch saved before side effect. Fresh
    preflight refuses changed definitions/state, running/queued/unknown tasks.
 5. Fixed Windows mutation also checks expected hash/state immediately beforehand.
@@ -79,3 +80,37 @@ Rollback is a separate exact inverse requiring fresh Owner approval.
 Positive recommended-action acceptance uses isolated scheduler fixtures. Live
 Windows acceptance reads the unchanged registered tasks and must not manufacture
 a production duplicate or relabel absence of evidence as success.
+
+## Conversation task continuation v1
+
+The intake host recognizes a closed, anchored Chinese/English grammar, for example
+`確認剛才那個暫停方案` / `I confirm the previous pause proposal`, status queries
+and requests to restore the previous schedule. Quotes, conditional prose, negation,
+pasted instructions and model-generated answers are not approval. A bare yes/go
+ahead asks for explicit confirmation only when the stored current conversation is
+a scheduler investigation; other workflow confirmations retain their own routing.
+
+The host uses the latest persisted assistant reference to a completed read-only
+background investigation, never browser history. More than one live proposal or
+separate action chain is ambiguous. Another topic, missing/deleted context, expired
+proposal or lost bridge ticket cannot be implicitly rebound or auto-approved.
+
+After rendering the exact target, action, impact and rollback, the active visible
+UI acknowledges the proposal ID and sealed hash using `present`. This does not
+execute anything. Only the host's typed-confirmation path can use the internal
+`chat_approve_displayed`; the public chat and generic center refuse that operation.
+The bridge requires the matching presentation, still-live one-use ticket, sealed
+context/hash, fresh preflight and independent Windows read-back as before.
+
+Intake turns within one conversation serialize until the full handler settles,
+including if the caller disconnects. Different conversations remain independent.
+Separate durable scheduler-dialogue receipts save request ID, request hash, exact
+proposal binding and result. Replays return the recorded answer; interrupted or
+conflicting requests cannot redispatch. Mutation confirmations are labeled
+`readOnly:false`; they are not saved as read-only investigation receipts.
+
+Status reads recorded verification and its timestamp, not a claim of current
+state. Restore only prepares a new inverse, and repeated restore queries reuse an
+existing pending proposal. The inverse must be displayed and separately approved.
+Uncertain/failed actions cannot claim success or offer an automatic rollback.
+This continuation adds no targets, model calls, permissions or arbitrary commands.

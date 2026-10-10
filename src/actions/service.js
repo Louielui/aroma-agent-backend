@@ -42,7 +42,7 @@ function createGateway ({ store = require('./store').createStore(), scheduler = 
     try{for(const id of locks)releases.push(store.lock(id))}catch(e){releases.reverse().forEach(fn=>fn());throw e}
     locks.forEach(id=>busy.add(id))
     try {
-      r.state='approved';record(r,'approved',{approvalHash:r.hash,approvedBy:'authenticated_owner'})
+      r.state='approved';record(r,'approved',{approvalHash:r.hash,approvedBy:'authenticated_owner',channel:b.channel==='typed_confirmation'?'typed_confirmation':'proposal_button'})
       const before=await scheduler.read(r.target.id)
       if(!idle(before))throw Error('task_not_idle')
       if(before.definitionHash!==r.expected.definitionHash||before.enabled!==r.previousState)throw Error('target_changed')
@@ -88,6 +88,16 @@ function createGateway ({ store = require('./store').createStore(), scheduler = 
       const r=store.get(b.id)
       if(!r?.context||hash(r.context)!==hash(context))throw Error('approval_unavailable')
       if(op==='get')return {run:chatView(r)}
+      if(op==='present'||op==='approve_displayed'){
+        const live=chatView(r)
+        if(!live.nonce||r.hash!==b.hash||proposalHash(r)!==r.hash)throw Error('approval_unavailable')
+        if(op==='present'){
+          r.presentation={hash:r.hash,at:new Date(now()).toISOString()};record(r,'presented',{proposalHash:r.hash,context})
+          return {presented:true,id:r.id,hash:r.hash}
+        }
+        if(r.presentation?.hash!==r.hash)throw Error('presentation_required')
+        return {run:await approve({id:r.id,hash:r.hash,nonce:live.nonce,channel:'typed_confirmation'})}
+      }
       if(op==='approve'){tickets.delete(b.id);return {run:await approve(b)}}
       return {run:await restore(b.id,context)}
     }

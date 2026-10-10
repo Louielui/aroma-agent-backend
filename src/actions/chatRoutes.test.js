@@ -35,3 +35,39 @@ test('real intake → saved investigation → inline approval route → read-bac
  assert.equal((await send(api,{op:'get',...c,id:p.id})).body.run.state,'verified')
  assert.equal((await send(api,{op:'list',...c,investigationId:randomUUID()})).status,409)
 })
+
+test('real HTTP typed confirmation uses displayed exact authority and serializes topic-changing turns',async t=>{
+ const dir=fs.mkdtempSync(path.join(os.tmpdir(),'xx-dialogue-actions-'));t.after(()=>fs.rmSync(dir,{recursive:true,force:true}))
+ const conversations=createConversationStore({dataDir:dir}),receipts=createReceipts({dir:path.join(dir,'investigations')}),store=require('./store').createStore({dir:path.join(dir,'actions')}),continuationStore=require('./store').createStore({dir:path.join(dir,'dialogue')})
+ let enabled=false,writes=0,hold=false,release,entered
+ const waiting=()=>new Promise(r=>{entered=r}),pending=()=>new Promise(r=>{release=r});let gate,reading
+ const scheduler={read:async id=>{if(hold){hold=false;entered();await gate}return{...TARGETS.find(t=>t.id===id),targetId:id,enabled,runtime:enabled?'Ready':'Disabled',definitionHash:'a'.repeat(64),at:new Date().toISOString()}},apply:async()=>{writes++;enabled=!enabled}}
+ const gateway=createGateway({store,scheduler}),request=b=>gateway.handle({id:'owner',role:'owner'},b),chat=createChatGateway({request,receipts,conversations,continuationStore})
+ const app=express();app.use(express.json());app.locals.conversationDemo=true;app.use((q,r,next)=>q.headers.authorization==='Bearer owner'?next():r.sendStatus(401))
+ app.use(createRouter({request}));app.use(createChatRouter({chat}));app.use(createDemoRouter({conversationStore:conversations,schedulerChat:chat,getAdapterFn:()=>{throw Error('no_model_allowed')}}))
+ const s=app.listen(0,'127.0.0.1');t.after(()=>s.close());await new Promise(r=>s.once('listening',r));const root='http://127.0.0.1:'+s.address().port
+ const send=(url,b,auth=true,origin='http://127.0.0.1:8090')=>new Promise((resolve,reject)=>{const q=require('node:http').request(root+url,{method:'POST',headers:{...(auth?{authorization:'Bearer owner'}:{}),'content-type':'application/json',host:'127.0.0.1:8090',origin}},r=>{let raw='';r.on('data',v=>raw+=v);r.on('end',()=>resolve({status:r.statusCode,body:(()=>{try{return JSON.parse(raw)}catch(_){return null}})()}))});q.on('error',reject);q.end(JSON.stringify(b))})
+ const cid=randomUUID(),rid=randomUUID(),api='/api/v1/demo/scheduler-actions',intake=(message,extra={})=>send('/api/v1/demo/intake',{message,conversationId:cid,websiteRequestId:randomUUID(),...extra})
+ let r=await intake('Resume ActionGatewayAcceptance',{websiteRequestId:rid});assert.equal(r.status,200)
+ const c={conversationId:cid,investigationId:rid},p=(await send(api,{op:'list',...c})).body.runs[0]
+ assert.equal((await send(api,{op:'present',...c,id:p.id,hash:p.hash},false)).status,401)
+ assert.equal((await send(api,{op:'present',...c,id:p.id,hash:p.hash},true,'https://other.invalid')).status,403)
+ assert.equal((await send('/api/v1/scheduler-actions',{op:'chat_approve_displayed',context:c,id:p.id,hash:p.hash})).status,400)
+ assert.equal((await send(api,{op:'approve_displayed',...c,id:p.id,hash:p.hash})).status,400)
+ assert.equal((await intake('I confirm the previous resume proposal',{targetId:'errand-recall'})).status,400)
+ assert.match((await intake('I confirm the previous resume proposal')).body.reply,/展示|displayed/);assert.equal(writes,0)
+ await send(api,{op:'present',...c,id:p.id,hash:p.hash})
+ hold=true;gate=pending();reading=waiting();const first=intake('I confirm the previous resume proposal');await reading
+ try{
+  r=await intake('Let us discuss email now');assert.equal(r.status,409);assert.equal(r.body.error.code,'conversation_busy')
+  assert.equal(conversations.get(cid).messages.at(-1).investigationRunId,rid)
+ }finally{release()}
+ r=await first;assert.equal(r.status,200);assert.equal(r.body.actionContinuation.state,'verified');assert.equal(writes,1)
+ assert.equal((await intake('Did it finish?')).body.actionContinuation.id,p.id)
+ r=await intake('Restore the previous schedule');assert.equal(r.body.actionContinuation.state,'awaiting_approval');assert.equal(writes,1)
+ const inverse=(await send(api,{op:'get',...c,id:r.body.actionContinuation.id})).body.run;await send(api,{op:'present',...c,id:inverse.id,hash:inverse.hash})
+ assert.equal((await intake('I confirm the previous pause proposal')).body.actionContinuation.state,'verified');assert.equal(writes,2)
+ const reopened=createChatGateway({request,receipts:createReceipts({dir:path.join(dir,'investigations')}),conversations:createConversationStore({dataDir:dir}),continuationStore:require('./store').createStore({dir:path.join(dir,'dialogue')})})
+ assert.equal((await reopened.start({message:'Did it finish?',conversationId:cid,requestId:randomUUID()})).actionContinuation.state,'verified');assert.equal(writes,2)
+ assert.ok(continuationStore.list().some(r=>r.readOnly===false&&r.proposalId===p.id))
+})
