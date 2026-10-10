@@ -65,6 +65,9 @@ function buildArchitectureHtml () {
   investigationRow.current += ' ' + t('investigation.subscriptionCurrent')
   investigationRow.current += ' ' + t('investigation.costAssessmentCurrent')
   investigationRow.current += ' ' + t('investigation.adviceCurrent')
+  investigationRow.current += ' ' + t('investigation.progressCurrent')
+  investigationRow.next += ' ' + t('investigation.progressNext')
+  investigationRow.evidence += '; src/investigation/workPurpose.js; src/investigation/workProgress.test.js; docs/WORK-PURPOSE-RESULTS-V1.md'
   investigationRow.next += ' ' + t('investigation.adviceNext')
   investigationRow.evidence += '; src/investigation/decisionAdvice.js; src/investigation/decisionAdvice.test.js; docs/INVESTIGATION-DECISION-ADVICE-V1.md'
   investigationRow.evidence += '; src/investigation/costAssessment.js; src/investigation/costAssessment.test.js; docs/COST-EVIDENCE-ASSESSMENT-V1.md'

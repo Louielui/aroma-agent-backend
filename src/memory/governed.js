@@ -287,6 +287,21 @@ function createGateway({ store, engine, clock = () => new Date().toISOString() }
         review: rows.filter(r => r.status === 'candidate' && r.source.kind === 'consolidation').length },
       agents: (await store.grants()).map(({ tokenHash, ...g }) => g) }
   }
+  async function progress(actor) {
+    owner(actor)
+    const rows=(await generalRows()).filter(r=>!sourceBound(r))
+    const active=rows.filter(r=>r.status==='active') // Same index queue eligibility as runtime.drain.
+    const eligible=rows.filter(require('./consolidationPolicy').eligible)
+    const count=(items,field,states)=>Object.fromEntries(states.map(state=>[state,items.filter(r=>field(r)===state).length]))
+    const index=count(active,r=>r.index?.state,['saved','raw_only','pending','unconfirmed','source_only'])
+    const consolidated=count(eligible,r=>r.details?.consolidation?.state,['running','done','empty','failed'])
+    const pending=eligible.filter(r=>!r.details?.consolidation).length
+    return { memory_index:{version:1,at:clock(),unit:'memory_record',scope:'active_general_memory_records',
+      counts:{total:active.length,...index,other:active.length-Object.values(index).reduce((a,b)=>a+b,0)}},
+      memory_consolidation:{version:1,at:clock(),unit:'memory_record',scope:'eligible_general_memory_records',
+        counts:{total:eligible.length,pending,...consolidated,other:eligible.length-pending-Object.values(consolidated).reduce((a,b)=>a+b,0),
+          candidates:rows.filter(r=>r.status==='candidate'&&r.source?.kind==='consolidation').length}} }
+  }
   const consolidating = new Map()
   async function consolidate(actor, id) {
     owner(actor)
@@ -343,6 +358,6 @@ function createGateway({ store, engine, clock = () => new Date().toISOString() }
   }
   return { engine: 'memory_gateway', authorize, get, list, propose: (actor, input) => create(actor, input, false),
     observe: (actor, input) => create(actor, input, true), transition, getDecision, recall, index, rebuildIndex, working, finishWork,
-    grant, authenticate, reflect, consolidate, status, audit: async (actor, id) => { const r = await get(actor, id); return r ? store.audit(id) : [] } }
+    grant, authenticate, reflect, consolidate, status, progress, audit: async (actor, id) => { const r = await get(actor, id); return r ? store.audit(id) : [] } }
 }
 module.exports = { createGateway, OWNER, TYPES, SCOPES, STATUSES, stableId }

@@ -325,7 +325,18 @@ function createMailMemory ({ store, mailbox, analyzer = null, engine = null, clo
     const result = { ...await list(actor, query, filter, snapshot), sync: await status(snapshot) }
     verify(); return result
   }
-  return { capture, list, view, detail, update, sync, status, analyze, analyzeBatch, analyzeNext, briefing,
+  // On-demand canonical counters only. Do not use status(): its semantic probe
+  // may read the index provider. Verify source permission before and after I/O.
+  async function progressStatus () {
+    const verify = guard(OWNER)
+    const [rows,checkpoint] = await Promise.all([sourceRows(['admin_mail_thread']),store.get(key('sync','checkpoint'))])
+    verify()
+    const ready=rows.filter(r=>r.details.analysis?.state==='ready').length
+    return { mail_analysis:{version:1,at:clock(),unit:'captured_thread',scope:'captured_mail_threads',
+      counts:{total:rows.length,ready,pending:rows.length-ready,failed:rows.filter(r=>r.details.analysis?.state==='failed').length},
+      syncHasMore:checkpoint ? !!checkpoint.details?.pageToken : null} }
+  }
+  return { capture, list, view, detail, update, sync, status, analyze, analyzeBatch, analyzeNext, briefing, progressStatus,
     runtimeStatus: () => ({ enabled:allowed(), syncActive:busy, analysisConnected:!!analyzer, analysisActive:analyzing,
       indexEnabled:allowed() && indexRunning, indexActive:indexAttemptActive || semantic.busy() }),
     recall: semantic.recall, indexNext, retryIndex: semantic.retry, rebuildIndex: semantic.rebuild,

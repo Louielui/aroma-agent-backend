@@ -7,13 +7,17 @@ function createBackendRuntimeReader ({ mailMemory = null, mailScheduler = null, 
       if(typeof object?.[method]!=='function')return {state:'unconnected',value:null}
       try {const value=await object[method]();return value&&typeof value==='object'?{state:'ok',value}:{state:'unavailable',value:null}} catch (_) {return {state:'unavailable',value:null}}
     }
-    const [mailRead,schedulerRead,generalRead,consolidationRead] = await Promise.all([
-      safe(mailMemory,'runtimeStatus'), safe(mailScheduler,'status'), safe(memory,'status'),safe(memory?.consolidation,'status')])
+    const [mailRead,schedulerRead,generalRead,consolidationRead,mailProgress,memoryProgress] = await Promise.all([
+      safe(mailMemory,'runtimeStatus'), safe(mailScheduler,'status'), safe(memory,'status'),safe(memory?.consolidation,'status'),
+      safe(mailMemory,'progressStatus'),safe(memory,'progressStatus')])
     const [mail,scheduler,general,consolidation]=[mailRead,schedulerRead,generalRead,consolidationRead].map(r=>r.value)
     const row = (role, enabled, active, observationState, extra = {}) => ({ sourceId:'backend:' + role, role, at,observationState,
       enabled: typeof enabled === 'boolean' ? enabled : null,
       currentRunningState: typeof active === 'boolean' ? active ? 'active' : 'idle' : 'unknown',
-      model:null, modelBasis:'not_observed', evidenceBasis:'live_process_snapshot', ...extra })
+      model:null, modelBasis:'not_observed', evidenceBasis:'live_process_snapshot', ...extra,
+      ...(['mail_analysis','memory_index','memory_outbox','memory_consolidation'].includes(role)?{
+        progressState:(role==='mail_analysis'?mailProgress:memoryProgress).value?.[role]?.state==='unavailable'?'unavailable':(role==='mail_analysis'?mailProgress:memoryProgress).state,
+        progress:require('./workPurpose').projectProgress(role,(role==='mail_analysis'?mailProgress:memoryProgress).value?.[role])}: {}) })
     return { state:'partial', retrievedAt:at, provesCharge:false, records:[
       row('mail_sync',mail?.enabled,mail?.syncActive,mailRead.state,{usesModel:false}),
       row('mail_analysis',mail && scheduler && [mail.enabled,mail.analysisConnected,scheduler.paused].every(v=>typeof v==='boolean') ? mail.enabled && mail.analysisConnected && !scheduler.paused : null,mail?.analysisActive,

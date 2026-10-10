@@ -55,6 +55,22 @@ test('bilingual intake saves the exact repair-chain gap without claiming an unre
  }
 })
 
+test('purpose and canonical backlog reach the actual bilingual background intake without extra models or dispatch',async t=>{
+ for(const question of ['電郵分析和記憶處理各自在做什麼？完成了什麼？還有多少未處理？','What do email analysis and memory processing do, what has completed, and what remains?']){
+  const at=new Date().toISOString()
+  const progress={version:1,at,unit:'captured_thread',scope:'captured_mail_threads',counts:{total:10,ready:8,pending:2,failed:1},syncHasMore:true}
+  const x=await turn(t,{question,focus:'background',fastPath:true,evidenceSections:[{section:'configuration',state:'partial',sourceId:'configuration:progress',records:[
+   {sourceId:'backend:mail_analysis',role:'mail_analysis',at,evidenceBasis:'live_process_snapshot',observationState:'ok',currentRunningState:'idle',enabled:true,model:'claude-sonnet-5-5',modelBasis:'bridge_route_configuration',progressState:'ok',progress}]}]})
+  assert.match(x.result.reply,/背景工作的用途與成果|Background work: purpose and results/)
+  assert.match(x.result.reply,/已收集 10|10 captured/);assert.match(x.result.reply,/其中失敗 1|including 1 failed/)
+  assert.match(x.result.reply,/未收集的電郵數量未知|Uncaptured mail counts are unknown/)
+  assert.equal(x.result.investigation.workPurpose.jobs[0].progressState,'CONFIRMED')
+  assert.equal(x.result.investigation.answerPresentation.workPurpose.references[0].recordId,'backend:mail_analysis')
+  assert.equal(x.result.reply,x.result.replyForArchive);assert.deepEqual(x.result.tasks,[])
+  assert.equal(x.calls.filter(c=>c.schema!=='goal_plan').length,0);assert.deepEqual(x.reads,[{source:'xiangxiang_operations',method:'readInvestigation'}])
+ }
+})
+
 test('decision advice reaches the actual bilingual cost intake without added calls or actions', async t => {
  for(const question of ['根據剛才的用量調查，你建議怎樣減少不必要的消耗？','Based on the usage investigation, what do you recommend to reduce unnecessary consumption?']){
   const call={sourceId:'invocation:advice',invocationId:'advice',requestId:'12345678-1234-4234-8234-123456789012',linkBasis:'host_request_identity',role:'chat_completion',phase:'answer',state:'succeeded',startedAt:'2026-10-08T01:00:00Z',finishedAt:'2026-10-08T01:00:01Z',actualModel:'claude-opus-5-5',modelResultObserved:true,billingRoute:'claude-subscription',usageBasis:'provider_result_model_usage',usage:{inputTokens:10,outputTokens:4},evidenceBasis:'owner_bridge_invocation_ledger'}

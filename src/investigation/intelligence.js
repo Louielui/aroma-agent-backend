@@ -77,6 +77,7 @@ function evaluateInvestigation ({ goal = '', focus = null, sections = [] } = {})
   const report = { version: 1, focus, state: sections.length ? 'partial' : 'unavailable', goal, readOnly: true, billingConfirmed: false, sections, invocationCorrelation, plan: { goal, focus, readOnly: true, sources: sections.map(s => s.section), fallback: 'continue_available_authorised_sources_when_memory_insufficient', automaticModelRetries: 0 }, findings: findings.slice(0, 30), findingsOmitted: Math.max(0, findings.length - 30), contradictions, transitions, gaps, recommendations, evaluationScope: 'structured_receipt_fields_only_no_semantic_conflict_or_billing_inference' }
   report.workCorrelation = require('./workCorrelation').correlateWork(report)
   report.executionUsage = require('./executionUsage').buildExecutionUsage(report)
+  report.workPurpose = require('./workPurpose').buildWorkPurpose(report)
   report.evidenceModel = require('./evidenceState').buildEvidenceState(report)
   report.costAssessment = require('./costAssessment').buildCostAssessment(report)
   report.decisionAdvice = require('./decisionAdvice').buildDecisionAdvice(report)

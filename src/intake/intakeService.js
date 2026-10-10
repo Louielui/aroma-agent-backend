@@ -3738,6 +3738,15 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
       // Recommendations are visible even when the concise work brief replaces
       // detailed findings. They add no model calls, reads or dispatch authority.
       operationalInvestigation.decisionAdvice = require('../investigation/decisionAdvice').buildDecisionAdvice(operationalInvestigation)
+      operationalInvestigation.workPurpose = require('../investigation/workPurpose').buildWorkPurpose(operationalInvestigation)
+      const purpose = operationalInvestigation.focus === 'background' ? require('../investigation/workPurpose').renderWorkPurpose(operationalInvestigation.workPurpose, { message }) : null
+      if (purpose) {
+        // Keep the detailed prior answer for inspection; canonical progress is
+        // the concise answer for this registered background-work investigation.
+        operationalInvestigation.answerDetails = operationalInvestigation.answerDetails || view.reply
+        view.reply += '\n\n' + purpose.text
+        operationalInvestigation.answerPresentation = { ...operationalInvestigation.answerPresentation, workPurpose: { ...purpose, text: undefined } }
+      }
       const advice = require('../investigation/decisionAdviceView').renderDecisionAdvice(operationalInvestigation.decisionAdvice, { message })
       if (advice && classifyDemoOutcome({ mode: distilled.mode, intent: distilled.intent }).outcome !== 'clarification') {
         view.reply += '\n\n' + advice.text

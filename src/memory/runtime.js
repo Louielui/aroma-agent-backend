@@ -159,8 +159,20 @@ function createRuntime({ store = createStructuredStore(), engine = createHindsig
     }
   }
   async function backup() { return store.backup() }
+  function captureQueueCount() {
+    try { return fs.readdirSync(dir).filter(n=>/^xx-[a-f0-9-]+\.json$/.test(n)).length }
+    catch(e) { if(e.code==='ENOENT')return 0;throw Error('memory_outbox_unavailable') }
+  }
+  async function progressStatus() {
+    // Independent source failures must not hide another source's valid counts.
+    const progress=await gateway.progress(OWNER).catch(()=>({memory_index:{state:'unavailable'},memory_consolidation:{state:'unavailable'}}))
+    try { progress.memory_outbox={version:1,at:new Date().toISOString(),unit:'queued_capture',scope:'local_capture_outbox',counts:{pending:captureQueueCount()}} }
+    catch(_) { progress.memory_outbox={state:'unavailable'} }
+    return progress
+  }
   return { gateway, ownerClient, event, observeRead, enqueue, drain, consolidation,
     backup,
+    progressStatus,
     status: () => ({ active: active || indexActive, indexing: indexActive, enabled: enabled(), error: lastError, nextIndexAt: nextIndexAt ? new Date(nextIndexAt).toISOString() : null, pending: fs.existsSync(dir) ? fs.readdirSync(dir).filter(n => n.endsWith('.json')).length : 0 }),
     start() { if (!timer) { timer = setInterval(() => { void drain(); void consolidation.tick() }, 5000); timer.unref() } },
     stop() { clearInterval(timer); timer = null }
