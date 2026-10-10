@@ -5,6 +5,7 @@ const NEEDS = Object.freeze({
   live_runtime:['configuration','schedules','work'], execution_history:['execution'],
   work_failure:['work'], work_history:['work'], source_revision:['work','configuration'],
   test_results:['work'], repair_verification:['work','configuration'],
+  memory_failures:['configuration'],
   history:['history'], usage:['execution','usage'], billing:['billing'],
   correspondence:[], documents:[], code_history:[], events:[]
 })

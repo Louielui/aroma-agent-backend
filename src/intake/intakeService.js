@@ -3739,16 +3739,21 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
       // detailed findings. They add no model calls, reads or dispatch authority.
       operationalInvestigation.decisionAdvice = require('../investigation/decisionAdvice').buildDecisionAdvice(operationalInvestigation)
       operationalInvestigation.workPurpose = require('../investigation/workPurpose').buildWorkPurpose(operationalInvestigation)
-      const purpose = operationalInvestigation.focus === 'background' ? require('../investigation/workPurpose').renderWorkPurpose(operationalInvestigation.workPurpose, { message }) : null
+      const memoryFailuresRequested = operationalInvestigation.routing?.requirements?.includes('memory_failures') === true
+      const memoryFailureOnly = memoryFailuresRequested && operationalInvestigation.focus === 'background' &&
+        operationalInvestigation.routing.requiredSources.length === 1 && operationalInvestigation.routing.requiredSources[0] === 'xiangxiang_operations' &&
+        operationalInvestigation.routing.unmappedFacts.length === 0 && operationalInvestigation.routing.requirements.every(n=>['configuration','enablement','execution_history','live_runtime','memory_failures'].includes(n)) &&
+        !operationalInvestigation.sections.some(s=>s.section.startsWith('external_'))
+      const purpose = operationalInvestigation.focus === 'background' || memoryFailuresRequested ? require('../investigation/workPurpose').renderWorkPurpose(operationalInvestigation.workPurpose, { message, failuresOnly: memoryFailuresRequested }) : null
       if (purpose) {
         // Keep the detailed prior answer for inspection; canonical progress is
         // the concise answer for this registered background-work investigation.
         operationalInvestigation.answerDetails = operationalInvestigation.answerDetails || view.reply
-        view.reply += '\n\n' + purpose.text
+        view.reply = memoryFailureOnly ? purpose.text : view.reply + '\n\n' + purpose.text
         operationalInvestigation.answerPresentation = { ...operationalInvestigation.answerPresentation, workPurpose: { ...purpose, text: undefined } }
       }
       const advice = require('../investigation/decisionAdviceView').renderDecisionAdvice(operationalInvestigation.decisionAdvice, { message })
-      if (advice && classifyDemoOutcome({ mode: distilled.mode, intent: distilled.intent }).outcome !== 'clarification') {
+      if (advice && !memoryFailureOnly && classifyDemoOutcome({ mode: distilled.mode, intent: distilled.intent }).outcome !== 'clarification') {
         view.reply += '\n\n' + advice.text
         operationalInvestigation.answerPresentation = { ...operationalInvestigation.answerPresentation, decisionAdvice: { ...advice, text: undefined } }
       }

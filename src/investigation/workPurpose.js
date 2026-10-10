@@ -15,7 +15,8 @@ function projectProgress(role,value){
  const c=Object.fromEntries(rule.fields.map(k=>[k,value.counts[k]]))
  if(role==='mail_analysis'&&(c.ready+c.pending!==c.total||c.failed>c.pending))return null
  if(['memory_index','memory_consolidation'].includes(role)&&rule.fields.filter(k=>!['total','candidates'].includes(k)).reduce((n,k)=>n+c[k],0)!==c.total)return null
- return {version:1,at:value.at,unit:rule.unit,scope:rule.scope,counts:c,...(role==='mail_analysis'?{syncHasMore:typeof value.syncHasMore==='boolean'?value.syncHasMore:null}:{})}
+ return {version:1,at:value.at,unit:rule.unit,scope:rule.scope,counts:c,...(role==='mail_analysis'?{syncHasMore:typeof value.syncHasMore==='boolean'?value.syncHasMore:null}:{}),
+  ...(['memory_index','memory_consolidation'].includes(role)?{diagnostics:require('./memoryFailures').projectDiagnostics(role,value.diagnostics,c.unconfirmed??c.failed,value.at)}:{})}
 }
 function buildWorkPurpose(report,{now=Date.now()}={}){
  const sections=(report.sections||[]).filter(s=>s.section==='configuration'&&['ok','partial'].includes(s.state))
@@ -52,7 +53,7 @@ function buildWorkPurpose(report,{now=Date.now()}={}){
  }
  return jobs.length?{version:1,readOnly:true,executionAllowed:false,inventoryComplete:false,jobs,ownerPurposeLink:'not_connected',billingConfirmed:false}:null
 }
-function renderWorkPurpose(value,{message=''}={}){
+function renderWorkPurpose(value,{message='',failuresOnly=false}={}){
  if(!value?.readOnly||value.executionAllowed!==false||!value.jobs?.length)return null
  const {t}=require('../i18n/t'),locale=/[\u3400-\u9fff]/.test(message)?'zh':'en'
  const purposes={
@@ -73,18 +74,20 @@ function renderWorkPurpose(value,{message=''}={}){
   observe_existing_processing:()=>t('investigation.progressNextObserveProcessing',{},locale),
   no_observed_pending:()=>t('investigation.progressNextNoPending',{},locale)
  }
- const lines=[t('investigation.progressTitle',{},locale)],references=[]
+ const lines=[failuresOnly?t('investigation.memoryFailureReportTitle',{},locale):t('investigation.progressTitle',{},locale)],references=[]
  for(const job of value.jobs){
+  if(failuresOnly&&!['memory_index','memory_consolidation'].includes(job.role))continue
   lines.push(purposes[job.role]())
   if(job.progressState==='CONFIRMED'){
    lines.push(counts[job.role](job.progress.counts))
    if(job.role==='mail_analysis')lines.push(job.progress.syncHasMore===true?t('investigation.progressMoreMail',{},locale):t('investigation.progressMailScope',{},locale))
    lines.push(t('investigation.progressAsOf',{at:job.progress.at},locale))
+   if(['memory_index','memory_consolidation'].includes(job.role))lines.push(require('./memoryFailures').renderDiagnostics(job.role,job.progress.diagnostics,locale))
   }else lines.push(t('investigation.progressGap',{state:job.progressState},locale))
-  lines.push(next[job.recommendation]())
+  if(!failuresOnly)lines.push(next[job.recommendation]())
   references.push(...job.references)
  }
- lines.push(t('investigation.progressBoundary',{},locale))
+ if(!failuresOnly)lines.push(t('investigation.progressBoundary',{},locale))
  return {text:lines.join('\n\n'),references,modelProseUsed:false}
 }
 module.exports={projectProgress,buildWorkPurpose,renderWorkPurpose}

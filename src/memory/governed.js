@@ -296,9 +296,12 @@ function createGateway({ store, engine, clock = () => new Date().toISOString() }
     const index=count(active,r=>r.index?.state,['saved','raw_only','pending','unconfirmed','source_only'])
     const consolidated=count(eligible,r=>r.details?.consolidation?.state,['running','done','empty','failed'])
     const pending=eligible.filter(r=>!r.details?.consolidation).length
-    return { memory_index:{version:1,at:clock(),unit:'memory_record',scope:'active_general_memory_records',
+    const at=clock(),diagnostics=require('../investigation/memoryFailures').buildDiagnostics
+    return { memory_index:{version:1,at,unit:'memory_record',scope:'active_general_memory_records',
+      diagnostics:diagnostics('memory_index',active,at),
       counts:{total:active.length,...index,other:active.length-Object.values(index).reduce((a,b)=>a+b,0)}},
-      memory_consolidation:{version:1,at:clock(),unit:'memory_record',scope:'eligible_general_memory_records',
+      memory_consolidation:{version:1,at,unit:'memory_record',scope:'eligible_general_memory_records',
+        diagnostics:diagnostics('memory_consolidation',eligible,at),
         counts:{total:eligible.length,pending,...consolidated,other:eligible.length-pending-Object.values(consolidated).reduce((a,b)=>a+b,0),
           candidates:rows.filter(r=>r.status==='candidate'&&r.source?.kind==='consolidation').length}} }
   }

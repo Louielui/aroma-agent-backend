@@ -66,6 +66,19 @@ function buildEvidenceState(report) {
     }
   }
   coverage.push(...require('./generalRouter').requiredSourceCoverage(report))
+  for(const job of report.workPurpose?.jobs||[]) {
+    if(!['memory_index','memory_consolidation'].includes(job.role))continue
+    const d=job.progress?.diagnostics,refs=job.references||[]
+    const put=(facet,value,state,time='current_record_snapshot')=>assertions.push({id:'e'+(assertions.length+1),subject:'memory_diagnostics:'+job.role,
+      sourceId:refs[0]?.sourceId||null,recordId:'backend:'+job.role,facet,temporalScope:time,state,
+      value:['UNKNOWN','UNAVAILABLE','CONTRADICTED'].includes(state)?null:value,observedAt:job.progress?.at||null,retrievedAt:job.progress?.at||null,references:refs})
+    const state=job.progressState==='CONFIRMED'?(d?'CONFIRMED':'UNKNOWN'):job.progressState
+    put('memory_recorded_failure_count',d?.failed??null,state)
+    put('memory_recorded_error_categories',d?.reasons??null,state==='CONFIRMED'?'SUPPORTED':state)
+    put('memory_recorded_retry_state',d?.retry??null,state==='CONFIRMED'?'SUPPORTED':state)
+    put('memory_retained_last_completion',d?.lastRecordedSuccessAt??null,state==='CONFIRMED'&&d.lastRecordedSuccessAt?'CONFIRMED':state==='CONFIRMED'?'UNKNOWN':state,'retained_historical_record')
+    put('memory_failure_root_cause',null,'UNKNOWN','historical_failure_causation')
+  }
   for(const c of report.executionUsage?.chains||[])for(const [facet,state]of Object.entries({execution:c.executionState,model:c.modelState,usage:c.usageState,correlation:c.correlationState,billing:c.billingState})){
     const refs=c.references.flatMap(ref=>Object.entries(ref.fields).map(([field,value])=>({sourceId:ref.sourceId,recordId:ref.recordId,field,value})))
     const values={execution:{attempts:c.observedAttempts??null,dispatches:c.observedDispatches??null,results:c.successfulResults??null,startedTurns:c.observedStartedTurns??null,completedTurns:c.observedCompletedTurns??null,recordedState:c.recordedState??null},model:c.references.filter(r=>r.fields.modelResultObserved===true&&r.fields.state==='succeeded').map(r=>r.fields.actualModel).filter(Boolean),usage:{models:c.usageModels,cumulativeUsage:c.cumulativeUsage??null,complete:c.usageComplete===true},correlation:c.identity}

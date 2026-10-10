@@ -109,6 +109,7 @@ function buildPrompt (question, catalogue, contextBlocks, workingContext) {
     '',
     '規則：',
     '- Investigation in any language: identify the goal, then evidence needs, then matching operations. Do not require the Owner to name sources. Development diagnosis needs work records, source revision and candidate tests versus loaded-version verification; background questions need configuration, enablement, history and a live runtime witness. Select external sources only when they can supply relevant evidence. Configuration and saved running states are not live activity. Map investigation_evidence to the evidence needed, never to an invented tool.',
+    '- Memory processing failure diagnosis (Chinese or English) is background investigation, not a failed development task. Include memory_failures evidence and xiangxiang_operations: current canonical index/consolidation diagnostics, recorded error categories, retry schedules/limits and retained success/failure times. Raw-only and empty consolidation are valid outcomes, not failures. Recorded generic unavailability does not establish authentication, quota or model root causes. Keep investigation read-only.',
     '- 最多 ' + MAX_FACTS + ' 樣事實。',
     '- 每樣事實要指明 operation、entity、同你需要嘅欄位名。',
     '- 如果冇任何 operation 承載得到某樣事實，operation 同 entity 都填 null。**唔好就近搵一個似樣嘅頂替。**',

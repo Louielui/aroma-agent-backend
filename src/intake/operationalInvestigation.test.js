@@ -55,6 +55,31 @@ test('bilingual intake saves the exact repair-chain gap without claiming an unre
  }
 })
 
+test('bilingual memory failure investigation selects diagnostics, binds evidence and recommends without extra calls or dispatch',async t=>{
+ const {buildDiagnostics}=require('../investigation/memoryFailures')
+ for(const question of ['記憶處理為什麼有失敗？會影響什麼？建議怎樣處理？','Why did memory processing fail, what is affected, and what do you recommend?']) {
+  const at=new Date().toISOString()
+  const diagnostics=buildDiagnostics('memory_index',[{index:{state:'unconfirmed',reason:'memory_unavailable',attempts:3,checkedAt:at,nextRetryAt:null}}],at)
+  const progress={version:1,at,unit:'memory_record',scope:'active_general_memory_records',counts:{total:1,saved:0,raw_only:0,pending:0,unconfirmed:1,source_only:0,other:0},diagnostics}
+  const x=await turn(t,{question,focus:'background',fastPath:true,investigationEvidence:['memory_failures'],evidenceSections:[{section:'configuration',state:'partial',sourceId:'configuration:diagnostic',retrievedAt:at,records:[
+   {sourceId:'backend:memory_index',role:'memory_index',at,evidenceBasis:'live_process_snapshot',observationState:'ok',currentRunningState:'idle',enabled:true,progressState:'ok',progress}]}]})
+  assert.match(x.result.reply,/詳細原因未記錄|detailed cause was not recorded/)
+  assert.match(x.result.reply,/達重試上限 1|1 at the retry limit/)
+  assert.match(x.result.reply,/語意搜尋|semantic retrieval/)
+  assert.match(x.result.reply,/^記憶處理：|^Memory processing:/)
+  assert.doesNotMatch(x.result.reply,/已找到排程設定|Recommended next steps|建議怎樣處理/)
+  assert.match(x.result.reply,/根本原因.*未確認|root cause.*unconfirmed/i)
+  assert.equal(x.result.investigation.evidenceModel.assertions.find(a=>a.facet==='memory_recorded_failure_count').state,'CONFIRMED')
+  assert.equal(x.result.investigation.evidenceModel.assertions.find(a=>a.facet==='memory_recorded_error_categories').state,'SUPPORTED')
+  assert.equal(x.result.investigation.evidenceModel.assertions.find(a=>a.facet==='memory_failure_root_cause').state,'UNKNOWN')
+  assert.equal(x.result.investigation.workPurpose.jobs[0].progress.diagnostics.failed,1)
+  assert.equal(x.result.investigation.answerPresentation.workPurpose.references[0].recordId,'backend:memory_index')
+  assert.equal(x.result.reply,x.result.replyForArchive);assert.deepEqual(x.result.tasks,[])
+  assert.equal(x.calls.filter(c=>c.schema!=='goal_plan').length,0)
+  assert.deepEqual(x.reads,[{source:'xiangxiang_operations',method:'readInvestigation'}])
+ }
+})
+
 test('purpose and canonical backlog reach the actual bilingual background intake without extra models or dispatch',async t=>{
  for(const question of ['電郵分析和記憶處理各自在做什麼？完成了什麼？還有多少未處理？','What do email analysis and memory processing do, what has completed, and what remains?']){
   const at=new Date().toISOString()
