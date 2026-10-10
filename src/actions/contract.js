@@ -9,6 +9,8 @@ const hash = value => require('node:crypto').createHash('sha256').update(JSON.st
 function target (id) { const t = TARGETS.find(t => t.id === id); if (!t) throw Error('target_not_allowed'); return t }
 function validInput (b) {
   if (typeof b?.op==='string' && b.op.startsWith('chat_')) {
+    if(b.op==='chat_recommend')return Object.keys(b).sort().join(',')==='context,op'&&validContext(b.context)
+    if(b.op==='chat_prepare_recommended')return Object.keys(b).sort().join(',')==='context,inspectionId,op,targetId'&&validContext(b.context)&&ID.test(b.inspectionId||'')&&TARGETS.some(t=>t.id===b.targetId)
     const op=b.op.slice(5), rest={...b,op};delete rest.context
     return ['list','get','prepare','approve','restore'].includes(op) && validContext(b.context) && validInput(rest)
   }

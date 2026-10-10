@@ -25,8 +25,9 @@ test('bilingual desktop and mobile investigation approves once, shows saved cita
         if (p === '/api/v1/demo/investigations/' + id) return json({ run: { id, state: 'completed', investigation: shownReport, enquiryApprovalId: linked ? 'appr_fixture' : null } })
         if (p === '/api/v1/demo/scheduler-actions') {
           assert.equal(focus,'background'); assert.equal(method,'POST')
-          assert.deepEqual(r.postDataJSON(),{op:'list',conversationId:cid,investigationId:id})
-          return json({runs:[]})
+          const body=r.postDataJSON();assert.deepEqual({...body,op:'list'},{op:'list',conversationId:cid,investigationId:id})
+          if(body.op==='list')return json({runs:[]})
+          assert.equal(body.op,'recommend');return json({assessment:{at:new Date().toISOString(),sourceState:'UNAVAILABLE',candidates:[],recommendations:[]}})
         }
         if (p === '/api/v1/owner/investigations/' + id + '/work-order') {
           preparations++; assert.equal(method, 'POST'); assert.deepEqual(r.postDataJSON(), {}); linked = true

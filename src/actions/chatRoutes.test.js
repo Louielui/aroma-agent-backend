@@ -18,6 +18,9 @@ test('real intake → saved investigation → inline approval route → read-bac
  let r=await send('/api/v1/demo/intake',{message,conversationId:cid,websiteRequestId:rid});assert.equal(r.status,200);assert.equal(writes,0);assert.equal(r.body.investigationRunId,rid)
  assert.equal(conversations.get(cid).messages.at(-1).investigationRunId,rid)
  const c={conversationId:cid,investigationId:rid},api='/api/v1/demo/scheduler-actions'
+ const assessment=(await send(api,{op:'recommend',...c})).body.assessment;assert.equal(assessment.sourceState,'UNAVAILABLE');assert.equal(assessment.recommendations.length,0);assert.equal(writes,0)
+ assert.equal((await send(api,{op:'recommend',...c,evidence:'confirmed duplicate'})).status,400)
+ assert.equal((await send('/api/v1/scheduler-actions',{op:'chat_recommend',context:c})).status,400)
  const p=(await send(api,{op:'list',...c})).body.runs[0];assert.ok(p.nonce);assert.equal(p.capability,'scheduler.resume')
  assert.equal((await send(api,{op:'approve',...c,id:p.id,hash:p.hash,nonce:p.nonce},false)).status,401)
  assert.equal((await send(api,{op:'approve',...c,id:p.id,hash:p.hash,nonce:p.nonce},true,'https://other.invalid')).status,403)

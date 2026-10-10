@@ -13,7 +13,7 @@ function createGateway ({ store = require('./store').createStore(), scheduler = 
     for(const t of TARGETS){try{const o=await scheduler.read(t.id);if(!current(o))throw Error('invalid_scheduler_receipt');r.observations.push({target:t,source:'Windows Task Scheduler fresh exact read',state:'CONFIRMED',snapshot:o})}catch(_){r.observations.push({target:t,state:'UNAVAILABLE'})}}
     record(r,'investigated',{duplicateState:'UNKNOWN'});return view(r)
   }
-  async function prepare ({inspectionId,targetId,action}, restoreOf=null, context=null) {
+  async function prepare ({inspectionId,targetId,action}, restoreOf=null, context=null, recommendation=null) {
     target(targetId);const inspection=store.get(inspectionId), row=inspection?.observations?.find(o=>o.target.id===targetId)
     if(inspection?.state!=='inspected'||row?.state!=='CONFIRMED'||!current(row.snapshot))throw Error('investigation_stale')
     const before=await scheduler.read(targetId), enabled=action==='scheduler.resume'
@@ -23,6 +23,7 @@ function createGateway ({ store = require('./store').createStore(), scheduler = 
     const r={id:randomUUID(),state:'awaiting_approval',timeline:[],target:target(targetId),capability:action,expected:before,desiredEnabled:enabled,inspectionId,restoreOf,previousState:before.enabled,expiresAt:now()+600000,proposedBy:'owner-request',worker:'fixed-windows-scheduler',model:null,
       rollback:{capability:before.enabled?'scheduler.resume':'scheduler.pause',targetId,requiresFreshApproval:true},impact:'future_triggers_only_no_running_process_termination',duplicateState:'UNKNOWN'}
     if(context)r.context=structuredClone(context)
+    if(recommendation)r.recommendation=structuredClone(recommendation)
     r.hash=proposalHash(r)
     const sessionId=approvals.createSession();sessions.set(r.id,sessionId)
     if(!approvals.seal({workOrder:{approvalId:r.id,hash:r.hash},proposalId:r.id}).ok)throw Error('approval_unavailable')
@@ -36,25 +37,29 @@ function createGateway ({ store = require('./store').createStore(), scheduler = 
     const expectedHash=proposalHash(r)
     if(r.hash!==expectedHash)throw Error('approval_unavailable')
     tickets.delete(r.id)
-    if(busy.has(r.target.id))throw Error('target_locked')
-    const release=store.lock(r.target.id);busy.add(r.target.id)
+    const locks=[r.target.id,...(r.recommendation?[r.recommendation.survivorId]:[])].sort(),releases=[]
+    if(locks.some(id=>busy.has(id)))throw Error('target_locked')
+    try{for(const id of locks)releases.push(store.lock(id))}catch(e){releases.reverse().forEach(fn=>fn());throw e}
+    locks.forEach(id=>busy.add(id))
     try {
       r.state='approved';record(r,'approved',{approvalHash:r.hash,approvedBy:'authenticated_owner'})
       const before=await scheduler.read(r.target.id)
       if(!idle(before))throw Error('task_not_idle')
       if(before.definitionHash!==r.expected.definitionHash||before.enabled!==r.previousState)throw Error('target_changed')
+      if(r.recommendation)await verifyRecommendation(r)
       r.before=before;r.state='executing';record(r,'dispatched',{worker:r.worker})
       // Persist before the side effect; a lost reply can never dispatch the same approval again.
       await scheduler.apply(r.target.id,{action:r.capability,definitionHash:before.definitionHash,enabled:before.enabled})
       record(r,'readback_started')
       const after=await scheduler.read(r.target.id);r.after=after
       if(!idle(after)||after.definitionHash!==before.definitionHash||after.enabled!==r.desiredEnabled)throw Error('verification_failed')
+      if(r.recommendation){const survivor=await scheduler.read(r.recommendation.survivorId),expected=r.recommendation.references.find(x=>x.targetId===survivor.targetId);if(!current(survivor)||!survivor.enabled||survivor.definitionHash!==expected.definitionHash)throw Error('verification_failed');record(r,'survivor_verified',{targetId:survivor.targetId,enabled:true,definitionHash:survivor.definitionHash})}
       r.state='verified';record(r,'verified',{beforeEnabled:before.enabled,afterEnabled:after.enabled,running:false});return view(r)
     } catch(e) {
       r.state=r.state==='executing'?'outcome_unknown':'failed';r.reason=['target_changed','task_not_idle','verification_failed','scheduler_unavailable','invalid_scheduler_receipt','audit_unavailable'].includes(e.message)?e.message:'action_unavailable'
       // If saving fails, the last durable dispatched record remains uncertain. Never retry.
       record(r,'failed',{reason:r.reason});return view(r)
-    } finally {busy.delete(r.target.id);release()}
+    } finally {locks.forEach(id=>busy.delete(id));releases.reverse().forEach(fn=>fn())}
   }
   async function restore (id,context=null) {
     const old=store.get(id);if(old?.state!=='verified')throw Error('rollback_unavailable')
@@ -62,14 +67,23 @@ function createGateway ({ store = require('./store').createStore(), scheduler = 
     if(o?.state!=='CONFIRMED'||o.snapshot.definitionHash!==old.after.definitionHash||o.snapshot.enabled!==old.after.enabled)throw Error('target_changed')
     return prepare({inspectionId:i.id,targetId:old.target.id,action:old.rollback.capability},id,context)
   }
-  function proposalHash(r){return hash({target:r.target,capability:r.capability,expected:r.expected,desiredEnabled:r.desiredEnabled,inspectionId:r.inspectionId,restoreOf:r.restoreOf,expiresAt:r.expiresAt,...(r.context?{context:r.context}:{})})}
+  function proposalHash(r){return hash({target:r.target,capability:r.capability,expected:r.expected,desiredEnabled:r.desiredEnabled,inspectionId:r.inspectionId,restoreOf:r.restoreOf,expiresAt:r.expiresAt,...(r.context?{context:r.context}:{}),...(r.recommendation?{recommendation:r.recommendation}:{})})}
+  async function verifyRecommendation(r){const i=await inspect(),a=require('./recommendations').assess(i,now()),v=a.recommendations.find(x=>x.targetId===r.target.id&&x.survivorId===r.recommendation.survivorId&&x.evidenceHash===r.recommendation.evidenceHash);if(!v)throw Error('target_changed')}
   function chatView(r){const v=view(r);if(v?.state==='awaiting_approval'&&v.expiresAt>now()&&approvals.validSession(sessions.get(v.id))&&approvals.loadSealed(v.id).ok&&tickets.has(v.id))v.nonce=tickets.get(v.id);return v}
   async function handle (actor,b) {
     if(actor?.id!=='owner'||actor.role!=='owner')throw Error('owner_required')
     if(!validInput(b))throw Error('invalid_request')
     if(b.op.startsWith('chat_')){
       const op=b.op.slice(5),context={conversationId:b.context.conversationId,investigationId:b.context.investigationId}
-      if(op==='list')return {runs:store.list().filter(r=>r.context&&hash(r.context)===hash(context)).map(chatView)}
+      if(op==='recommend'){const i=await inspect(),r=store.get(i.id);r.context=context;r.assessment=require('./recommendations').assess(i,now());record(r,'assessed',{context,configurationOnly:true});return {assessment:r.assessment}}
+      if(op==='prepare_recommended'){
+        const old=store.get(b.inspectionId),rec=old?.assessment?.recommendations?.find(x=>x.targetId===b.targetId)
+        if(!rec||hash(old.context)!==hash(context)||now()-Date.parse(old.assessment.at)>30000)throw Error('investigation_stale')
+        const i=await inspect(),assessment=require('./recommendations').assess(i,now()),fresh=assessment.recommendations.find(x=>x.targetId===rec.targetId&&x.survivorId===rec.survivorId&&x.evidenceHash===rec.evidenceHash)
+        if(!fresh)throw Error('target_changed')
+        return {run:await prepare({inspectionId:i.id,targetId:rec.targetId,action:'scheduler.pause'},null,context,{...fresh,assessmentId:old.id})}
+      }
+      if(op==='list')return {runs:store.list().filter(r=>r.target&&['scheduler.pause','scheduler.resume'].includes(r.capability)&&r.context&&hash(r.context)===hash(context)).map(chatView)}
       if(op==='prepare')return {run:await prepare(b,null,context)}
       const r=store.get(b.id)
       if(!r?.context||hash(r.context)!==hash(context))throw Error('approval_unavailable')

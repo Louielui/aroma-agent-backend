@@ -19,7 +19,7 @@ function createChatGateway({request,receipts,conversations}){
   return {conversationId:b.conversationId,investigationId:b.investigationId}
  }
  async function handle(b){
-  const shapes={inspect:['op','conversationId','investigationId'],list:['op','conversationId','investigationId'],get:['op','conversationId','investigationId','id'],prepare:['op','conversationId','investigationId','targetId','action'],approve:['op','conversationId','investigationId','id','hash','nonce'],restore:['op','conversationId','investigationId','id']}
+  const shapes={recommend:['op','conversationId','investigationId'],prepare_recommended:['op','conversationId','investigationId','inspectionId','targetId'],inspect:['op','conversationId','investigationId'],list:['op','conversationId','investigationId'],get:['op','conversationId','investigationId','id'],prepare:['op','conversationId','investigationId','targetId','action'],approve:['op','conversationId','investigationId','id','hash','nonce'],restore:['op','conversationId','investigationId','id']}
   if(!b||!Object.hasOwn(shapes,b.op)||Object.keys(b).sort().join(',')!==shapes[b.op].sort().join(','))throw Error('invalid_request')
   const context=contextOf(b)
   if(b.op==='inspect')return call({op:'inspect'})

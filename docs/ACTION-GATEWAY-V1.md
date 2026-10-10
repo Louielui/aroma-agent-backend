@@ -46,6 +46,36 @@ inspect and explicitly select one registered task in that saved investigation's
 panel. This is a bounded handoff, not general autonomous duplicate diagnosis.
 
 Overall connection is PARTIAL: registered actions have a reachable approval
-surface; automatic duplicate diagnosis, arbitrary inventory and other write
+surface; actual duplicate-execution diagnosis, arbitrary inventory and other write
 adapters remain unconnected. Real Windows acceptance must be measured separately
 from fixture/HTTP tests; if unavailable, report it as pending, never as passed.
+
+## Evidence-to-recommendation handoff
+
+Background investigation panels now automatically ask the host for a fresh,
+read-only assessment of the two registered tasks. This remains a bounded source,
+not an inventory of every Windows/Codex/backend job. Arbitrary names or model
+prose cannot select a target or supply duplication evidence.
+
+The fixed Windows reader hashes Actions, Principals and Settings (excluding only
+Settings/Enabled), plus enabled exact CalendarTrigger XML. Unsupported triggers,
+random delay or variable-bearing execution definitions produce unavailable
+comparison evidence. Identical action/condition hashes and overlapping trigger
+hashes establish redundant *configuration*, not duplicate execution or charges.
+An entire-task pause is recommended only when all of its enabled triggers are
+covered by another registered, enabled, idle task. Partial overlap and mere
+similarity produce no pause recommendation.
+
+`recommend` and `prepare_recommended` require the same saved investigation and
+conversation as other chat operations. The latter rereads both tasks and seals
+the exact recommendation, retained target and evidence hash with the proposal.
+Approval locks both registered targets and checks the retained task again before
+dispatch and after target read-back. Drift or missing evidence refuses action;
+lost coverage after a side effect is outcome_unknown, never a claimed success.
+External administrators can still change Windows tasks outside these gateway
+locks; the read-back detects observed drift, not an atomic Windows transaction.
+Rollback is a separate exact inverse requiring fresh Owner approval.
+
+Positive recommended-action acceptance uses isolated scheduler fixtures. Live
+Windows acceptance reads the unchanged registered tasks and must not manufacture
+a production duplicate or relabel absence of evidence as success.

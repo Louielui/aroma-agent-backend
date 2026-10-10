@@ -1342,6 +1342,7 @@
       content.appendChild(el('strong', '', r.target.taskPath + r.target.taskName))
       content.appendChild(el('p', '', r.capability === 'scheduler.pause' ? t('actions.pauseAction') : t('actions.resumeAction')))
       content.appendChild(el('p', '', t('actions.impact'))); content.appendChild(el('p', '', t('actions.rollback')))
+      if(r.recommendation){content.appendChild(el('p','',t('actions.recommendBasis',{survivor:r.recommendation.survivorTaskName})));content.appendChild(el('p','',t('actions.executionUnknown')))}
       var pending = r.state === 'awaiting_approval', verified = r.state === 'verified'
       content.appendChild(el('p', '', verified ? t('actions.verified') : pending ? (r.nonce ? t('actions.pending') : t('actions.expired')) : t('actions.failure')))
       if (verified && r.after && r.after.at) content.appendChild(el('p','meta',t('actions.checkedAt',{at:new Date(r.after.at).toLocaleString()})))
@@ -1355,7 +1356,7 @@
       if (verified) button(content, t('actions.restore'), function () { return call({op:'restore',id:r.id}).then(function(v){show(v.run)}) })
       if (pending && !r.nonce) button(content, t('actions.inspect'), inspect)
       button(content, t('actions.refresh'), function () { return call({op:'get',id:r.id}).then(function(v){show(v.run)}) })
-      var details=el('details'), facts=el('pre');facts.textContent=JSON.stringify({investigationId:investigationId,expected:r.expected,hash:r.hash,timeline:r.timeline},null,2)
+      var details=el('details'), facts=el('pre');facts.textContent=JSON.stringify({investigationId:investigationId,expected:r.expected,recommendation:r.recommendation||null,hash:r.hash,timeline:r.timeline},null,2)
       details.appendChild(el('summary','',t('actions.evidence')));details.appendChild(facts);content.appendChild(details)
     }
     function inspect () {
@@ -1368,10 +1369,25 @@
         })
       })
     }
+    function recommend () {
+      status.textContent=t('actions.assessing')
+      return call({op:'recommend'}).then(function(v){
+        var a=v.assessment;clear(content);status.textContent=''
+        content.appendChild(el('p','',t('actions.recommendScope')))
+        content.appendChild(el('p','',t('actions.checkedAt',{at:new Date(a.at).toLocaleString()})))
+        if(a.recommendations.length){a.recommendations.forEach(function(r){
+          var row=el('div','scheduler-target');content.appendChild(row);row.appendChild(el('strong','',r.taskName));row.appendChild(el('p','',t('actions.recommendBasis',{survivor:r.survivorTaskName})));row.appendChild(el('p','',t('actions.executionUnknown')))
+          button(row,t('actions.prepareRecommended'),function(){return call({op:'prepare_recommended',inspectionId:a.inspectionId,targetId:r.targetId}).then(function(v){show(v.run)})})
+        })}else content.appendChild(el('p','',a.sourceState==='UNAVAILABLE'?t('actions.evidenceMissing'):a.candidates.length?t('actions.overlapOnly'):t('actions.noRecommendation')))
+        button(content,t('actions.reassess'),recommend)
+        var manual=el('details');manual.appendChild(el('summary','',t('actions.manualChoice')));button(manual,t('actions.inspect'),inspect);content.appendChild(manual)
+        var facts=el('details'),body=el('pre');body.textContent=JSON.stringify(a,null,2);facts.appendChild(el('summary','',t('actions.evidence')));facts.appendChild(body);content.appendChild(facts)
+      })
+    }
     work(function(){return call({op:'list'}).then(function(v){
       status.textContent=''
       if(v.runs.length){var runs=v.runs.slice().sort(function(a,b){return Date.parse(a.timeline[0].at)-Date.parse(b.timeline[0].at)});show(runs[runs.length-1]);var history=el('details');history.appendChild(el('summary','',t('actions.history')));runs.forEach(function(r){button(history,r.target.taskName+' · '+(r.state==='verified'?t('actions.verified'):r.state==='awaiting_approval'?t('actions.pending'):t('actions.failure')),function(){return call({op:'get',id:r.id}).then(function(v){show(v.run)})})});content.appendChild(history)}
-      else {content.appendChild(el('p','',t('actions.unknown')));button(content,t('actions.inspect'),inspect)}
+      else return recommend()
     })})
   }
   function loadInvestigation (turnEl, id) {
