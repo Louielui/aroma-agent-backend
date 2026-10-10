@@ -214,11 +214,12 @@ function buildWorkRequestResolution ({ req, message, offerDecision, conversation
   return null
 }
 
-function createDemoRouter ({ getAdapterFn = getAdapterForLane, processIntakeFn = processIntake, conversationStore = INERT_CONVERSATION_STORE, readBacklogFn = null, backlogTimeoutMs = 2500, errandStoreFn = null, operatingManager = null, memoryJournal = null, mailChat = null, liveContext = null, developmentPlan = null, codeDiagnosis = null, codeRepair = null, chatWork = null, taskPlanner = null, taskDialogue = null, schedulerChat = null, capabilityGaps = null, imageAdapterFn = selection => {
+function createDemoRouter ({ getAdapterFn = getAdapterForLane, processIntakeFn = processIntake, conversationStore = INERT_CONVERSATION_STORE, readBacklogFn = null, backlogTimeoutMs = 2500, errandStoreFn = null, operatingManager = null, memoryJournal = null, mailChat = null, liveContext = null, sevenShiftsReport = null, developmentPlan = null, codeDiagnosis = null, codeRepair = null, chatWork = null, taskPlanner = null, taskDialogue = null, schedulerChat = null, capabilityGaps = null, imageAdapterFn = selection => {
   if (process.env.CHAT_BACKEND !== 'codex-subscription') throw Error('image_chat_unavailable')
   return new (require('../adapters/CodexSubscriptionAdapter').CodexSubscriptionAdapter)(selection)
 }, modelCenter = null, planningRevision = require('../governance/bootCommit').BOOT_COMMIT, modelsFn = async () => new (require('../adapters/CodexSubscriptionAdapter').CodexSubscriptionAdapter)().models() } = {}) {
   const contextReceipts = new Map()
+  const clockOutReceipts = new Map()
   const chatWorkReceipts = new Map()
   const router = express.Router()
   const investigationReceipts = require('../investigation/receipts').createReceipts()
@@ -571,12 +572,43 @@ function createDemoRouter ({ getAdapterFn = getAdapterForLane, processIntakeFn =
       // Browser history can still contain the immediately displayed mail answer.
       // Replace it before ordinary intake; the source-bound lane rechecks access.
       const history = Array.isArray(req.body.history) ? req.body.history.map((entry, i, all) =>
-        entry?.role === 'assistant' && (entry.sourceBound === true || (all[i - 1]?.role === 'user' && (require('../company/mailIntent').parseMailRequest(all[i - 1].text || all[i - 1].content, all.slice(0, i - 1)) || require('../context/gmailContextService').gmailIntent(all[i - 1].text || all[i - 1].content))))
+        entry?.role === 'assistant' && (entry.sourceBound === true || (all[i - 1]?.role === 'user' && (require('../company/mailIntent').parseMailRequest(all[i - 1].text || all[i - 1].content, all.slice(0, i - 1)) || require('../context/gmailContextService').gmailIntent(all[i - 1].text || all[i - 1].content) || require('../context/sevenShiftsReport').clockOutRequest(all[i - 1].text || all[i - 1].content))))
           ? { ...entry, text: t('company.mailHistoryReceipt'), content: t('company.mailHistoryReceipt') } : entry) : req.body.history
       // Resolve a bounded development conversation before keyword-based mail lanes:
       // navigation labels and chat history are not requests to read a mailbox.
       // A semantic topic change returns null and preserves ordinary mail routing.
       const planningLane = !contextCard && !req.body.attachSection && (!req.body.interactionMode || req.body.interactionMode === 'chat')
+      const clockOutRequest = planningLane && sevenShiftsReport ? require('../context/sevenShiftsReport').clockOutRequest(message) : null
+      if (clockOutRequest) {
+        if (!require('../core/operating/chatRequest').sameOrigin(req)) return res.status(403).json({ error: 'same_origin_required' })
+        const { conversationId, workflowRequestId } = req.body
+        if (!isValidConversationId(conversationId) || !require('../core/operating/runStore').ID.test(workflowRequestId || '')) return res.status(400).json({ error: 'invalid_request_id' })
+        const prior = clockOutReceipts.get(workflowRequestId)
+        if (prior && (prior.conversationId !== conversationId || prior.message !== message)) return res.status(409).json({ error: 'request_conflict' })
+        if (prior) {
+          try { prior.verify?.(); const result = await prior.result; prior.verify?.(); return res.set('Cache-Control', 'no-store').json(result) }
+          catch (_) { return res.status(503).json({ error: 'source_access_changed' }) }
+        }
+        if (clockOutReceipts.size >= 500) return res.status(409).json({ error: 'request_limit' })
+        const receipt = { conversationId, message }
+        try { receipt.verify = sevenShiftsReport.captureAccess() } catch (_) { /* read() returns a safe unavailable report */ }
+        receipt.result = (async () => {
+          const report = await sevenShiftsReport.read({ id: 'owner', role: 'owner' }, clockOutRequest)
+          if (report.state === 'live') receipt.verify?.()
+          const reply = require('../context/sevenShiftsReport').reportReply(report, /[\u3400-\u9fff]/u.test(message) ? 'zh' : 'en')
+          let gapRun, historySaved = true
+          if (report.gap && capabilityGaps) gapRun = capabilityGaps.offer({ id: 'owner', role: 'owner' }, { conversationId, requestId: workflowRequestId, message,
+            gap: report.gap, model: req.body.chatModel || require('../subscription/chatModels').DEFAULT_BRAIN_MODEL,
+            effort: require('../intake/chatSpeed').profileFor(req.body.chatLevel || 'medium').effort,
+            readRequest: { window: 'dates', dates: [report.query.firstDate, report.query.lastDate] } })
+          try { conversationStore.appendTurn({ id: conversationId, userText: message, replyText: reply, ...(gapRun ? { capabilityGapRunId: gapRun.id } : {}) }) } catch (_) { historySaved = false }
+          return { lane: 'chat', mode: report.state === 'needs_date' ? 'ask' : 'chat', reply, sevenShiftsReport: report, sourceBound: true, historySaved, servedBy: null,
+            ...(gapRun ? { capabilityGapRunId: gapRun.id, capabilityGapResolution: gapRun } : {}) }
+        })()
+        clockOutReceipts.set(workflowRequestId, receipt)
+        try { return res.set('Cache-Control', 'no-store').json(await receipt.result) }
+        catch (_) { return res.status(503).json({ error: 'clock_out_report_unavailable' }) }
+      }
       if (planningLane && capabilityGaps && capabilityGaps.candidate(message, req.body.conversationId)) {
         if (!require('../core/operating/chatRequest').sameOrigin(req)) return res.status(403).json({ error: 'same_origin_required' })
         const allowed = ['message','conversationId','workflowRequestId','websiteRequestId','history','providerHint','previousLane','chatLevel','chatModel','interactionMode']
