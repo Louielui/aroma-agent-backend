@@ -23,7 +23,7 @@ const WORK_ORDER = Object.freeze({ recipe: RECIPE, capability: CAPABILITY, versi
 function isDevelopmentPlanRequest (message) {
   if (typeof message !== 'string') return false
   const value = message.trim().replace(/[。！!？?]+$/, '').trim()
-  return /^(?:香香[，,\s]*)?(?:請|幫我)?(?:檢查|查看)(?:目前|現在)(?:的)?開發進度(?:[，,]\s*|並)提出下一項修正方案$/u.test(value) || /^review development progress and propose the next fix$/i.test(value)
+  return /^(?:(?:香香|Imagine|Xiangxiang)[，,\s]*)?(?:請|幫我)?(?:檢查|查看)(?:目前|現在)(?:的)?開發進度(?:[，,]\s*|並)提出下一項修正方案$/iu.test(value) || /^review development progress and propose the next fix$/i.test(value)
 }
 const hash = value => createHash('sha256').update(JSON.stringify(value)).digest('hex')
 function packet (report) {

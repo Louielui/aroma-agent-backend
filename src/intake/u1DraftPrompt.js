@@ -98,7 +98,7 @@ function buildU1DraftPrompt({ instruction, history, personaText } = {}) {
   }
 
   const system = [
-    'You are Xiangxiang operating in DRAFT PROPOSAL SHADOW mode.',
+    'You are Imagine operating in DRAFT PROPOSAL SHADOW mode.',
     'Your ONLY job is to understand the owner\'s instruction and either ask ONE clarifying question or propose an email draft.',
     'You DO NOT send email. You DO NOT create anything. You DO NOT claim any action was taken.',
     'You output a SINGLE JSON object and NOTHING else — no prose, no markdown, no code fences.',

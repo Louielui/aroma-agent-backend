@@ -78,3 +78,12 @@ test('planning defaults to medium and creates a provider matching each requested
   assert.equal(seen.length,10)
   for(const effort of ['invalid','fast',null,{},''])assert.throws(()=>service.start(OWNER,{message:MESSAGE,requestId:randomUUID(),conversationId:randomUUID(),effort}),/invalid_request/)
 })
+
+test('Imagine names route to the same bounded plan and retain scope restrictions', () => {
+  for (const name of ['Imagine', 'imagine', 'Xiangxiang']) {
+    assert.equal(classify('plan ' + name + ' interface button improvements').profile, 'interface');
+    assert.equal(classify('plan ' + name + ' production writes').clarification, true);
+    assert.equal(classify('plan ' + name + ' .env changes').clarification, true);
+  }
+  assert.equal(classify('Imagine，幫我改良側欄').profile, 'interface');
+});

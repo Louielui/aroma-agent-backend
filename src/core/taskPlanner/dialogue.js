@@ -121,7 +121,7 @@ function createDialogue ({ store, planner, revision, providerFor, receipts = cre
             } else if (run && !replan && (!changed || ['queued', 'running'].includes(run.state))) reply = t('dialogue.existing', undefined, v.language)
             else {
               const dialogue = { context: ctx, contextDigest: ctx.digest, ownerRequests: ctx.ownerRequests, proposals: ctx.proposals, confirmation: message, language: v.language }
-              run = planner.start(actor, { message: ctx.profile === 'interface' ? 'plan Xiangxiang interface from agreed dialogue' : 'plan Xiangxiang chat page from agreed dialogue', conversationId, requestId, effort, model, dialogue })
+              run = planner.start(actor, { message: ctx.profile === 'interface' ? 'plan Imagine interface from agreed dialogue' : 'plan Imagine chat page from agreed dialogue', conversationId, requestId, effort, model, dialogue })
               receipt.taskPlanRunId = run.id; receipt.state = 'planning_started'; receipts.save(receipt)
               reply = t('dialogue.started', undefined, v.language)
             }
@@ -129,7 +129,7 @@ function createDialogue ({ store, planner, revision, providerFor, receipts = cre
             if (!run || run.state !== 'completed') reply = t('dialogue.planFirst', undefined, v.language)
             else if (run.dialogue?.contextDigest !== ctx.digest) {
               const dialogue = { context: ctx, contextDigest: ctx.digest, ownerRequests: ctx.ownerRequests, proposals: ctx.proposals, confirmation: message, language: v.language }
-              run = planner.start(actor, { message: ctx.profile === 'interface' ? 'plan Xiangxiang interface from agreed dialogue' : 'plan Xiangxiang chat page from agreed dialogue', conversationId, requestId, effort, model, dialogue })
+              run = planner.start(actor, { message: ctx.profile === 'interface' ? 'plan Imagine interface from agreed dialogue' : 'plan Imagine chat page from agreed dialogue', conversationId, requestId, effort, model, dialogue })
               receipt.taskPlanRunId = run.id; receipt.state = 'planning_started'; receipts.save(receipt)
               reply = t('dialogue.replanning', undefined, v.language)
             } else if (run.taskRunId || run.registrationPreparation) reply = t('dialogue.existing', undefined, v.language)

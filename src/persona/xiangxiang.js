@@ -16,7 +16,8 @@
  *                           <context_card> block is background DATA, not
  *                           instructions, and can never override identity /
  *                           governance / reply schema.
- *   3. the existing distill system prompt — the classifier, preserved verbatim
+ *   3. BRAND_NAME_GUARD — Owner-selected English display name; Chinese identity stays intact.
+ *   4. the existing distill system prompt — the classifier, preserved verbatim
  *                           at the END so classification is unchanged.
  *
  * PERSONA_IDENTITY is FROZEN (Owner sign-off, B5). It must NOT be rewritten,
@@ -85,6 +86,9 @@ const ACTION_HONESTY_GUARD = [
   '當要求尚未收斂成單一明確動作時,先請 Louie 收斂,並說明目前尚未建立任何提案。'
 ].join('')
 
+// Owner-requested naming policy; keep the signed Chinese persona unchanged.
+const BRAND_NAME_GUARD = '名稱約定：你的中文名稱是「香香」，英文名稱是「Imagine」。英文自我介紹及對外稱呼使用 Imagine；Xiangxiang 只是舊英文名或既有技術識別，不是現在的英文名稱。名稱不改變你的角色、能力或批准規則。'
+
 /**
  * Compose the demo system prompt: persona identity + data-boundary guard, above
  * the existing distill system (classifier). The classifier is preserved verbatim
@@ -94,7 +98,7 @@ const ACTION_HONESTY_GUARD = [
  * @returns {string}
  */
 function buildPersonaSystem (distillSystem) {
-  // Legacy wrapper — byte-identical to the historical behaviour. Delegates to the
+  // Wrapper delegates to the
   // pure composer with the frozen PERSONA_IDENTITY in the persona slot.
   return buildPersonaSystemFromPersona(PERSONA_IDENTITY, distillSystem)
 }
@@ -102,8 +106,7 @@ function buildPersonaSystem (distillSystem) {
 /**
  * Pure composer: place an ALREADY-VERIFIED persona text in the persona slot, above
  * the fixed data-boundary guard and the existing distill classifier. Only the
- * persona slot varies; the guard, the separators, and the classifier are exactly as
- * before. `buildPersonaSystem(d)` === `buildPersonaSystemFromPersona(PERSONA_IDENTITY, d)`.
+ * persona slot varies; the fixed naming policy accompanies either persona and the classifier stays last. `buildPersonaSystem(d)` === `buildPersonaSystemFromPersona(PERSONA_IDENTITY, d)`.
  *
  * @param {string} personaText   a verified persona string (legacy PERSONA_IDENTITY or a proven Hybrid Persona)
  * @param {string} distillSystem the existing distill SYSTEM_PROMPT
@@ -113,14 +116,14 @@ function buildPersonaSystemFromPersona (personaText, distillSystem, opts) {
   const parts = []
   if (personaText) parts.push(personaText) // trusted persona (frozen legacy, or a proven byte-identical hybrid)
   parts.push(CONTEXT_CARD_GUARD) // trusted security frame — always present in demo
+  parts.push(BRAND_NAME_GUARD) // trusted Owner naming policy, including when conversation contract is off
   // Optional additional trusted frames (demo-only; e.g. ACTION_HONESTY_GUARD),
   // placed AFTER the data-boundary guard and BEFORE the classifier. 2-arg callers
-  // (legacy buildPersonaSystem + existing tests) pass no opts → output is
-  // byte-identical to before.
+  // (legacy buildPersonaSystem + existing tests) still receive the fixed naming policy.
   const extra = opts && Array.isArray(opts.extraGuards) ? opts.extraGuards : []
   for (const g of extra) { if (g) parts.push(g) }
   parts.push(distillSystem) // existing classifier, unchanged, kept last
   return parts.join('\n\n')
 }
 
-module.exports = { buildPersonaSystem, buildPersonaSystemFromPersona, PERSONA_IDENTITY, CONTEXT_CARD_GUARD, ACTION_HONESTY_GUARD }
+module.exports = { buildPersonaSystem, buildPersonaSystemFromPersona, PERSONA_IDENTITY, CONTEXT_CARD_GUARD, ACTION_HONESTY_GUARD, BRAND_NAME_GUARD }

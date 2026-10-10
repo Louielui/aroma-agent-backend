@@ -477,3 +477,10 @@ test('*** nothing still tells the Owner to press a button that no longer exists 
     assert.ok(!src.includes('目前是聊天模式，未建立任何提案'), f + ' still ships the pre-unification message')
   }
 })
+
+test('Imagine-addressed investigations stay read-only even when historical evidence names mail actions', () => {
+  for (const name of ['Imagine', 'imagine', 'Xiangxiang', '香香']) {
+    assert.equal(routeLane(name + '，查一下之前寄出 email 的工作為什麼失敗').lane, CHAT);
+    if (name !== '香香') assert.equal(routeLane(name + ', investigate why the previous send email task failed').lane, CHAT);
+  }
+});

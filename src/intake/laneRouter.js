@@ -117,7 +117,7 @@ const WRITE_ACT = /(回覆|回复|覆返|覆下|回信|寫信|寫封|寫個|寫�
 // A primary request to investigate stays read-only even when its subject names
 // replies/drafts. Match only the opening act, not a read verb inside a real mail
 // instruction such as "Reply to Rob after checking the records".
-const PRIMARY_INVESTIGATION = /^(?:(?:香香|Xiangxiang)[，,:：\s]*)?(?:(?:請|请|幫我|帮我|麻煩|麻烦)\s*)?(?:查明|查清|查核|查詢|查询|查看|查|調查|调查|核對|核对|追查)|^(?:(?:please|help me)\s+)?(?:investigate|check|look into|find out|verify|audit)\b/i
+const PRIMARY_INVESTIGATION = /^(?:(?:香香|Imagine|Xiangxiang)[，,:：\s]*)?(?:(?:請|请|幫我|帮我|麻煩|麻烦)\s*)?(?:查明|查清|查核|查詢|查询|查看|查|調查|调查|核對|核对|追查)|^(?:(?:Imagine|Xiangxiang)[，,:：\s]+)?(?:(?:please|help me)\s+)?(?:investigate|check|look into|find out|verify|audit)\b/i
 const MAIL_OBJECT = /(e-?mail|電郵|郵件|信|回信|mail)/i
 // A recipient makes the act unambiguous even without the word "email": 「幫我回覆 Rob」.
 const RECIPIENT = /(?:回覆|回复|覆|回|reply to|respond to|畀|俾|比|給|to)\s*[「"']?([A-Za-z][A-Za-z.\- ]{1,30}|[一-鿿]{2,6})[」"']?/
