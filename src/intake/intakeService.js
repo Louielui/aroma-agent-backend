@@ -2181,6 +2181,7 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
   // reaches it, and it names a WORLD, never a capability. The model still chooses how to read.
   // ══════════════════════════════════════════════════════════════════════════
   let initialObligation = null
+  let terminalReadGap = null
   /**
    * ⛔ X4.4 — A SECOND, SEPARATE REASON A TURN MAY NOT STOP YET. NOT A4'S.
    *
@@ -2381,7 +2382,9 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
       // question stands, no obligation is invented, and no read is performed on a verdict that
       // never arrived.
       if (!initialIsAsk) {
-        distilled = Object.assign({}, distilled, { answerPlan: null, nextRead: null, reply: null })
+        terminalReadGap = 'validation_unavailable'
+        distilled = Object.assign({}, distilled, { mode: 'chat', tasks: [], answerPlan: null, nextRead: null,
+          reply: require('./readObligationGap').readGapReply(message, terminalReadGap) })
       }
       try { console.log('[AROMA-REASONING]', JSON.stringify({ requestId, event: 'REASONING_STEP', reasoningStep: 1, decisionType: initialIsAsk ? 'ask' : 'final', stopReason: initialIsAsk ? 'ask_validation_unavailable' : 'final_validation_unavailable' })) } catch (_) {}
       forkTrace(FORK_STAGE.INITIAL_FINAL_GATE, FORK_BRANCH.VERDICT_UNUSABLE, {
@@ -2573,6 +2576,17 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
   // Nothing downstream should be able to reach the older snapshot by accident.
   investigationObserved = investigationNow
 
+  // A world-level obligation cannot manufacture an operation for an unmapped
+  // goal. Preserve the missing-evidence boundary, but close it with an explicit
+  // gap instead of repeatedly refusing an impossible read and shipping silence.
+  if (initialObligation && !distilled.nextRead && !semanticAutomaticOperation &&
+      require('./readObligationGap').hasOnlyUnmappedRequiredFacts(investigationNow)) {
+    terminalReadGap = 'no_mapped_operation'
+    distilled = Object.assign({}, distilled, { mode: 'chat', tasks: [], answerPlan: null, nextRead: null,
+      reply: require('./readObligationGap').readGapReply(message, terminalReadGap) })
+    try { console.log('[AROMA-REASONING]', JSON.stringify({ requestId, event: 'READ_OBLIGATION_GAP', reason: terminalReadGap })) } catch (_) {}
+  }
+
   const x4InitialSelfReadable = !!(
     initialIsAsk && !gateAuthoredAsk &&
     distilled && distilled.mode === 'ask' && !distilled.nextRead &&
@@ -2609,7 +2623,7 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
   // has been attempted, report its gap instead of repeating a subscription turn
   // to ask the same unavailable fixed source again. Other source plans are intact.
   if (operationsScopeExhausted) operationalInvestigation.plan.completion = 'sources_exhausted_with_gaps'
-  const willEnterLoop = !!(!operationsScopeExhausted && readEntranceAllowed && interactionMode === 'chat' && distilled && (distilled.nextRead || initialObligation || x4InitialSelfRead || semanticPendingOperation))
+  const willEnterLoop = !!(!terminalReadGap && !operationsScopeExhausted && readEntranceAllowed && interactionMode === 'chat' && distilled && (distilled.nextRead || initialObligation || x4InitialSelfRead || semanticPendingOperation))
   forkTrace(FORK_STAGE.LOOP_ENTRY,
     willEnterLoop ? FORK_BRANCH.LOOP_ENTERED : FORK_BRANCH.LOOP_SKIPPED,
     { reasoningEntered: willEnterLoop, shortCircuit: !willEnterLoop })
@@ -3310,7 +3324,9 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
     // loop happened to return, so this holds however the loop ended.
     // ══════════════════════════════════════════════════════════════════════════
     if (requiredWorlds && missingWorld(requiredWorlds, completedWorlds)) {
-      distilled = Object.assign({}, distilled, { answerPlan: null, nextRead: null, reply: null })
+      terminalReadGap = 'required_world_missing'
+      distilled = Object.assign({}, distilled, { mode: 'chat', tasks: [], answerPlan: null, nextRead: null,
+        reply: require('./readObligationGap').readGapReply(message, terminalReadGap) })
       try { console.log('[AROMA-REASONING]', JSON.stringify({ requestId, event: 'REASONING_STEP', reasoningStep: loop.steps, decisionType: 'final', stopReason: 'required_world_missing' })) } catch (_) {}
     }
     /**

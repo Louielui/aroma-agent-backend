@@ -314,6 +314,8 @@ test('*** P — ⛔ an UNAVAILABLE read does not satisfy the required world ***'
     assert.equal(a.calls.length, 1 + 3)
     assert.equal(String(out.reply || '').includes('試過唔得。'), false,
       '⛔ an answer was released although the required world never produced evidence')
+    assert.equal(out.reply.includes('呢個回合冇產生'), false, 'a known evidence gap must not become an empty-response fault')
+    assert.ok(out.reply.includes('尚未取得所需的即時資料'), out.reply)
   })
 })
 
