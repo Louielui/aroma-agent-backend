@@ -59,10 +59,14 @@ test('bilingual memory failure investigation selects diagnostics, binds evidence
  const {buildDiagnostics}=require('../investigation/memoryFailures')
  for(const question of ['記憶處理為什麼有失敗？會影響什麼？建議怎樣處理？','Why did memory processing fail, what is affected, and what do you recommend?']) {
   const at=new Date().toISOString()
-  const diagnostics=buildDiagnostics('memory_index',[{index:{state:'unconfirmed',reason:'memory_unavailable',attempts:3,checkedAt:at,nextRetryAt:null}}],at)
-  const progress={version:1,at,unit:'memory_record',scope:'active_general_memory_records',counts:{total:1,saved:0,raw_only:0,pending:0,unconfirmed:1,source_only:0,other:0},diagnostics}
+  const id='xx-aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',trace=require('../investigation/workTrace').createWorkTrace('memory_index','intake-fixture','extraction',3,id)
+  const rows=[{id,index:{state:'unconfirmed',reason:'memory_unavailable',failureCheckpoint:'index_retain',workTrace:trace,attempts:3,checkedAt:at,nextRetryAt:null}}]
+  const diagnostics=buildDiagnostics('memory_index',rows,at)
+  const failureEvidence=require('../investigation/memoryAttemptEvidence').buildAttemptEvidence('memory_index',rows,at)
+  const progress={version:1,at,unit:'memory_record',scope:'active_general_memory_records',counts:{total:1,saved:0,raw_only:0,pending:0,unconfirmed:1,source_only:0,other:0},diagnostics,failureEvidence}
   const x=await turn(t,{question,focus:'background',fastPath:true,investigationEvidence:['memory_failures'],evidenceSections:[{section:'configuration',state:'partial',sourceId:'configuration:diagnostic',retrievedAt:at,records:[
-   {sourceId:'backend:memory_index',role:'memory_index',at,evidenceBasis:'live_process_snapshot',observationState:'ok',currentRunningState:'idle',enabled:true,progressState:'ok',progress}]}]})
+   {sourceId:'backend:memory_index',role:'memory_index',at,evidenceBasis:'live_process_snapshot',observationState:'ok',currentRunningState:'idle',enabled:true,progressState:'ok',progress}]},
+    {section:'execution',state:'partial',sourceId:'execution:trace',retrievedAt:at,records:[require('../investigation/invocations').projectRecord({invocationId:require('node:crypto').randomUUID(),role:'memory_completion',model:'claude-opus-5-5',state:'failed',startedAt:new Date(Date.parse(at)-2000).toISOString(),finishedAt:new Date(Date.parse(at)-1000).toISOString(),workTrace:trace,failureCode:'subscription_login_required'})]}]})
   assert.match(x.result.reply,/詳細原因未記錄|detailed cause was not recorded/)
   assert.match(x.result.reply,/達重試上限 1|1 at the retry limit/)
   assert.match(x.result.reply,/語意搜尋|semantic retrieval/)
@@ -73,6 +77,9 @@ test('bilingual memory failure investigation selects diagnostics, binds evidence
   assert.equal(x.result.investigation.evidenceModel.assertions.find(a=>a.facet==='memory_recorded_error_categories').state,'SUPPORTED')
   assert.equal(x.result.investigation.evidenceModel.assertions.find(a=>a.facet==='memory_failure_root_cause').state,'UNKNOWN')
   assert.equal(x.result.investigation.workPurpose.jobs[0].progress.diagnostics.failed,1)
+  assert.equal(x.result.investigation.memoryFailureCorrelation.jobs[0].cases[0].providerState,'CONFIRMED')
+  assert.equal(x.result.investigation.evidenceModel.assertions.find(a=>a.facet==='memory_failure_execution_link').state,'CONFIRMED')
+  assert.match(x.result.reply,/登入認證未通過|login authentication rejected/)
   assert.equal(x.result.investigation.answerPresentation.workPurpose.references[0].recordId,'backend:memory_index')
   assert.equal(x.result.reply,x.result.replyForArchive);assert.deepEqual(x.result.tasks,[])
   assert.equal(x.calls.filter(c=>c.schema!=='goal_plan').length,0)

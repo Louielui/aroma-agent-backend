@@ -79,6 +79,18 @@ function buildEvidenceState(report) {
     put('memory_retained_last_completion',d?.lastRecordedSuccessAt??null,state==='CONFIRMED'&&d.lastRecordedSuccessAt?'CONFIRMED':state==='CONFIRMED'?'UNKNOWN':state,'retained_historical_record')
     put('memory_failure_root_cause',null,'UNKNOWN','historical_failure_causation')
   }
+  for(const job of report.memoryFailureCorrelation?.jobs||[])for(const c of job.cases){
+    for(const [facet,state,value]of [
+      ['memory_failure_checkpoint',c.checkpointState,c.checkpoint],
+      ['memory_failure_validation',c.validationState,c.validationCode],
+      ['memory_failure_provider_observation',c.providerState,{failures:c.providerFailures,results:c.providerResults}],
+      ['memory_failure_execution_link',c.linkState,c.linkState==='CONFIRMED'?'exact_host_work_trace':null],
+      ['memory_same_record_later_completion',c.laterCompletionState,c.laterCompletion]
+    ])assertions.push({id:'e'+(assertions.length+1),subject:'memory_attempt:'+job.role+':'+c.recordId,sourceId:c.references[0]?.sourceId||null,recordId:c.recordId,
+      facet,temporalScope:facet==='memory_same_record_later_completion'?'retained_later_completion':'historical_failure',state,
+      value:['UNKNOWN','UNAVAILABLE','CONTRADICTED'].includes(state)?null:value,observedAt:facet==='memory_same_record_later_completion'?c.laterCompletion?.at||null:c.failedAt,
+      retrievedAt:job.state==='CONFIRMED'?report.workPurpose.jobs.find(j=>j.role===job.role)?.progress?.at||null:null,references:c.references})
+  }
   for(const c of report.executionUsage?.chains||[])for(const [facet,state]of Object.entries({execution:c.executionState,model:c.modelState,usage:c.usageState,correlation:c.correlationState,billing:c.billingState})){
     const refs=c.references.flatMap(ref=>Object.entries(ref.fields).map(([field,value])=>({sourceId:ref.sourceId,recordId:ref.recordId,field,value})))
     const values={execution:{attempts:c.observedAttempts??null,dispatches:c.observedDispatches??null,results:c.successfulResults??null,startedTurns:c.observedStartedTurns??null,completedTurns:c.observedCompletedTurns??null,recordedState:c.recordedState??null},model:c.references.filter(r=>r.fields.modelResultObserved===true&&r.fields.state==='succeeded').map(r=>r.fields.actualModel).filter(Boolean),usage:{models:c.usageModels,cumulativeUsage:c.cumulativeUsage??null,complete:c.usageComplete===true},correlation:c.identity}

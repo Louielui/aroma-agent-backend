@@ -171,7 +171,7 @@ function createGateway({ store, engine, clock = () => new Date().toISOString() }
   async function runIndex(actor, id) {
     owner(actor); const row = await get(actor, id)
     if (!row || !current(row) || !engine) throw Error('not_indexable')
-    const expected = row.version; let result;let workTrace=null
+    const expected = row.version; let result;let workTrace=null,checkpoint=null
     const attempts = row.index.attempts + 1
     const sourceReason = sourceOnlyReason(row.text)
     if (sourceReason) {
@@ -180,11 +180,17 @@ function createGateway({ store, engine, clock = () => new Date().toISOString() }
     } else try {
       const client = engine.forScope(row.scope)
       // A previous timeout may have completed upstream. Reconcile before any write.
-      let d = client.get ? await client.get(row.id) : null
-      if (!d || d.text !== row.text){
-        workTrace=createWorkTrace('memory_index',JSON.stringify([row.id,row.text]),'extraction',attempts,row.id)
-        d=await withWorkTrace(workTrace,()=>client.retainAutomatic ? client.retainAutomatic(row.id, row.text, row.source) : client.retain(row.id, row.text))
-      }
+      workTrace=createWorkTrace('memory_index',JSON.stringify([row.id,row.text]),'extraction',attempts,row.id)
+      let d=await withWorkTrace(workTrace,async()=>{
+        checkpoint='index_lookup'
+        let document=client.get ? await client.get(row.id) : null
+        if (!document || document.text !== row.text){
+          checkpoint='index_retain'
+          document=await (client.retainAutomatic ? client.retainAutomatic(row.id, row.text, row.source) : client.retain(row.id, row.text))
+        }
+        return document
+      })
+      checkpoint='index_result_validation'
       if (!Number.isInteger(d?.facts) || d.facts < 0) throw Error('memory_unconfirmed')
       result = { state: d.facts > 0 ? 'saved' : 'raw_only', facts: d.facts, attempts,
         reason: d.facts > 0 ? null : 'no_extracted_facts', checkedAt: clock(), nextRetryAt: null }
@@ -192,10 +198,11 @@ function createGateway({ store, engine, clock = () => new Date().toISOString() }
       const reason = ['memory_timeout', 'memory_rate_limited', 'memory_unauthorized', 'memory_invalid_request', 'memory_invalid_text', 'memory_invalid_result', 'memory_unconfirmed'].includes(e.message) ? e.message : 'memory_unavailable'
       const retryable = ['memory_timeout', 'memory_rate_limited', 'memory_unavailable', 'memory_unconfirmed'].includes(reason)
       const delay = reason === 'memory_rate_limited' ? 15 * 60000 : reason === 'memory_timeout' ? 5 * 60000 : 30000 * 2 ** Math.min(attempts - 1, 4)
-      result = { state: 'unconfirmed', facts: null, attempts, reason, checkedAt: clock(),
+      result = { state: 'unconfirmed', facts: null, attempts, reason, failureCheckpoint:checkpoint, checkedAt: clock(),
         nextRetryAt: retryable && attempts < 3 ? new Date(Date.parse(clock()) + delay).toISOString() : null }
     }
     if(workTrace)result={...result,workTrace}
+    result=require('../investigation/memoryAttemptEvidence').appendAttempt('memory_index',row.index,result,row.id)
     if (row.index.rebuildId) result = { ...result, rebuildId: row.index.rebuildId, queuedAt: row.index.queuedAt }
     // Never replace a newer approval, archive or supersession when an index call finishes late.
     const latest = await get(actor, id)
@@ -299,9 +306,11 @@ function createGateway({ store, engine, clock = () => new Date().toISOString() }
     const at=clock(),diagnostics=require('../investigation/memoryFailures').buildDiagnostics
     return { memory_index:{version:1,at,unit:'memory_record',scope:'active_general_memory_records',
       diagnostics:diagnostics('memory_index',active,at),
+      failureEvidence:require('../investigation/memoryAttemptEvidence').buildAttemptEvidence('memory_index',active,at),
       counts:{total:active.length,...index,other:active.length-Object.values(index).reduce((a,b)=>a+b,0)}},
       memory_consolidation:{version:1,at,unit:'memory_record',scope:'eligible_general_memory_records',
         diagnostics:diagnostics('memory_consolidation',eligible,at),
+        failureEvidence:require('../investigation/memoryAttemptEvidence').buildAttemptEvidence('memory_consolidation',eligible,at),
         counts:{total:eligible.length,pending,...consolidated,other:eligible.length-pending-Object.values(consolidated).reduce((a,b)=>a+b,0),
           candidates:rows.filter(r=>r.status==='candidate'&&r.source?.kind==='consolidation').length}} }
   }
@@ -318,13 +327,16 @@ function createGateway({ store, engine, clock = () => new Date().toISOString() }
     if (['done', 'empty'].includes(source.details.consolidation?.state)) return source.details.consolidation
     const attempts = (source.details.consolidation?.attempts || 0) + 1
     const workTrace=createWorkTrace('memory_consolidation',JSON.stringify([source.id,evidenceHash(source)]),'consolidation',attempts,source.id)
-    const state = { state: 'running', attempts, checkedAt: clock(), nextRetryAt: null, error: null, candidateIds: [],workTrace }
+    const state = require('../investigation/memoryAttemptEvidence').appendAttempt('memory_consolidation',source.details.consolidation,{ state: 'running', attempts, checkedAt: clock(), nextRetryAt: null, error: null, candidateIds: [],workTrace },source.id)
     await store.commit([{ expected: source.version, row: { ...source, version: source.version + 1, details: { ...source.details, consolidation: state } } }], { op: 'consolidation_started', actor: actor.id, at: clock() })
+    let checkpoint='consolidation_inference'
     try {
       const existing = (await list(actor, { scope: source.scope })).filter(r => current(r) && r.approval?.kind === 'owner' && ['preference','decision','semantic'].includes(r.type)).slice(-40)
       const result = await withWorkTrace(workTrace,()=>engine.forScope(source.scope).consolidate({ id: source.id, text: source.text, source: source.source },
         existing.map(r => ({ id: r.id, kind: r.details.category || r.type, subject: r.subject, text: r.text.slice(0,2000) }))))
+      checkpoint='consolidation_validation'
       const plans = require('./consolidationPolicy').validate(result, source, existing)
+      checkpoint='consolidation_candidates'
       const drafts = []
       for (const plan of plans) {
         const target = plan.supersedes ? existing.find(r => r.id === plan.supersedes) : null
@@ -342,17 +354,21 @@ function createGateway({ store, engine, clock = () => new Date().toISOString() }
       // Source/index metadata may advance while the engine runs. Commit all new
       // candidates and completion together against a freshly verified source.
       for (let retry = 0; retry < 3; retry++) {
+        checkpoint='consolidation_source_verification'
         const latest = await get(actor, id)
         if (!current(latest) || evidenceHash(latest) !== evidenceHash(source)) throw Error('stale_evidence')
-        const resultState = { ...state, state: drafts.length ? 'done' : 'empty', checkedAt: clock(), candidateIds: drafts.map(r => r.id) }
+        const resultState = require('../investigation/memoryAttemptEvidence').appendAttempt('memory_consolidation',source.details.consolidation,{ ...state, state: drafts.length ? 'done' : 'empty', checkedAt: clock(), candidateIds: drafts.map(r => r.id) },source.id)
         const changes = [{ expected: latest.version, row: { ...latest, version: latest.version + 1, details: { ...latest.details, consolidation: resultState } } }]
         for (const row of drafts) if (!await store.get(row.id)) changes.push({ expected: 0, row })
+        checkpoint='consolidation_commit'
         try { await store.commit(changes, { op: 'consolidated', actor: actor.id, at: clock() });await reportWorkOutcome(workTrace,resultState.state); return resultState }
         catch (e) { if (e.message !== 'revision_conflict' || retry === 2) throw e }
       }
     } catch (e) {
       const error = ['invalid_consolidation', 'stale_evidence'].includes(e.message) ? e.message : 'consolidation_unavailable'
-      const failed = { ...state, state: 'failed', error, checkedAt: clock(), nextRetryAt: attempts < 3 ? new Date(Date.parse(clock()) + attempts * 300000).toISOString() : null }
+      const failed = require('../investigation/memoryAttemptEvidence').appendAttempt('memory_consolidation',source.details.consolidation,{ ...state, state: 'failed', error, failureCheckpoint:checkpoint,
+        validationCode:require('../investigation/memoryAttemptEvidence').VALIDATION.includes(e.validationCode)?e.validationCode:null,
+        checkedAt: clock(), nextRetryAt: attempts < 3 ? new Date(Date.parse(clock()) + attempts * 300000).toISOString() : null },source.id)
       const latest = await get(actor, id)
       await store.commit([{ expected: latest.version, row: { ...latest, version: latest.version + 1, details: { ...latest.details, consolidation: failed } } }], { op: 'consolidation_failed', actor: actor.id, at: clock(), reason: error })
       await reportWorkOutcome(workTrace,'failed')

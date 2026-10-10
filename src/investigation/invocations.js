@@ -30,7 +30,7 @@ function projectRecord(r){
   workTrace,workOutcome:workTrace&&validOutcome(workOutcome)?{...workOutcome,basis:'host_checkpoint_report'}:null,
   workerTrace,workerOutcome,workerPhase:workerTrace&&PHASES.includes(r.workerPhase)?r.workerPhase:null,candidateAttempt:workerTrace&&[1,2].includes(r.candidateAttempt)?r.candidateAttempt:null,
   dispatchBasis:['provider_turn_start','cli_process_started'].includes(r.dispatchBasis)?r.dispatchBasis:null,
-  failureCode:r.state==='failed'&&['worker_cancelled','worker_timeout','claude_unavailable','subscription_limit_reached','subscription_model_unavailable','subscription_unavailable','worker_evidence_unavailable'].includes(r.failureCode)?r.failureCode:null,
+  failureCode:r.state==='failed'&&['worker_cancelled','worker_timeout','claude_unavailable','subscription_limit_reached','subscription_login_required','subscription_invalid_output','subscription_model_unavailable','subscription_unavailable','worker_evidence_unavailable'].includes(r.failureCode)?r.failureCode:null,
   evidenceBasis:'owner_bridge_invocation_ledger',linkBasis:workerTrace?'host_worker_identity':workTrace?'host_work_identity':trace.requestId?'host_request_identity':'role_only_no_individual_job_link',provesCharge:false}
 }
 function createInvocationLedger({file,clock=Date.now,limit=256}={}){

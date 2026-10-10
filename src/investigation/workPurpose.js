@@ -16,7 +16,8 @@ function projectProgress(role,value){
  if(role==='mail_analysis'&&(c.ready+c.pending!==c.total||c.failed>c.pending))return null
  if(['memory_index','memory_consolidation'].includes(role)&&rule.fields.filter(k=>!['total','candidates'].includes(k)).reduce((n,k)=>n+c[k],0)!==c.total)return null
  return {version:1,at:value.at,unit:rule.unit,scope:rule.scope,counts:c,...(role==='mail_analysis'?{syncHasMore:typeof value.syncHasMore==='boolean'?value.syncHasMore:null}:{}),
-  ...(['memory_index','memory_consolidation'].includes(role)?{diagnostics:require('./memoryFailures').projectDiagnostics(role,value.diagnostics,c.unconfirmed??c.failed,value.at)}:{})}
+  ...(['memory_index','memory_consolidation'].includes(role)?{diagnostics:require('./memoryFailures').projectDiagnostics(role,value.diagnostics,c.unconfirmed??c.failed,value.at),
+    failureEvidence:require('./memoryAttemptEvidence').projectAttemptEvidence(role,value.failureEvidence,c.unconfirmed??c.failed,value.at)}:{})}
 }
 function buildWorkPurpose(report,{now=Date.now()}={}){
  const sections=(report.sections||[]).filter(s=>s.section==='configuration'&&['ok','partial'].includes(s.state))
@@ -82,10 +83,14 @@ function renderWorkPurpose(value,{message='',failuresOnly=false}={}){
    lines.push(counts[job.role](job.progress.counts))
    if(job.role==='mail_analysis')lines.push(job.progress.syncHasMore===true?t('investigation.progressMoreMail',{},locale):t('investigation.progressMailScope',{},locale))
    lines.push(t('investigation.progressAsOf',{at:job.progress.at},locale))
-   if(['memory_index','memory_consolidation'].includes(job.role))lines.push(require('./memoryFailures').renderDiagnostics(job.role,job.progress.diagnostics,locale))
+   if(['memory_index','memory_consolidation'].includes(job.role)){
+    lines.push(require('./memoryFailures').renderDiagnostics(job.role,job.progress.diagnostics,locale))
+    lines.push(require('./memoryFailureCorrelation').renderFailureCorrelation(job.failureCorrelation,locale))
+   }
   }else lines.push(t('investigation.progressGap',{state:job.progressState},locale))
   if(!failuresOnly)lines.push(next[job.recommendation]())
   references.push(...job.references)
+  for(const c of job.failureCorrelation?.cases||[])references.push(...c.references)
  }
  if(!failuresOnly)lines.push(t('investigation.progressBoundary',{},locale))
  return {text:lines.join('\n\n'),references,modelProseUsed:false}

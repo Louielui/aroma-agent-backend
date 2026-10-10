@@ -6,17 +6,17 @@ function eligible(row) {
     ['owner_statement', 'measured_result'].includes(row.source.attribution) && row.text.length >= 2 && row.text.length <= 12000 && !exclusionReason(row.text))
 }
 function validate(result, source, existing) {
-  const invalid = () => { throw Error('invalid_consolidation') }
-  if (!result || Object.keys(result).some(k => k !== 'candidates') || !Array.isArray(result.candidates) || result.candidates.length > 4) invalid()
+  const invalid = validationCode => { const error=Error('invalid_consolidation');error.validationCode=validationCode;throw error }
+  if (!result || Object.keys(result).some(k => k !== 'candidates') || !Array.isArray(result.candidates) || result.candidates.length > 4) invalid('invalid_result_shape')
   return result.candidates.map(p => {
-    if (!p || Object.keys(p).some(k => !['kind','subject','text','reason','quote','supersedes','taskState'].includes(k)) || !Object.hasOwn(kinds, p.kind)) invalid()
-    for (const [key, max] of [['subject',240],['text',2000],['reason',600],['quote',2000]]) if (typeof p[key] !== 'string' || !p[key].trim() || p[key].length > max) invalid()
-    if (exclusionReason(JSON.stringify(p)) || p.quote.length < 2 || !source.text.includes(p.quote)) invalid()
-    if (p.kind !== 'experience' && source.source.attribution !== 'owner_statement') invalid()
-    if (p.kind === 'todo' ? !['open','completed'].includes(p.taskState) : p.taskState !== null) invalid()
+    if (!p || Object.keys(p).some(k => !['kind','subject','text','reason','quote','supersedes','taskState'].includes(k)) || !Object.hasOwn(kinds, p.kind)) invalid('invalid_candidate_shape')
+    for (const [key, max] of [['subject',240],['text',2000],['reason',600],['quote',2000]]) if (typeof p[key] !== 'string' || !p[key].trim() || p[key].length > max) invalid('invalid_candidate_field')
+    if (exclusionReason(JSON.stringify(p)) || p.quote.length < 2 || !source.text.includes(p.quote)) invalid('unsupported_quote')
+    if (p.kind !== 'experience' && source.source.attribution !== 'owner_statement') invalid('invalid_attribution')
+    if (p.kind === 'todo' ? !['open','completed'].includes(p.taskState) : p.taskState !== null) invalid('invalid_task_state')
     if (p.supersedes !== null) {
       const old = existing.find(r => r.id === p.supersedes)
-      if (!old || old.type !== kinds[p.kind] || (old.details.category && old.details.category !== p.kind)) invalid()
+      if (!old || old.type !== kinds[p.kind] || (old.details.category && old.details.category !== p.kind)) invalid('invalid_supersession')
       p = { ...p, subject: old.subject }
     }
     return { ...p, type: kinds[p.kind] }

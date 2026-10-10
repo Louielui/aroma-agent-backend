@@ -3739,6 +3739,8 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
       // detailed findings. They add no model calls, reads or dispatch authority.
       operationalInvestigation.decisionAdvice = require('../investigation/decisionAdvice').buildDecisionAdvice(operationalInvestigation)
       operationalInvestigation.workPurpose = require('../investigation/workPurpose').buildWorkPurpose(operationalInvestigation)
+      operationalInvestigation.memoryFailureCorrelation = require('../investigation/memoryFailureCorrelation').correlateMemoryFailures(operationalInvestigation)
+      operationalInvestigation.evidenceModel = require('../investigation/evidenceState').buildEvidenceState(operationalInvestigation)
       const memoryFailuresRequested = operationalInvestigation.routing?.requirements?.includes('memory_failures') === true
       const memoryFailureOnly = memoryFailuresRequested && operationalInvestigation.focus === 'background' &&
         operationalInvestigation.routing.requiredSources.length === 1 && operationalInvestigation.routing.requiredSources[0] === 'xiangxiang_operations' &&
