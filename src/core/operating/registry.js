@@ -31,7 +31,7 @@ function registryView () {
       { id: 'memory_pgvector', state: 'foundation', number: '12', phase: 4 },
       { id: 'business_write', state: 'not_enabled', phase: 5 },
       { id: 'qbo', state: 'not_connected', number: '13', phase: 6 },
-      { id: '7shifts', state: 'not_connected', number: '14', phase: 6 },
+      { id: '7shifts', state: 'partial', number: '14', phase: 6 },
       { id: 'google_business', state: 'not_connected', number: '15', phase: 6 },
       { id: 'pos', state: 'not_connected', number: '16', phase: 6 },
       { id: 'cloudflare', state: 'not_connected', number: '17', phase: 6 },

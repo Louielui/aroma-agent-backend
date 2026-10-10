@@ -1,0 +1,35 @@
+# 7shifts clock-out report and real remediation acceptance
+
+Owner scope: employee names, Winnipeg local dates, all bounded clock-out results,
+and a genuine gap → approved development → adoption → original-read continuation.
+Business punch writes and payroll actions remain excluded.
+
+The host report handler resolves explicit dates, today and yesterday in
+America/Winnipeg. Calendar midnights are resolved independently at both ends,
+including 23/25-hour DST days. The original local date is sealed into the gap
+receipt so a later continuation does not reinterpret yesterday.
+
+The fixed adapter contract is `methods.listClockOuts({timeMin,timeMax})` with
+inclusive UTC clock-out bounds. It uses only company-bound GET time_punches and
+GET users/{numeric user ID}, reusing the approved dedicated connection. Names
+must be projected without contact, wage or other unrelated user fields. A missing
+name must not discard a verified punch. No arbitrary URL or command is accepted.
+
+The report bypasses the four-row model-context preview and renders every retrieved
+row within the adapter's finite page budget. Only a terminal null cursor establishes
+scope completeness; incomplete pagination and unresolved names remain visible.
+This is a clock-out-date report, not a claim that every employee worked or clocked
+out. Overnight shifts are selected by the time of clock-out, not clock-in.
+
+The acceptance reviewer now recognises the exact existing 7shifts source package.
+The scope remains one editable reader plus the immutable contextResult dependency.
+Old v1/v2 proposal seals and work receipts remain readable; the new v3 report
+proposal separately describes the fixed name-read endpoint and adapter contract.
+The host query/report wiring is not evidence of worker-developed code or a loaded
+adoption. Those claims require actual planner, test, worker, review and adoption
+receipts. No fixture or directly implemented code may stand in for them.
+
+References:
+- [List Time Punches](https://developers.7shifts.com/reference/gettimepunches)
+- [Retrieve User](https://developers.7shifts.com/reference/getuser)
+- [Pagination](https://developers.7shifts.com/reference/pagination)

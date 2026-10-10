@@ -68,6 +68,23 @@ test('registered Context gaps hand off once to committed-source planning, never 
   assert.equal(f.starts[0].model,'claude-opus-5-5'); assert.equal(f.starts[0].effort,'medium'); assert.equal(f.reads(),0)
   await assert.rejects(f.resume(r),/capability_unverified/)
 })
+test('a report gap seals the original Winnipeg day and passes it to continuation after a day changes',async()=>{
+  const workRunId=randomUUID(),f=fixture({plan:{execution:{state:'completed',workRunId}},proof:{state:'verified',workRunId,bootCommit:NEW}})
+  f.dependencies.planner.start=(actor,input)=>({id:randomUUID(),profile:'seven_shifts'})
+  let resumed
+  const service=createGapService({...f.dependencies,resumeOriginal:async value=>{resumed=value;return {mode:'chat',reply:'Source checked',tasks:[]}}})
+  const readRequest={window:'dates',dates:['2026-10-09','2026-10-09']}
+  const run=service.offer(OWNER,{conversationId:f.cid,requestId:randomUUID(),message:'7shifts clock out yesterday',gap:gap('no_mapped_operation','seven_shifts.read'),model:'claude-opus-5-5',effort:'medium',readRequest})
+  f.conversations.appendTurn({id:f.cid,userText:run.originalGoal,replyText:'Displayed',capabilityGapRunId:run.id})
+  const saved=f.store.get(run.id);saved.readRequest.dates[0]='2026-10-08';f.store.save(saved)
+  assert.throws(()=>service.get(OWNER,run.id),/proposal_unavailable/)
+  saved.readRequest=readRequest;f.store.save(saved)
+  await service.approve(OWNER,{id:run.id,conversationId:f.cid,hash:run.proposalHash})
+  f.advance(2*86400000)
+  await service.resume(OWNER,{id:run.id,conversationId:f.cid,hash:run.proposalHash,requestId:randomUUID()})
+  assert.deepEqual(resumed.readRequest,readRequest);assert.equal(resumed.message,run.originalGoal)
+})
+
 test('worker completion alone and a loaded unrelated commit cannot resume original business request',async()=>{
   const workRunId=randomUUID(),plan={execution:{state:'completed',workRunId}},f=fixture({plan}),r=f.offer(gap('no_mapped_operation','aroma_system.read'))
   await f.approve(r); await assert.rejects(f.resume(r),/capability_unverified/); assert.equal(f.reads(),0)

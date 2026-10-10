@@ -20,7 +20,7 @@ test('architecture page is owner-gated, distinguishes pilot memory, and does not
   const html = await response.text()
   assert.equal((html.match(/data-component=/g) || []).length, 22)
   assert.match(html, /data-component="capability-gap-resolution" data-state="partial"/)
-  assert.match(html, /新增固定 7shifts 唯讀 reader 開發範圍/)
+  assert.match(html, /固定 7shifts 唯讀 reader 範圍已有專用連線及真實打卡讀取證據/)
   assert.match(html, /讀取器實作不等於已取得讀取權限/)
   assert.equal((await fetch(url + '/api/v1/capability-gaps/11111111-1111-4111-8111-111111111111')).status, 401)
   assert.match(html, /data-component="action-gateway" data-state="partial"/)
@@ -115,7 +115,7 @@ test('architecture remains readable in English and uses the shared integration r
     assert.match(html, /The repair evidence chain is connected to read-only investigation/)
     assert.match(html, /not a repaired live application path/)
     assert.match(html, /Hindsight.*Partially/)
-    assert.match(html, /7shifts.*Not connected/)
+    assert.match(html, /data-integration="7shifts"><th scope="row">14 · 7shifts<\/th><td><span class="badge partial">/)
     assert.match(html, /QBO.*Not connected/)
     assert.doesNotMatch(html, /\[missing|undefined|\/\*LABELS\*\//)
   } finally {

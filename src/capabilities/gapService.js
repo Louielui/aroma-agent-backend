@@ -6,7 +6,7 @@ const { hash, keys, text, validGap, registeredScope, proposalFor } = require('./
 const OWNER = Object.freeze({ id: 'owner', role: 'owner' })
 const TTL = 24 * 60 * 60 * 1000
 const uuidFor = h => [h.slice(0, 8), h.slice(8, 12), h.slice(12, 16), h.slice(16, 20), h.slice(20, 32)].join('-')
-const seal = r => hash([r.version, r.originalGoal, r.gap, r.proposal, r.revision, r.conversationId, r.createdAt, r.model, r.effort])
+const seal = r => hash([r.version, r.originalGoal, r.gap, r.proposal, r.revision, r.conversationId, r.createdAt, r.model, r.effort, ...(r.readRequest ? [r.readRequest] : [])])
 const confirmation = s => /^(?:好|好的|可以|同意|批准|確認|yes|ok|okay)[。.!！\s]*$/iu.test(s.trim()) || require('../core/taskPlanner/boundPlan').confirmation(s) || /^(?:批准建立開發任務|建立這項開發任務|approve this development proposal)[。.!！\s]*$/iu.test(s.trim())
 function loadedProof (records, workRunId, bootCommit) {
   if (!ID.test(workRunId || '') || !/^[a-f0-9]{40}$/.test(bootCommit || '')) return null
@@ -22,7 +22,7 @@ function createGapService ({ store = createMemoryRunStore(), conversations, revi
   function checked (id) {
     if (!ID.test(id || '')) throw Error('invalid_request')
     const r = store.get(id)
-    if (!r || ![1,2].includes(r.version) || !validGap(r.gap) || r.proposalHash !== seal(r) || JSON.stringify(r.proposal) !== JSON.stringify(proposalFor(r.originalGoal, r.gap, r.language,r.version))) throw Error('proposal_unavailable')
+    if (!r || ![1,2,3].includes(r.version) || !validGap(r.gap) || r.proposalHash !== seal(r) || JSON.stringify(r.proposal) !== JSON.stringify(proposalFor(r.originalGoal, r.gap, r.language,r.version))) throw Error('proposal_unavailable')
     return r
   }
   function latest (r) {
@@ -33,18 +33,23 @@ function createGapService ({ store = createMemoryRunStore(), conversations, revi
     return structuredClone({ id: r.id, version: r.version, state: r.state, reason: r.reason || null, originalGoal: r.originalGoal, gap: r.gap,
       proposal: r.proposal, proposalHash: r.proposalHash, revision: r.revision, conversationId: r.conversationId, createdAt: r.createdAt,
       taskPlanRunId: r.taskPlanRunId || null, developmentTask: r.developmentTask || null, steps: r.steps,
-      resumeResult: r.resumeResult || null, replacementRunId:r.replacementRunId || null, language: r.language })
+      resumeResult: r.resumeResult || null, replacementRunId:r.replacementRunId || null, language: r.language, ...(r.readRequest ? {readRequest:r.readRequest} : {}) })
   }
   function offer (actor, input) {
     owner(actor)
-    if (!keys(input, ['conversationId', 'requestId', 'message', 'gap', 'model', 'effort']) || !isValidId(input.conversationId) || !ID.test(input.requestId || '') || !text(input.message, 2000) || !validGap(input.gap) ||
+    if (!keys(input, ['conversationId', 'requestId', 'message', 'gap', 'model', 'effort', ...(Object.hasOwn(input || {},'readRequest') ? ['readRequest'] : [])]) || !isValidId(input.conversationId) || !ID.test(input.requestId || '') || !text(input.message, 2000) || !validGap(input.gap) ||
       !require('../subscription/chatModels').isBrainModel(input.model) || !require('../subscription/chatModels').REASONING_EFFORTS.includes(input.effort)) throw Error('invalid_request')
     const identity = hash(input), prior = store.all().find(r => r.requestId === input.requestId)
     if (prior) { if (prior.identity !== identity) throw Error('request_conflict'); return view(checked(prior.id)) }
     const language = /[\u3400-\u9fff]/u.test(input.message) ? 'zh' : 'en'
-    const r = { id: randomUUID(), version: 2, workflow: 'capability_gap', requestId: input.requestId, identity, conversationId: input.conversationId,
-      originalGoal: input.message, gap: structuredClone(input.gap), proposal: proposalFor(input.message, input.gap, language,2), language, revision,
-      model: input.model, effort: input.effort, state: 'awaiting_approval', createdAt: new Date(now()).toISOString(), steps: [], sections: [] }
+    const version = input.gap.capability === 'seven_shifts.read' && require('../context/sevenShiftsReport').clockOutRequest(input.message) ? 3 : 2
+    if (input.readRequest) {
+      if (version !== 3 || !keys(input.readRequest,['window','dates']) || input.readRequest.window !== 'dates') throw Error('invalid_request')
+      require('../context/sevenShiftsReport').queryWindow(input.readRequest,new Date(now()).toISOString())
+    }
+    const r = { id: randomUUID(), version, workflow: 'capability_gap', requestId: input.requestId, identity, conversationId: input.conversationId,
+      originalGoal: input.message, gap: structuredClone(input.gap), proposal: proposalFor(input.message, input.gap, language,version), language, revision,
+      model: input.model, effort: input.effort, state: 'awaiting_approval', createdAt: new Date(now()).toISOString(), steps: [], sections: [], ...(input.readRequest ? {readRequest:structuredClone(input.readRequest)} : {}) }
     r.proposalHash = seal(r); record(r, 'gap_observed', { kind: r.gap.kind }); record(r, 'proposal_prepared', { registeredScope: !!r.proposal.scope })
     return view(r)
   }
@@ -69,7 +74,7 @@ function createGapService ({ store = createMemoryRunStore(), conversations, revi
     const scope = registeredScope(r.gap,r.originalGoal,r.version)
     if (JSON.stringify(scope) !== JSON.stringify(r.proposal.scope)) throw Error('proposal_changed')
     r.approval = { hash: r.proposalHash, actor: 'owner', at: new Date(now()).toISOString(), permission: 'development_handoff_only' }
-    r.developmentTask = { id: uuidFor(hash([r.id, r.proposalHash, 'development'])), goal: scope ? require('./scopeRegistry').remediationGoal(scope,r.originalGoal) : r.originalGoal, steps: r.proposal.steps, criteria: r.proposal.criteria,
+    r.developmentTask = { id: uuidFor(hash([r.id, r.proposalHash, 'development'])), goal: scope ? require('./scopeRegistry').remediationGoal(scope,r.originalGoal,r.version) : r.originalGoal, steps: r.proposal.steps, criteria: r.proposal.criteria,
       scope, state: scope ? 'planning_pending' : 'awaiting_scope_registration', originalRequest: { conversationId: r.conversationId, goal: r.originalGoal },
       exclusions: ['new_credentials', 'new_permissions', 'business_writes', 'automatic_adoption', 'arbitrary_commands'] }
     r.state = scope ? 'handoff_pending' : 'awaiting_scope_registration'
@@ -181,7 +186,7 @@ function createGapService ({ store = createMemoryRunStore(), conversations, revi
     r.resumeRequestId = input.requestId; r.state = 'resuming'; record(r, 'original_read_requested', { workRunId, bootCommit: proof.bootCommit, businessWrites: false })
     const work = (async () => {
       try {
-        const result = await resumeOriginal({ message: r.originalGoal, conversationId: r.conversationId, model: r.model, effort: r.effort, requestId: input.requestId })
+        const result = await resumeOriginal({ message: r.originalGoal, conversationId: r.conversationId, model: r.model, effort: r.effort, requestId: input.requestId, ...(r.readRequest ? {readRequest:structuredClone(r.readRequest)} : {}) })
         if (!result || !text(result.reply, 50000) || result.proposals?.length || result.tasks?.length || result.decision || !['chat', 'ask', 'recommend'].includes(result.mode)) throw Error('resume_unconfirmed')
         r.resumeResult = { reply: result.reply, mode: result.mode, capabilityGap: result.capabilityGap || null }
         r.state = result.capabilityGap || result.mode === 'ask' ? 'needs_attention' : 'completed'; r.reason = result.capabilityGap ? 'gap_still_present' : result.mode === 'ask' ? 'original_request_needs_clarification' : null

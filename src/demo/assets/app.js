@@ -1614,6 +1614,8 @@
       var stateText = {awaiting_approval:t('gap.awaitingApproval'),awaiting_scope_registration:t('gap.awaitingScopeRegistration'),development_planning:t('gap.developmentPlanning'),handoff_pending:t('gap.handoffPending'),needs_attention:t('gap.needsAttention'),resuming:t('gap.resuming'),completed:t('gap.completed')}
       content.replaceChildren(); content.appendChild(el('h3','',t('gap.title'))); content.appendChild(el('p','meta',stateText[r.state] || t('gap.needsAttention')))
       content.appendChild(el('strong','',t('gap.original'))); content.appendChild(el('p','',r.originalGoal)); content.appendChild(el('p','',r.proposal.diagnosis))
+      var readDate = r.readRequest && Array.isArray(r.readRequest.dates) ? r.readRequest.dates.join(' — ') + ' (America/Winnipeg)' : ''
+      if (readDate) content.appendChild(el('p','meta',readDate))
       var details = el('details'), summary = el('summary','',t('gap.solution')), steps = el('ol'); details.appendChild(summary)
       r.proposal.steps.forEach(function (s) { steps.appendChild(el('li','',s)) }); details.appendChild(steps); content.appendChild(details)
       content.appendChild(el('p','meta',r.proposal.impact)); content.appendChild(el('p','meta',r.proposal.risk))
@@ -1623,7 +1625,7 @@
         var b = el('button','',label); b.type = 'button'; b.disabled = busy
         b.addEventListener('click', async function () {
           if (busy || conv !== active) return
-          if (op === 'approve' && !window.confirm(t('gap.approvalConfirm') + '\n\n' + r.originalGoal + '\n' + r.proposal.steps.join('\n') + '\n\n' + r.proposal.impact + '\n' + r.proposal.risk + '\n' + (r.proposal.scope ? r.proposal.scope.files.join(', ') : t('gap.scopePending')))) return
+          if (op === 'approve' && !window.confirm(t('gap.approvalConfirm') + '\n\n' + r.originalGoal + '\n' + readDate + '\n' + r.proposal.steps.join('\n') + '\n\n' + r.proposal.impact + '\n' + r.proposal.risk + '\n' + (r.proposal.scope ? r.proposal.scope.files.join(', ') : t('gap.scopePending')))) return
           busy = true; b.disabled = true
           try {
             var body = {op:op,id:runId,conversationId:conv.cid,hash:r.proposalHash}

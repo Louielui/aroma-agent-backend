@@ -146,11 +146,11 @@ async function runTextReview (args, options, files, run = runClaude) {
   }
 }
 function acceptanceReviewScope (packet) {
-  const { FILES, INTERFACE_FILES, CHAT_FILES, filesFor } = require('../projectTasks/contract')
+  const { FILES, INTERFACE_FILES, CHAT_FILES, SEVEN_FILES, filesFor } = require('../projectTasks/contract')
   const source = packet?.source
   if (!source || typeof source !== 'object' || Array.isArray(source)) throw Error('invalid_worker_result')
   const names = Object.keys(source).sort().join('\n')
-  const profile = Object.entries({ context: FILES, interface: [...INTERFACE_FILES, 'src/workers/execution/chatBrowser.cjs'], chat: filesFor({ editable: CHAT_FILES }) })
+  const profile = Object.entries({ context: FILES, seven_shifts: filesFor({ editable: SEVEN_FILES }), interface: [...INTERFACE_FILES, 'src/workers/execution/chatBrowser.cjs'], chat: filesFor({ editable: CHAT_FILES }) })
     .find(([, files]) => files.slice().sort().join('\n') === names)?.[0] || (names === INTERFACE_FILES.slice().sort().join('\n') ? 'interface' : null)
   if (!profile) throw Error('invalid_worker_result')
   const files = ['acceptance/registered-task.test.cjs']
@@ -164,6 +164,7 @@ function acceptanceReviewArgs (packet) {
   // These rules describe packaged tests inside the offline executor, not reviewer tools.
   // The host selects a closed profile; packet prose cannot expand its capabilities.
   const limits = {
+    seven_shifts: 'Tests may import node:test, node:assert/strict and the supplied sevenShiftsRead.js only. Synthetic env and injected fetchFn responses exercise the real adapter offline. Fixed company-bound GET /time_punches and GET /users/{numeric_id} are permitted implementation paths; arbitrary URLs, writes, credentials and live fetch are forbidden. Clock-out filtering must retain overnight punches, validate returned bounds and company identity. Name lookup failures must retain verified punches with explicit unresolved names. Cursor completeness must not become a four-row report limit.',
     context: 'Tests may use node:test, node:assert/strict and the supplied contextResult/toolGateway modules only. No filesystem access.',
     interface: 'Tests may use node:test, node:assert/strict and the supplied sidebar.js module with a deterministic DOM double. node:fs and node:path may read only packaged sidebar.css inside the offline sandbox. No filesystem writes. DOM doubles cannot replace the implementation under test; CSS text assertions alone do not prove rendered geometry. If supplied, the immutable host browser tests and chatBrowser.cjs harness check actual navigation bounds, ancestor clipping and hit testing at desktop/mobile widths and low heights in the offline guest. Assess generated tests and host browser tests together. The four browser cases add to the generated count. Do not permit generated tests to launch processes or alter the harness; do not infer that these tests have already run.',
     chat: 'Tests may use the supplied chat modules and registered read-only dependencies. The fixed browser acceptance harness remains protected. Assess the generated Node tests and the supplied browser tests together, without inferring execution or allowing changes to read-only dependencies.'

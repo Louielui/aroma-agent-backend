@@ -36,7 +36,8 @@ function validGap (g) {
 // unavailable credentials and permissions never grant a development scope.
 function registeredScope (gap, goal, version = 1) {
   if (gap.kind === 'unmapped_read' && gap.capability === 'aroma_system.read') return { profile:'context', files:[...require('../core/taskPlanner/contract').PROFILES.context] }
-  if (version === 2 && gap.kind === 'unmapped_read' && (gap.capability === null || gap.capability === 'seven_shifts.read')) return require('./scopeRegistry').scopeForGoal(goal)
+  if (version === 3 && gap.kind === 'unmapped_read' && gap.capability === 'seven_shifts.read' && require('../context/sevenShiftsReport').clockOutRequest(goal)) return structuredClone(require('./scopeRegistry').SEVEN_SCOPE)
+  if ([2,3].includes(version) && gap.kind === 'unmapped_read' && (gap.capability === null || gap.capability === 'seven_shifts.read')) return require('./scopeRegistry').scopeForGoal(goal)
   return null
 }
 function proposalFor (goal, gap, language, version = 1) {
@@ -50,6 +51,14 @@ function proposalFor (goal, gap, language, version = 1) {
     unknown: zh ? '所需證據不足，尚未確認缺口根因。' : 'Required evidence is missing; the cause of the gap is not established.'
   }[gap.kind]
   const scope = registeredScope(gap, goal, version)
+  if (version === 3 && scope?.profile === 'seven_shifts') return {
+    goal, needs,
+    diagnosis: zh ? '既有 7shifts 唯讀連線不等於完整下班報表能力：目前缺少按下班日期讀取全部查詢結果及員工姓名的讀取方法。' : 'An existing 7shifts read connection does not provide a complete clock-out report: the scoped clock-out reader and employee-name lookup are missing.',
+    steps: zh ? ['由現有日期處理器把 Winnipeg 本地日期轉成 UTC 查詢邊界，包含跨午夜班次。', '只修改固定讀取器檔案，新增 listClockOuts：固定 GET time_punches 按 clocked_out 篩選；固定 GET users/{數字 ID} 核對姓名。', '以受保護測試核對公司、日期邊界、分頁完整性、姓名讀取失敗及權限撤回；再經獨立審閱與採納。', '確認採納版本實際載入後，重新唯讀查詢原問題；結果显示完整性及未核實姓名。'] : ['The existing host query handler converts Winnipeg local dates to UTC boundaries, including overnight shifts.', 'Change only the registered reader file: add listClockOuts using fixed GET time_punches clocked_out filters and fixed GET users/{numeric ID} for names.', 'Use protected tests for company and date binding, pagination, name failures and access revocation; then independent review and adoption.', 'Verify the adopted build is loaded before resuming the original read-only question, reporting completeness and unresolved names.'],
+    criteria: zh ? ['新增 listClockOuts({timeMin,timeMax})，回傳所有已取得的打卡及 clocked_out 查詢證據；completeWithinScope 只能由最後一頁 next:null 證明。', '查詢以 clocked_out 而非 clocked_in 篩選，保留跨午夜班次；姓名只由同公司 users/{數字 ID} 核實，失敗時保留打卡及未核實標記。', '保留舊 listTimePunches 行為；限制分頁及姓名查詢數，拒絕跨公司、越界與任意 URL，禁止任何寫入，不能洩漏憑證。'] : ['Add listClockOuts({timeMin,timeMax}) returning all retrieved punch rows and clocked_out evidence; completeWithinScope requires a final next:null cursor.', 'Filter by clocked_out rather than clocked_in, retaining overnight shifts. Resolve names only through same-company users/{numeric ID}; retain punches with unresolved-name markers on lookup failures.', 'Preserve listTimePunches behavior; bound pagination and name lookups, reject foreign-company/out-of-window evidence and arbitrary URLs, forbid writes and credential leakage.'],
+    impact: zh ? '此方案沿用已批准的公司連線，只新增固定 GET 姓名與下班查詢；不新增 token、外部權限或打卡寫入。' : 'Reuse the approved company connection for fixed GET names and clock-out queries. No new token, external privileges or punch writes.',
+    risk: zh ? '姓名讀取或分頁可能不完整，必須明示；採納仍由 Owner 確認，新版未載入不可聲稱成功。' : 'Name lookup or pagination may be incomplete and must be disclosed. Adoption requires Owner confirmation; an unloaded build cannot count as success.', scope
+  }
   return {
     goal, needs, diagnosis,
     steps: zh ? [
