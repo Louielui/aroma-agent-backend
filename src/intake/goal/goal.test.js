@@ -139,10 +139,11 @@ test('*** ⛔ there is no cost entity and no costing operation to name in the fi
    * Comparing the whole list, in order, against both declarations is strictly stronger than
    * the length check it replaces — a wrong name of the right count used to pass.
    */
-  const { SOURCE_LEVEL_OPERATIONS } = require('../../context/readOperations')
+  const { SOURCE_LEVEL_OPERATIONS, PUBLIC_OPERATIONS } = require('../../context/readOperations')
   const declared = [
     ...AROMA_OPERATIONS.map((o) => o.operation),
-    ...SOURCE_LEVEL_OPERATIONS.map((o) => o.operation)
+    ...SOURCE_LEVEL_OPERATIONS.map((o) => o.operation),
+    ...PUBLIC_OPERATIONS.map((o) => o.operation)
   ]
   assert.deepEqual(ops.filter(Boolean), declared, 'the enum IS the closed list')
 })

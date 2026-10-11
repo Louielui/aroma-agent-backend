@@ -110,6 +110,13 @@ function createLiveReadConnector (options = {}) {
      * would move the Owner's words to a company he never agreed to.
      */
     public_knowledge: () => {
+      if (env.PUBLIC_SEARCH_PROVIDER === 'claude-subscription') {
+        if (!a4SemanticRoutingEnabled(env)) throw new Error('A4_KNOWLEDGE_ROUTING off')
+        if (!require('../subscription/bridge').validToken(env.CODEX_CHAT_BRIDGE_TOKEN)) throw new Error('CODEX_CHAT_BRIDGE_TOKEN not set')
+        return createPublicKnowledgeReadAdapter({clock:options.clock,provider:
+          require('./providers/claudeSubscriptionSearchProvider').createClaudeSubscriptionSearchProvider({env,request:options.publicSubscriptionRequest})})
+      }
+      if (env.PUBLIC_SEARCH_PROVIDER && env.PUBLIC_SEARCH_PROVIDER !== 'openai-api') throw new Error('unknown public search provider')
       const key = env[PUBLIC_KEY_ENV]
       if (!key) throw new Error(PUBLIC_KEY_ENV + ' not set')
       if (!a4SemanticRoutingEnabled(env)) throw new Error('A4_KNOWLEDGE_ROUTING off')

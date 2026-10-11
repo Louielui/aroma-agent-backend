@@ -285,10 +285,13 @@ describe('C4 (12) the six typed operations keep their strict field judging', () 
 /* ═══ 13. THE PUBLIC FENCE ═══════════════════════════════════════════════════ */
 
 describe('C4 (13) public_knowledge is not widened, reachable or renamed', () => {
-  test('*** ⛔ public_knowledge is absent from the planning vocabulary entirely ***', () => {
-    for (const n of operationNames()) assert.equal(/public_knowledge/.test(n), false, 'enum leaked ' + n)
-    for (const n of schemaOperationEnum()) assert.equal(/public_knowledge/.test(n), false, 'schema leaked ' + n)
-    for (const e of catalogueForPrompt()) assert.equal(/public_knowledge/.test(e.operation), false, 'prompt leaked ' + e.operation)
+  test('public information v1 exposes only the existing dotted search to planning, without field proof or permission', () => {
+    assert.deepEqual(operationNames().filter(n => n.startsWith('public_knowledge')), ['public_knowledge.search'])
+    assert.ok(schemaOperationEnum().includes('public_knowledge.search'))
+    assert.ok(catalogueForPrompt().some(e => e.operation === 'public_knowledge.search'))
+    assert.equal(judge1({ operation: 'public_knowledge.search', fields: ['current_temperature'] }).status, STATUS.PARTIAL)
+    assert.deepEqual(judge1({ operation: 'public_knowledge.search', fields: ['current_temperature'] }).fields, [])
+    assert.deepEqual(sourcesForPlan(planOf([fact({ operation: 'public_knowledge.search' })]), ENABLED_ALL), [])
     assert.equal(isSourceLevelOperation('public_knowledge'), false)
     assert.equal(isSourceLevelOperation('public_knowledge.search'), false)
   })
@@ -308,8 +311,8 @@ describe('C4 (13) public_knowledge is not widened, reachable or renamed', () => 
      * source, at base d4708ff and before. C4 neither opened nor closed it, and claiming
      * either would be a false guarantee in a test that looks like a fence.
      *
-     * What C4 DOES guarantee is above: the name is not in B's enum, schema or prompt, so a
-     * conforming plan cannot produce it — and the source is off in production regardless.
+     * Current Public Information v1 now adds this existing dotted operation to
+     * planning. C4's source-level membership and disabled-source fence remain.
      */
     assert.deepEqual(
       sourcesForPlan(planOf([fact({ operation: 'public_knowledge.search' })]), ['aroma_system', 'public_knowledge']),

@@ -16,7 +16,7 @@ function projectTiming(value){
  return cliDurationMs===null&&apiDurationMs===null?null:{cliDurationMs,apiDurationMs,basis:'claude_cli_result'}
 }
 function projectRecord(r){
- if(!r||typeof r.invocationId!=='string'||!UUID.test(r.invocationId)||!['chat_completion','memory_completion','worker_completion'].includes(r.role)||!['started','succeeded','failed','interrupted_unknown'].includes(r.state)||typeof r.startedAt!=='string'||!Number.isFinite(Date.parse(r.startedAt)))throw Error('invalid_ledger')
+ if(!r||typeof r.invocationId!=='string'||!UUID.test(r.invocationId)||!['chat_completion','memory_completion','worker_completion','public_search'].includes(r.role)||!['started','succeeded','failed','interrupted_unknown'].includes(r.state)||typeof r.startedAt!=='string'||!Number.isFinite(Date.parse(r.startedAt)))throw Error('invalid_ledger')
  const at=v=>typeof v==='string'&&Number.isFinite(Date.parse(v))?v:null
  const trace=validTrace({requestId:r.requestId,phase:r.phase})?{requestId:r.requestId,phase:r.phase}:{requestId:null,phase:'unspecified'}
  const workTrace=r.role!=='worker_completion'&&validWorkTrace(r.workTrace)?{...r.workTrace}:null
@@ -74,7 +74,7 @@ function createInvocationLedger({file,clock=Date.now,limit=256}={}){
    for(const r of rows)r.workOutcome={...outcome};save();return !unavailable
   },
   read(){const sample=unavailable?[]:records.slice(-24).reverse().map(projectRecord);return {state:unavailable?'unavailable':'partial',records:sample,coverageStartedAt,retained:unavailable?null:records.length,omitted:unavailable?null:omitted+Math.max(0,records.length-24),provesCharge:false,
-   note:'Bounded Owner bridge chat, memory and registered development worker receipts since coverageStartedAt, not account totals. New project-tasks, project-runs and fixed-fixture runs have host identities; old records remain unlinked. CLI process start is not proof of a provider turn. Failed or interrupted calls may consume unknown usage. Tokens are not credits or charges. Legacy workers, controlled code repair, website, API and external-app calls are not covered. No retrospective backfill.'}}
+   note:'Bounded Owner bridge chat, memory, public search and registered development worker receipts since coverageStartedAt, not account totals. New project-tasks, project-runs and fixed-fixture runs have host identities; old records remain unlinked. CLI process start is not proof of a provider turn. Failed or interrupted calls may consume unknown usage. Tokens are not credits or charges. Legacy workers, controlled code repair, website, API and external-app calls are not covered. No retrospective backfill.'}}
  }
 }
 function createOwnerInvocationLedger({home=require('node:os').homedir()}={}){

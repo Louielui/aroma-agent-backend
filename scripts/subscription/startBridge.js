@@ -69,6 +69,7 @@ function main () {
     onFinish: run => memoryRuntime ? memoryRuntime.event('worker','code-repair:'+run.id,JSON.stringify({id:run.id,state:run.state,reason:run.reason,diagnosisId:run.diagnosisId,approvalHash:run.approvalHash,patchHash:run.result?.patchHash || null,tests:run.tests?{tests:run.tests.tests,pass:run.tests.pass,fail:run.tests.fail}:null,sourceRevision:run.source?.revision,appliedToLive:false}),'measured_result',run.finishedAt) : {state:'not_connected'} })
   const schedulerActions = require('../../src/actions/service').createGateway({store:require('../../src/actions/store').createStore({dir:path.join(workerRoot,'scheduler-action-runs')})})
   const server = createBridge({ schedulerActions, backgroundModel: require('../../src/subscription/chatModels').DEFAULT_BRAIN_MODEL, token: env.CODEX_CHAT_BRIDGE_TOKEN, clientOptions: { executable: chatExecutable, cwd, allowCredits: env.CODEX_CHAT_ALLOW_CREDITS === 'true' }, memoryClientOptions: { executable, cwd, allowCredits: env.CODEX_CHAT_ALLOW_CREDITS === 'true' }, workerFlow, workerProviders, websiteEnabled: env.XIANGXIANG_WEBSITE_FLOW === 'on', memoryEnabled: env.XIANGXIANG_MEMORY === 'on',
+    publicSearchEnabled: env.PUBLIC_SEARCH_PROVIDER === 'claude-subscription',
     memoryStore: require('../../src/memory/structuredStore').createStructuredStore({ local: true }),
     schedulerReader: require('../../src/home/schedulerWitness').readWindowsSchedulerWitness,
     invocationLedger,

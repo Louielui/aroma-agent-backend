@@ -30,10 +30,21 @@ function validateInput (input) {
   return input
 }
 
-function createBridge ({ token, clientOptions, memoryClientOptions = clientOptions, completeFn = complete, claudeFn = require('./claudeClient').complete, claudeCheckFn = require('./claudeClient').checkSubscription, claudeModelsFn = require('./claudeClient').listModels, backgroundModel = null, checkFn = checkSubscription, modelsFn = listSubscriptionModels, subscriptionFn = require('./subscriptionEvidence').readCodexEvidence, workerFlow = null, workerProviders = null, websiteEnabled = false, memoryEnabled = false, memoryStore = null, codeSourceFactory = null, taskPlanSource = null, codeRepair = null, projectWork = null, projectAdoption = null, projectTasks = null, schedulerActions = null, executionReader = null, workReader = null, schedulerReader = null, invocationLedger = null, findWebsiteFn = require('./websiteClient').findWebsite }) {
+function createBridge ({ token, clientOptions, memoryClientOptions = clientOptions, completeFn = complete, claudeFn = require('./claudeClient').complete, claudeCheckFn = require('./claudeClient').checkSubscription, claudeModelsFn = require('./claudeClient').listModels, backgroundModel = null, checkFn = checkSubscription, modelsFn = listSubscriptionModels, subscriptionFn = require('./subscriptionEvidence').readCodexEvidence, workerFlow = null, workerProviders = null, websiteEnabled = false, memoryEnabled = false, memoryStore = null, codeSourceFactory = null, taskPlanSource = null, codeRepair = null, projectWork = null, projectAdoption = null, projectTasks = null, schedulerActions = null, executionReader = null, workReader = null, schedulerReader = null, invocationLedger = null, publicSearchEnabled = false, publicSearchFn = require('./publicSearch').search, findWebsiteFn = require('./websiteClient').findWebsite }) {
   if (!validToken(token)) throw new Error('bridge requires a 256-bit local token')
   let busy = false; let memoryBusy = false
   const activeCalls = new Map()
+  const publicSearch = require('./publicSearch').createSearchCache(async input => {
+    const role='public_search',model=require('./publicSearch').MODEL
+    activeCalls.set(role,{model,effort:'low',startedAt:new Date().toISOString()})
+    const id=invocationLedger?.begin({role,model,effort:'low'})
+    try {
+      const result=await publicSearchFn({...clientOptions,onDispatch:()=>invocationLedger?.dispatched(id)},input)
+      invocationLedger?.finish(id,result.status==='live'?result:null,result.status==='live'?null:Error('public_search_unavailable'))
+      return result
+    } catch(error) {invocationLedger?.finish(id,null,error);throw error}
+    finally {activeCalls.delete(role)}
+  })
   async function observedCall (role, fn, options, body) {
     activeCalls.set(role,{model:body.model || null,effort:body.effort || null,startedAt:new Date().toISOString()})
     const id=invocationLedger?.begin({role,model:body.model,effort:body.effort,trace:body.trace,workTrace:body.workTrace})
@@ -93,10 +104,10 @@ function createBridge ({ token, clientOptions, memoryClientOptions = clientOptio
       if (!res.destroyed) { res.writeHead(status, { 'content-type': 'application/json', 'cache-control': 'no-store' }); res.end(JSON.stringify(body)) }
     }
     if (!authenticated(req.headers.authorization, token) || req.headers.origin) { reply(401, { code: 'subscription_unavailable' }); req.resume(); return }
-    if (req.method !== 'POST' || !['/execution-health', '/complete', '/status', '/models', '/workers', '/website', '/v1/chat/completions', '/memory-store', '/code-diagnosis-source', '/task-plan-source', '/code-repair', '/project-work', '/project-adoption', '/project-tasks', '/execution-metadata', '/work-metadata', '/runtime-metadata', '/invocation-metadata','/work-outcome','/subscription-metadata','/scheduler-action'].includes(req.url)) { reply(404, { code: 'subscription_unavailable' }); req.resume(); return }
+    if (req.method !== 'POST' || !['/execution-health', '/complete', '/status', '/models', '/workers', '/website', '/v1/chat/completions', '/memory-store', '/code-diagnosis-source', '/task-plan-source', '/code-repair', '/project-work', '/project-adoption', '/project-tasks', '/execution-metadata', '/work-metadata', '/runtime-metadata', '/invocation-metadata','/work-outcome','/subscription-metadata','/scheduler-action', '/public-search'].includes(req.url)) { reply(404, { code: 'subscription_unavailable' }); req.resume(); return }
     const isMemory = req.url === '/v1/chat/completions'
     const isStore = req.url === '/memory-store'||req.url==='/work-outcome'
-    const isCatalogue = req.url === '/execution-health' || req.url === '/scheduler-action' || req.url === '/models' || req.url === '/execution-metadata' || req.url === '/work-metadata' || req.url === '/runtime-metadata' || req.url === '/invocation-metadata' || req.url === '/subscription-metadata'
+    const isCatalogue = req.url === '/public-search' || req.url === '/execution-health' || req.url === '/scheduler-action' || req.url === '/models' || req.url === '/execution-metadata' || req.url === '/work-metadata' || req.url === '/runtime-metadata' || req.url === '/invocation-metadata' || req.url === '/subscription-metadata'
     // Closed account metadata uses its own single-flight session. Reading it
     // neither acquires nor releases the execution lane or dispatches a turn.
     if (!isStore && !isCatalogue && ((isMemory ? memoryBusy : busy) || (!isMemory && req.url !== '/project-tasks' && projectTasks?.isActive()) || (!isMemory && req.url !== '/code-repair' && codeRepair?.isActive()) || (!isMemory && !['/project-work', '/project-adoption', '/project-tasks'].includes(req.url) && projectWork?.isActive()) || (!isMemory && req.url !== '/workers' && workerFlow?.isActive?.()) || (!isMemory && !['/project-adoption', '/project-work', '/project-tasks'].includes(req.url) && projectAdoption?.isActive()))) { reply(503, { code: 'subscription_unavailable' }); req.resume(); return }
@@ -115,7 +126,11 @@ function createBridge ({ token, clientOptions, memoryClientOptions = clientOptio
       }
       let input
       try { input = JSON.parse(Buffer.concat(chunks).toString('utf8')) } catch (_) { reply(400, { code: 'subscription_invalid_output' }); return }
-      if(req.url==='/scheduler-action'){
+      if(req.url==='/public-search'){
+        if(!publicSearchEnabled || !require('./publicSearch').validInput(input)){reply(400,{code:'subscription_invalid_output'});return}
+        if(busy || workerFlow?.isActive?.() || projectTasks?.isActive() || projectWork?.isActive() || projectAdoption?.isActive() || codeRepair?.isActive()) {reply(503,{code:'subscription_unavailable'});return}
+        reply(200,await publicSearch(input))
+      }else if(req.url==='/scheduler-action'){
         if(!schedulerActions || !require('../actions/contract').validInput(input)){reply(400,{error:'invalid_request'});return}
         try{reply(200,await schedulerActions.handle({id:'owner',role:'owner'},input))}catch(e){const allowed=['target_not_allowed','investigation_stale','task_not_idle','target_changed','already_in_requested_state','approval_unavailable','rollback_unavailable','target_locked','audit_unavailable'];reply(200,{error:allowed.includes(e.message)?e.message:'action_unavailable'})}
       }else if(req.url==='/work-outcome'){

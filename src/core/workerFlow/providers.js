@@ -46,12 +46,15 @@ function claudeArgs (files = ['duration.js']) {
     '--json-schema', JSON.stringify(reviewSchema)]
 }
 function runClaude(args, options = {}) {
+  // The search bridge owns its invocation receipt; a second worker receipt would
+  // count the same subscription usage twice. This is a host-only option.
+  if (options.observedPublicSearch === true) return runClaudeUnobserved(args, options)
   if (!args.includes('-p') || !args.includes('--model')) return runClaudeUnobserved(args, options)
   const observer = require('../../investigation/workerInvocation')
   return observer.observeWorkerCall({ model: args[args.indexOf('--model') + 1], effort: args.includes('--effort') ? args[args.indexOf('--effort') + 1] : 'auto', dispatchBasis: 'cli_process_started' },
-    onDispatch => runClaudeUnobserved(args, { ...options, onDispatch }), observer.claudeReceipt)
+    onDispatch => runClaudeUnobserved(args, { ...options, onDispatch: () => { onDispatch(); options.onDispatch?.() } }), observer.claudeReceipt)
 }
-function runClaudeUnobserved (args, { cwd, timeoutMs = 90000, signal, input = '', maxInputBytes = 1000000, controlRequestId, spawnImpl = spawn, resolveCommand = resolveAgentCliCommand, onDispatch } = {}) {
+function runClaudeUnobserved (args, { cwd, timeoutMs = 90000, signal, input = '', maxInputBytes = 1000000, controlRequestId, spawnImpl = spawn, resolveCommand = resolveAgentCliCommand, onDispatch, onEvent } = {}) {
   if (typeof input !== 'string' || Buffer.byteLength(input) > Math.min(maxInputBytes, 9 * 1024 * 1024)) return Promise.reject(Error('invalid_worker_result'))
   if (spawnImpl === spawn) assertLiveEgressAllowed('claude-code-subscription')
   const resolved = resolveCommand(process.env)
@@ -84,7 +87,9 @@ function runClaudeUnobserved (args, { cwd, timeoutMs = 90000, signal, input = ''
       let envelope
       try {
         if (args[args.indexOf('--output-format') + 1] === 'stream-json') {
-          const results = stdout.trim().split(/\r?\n/).filter(Boolean).map(line => JSON.parse(line)).filter(row => row.type === 'result')
+          const events = stdout.trim().split(/\r?\n/).filter(Boolean).map(line => JSON.parse(line))
+          if (typeof onEvent === 'function') events.forEach(onEvent)
+          const results = events.filter(row => row.type === 'result')
           if (results.length === 1) envelope = results[0]
         } else envelope = JSON.parse(stdout)
       } catch (_) { /* No raw output is retained in diagnostics. */ }

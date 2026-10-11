@@ -41,7 +41,7 @@
 
 const {
   operationEntry, operationNames, entityTypes, fieldTier, coverageOf, FIELD_TIER,
-  isSourceLevelOperation
+  isSourceLevelOperation, isPublicSearchOperation
 } = require('./operationCatalogue')
 const { executiveFrameSchema, judgeExecutiveFrame } = require('./executiveFrame')
 const { CAPABILITY_NAMES, capabilityEntry } = require('../../governance/selfCapability')
@@ -241,7 +241,7 @@ function judgeFact (fact) {
    * ⛔ AND IT IS STILL A CLOSED SET. Membership comes from the derived table, so `dropbox`,
    * `gmail2` and `aroma_system.fake` fall through to UNKNOWN_OPERATION exactly as before.
    */
-  if (isSourceLevelOperation(base.operation)) {
+  if (isSourceLevelOperation(base.operation) || isPublicSearchOperation(base.operation)) {
     return Object.assign({}, base, {
       status: STATUS.PARTIAL,
       reason: REASON.SOURCE_LEVEL_NO_FIELD_PROOF,

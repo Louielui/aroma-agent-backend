@@ -120,6 +120,9 @@ const CREDENTIAL_ENV = Object.freeze({
  * This says only 「is there credential material to try with, and is any needed at all」.
  */
 function credentialStateFor (source, env, credsPresent) {
+  if (source === 'public_knowledge' && env.PUBLIC_SEARCH_PROVIDER === 'claude-subscription') {
+    return require('../subscription/bridge').validToken(env.CODEX_CHAT_BRIDGE_TOKEN) ? CREDENTIAL.PRESENT : CREDENTIAL.MISSING
+  }
   // Local: there is no credential to have or to lack. Saying either would be a claim about
   // something that does not exist.
   if (LOCAL_SOURCES.includes(source)) return CREDENTIAL.NOT_REQUIRED

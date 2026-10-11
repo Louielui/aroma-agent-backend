@@ -39,7 +39,7 @@
  * catalogue says CANDIDATE and means it.
  */
 
-const { AROMA_OPERATIONS, SOURCE_LEVEL_OPERATIONS, isSourceLevelOperation } = require('../../context/readOperations')
+const { AROMA_OPERATIONS, PUBLIC_OPERATIONS, SOURCE_LEVEL_OPERATIONS, isSourceLevelOperation } = require('../../context/readOperations')
 const {
   METRICS_OF, ENTITY_OF, ROW_SHAPE, QUERY_SCOPE, SERVER_LIMITS, LIMIT_KNOWN
 } = require('../../context/adapters/aromaSystemRead')
@@ -228,6 +228,10 @@ const SOURCE_CATALOGUE = Object.freeze(SOURCE_LEVEL_OPERATIONS.map((o) => Object
   queryScope: null
 })))
 
+// Public retrieval is a distinct closed operation class. It has no measured
+// business entity or weather fields, and catalogue membership grants no egress.
+const isPublicSearchOperation = name => typeof name === 'string' && PUBLIC_OPERATIONS.some(o => o.operation === name.trim())
+
 /** Owner-facing name, taken from the one label table already derived from ALL_SOURCES. */
 function sourceLabel (source) {
   if (source === 'seven_shifts') return '7shifts GET-only time-punch evidence for one configured company: employee IDs, clocked-in and nullable clocked-out timestamps. The host binds a clock-in UTC date window, at most 31 days and 3 pages. This is not employee-name lookup or payroll approval. A registered implementation does not prove the connection or permission is usable. Null clocked-out means no clock-out was recorded, not a fabricated time. Retrieval and context coverage are separate; wider-source totals remain unknown.'
@@ -246,7 +250,7 @@ const operationEntry = (operation) => CATALOGUE.find((e) => e.operation === oper
 // ⛔ BOTH CLASSES. This IS the schema enum, and it is the only place the two vocabularies
 // are joined. Typed operations keep their existing order, so an Aroma plan's options are
 // byte-identical to before; the source-level names are appended.
-const operationNames = () => [...CATALOGUE.map((e) => e.operation), ...SOURCE_CATALOGUE.map((e) => e.operation)]
+const operationNames = () => [...CATALOGUE.map((e) => e.operation), ...SOURCE_CATALOGUE.map((e) => e.operation), ...PUBLIC_OPERATIONS.map(o => o.operation)]
 
 /** Every entity type the six operations produce. There is no cost entity, and that matters. */
 // ⛔ TYPED ONLY, DELIBERATELY. A source-level operation has no measured entity, so offering
@@ -383,13 +387,16 @@ function catalogueForPrompt () {
     fields: [],
     note: '整個來源可以讀。但呢個來源冇經量度嘅欄位保證，所以 entity 同 fields 要留空，亦唔好聲稱具體欄位。'
   }))
-  return [...typed, ...sources]
+  const publicReads = PUBLIC_OPERATIONS.map(o => ({ operation: o.operation, label: o.label, kind: 'public_search', entity: null, fields: [],
+    note: 'Bounded public search for fresh public information, including weather. The Owner-only query planner determines outbound args; source/A4/egress authorisation remains mandatory. Cited summaries do not guarantee exact fields, publication dates or current observations. Do not substitute public search for private company facts.' }))
+  return [...typed, ...sources, ...publicReads]
 }
 
 module.exports = {
   CATALOGUE,
   SOURCE_CATALOGUE,
   isSourceLevelOperation,
+  isPublicSearchOperation,
   CANDIDATE_FIELDS,
   CAPTURED_ON,
   ENDPOINT_OF_INTENT,

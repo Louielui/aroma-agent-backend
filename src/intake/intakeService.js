@@ -258,6 +258,9 @@ const { buildInvestigationState, investigationBlock, selfReadableObservation, X4
  * this function chooses placement, never content.
  */
 function leadWithJudgment (view, distilled, requestId, path, investigation = null) {
+  // A public-search excerpt reports observed summary bytes and their limits.
+  // Auxiliary model prose must not upgrade these to verified current facts.
+  if (view.publicSummaryRendered === true) return view
   const j = distilled && distilled[JUDGMENT_KEY]
   // This auxiliary prose bypasses the Answer Plan's source checks. The measured
   // operational failure turned unconnected execution history into nonexistent records.
@@ -3530,7 +3533,7 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
       blocked: false, mode: 'chat', talkOnly: true, interactionMode: 'chat',
       ...(gapForTurn() && { capabilityGap: gapForTurn() }),
       ...(operationalInvestigation && { investigation: operationalInvestigation }),
-      reply: view.reply, replyForArchive: guarded.reply, readClaimCorrected: claim.corrected,
+      reply: view.reply, replyForArchive: view.publicSummaryRendered ? view.reply : guarded.reply, readClaimCorrected: claim.corrected,
       decision: null, tasks: [], risks: [], next_step: '', requestId
     }
   }
@@ -3791,7 +3794,7 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
       ...(gapForTurn() && { capabilityGap: gapForTurn() }),
       ...(operationalInvestigation && { investigation: operationalInvestigation }),
       ...(demo && { demoOutcome: classifyDemoOutcome({ mode: distilled.mode, intent: distilled.intent }).outcome, contextCardWarnings: ctx.warnings }),
-      reply: view.reply, replyForArchive: operationalInvestigation?.readOnly === true ? view.reply : guarded.reply, readClaimCorrected: chatClaim.corrected,
+      reply: view.reply, replyForArchive: view.publicSummaryRendered || operationalInvestigation?.readOnly === true ? view.reply : guarded.reply, readClaimCorrected: chatClaim.corrected,
       judgment: '', reasons: distilled.reasons || [], offer: distilled.offer || '', decision: null, tasks: [], risks: [], next_step: '', requestId }
   }
 

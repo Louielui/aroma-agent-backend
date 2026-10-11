@@ -128,6 +128,24 @@ test('large multi-file review is streamed through stdin, never expanded into com
   await assert.rejects(runClaude([], { input: 'x'.repeat(1000001) }), /invalid_worker_result/)
 })
 
+test('public retrieval receives matched stream events and one dispatch without API credentials', async () => {
+  const { EventEmitter } = require('node:events'), { PassThrough, Writable } = require('node:stream')
+  const rows = [{ type: 'system', subtype: 'init', tools: ['WebSearch'] }, { type: 'result', subtype: 'success', result: 'cited public facts' }]
+  const received = []; let dispatched = 0
+  const out = await runClaude(['-p', '--model', 'claude-opus-5-5', '--output-format', 'stream-json'], {
+    observedPublicSearch: true, input: 'public query', onDispatch: () => dispatched++, onEvent: row => received.push(row),
+    resolveCommand: () => ({ ok: true, command: 'fixture' }), spawnImpl: (exe, args, options) => {
+      assert.equal(options.env.ANTHROPIC_API_KEY, undefined); assert.equal(options.env.OPENAI_API_KEY, undefined)
+      assert.equal(options.windowsHide, true); assert.equal(options.shell, false)
+      const child = new EventEmitter(); child.stdout = new PassThrough(); child.stderr = new PassThrough(); child.kill = () => {}
+      child.stdin = new Writable({ write (c, e, done) { done() }, final (done) { done(); process.nextTick(() => {
+        child.emit('spawn'); child.stdout.end(rows.map(row => JSON.stringify(row)).join('\n')); child.emit('close', 0)
+      }) } }); return child
+    }
+  })
+  assert.equal(dispatched, 1); assert.deepEqual(received, rows); assert.deepEqual(out, rows[1])
+})
+
 test('review failures retain bounded diagnostic enums and byte counts without raw output', async () => {
   const { EventEmitter } = require('node:events'), { PassThrough, Writable } = require('node:stream')
   for (const subtype of ['error_max_turns', 'error_max_structured_output_retries', 'unexpected-sensitive-value']) {
