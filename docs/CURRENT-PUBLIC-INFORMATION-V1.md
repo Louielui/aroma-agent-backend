@@ -15,6 +15,10 @@ no sessions, a shared finite 110-second deadline and four maximum search turns.
 The host then reads at most two observed URLs on six registered official hosts
 using HTTPS GET, with at most two registered redirects per page, bounded bodies,
 public DNS addresses, no credentials/cookies/referrer, and no script execution.
+Public Source Fallback v1 adds subject-bound embedded JSON-LD, same-host alternate
+JSON and a fixed library JSON directory referenced by registered official pages.
+At most two additional source reads share the existing 110-second deadline; see
+`PUBLIC-SOURCE-FALLBACK-V1.md` for coverage, egress and usage boundaries.
 An observation over two hours old gets one bounded read-back. Failure keeps the
 earlier dated page and an explicit failed check, never a new-time substitute.
 A separate tool-free subscription composition call translates exact matched
@@ -76,11 +80,12 @@ worker. Navigation now requires a separately declared website-URL deliverable;
 factual/ambiguous output falls through to the existing query architecture. This
 does not migrate the explicitly requested legacy navigation worker's billing.
 Candidate and loaded real cross-domain acceptance are recorded separately.
-The isolated real Express candidate passed Chinese and English weather, the
+The previous isolated real Express candidate passed Chinese and English weather, the
 observed Manitoba release listing, and honest gap handling for Millennium Library.
 All four final candidate replies used Claude Opus 5.5. The library's official HTML
 loads its hours through scripts, which this bounded reader does not execute; hours
-remain unestablished. This is not a successful opening-hours retrieval. English
+remained unestablished in that previous version. This was not a successful
+opening-hours retrieval; new structured-source acceptance is recorded separately. English
 weather withheld two unmatched statements and kept that omission visible. The
 government result establishes what the observed listing says, not a complete
 inventory of every announcement. None of these candidate results proves deployment.

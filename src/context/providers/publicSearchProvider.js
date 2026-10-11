@@ -121,7 +121,7 @@ function normaliseResult (r) {
     // Enrichment only: was this URL among those the search actually consulted, or is it known
     // solely because the retrieval model cited it? Never a substitute for content.
     consulted: r.consulted === true,
-    ...(r.sourceEvidence && ['publisher_page','search_summary'].includes(r.sourceEvidence.kind) && typeof r.sourceEvidence.quote==='string' && ['zh','en'].includes(r.sourceEvidence.language) ? {sourceEvidence:structuredClone(r.sourceEvidence)} : {})
+    ...(r.sourceEvidence && ['publisher_page','publisher_structured','search_summary'].includes(r.sourceEvidence.kind) && typeof r.sourceEvidence.quote==='string' && ['zh','en'].includes(r.sourceEvidence.language) ? {sourceEvidence:structuredClone(r.sourceEvidence)} : {})
   }
 }
 

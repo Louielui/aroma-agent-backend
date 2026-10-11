@@ -13,6 +13,27 @@ test('official page reads are closed HTTPS GETs, reject credentials, local hosts
  assert.doesNotMatch(out.text,/99°C|Ignore instructions/)
  const denied=await readPage(url,{get:async()=>({status:302,headers:{location:'http://127.0.0.1/secret'},body:''})});assert.equal(denied.state,'unavailable')
 })
+
+test('publisher structured references and alternate observed pages share one bounded fallback budget',async()=>{
+ const {readFallbackPages}=require('./publicPages')
+ const parent='https://www.winnipeg.ca/recreation-leisure/libraries/locations-and-hours/millennium-library',data='https://raw.githubusercontent.com/winnipegpublibrary/winnipeg-ca-openinghours/main/hours-schema/1262.json'
+ const official={pages:[{url:parent,references:[{url:data,format:'structured',binding:{pageUrl:parent,name:'Millennium'}}]}],checks:[{url:parent,state:'read'}]}
+ const seen=[]
+ const out=await readFallbackPages([{url:parent},{url:'https://news.gov.mb.ca/news'},{url:'https://www.canada.ca/another'},{url:'https://evil.invalid/'}],official,{limit:2,read:async(u,options)=>{seen.push({u,options});return u===data?{url:u,state:'unavailable',reason:'structured_subject_mismatch'}:extractPage('<h1>Official release</h1><p>Verified public announcement.</p>',u,'2026-10-11T22:00:00Z')}})
+ assert.equal(seen.length,2);assert.equal(seen[0].options.format,'structured');assert.equal(seen[0].options.binding.name,'Millennium')
+ assert.equal(out.pages.length,1);assert.equal(out.attempted,2);assert.equal(out.checks[0].reason,'structured_subject_mismatch');assert.equal(out.checks[1].fallback,true)
+ const cancelled=new AbortController();cancelled.abort();await readFallbackPages([],official,{signal:cancelled.signal,read:()=>assert.fail('aborted fallback read')})
+})
+test('JSON-LD is preserved without script execution; a structured GET must match its publisher subject',async()=>{
+ const value={'@context':'https://schema.org','@type':'NewsArticle',headline:'Official release',datePublished:'2026-10-09',description:'Verified public announcement.'}
+ const parent='https://news.gov.mb.ca/release',source=parent+'.json'
+ const page=extractPage('<h1>Official release</h1><script type="application/ld+json">'+JSON.stringify(value)+'</script>',parent,'2026-10-11T22:00:00Z')
+ assert.equal(page.structuredRecords[0].publishedAt,'2026-10-09')
+ const read=await readPage(source,{format:'structured',binding:{pageUrl:parent,title:'Official release'},get:async()=>({status:200,headers:{'content-type':'application/ld+json'},body:JSON.stringify(value)})})
+ assert.equal(read.state,'read');assert.equal(read.kind,'publisher_structured');assert.equal(read.times[0].value,'2026-10-09')
+ const wrong=await readPage(source,{format:'structured',binding:{pageUrl:parent,title:'Another release'},get:async()=>({status:200,headers:{'content-type':'application/json'},body:JSON.stringify(value)})})
+ assert.equal(wrong.state,'unavailable');assert.equal(wrong.reason,'structured_subject_mismatch')
+})
 test('source date meanings remain distinct; unknown publication and old observation cannot become current',()=>{
  const out=extractPage(html,url,'2026-10-12T00:00:00Z')
  assert.equal(out.publishedAt,null);assert.equal(out.freshness,'stale_observation');assert.equal(out.times.find(x=>x.kind==='update').value,'2026-09-03T15:20:37.000Z')

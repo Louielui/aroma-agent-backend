@@ -72,7 +72,8 @@ async function search (options={}, input) {
   const clock=options.clock || (()=>new Date().toISOString()),at=clock()
   if(!validInput(input)) return unavailable('',at)
   const query=input.query.trim(),events=[]
-  let paidSearch=null,compositionUsage=null
+  let paidSearch=null,missingCompositionUsage=false
+  const compositionReceipts=[]
   // Authentication and retrieval share one deadline; a slow login check must
   // not leave a paid search running after the backend's read has timed out.
   const signal=AbortSignal.any([AbortSignal.timeout(110000),...(options.signal?[options.signal]:[])])
@@ -86,33 +87,59 @@ async function search (options={}, input) {
     const found=extractEvidence(events,query,clock())
     paidSearch=found
     options.onDiscovery?.(found)
-    if(found.status!==SEARCH_STATUS.LIVE)return found
+    if(found.actualModel!==MODEL||!found.observedSources?.length)return found
     const official=await (options.readPages||require('./publicPages').readOfficialPages)(found.observedSources,{signal,freshness:input.freshness})
     const language=input.replyLanguage||(/[\u3400-\u9fff]/.test(query)?'zh':'en')
-    const sources=[...official.pages.map(p=>({...p,kind:'publisher_page'})),...found.results.map((r,i)=>({id:'s'+(i+1),kind:'search_summary',url:r.url,title:r.title,text:r.content,retrievedAt:found.retrievedAt,times:[],freshness:'unknown'}))]
-    const composed=await (options.compose||require('./publicAnswer').compose)({...options,signal,onCompositionUsage:value=>{compositionUsage=value}},{query,language,sources})
-    const results=composed.claims.map(({source,quote,answer})=>({title:source.title,url:source.url,content:answer,contentKind:source.kind==='publisher_page'?'publisher_cited_summary':'web_search_cited_summary',publishedAt:source.publishedAt||null,consulted:true,sourceEvidence:{kind:source.kind,quote,language,readAt:source.retrievedAt,hash:source.hash||null,times:source.times,freshness:source.freshness,pageChecks:official.checks,omitted:composed.omitted||0,answerState:composed.answerState}}))
+    let additionalReads=0
+    async function addSources(referencesOnly){
+      if(additionalReads>=2||signal.aborted)return
+      const extra=await (options.readFallback||require('./publicPages').readFallbackPages)(found.observedSources,official,{signal,referencesOnly,limit:2-additionalReads})
+      additionalReads+=extra.attempted;official.pages.push(...extra.pages);official.checks.push(...extra.checks)
+    }
+    // Referenced structured data needs no extra model decision or browser run.
+    await addSources(true)
+    function evidenceSources(){
+      const pages=official.pages.flatMap(p=>[...(p.structuredRecords||[]),{...p,kind:p.kind||'publisher_page'}]).sort((a,b)=>Number(b.kind==='publisher_structured')-Number(a.kind==='publisher_structured'))
+      return [...pages.map((p,i)=>({...p,id:'p'+(i+1)})),...found.results.map((r,i)=>({id:'s'+(i+1),kind:'search_summary',url:r.url,title:r.title,text:r.content,retrievedAt:found.retrievedAt,times:[],freshness:'unknown'}))]
+    }
+    let sources=evidenceSources()
+    if(!sources.length){await addSources(false);sources=evidenceSources();if(!sources.length)return found}
+    async function composeOnce(){
+      if(signal.aborted)throw Error('worker_timeout')
+      let observed=null
+      try{
+        const value=await (options.compose||require('./publicAnswer').compose)({...options,signal,onCompositionUsage:usage=>{observed=usage}},{query,language,sources})
+        compositionReceipts.push(value.modelUsage||observed);if(!completeUsage(value.modelUsage||observed))missingCompositionUsage=true
+        return value
+      }catch(error){if(observed)compositionReceipts.push(observed);if(!completeUsage(observed))missingCompositionUsage=true;throw error}
+    }
+    let composed=await composeOnce()
+    if(composed.answerState==='insufficient'&&additionalReads<2){const previousCount=official.pages.length;await addSources(false);if(official.pages.length>previousCount){sources=evidenceSources();composed=await composeOnce()}}
+    const results=composed.claims.map(({source,quote,answer})=>({title:source.title,url:source.url,content:answer,contentKind:source.kind==='search_summary'?'web_search_cited_summary':'publisher_cited_summary',publishedAt:source.publishedAt||null,consulted:true,sourceEvidence:{kind:source.kind,quote,language,readAt:source.retrievedAt,hash:source.hash||null,times:source.times,freshness:source.freshness,parentUrl:source.parentUrl||null,extraction:source.extraction||null,coverage:source.coverage||null,pageChecks:official.checks,omitted:composed.omitted||0,answerState:composed.answerState}}))
     // Both subscription calls contribute observed token usage; neither CLI USD
     // estimates nor search tool counts establish account billing.
-    const usageByModel=found.usageByModel.map(row=>({...row,usage:{...row.usage}}))
-    const {projectUsage}=require('../investigation/invocations')
-    for(const [model,raw] of Object.entries(composed.modelUsage||{})){
-      const usage=projectUsage(raw),prior=usageByModel.find(r=>r.model===model)
-      if(!prior)usageByModel.push({model,usage});else for(const key of Object.keys(prior.usage||{}))prior.usage[key]=typeof prior.usage[key]==='number'&&typeof usage?.[key]==='number'?prior.usage[key]+usage[key]:null
-    }
+    const usageByModel=combineUsage(found,compositionReceipts)
     const normalized=makeSearchResult({provider:PROVIDER,query,retrievedAt:clock(),results,sourcesSeen:found.observedSources.length})
-    return {...normalized,model:MODEL,actualModel:MODEL,billing:'claude-subscription',webSearchCalls:found.webSearchCalls,usage:usageByModel.find(r=>r.model===MODEL)?.usage||null,usageByModel,usageBasis:'provider_result_model_usage'}
+    return {...normalized,model:MODEL,actualModel:MODEL,billing:'claude-subscription',webSearchCalls:found.webSearchCalls,usage:usageByModel.find(r=>r.model===MODEL)?.usage||null,usageByModel,usageBasis:'provider_result_model_usage',usageComplete:!missingCompositionUsage}
   } catch(error) {
     const failure=unavailable(query,clock(),error.code==='subscription_login_required'?UNAVAILABLE_REASON.AUTH:
       error.message==='worker_timeout'?UNAVAILABLE_REASON.TIMEOUT:
       error.message==='subscription_limit_reached'?UNAVAILABLE_REASON.RATE_LIMIT:UNAVAILABLE_REASON.NETWORK)
     if(paidSearch?.actualModel===MODEL){
-      const {projectUsage}=require('../investigation/invocations'),usage={...paidSearch.usage},other=compositionUsage?.[MODEL]?projectUsage(compositionUsage[MODEL]):null
-      if(other)for(const key of Object.keys(usage))usage[key]=typeof usage[key]==='number'&&typeof other[key]==='number'?usage[key]+other[key]:null
-      return {...failure,actualModel:MODEL,webSearchCalls:paidSearch.webSearchCalls,usage,usageBasis:'provider_result_model_usage',usageComplete:other!==null}
+      const usageByModel=combineUsage(paidSearch,compositionReceipts)
+      return {...failure,actualModel:MODEL,webSearchCalls:paidSearch.webSearchCalls,usage:usageByModel.find(r=>r.model===MODEL)?.usage||null,usageByModel,usageBasis:'provider_result_model_usage',usageComplete:!missingCompositionUsage}
     }
     return failure
   }
+}
+function completeUsage(receipt){const {projectUsage}=require('../investigation/invocations'),usage=receipt?.[MODEL]?projectUsage(receipt[MODEL]):null;return !!usage&&typeof usage.inputTokens==='number'&&typeof usage.outputTokens==='number'}
+function combineUsage(found,receipts){
+ const rows=(found.usageByModel||[]).map(row=>({...row,usage:{...row.usage}})),{projectUsage}=require('../investigation/invocations')
+ for(const receipt of receipts)for(const [model,raw] of Object.entries(receipt||{})){
+  const usage=projectUsage(raw),prior=rows.find(r=>r.model===model)
+  if(!prior)rows.push({model,usage});else for(const key of Object.keys(prior.usage||{}))prior.usage[key]=typeof prior.usage[key]==='number'&&typeof usage?.[key]==='number'?prior.usage[key]+usage[key]:null
+ }
+ return rows
 }
 function createSearchCache (execute,{clock=Date.now,maxEntries=32}={}) {
   const cache=new Map(),pending=new Map()

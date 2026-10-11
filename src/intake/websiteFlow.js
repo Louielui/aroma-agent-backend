@@ -33,6 +33,10 @@ async function runWebsiteFlow ({ message, history = [], classify, search, record
     return answer(t('website.found', { url }))
   } catch (error) {
     // No provider text or false progress promises cross the failure boundary.
+    if(error.code==='subscription_login_required'){
+      try{step('failed',{reason:'subscription_login_required'})}catch(_){}
+      return answer(t('website.subscriptionLoginRequired'))
+    }
     try { step('failed', { reason: error.code === 'subscription_limit_reached' ? 'subscription_limit_reached' : 'website_unavailable' }) } catch (_) {}
     return answer(t('website.failed'))
   }

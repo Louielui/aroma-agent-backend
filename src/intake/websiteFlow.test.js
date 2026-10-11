@@ -39,3 +39,8 @@ test('read switches and sensitive previous context stop before classification or
   const sensitive = await runWebsiteFlow({ ...base, history: [{ role: 'user', text: 'my password is secret' }] })
   assert.equal(sensitive.website.state, 'needs_input'); assert.equal(sensitive.website.reason, 'sensitive_context')
 })
+
+test('subscription login failure is labelled as authentication rather than a failed website lookup',async()=>{
+ const out=await runWebsiteFlow({message:'Opening hours according to the official website?',classify:async()=>{const error=Error('subscription_login_required');error.code='subscription_login_required';throw error},search:()=>assert.fail('unauthenticated search')})
+ assert.equal(out.website.reason,'subscription_login_required');assert.match(out.reply,/訂閱.*登入|subscription.*sign.in/i);assert.doesNotMatch(out.reply,/沒有確認到可交付的網址/)
+})

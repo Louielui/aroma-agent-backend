@@ -9,6 +9,14 @@ test('only exact source quotes survive; unrelated URLs, extra numbers and wrong-
  assert.equal(admitClaims({claims:[{...claim,answer:'該次觀測氣溫為7°C。'}]},[page],'zh').length,1)
 })
 
+test('recurring hours cannot turn missing days or undated exceptions into confirmed closures',()=>{
+ const source={...page,kind:'publisher_structured',coverage:{kind:'recurring_hours',missingDays:['Sunday'],exceptions:'unknown'},text:'Sunday state unknown; Monday opens 10:00 and closes 17:00.'}
+ for(const language of ['en','zh']){
+  const claim={sourceId:'p1',quote:source.text,answer:language==='en'?'Sunday is closed.':'星期日休館。'}
+  assert.equal(admitClaims({claims:[claim]},[source],language).length,0)
+ }
+})
+
 test('insufficient subject or period evidence yields an explicit incomplete state rather than unrelated numeric answers',async()=>{
  const result=await compose({run:async(args,options)=>{assert.equal(args[args.indexOf('--tools')+1],'');assert.equal(JSON.parse(options.input).replyLanguage,'en');return {subtype:'success',is_error:false,structured_output:{answerState:'insufficient',claims:[{sourceId:'p1',quote:page.text,answer:'Unrelated opening hours: 10:00–17:00.'}]},modelUsage:{'claude-opus-5-5':{inputTokens:3,outputTokens:4}}}}},{query:'Opening hours of a named location',language:'en',sources:[page]})
  assert.equal(result.answerState,'insufficient');assert.equal(result.claims[0].quote,page.text);assert.doesNotMatch(result.claims[0].answer,/10:00/)

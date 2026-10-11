@@ -1,5 +1,6 @@
 'use strict'
 const https=require('node:https'),dns=require('node:dns'),crypto=require('node:crypto')
+const structured=require('./publicStructured')
 // Public publisher reads only. No caller can supply headers, cookies, a method,
 // credentials, a port or a host outside this fixed catalogue.
 const HOSTS=Object.freeze(['weather.gc.ca','www.canada.ca','www.gov.mb.ca','news.gov.mb.ca','www.winnipeg.ca','wpl.winnipeg.ca'])
@@ -14,7 +15,7 @@ function publicAddress(address){
 function getPublic(url,{signal}={}){
  if(require('../testProcess').isTestProcess())return Promise.reject(Error('test_public_egress_forbidden'))
  return new Promise((resolve,reject)=>{
-  const req=https.request(url,{method:'GET',signal,headers:{accept:'text/html,text/plain','user-agent':'Imagine-Public-Read/1.0','cache-control':'no-cache'},lookup:(host,options,callback)=>{
+  const req=https.request(url,{method:'GET',signal,headers:{accept:'text/html,text/plain,application/ld+json,application/json','user-agent':'Imagine-Public-Read/1.0','cache-control':'no-cache'},lookup:(host,options,callback)=>{
    dns.lookup(host,{all:true},(error,rows)=>{if(error)return callback(error);if(!rows.length||rows.some(r=>!publicAddress(r.address)))return callback(Error('public_address_required'));callback(null,options.all?rows:rows[0].address,options.all?undefined:rows[0].family)})
   }},res=>{
    const chunks=[];let size=0
@@ -41,29 +42,43 @@ function extractPage(html,url,retrievedAt){
   if(kind&&value&&!times.some(t=>t.kind===kind&&t.value===value))times.push({kind,value,raw:value})
  }
  const observed=times.filter(t=>t.kind==='observation'&&t.value.includes('T')).map(t=>Date.parse(t.value)),age=observed.length?Date.parse(retrievedAt)-Math.max(...observed):null
- return {state:'read',url,title:plain(clean.match(/<title\b[^>]*>([^]*?)<\/title>/i)?.[1]||main.match(/<h1\b[^>]*>([^]*?)<\/h1>/i)?.[1]||new URL(url).hostname).slice(0,200),text,retrievedAt,hash:crypto.createHash('sha256').update(html).digest('hex'),times,publishedAt:times.find(t=>t.kind==='publication')?.value||null,freshness:age===null?'unknown':age<0?'unknown':age<=2*60*60*1000?'recent_observation':'stale_observation'}
+ const subject=plain(main.match(/<h1\b[^>]*>([^]*?)<\/h1>/i)?.[1]||'').slice(0,200),inspected=structured.inspectDocument(html,url,subject),hash=crypto.createHash('sha256').update(html).digest('hex')
+ return {state:'read',url,title:plain(clean.match(/<title\b[^>]*>([^]*?)<\/title>/i)?.[1]||subject||new URL(url).hostname).slice(0,200),text,retrievedAt,hash,times,publishedAt:times.find(t=>t.kind==='publication')?.value||null,freshness:age===null?'unknown':age<0?'unknown':age<=2*60*60*1000?'recent_observation':'stale_observation',structuredRecords:inspected.records.map(r=>({...r,url,retrievedAt,hash,parentUrl:url})),references:inspected.references.filter(r=>admitUrl(r.url)||structured.admitStructuredUrl(r.url))}
 }
-async function readPage(value,{get=getPublic,signal,now=Date.now}={}){
- const original=admitUrl(value);if(!original)return {url:value,state:'unavailable',reason:'host_not_registered'}
+async function readPage(value,{get=getPublic,signal,now=Date.now,format=null,binding=null}={}){
+ const original=admitUrl(value)||(format==='structured'&&binding&&admitUrl(binding.pageUrl)?structured.admitStructuredUrl(value):null);if(!original)return {url:value,state:'unavailable',reason:'host_not_registered'}
  const deadline=AbortSignal.any([AbortSignal.timeout(15000),...(signal?[signal]:[])])
  try{
   let url=original
   for(let n=0;n<3;n++){
    const r=await get(url,{method:'GET',redirect:'manual',credentials:'omit',signal:deadline})
-   if([301,302,303,307,308].includes(r.status)){const next=admitUrl(new URL(r.headers.location,url).href);if(!next)throw Error('redirect_not_registered');url=next;continue}
-   if(r.status!==200||!/^text\/(html|plain)/i.test(r.headers['content-type']||'')||typeof r.body!=='string'||Buffer.byteLength(r.body)>MAX_BYTES)throw Error('page_unavailable')
-   const page=extractPage(r.body,url,new Date(now()).toISOString());if(page.text.length<20)throw Error('page_empty');return {...page,url:original,finalUrl:url}
+   if([301,302,303,307,308].includes(r.status)){const next=admitUrl(new URL(r.headers.location,url).href);if(!next||(format==='structured'&&new URL(next).origin!==new URL(original).origin))throw Error('redirect_not_registered');url=next;continue}
+   const accepted=format==='structured'?/^(?:application\/(?:ld\+)?json|text\/plain)(?:;|$)/i:/^text\/(html|plain)(?:;|$)/i
+   if(r.status!==200||!accepted.test(r.headers['content-type']||'')||typeof r.body!=='string'||Buffer.byteLength(r.body)>MAX_BYTES)throw Error('page_unavailable')
+   if(format==='structured'){
+    const projected=structured.projectStructured(JSON.parse(r.body),binding);if(!projected)throw Error('structured_subject_mismatch')
+    return {...projected,state:'read',url:original,finalUrl:url,retrievedAt:new Date(now()).toISOString(),hash:crypto.createHash('sha256').update(r.body).digest('hex'),parentUrl:binding.pageUrl}
+   }
+   const page=extractPage(r.body,url,new Date(now()).toISOString());if(page.text.length<20&&!page.structuredRecords.length)throw Error('page_empty');return {...page,url:original,finalUrl:url}
   }
   throw Error('redirect_limit')
- }catch(e){return {url:original,state:'unavailable',reason:['redirect_not_registered','page_empty','page_too_large'].includes(e.message)?e.message:'page_unavailable'}}
+ }catch(e){return {url:original,state:'unavailable',reason:['redirect_not_registered','page_empty','page_too_large','structured_subject_mismatch'].includes(e.message)?e.message:'page_unavailable'}}
 }
 async function readOfficialPages(sources,{read=readPage,signal,freshness=null}={}){
  const selected=Array.from(new Set(sources.map(s=>admitUrl(s.url)).filter(Boolean))).sort((a,b)=>Number(/\.pdf(?:\?|$)/i.test(a))-Number(/\.pdf(?:\?|$)/i.test(b))).slice(0,2),pages=[],checks=[]
  for(const url of selected){
+  if(signal?.aborted)break
   let page=await read(url,{signal});checks.push({url,state:page.state,reason:page.reason||null,freshness:page.freshness||'unknown'})
   if(page.state==='read'&&freshness==='current'&&page.freshness==='stale_observation'&&checks.length<3){const retry=await read(url,{signal});checks.push({url,state:retry.state,reason:retry.reason||null,freshness:retry.freshness||'unknown',retry:true});if(retry.state==='read')page=retry}
   if(page.state==='read')pages.push({...page,id:'p'+(pages.length+1)})
  }
  return {pages,checks}
 }
-module.exports={HOSTS,admitUrl,publicAddress,extractPage,readPage,readOfficialPages,plain}
+async function readFallbackPages(sources,official,{read=readPage,signal,limit=2,referencesOnly=false}={}){
+ const seen=new Set((official.checks||[]).map(c=>c.url)),references=(official.pages||[]).flatMap(p=>p.references||[]),alternates=referencesOnly?[]:sources.map(s=>({url:admitUrl(s.url),format:null,relation:'observed_search_alternate'})),selected=[]
+ for(const hint of [...references,...alternates]){if(!hint.url||seen.has(hint.url)||selected.length>=Math.min(2,Math.max(0,limit)))continue;seen.add(hint.url);selected.push(hint)}
+ const pages=[],checks=[]
+ for(const hint of selected){if(signal?.aborted)break;const page=await read(hint.url,{signal,format:hint.format,binding:hint.binding});checks.push({url:hint.url,state:page.state,reason:page.reason||null,fallback:true,relation:hint.relation,parentUrl:hint.binding?.pageUrl||null});if(page.state==='read')pages.push({...page,id:'f'+(checks.length)})}
+ return {pages,checks,attempted:checks.length}
+}
+module.exports={HOSTS,admitUrl,publicAddress,extractPage,readPage,readOfficialPages,readFallbackPages,plain}

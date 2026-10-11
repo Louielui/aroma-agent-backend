@@ -53,9 +53,36 @@ test('failed composition preserves observed search usage and never triggers API 
  assert.equal(out.status,'unavailable');assert.equal(out.webSearchCalls,1);assert.equal(out.usage.outputTokens,2);assert.equal(out.usageComplete,false);assert.equal(out.actualModel,'claude-opus-5-5')
 })
 
+test('insufficient evidence triggers bounded alternate reads and counts both composition calls',async()=>{
+ let compositions=0,fallbacks=0
+ const first={id:'p1',kind:'publisher_page',url:URL,title:'Weather',text:'Official page has no usable measurement.',retrievedAt:now,times:[],freshness:'unknown'}
+ const next={id:'f1',kind:'publisher_page',url:'https://www.canada.ca/news',title:'Release',text:'Official release dated 2026-10-09.',retrievedAt:now,times:[],freshness:'unknown'}
+ const out=await search({check:async()=>{},clock:()=>now,run:async(args,options)=>{events().forEach(options.onEvent);return events().at(-1)},readPages:async()=>({pages:[first],checks:[{url:URL,state:'read'}]}),readFallback:async(sources,prior,opts)=>{fallbacks++;assert.equal(opts.limit,2);assert.ok(opts.signal instanceof AbortSignal);return opts.referencesOnly?{pages:[],checks:[],attempted:0}:{pages:[next],checks:[{url:next.url,state:'read',fallback:true}],attempted:1}},compose:async(opts)=>{compositions++;const modelUsage={'claude-opus-5-5':{inputTokens:compositions===1?3:5,outputTokens:compositions===1?4:6}};opts.onCompositionUsage(modelUsage);return {answerState:compositions===1?'insufficient':'supported',claims:[{source:compositions===1?first:next,quote:compositions===1?first.text:next.text,answer:compositions===1?first.text:next.text}],modelUsage}}},{query:'Latest official release',replyLanguage:'en'})
+ assert.equal(fallbacks,2);assert.equal(compositions,2);assert.equal(out.status,'live');assert.equal(out.results[0].sourceEvidence.answerState,'supported');assert.equal(out.results[0].sourceEvidence.pageChecks.at(-1).fallback,true)
+ assert.equal(out.usage.inputTokens,9);assert.equal(out.usage.outputTokens,12)
+})
+test('observed official URLs with a contentless bibliography can be rescued by an actual publisher read',async()=>{
+ let composeCalls=0
+ const out=await search({check:async()=>{},clock:()=>now,run:async(args,options)=>{const rows=events('[Environment Canada]('+URL+')');rows.forEach(options.onEvent);return rows.at(-1)},readPages:async()=>({pages:[{id:'p1',url:URL,title:'Weather',kind:'publisher_page',text:'Recorded temperature 10°C.',retrievedAt:now,times:[],freshness:'unknown'}],checks:[{url:URL,state:'read'}]}),readFallback:async()=>({pages:[],checks:[],attempted:0}),compose:async(opts,{sources})=>{composeCalls++;return {answerState:'supported',claims:[{source:sources[0],quote:sources[0].text,answer:sources[0].text}],modelUsage:{'claude-opus-5-5':{inputTokens:3,outputTokens:4}}}}},{query:'weather',replyLanguage:'en'})
+ assert.equal(composeCalls,1);assert.equal(out.status,'live');assert.equal(out.results[0].contentKind,'publisher_cited_summary')
+})
+
 test('reply languages have independent caches even when an upstream planner uses the same search words',async()=>{
  let calls=0;const cache=createSearchCache(async()=>{calls++;return extractEvidence(events(),'weather',now)})
  await cache({query:'weather',replyLanguage:'en'});await cache({query:'weather',replyLanguage:'zh'});assert.equal(calls,2)
+})
+
+test('exhausted fallback budget does not loop; failed second composition retains every observed paid receipt',async()=>{
+ const page={id:'p1',kind:'publisher_page',url:URL,title:'Source',text:'No verified opening hours.',retrievedAt:now,times:[],freshness:'unknown'}
+ const base={check:async()=>{},clock:()=>now,run:async(args,options)=>{events().forEach(options.onEvent);return events().at(-1)},readPages:async()=>({pages:[page],checks:[{url:URL,state:'read'}]})}
+ let calls=0
+ const exhausted=await search({...base,readFallback:async()=>({pages:[],checks:[{url:'https://www.canada.ca/a',state:'unavailable',fallback:true},{url:'https://www.canada.ca/b',state:'unavailable',fallback:true}],attempted:2}),compose:async()=>{calls++;return {answerState:'insufficient',claims:[{source:page,quote:page.text,answer:page.text}],modelUsage:{'claude-opus-5-5':{inputTokens:3,outputTokens:4}}}}},{query:'hours',replyLanguage:'en'})
+ assert.equal(calls,1);assert.equal(exhausted.results[0].sourceEvidence.answerState,'insufficient');assert.equal(exhausted.results[0].sourceEvidence.pageChecks.length,3)
+ calls=0
+ const failed=await search({...base,readFallback:async(sources,prior,opts)=>opts.referencesOnly?{pages:[],checks:[],attempted:0}:{pages:[{...page,url:'https://www.canada.ca/other'}],checks:[{url:'https://www.canada.ca/other',state:'read',fallback:true}],attempted:1},compose:async opts=>{calls++;opts.onCompositionUsage({'claude-opus-5-5':{inputTokens:3,outputTokens:4}});if(calls===2)throw Error('composition_failed');return {answerState:'insufficient',claims:[{source:page,quote:page.text,answer:page.text}],modelUsage:{'claude-opus-5-5':{inputTokens:3,outputTokens:4}}}}},{query:'hours',replyLanguage:'en'})
+ assert.equal(calls,2);assert.equal(failed.status,'unavailable');assert.equal(failed.usage.inputTokens,7);assert.equal(failed.usage.outputTokens,10);assert.equal(failed.usageComplete,true)
+ const unknown=await search({...base,readFallback:async()=>({pages:[],checks:[],attempted:0}),compose:async opts=>{opts.onCompositionUsage({});throw Error('composition_failed')}},{query:'hours',replyLanguage:'en'})
+ assert.equal(unknown.usageComplete,false);assert.equal(unknown.usage.outputTokens,2)
 })
 test('explicit subscription provider works without OpenAI key and reports bridge presence instead of API credential', async () => {
   const env={READ_ACCESS:'on',CONTEXT_PUBLIC_KNOWLEDGE:'on',A4_KNOWLEDGE_ROUTING:'on',PUBLIC_SEARCH_PROVIDER:'claude-subscription',CODEX_CHAT_BRIDGE_TOKEN:'a'.repeat(64)}

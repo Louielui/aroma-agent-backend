@@ -13,6 +13,17 @@ test('the real reply formatter preserves links, original evidence time and unkno
     assert.equal(out.reply.includes('published today'), false)
   }
 })
+
+test('structured hours expose missing weekday, unknown exception scope, fallback checks and publisher reference',()=>{
+ for(const language of ['zh','en']){
+  const data='https://raw.githubusercontent.com/winnipegpublibrary/winnipeg-ca-openinghours/main/hours-schema/1262.json'
+  const observed={...row,content:language==='zh'?'星期一開放10:00至17:00。':'Monday: opens 10:00; closes 17:00.',fields:{...row.fields,url:data,contentKind:'publisher_cited_summary',sourceEvidence:{kind:'publisher_structured',language,hash:'a'.repeat(64),quote:'Monday: opens 10:00; closes 17:00.',times:[],freshness:'unknown',parentUrl:'https://www.winnipeg.ca/library',coverage:{kind:'recurring_hours',missingDays:['Sunday'],exceptions:'unknown',invalidFields:1},pageChecks:[{url:data,state:'read',fallback:true}],answerState:'supported'}}}
+  const out=buildReadResultReply({message:language==='zh'?'營業時間？':'Opening hours?',itemsBySource:[{source:'public_knowledge',items:[observed]}]})
+  const lead=out.reply.split('### ')[0]
+  assert.match(lead,/常規週期|recurring/);assert.match(lead,/星期日|Sunday/);assert.match(lead,/不代表休息|does not mean closed/);assert.match(lead,/假日|holiday/);assert.ok(lead.includes('https://www.winnipeg.ca/library'))
+  assert.match(out.reply,/結構化|structured/);assert.match(out.reply,/已補查|Additional sources checked/);assert.match(lead,/1/)
+ }
+})
 test('no evidence, failed reads, invented model URLs and legacy providers gain no public attribution', () => {
   for (const r of [null, { ...row, trust: 'unavailable' }, { ...row, fields: { ...row.fields, consulted: false } },
     { ...row, fields: { ...row.fields, url: 'javascript:alert(1)' } }, { ...row, fields: { ...row.fields, provider: 'legacy' } }]) {
