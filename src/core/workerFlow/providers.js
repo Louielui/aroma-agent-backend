@@ -89,8 +89,11 @@ function runClaudeUnobserved (args, { cwd, timeoutMs = 90000, signal, input = ''
         } else envelope = JSON.parse(stdout)
       } catch (_) { /* No raw output is retained in diagnostics. */ }
       if (exitCode === 0 && envelope) { finish(null, envelope); return }
+      // Claude auth status uses exit 1 for logout. Do not treat a completion or
+      // an unavailable executable as a login failure, or retain account data.
+      const loggedOut = exitCode === 1 && envelope?.loggedIn === false && JSON.stringify(args) === JSON.stringify(['--restricted', '--setting-sources', '', 'auth', 'status', '--json'])
       const limited = envelope?.api_error_status === 429 || (envelope?.is_error === true && /(?:hit (?:your|the) limit|usage limit|rate.limit|out of.*usage)/i.test(envelope?.result || ''))
-      const reason = limited ? 'subscription_limit_reached' : envelope?.subtype === 'error_max_turns' ? 'claude_max_turns' : envelope?.subtype === 'error_max_structured_output_retries' ? 'claude_invalid_structured_output' : 'claude_unavailable'
+      const reason = loggedOut ? 'claude_login_required' : limited ? 'subscription_limit_reached' : envelope?.subtype === 'error_max_turns' ? 'claude_max_turns' : envelope?.subtype === 'error_max_structured_output_retries' ? 'claude_invalid_structured_output' : 'claude_unavailable'
       const error = Error(reason)
       error.safeDiagnostics = { exitCode: Number.isInteger(exitCode) ? exitCode : null, parsedJson: !!envelope,
         subtype: ['success', 'error_max_turns', 'error_during_execution', 'error_max_budget_usd', 'error_max_structured_output_retries'].includes(envelope?.subtype) ? envelope.subtype : 'unknown', stdoutBytes: Buffer.byteLength(stdout), stderrBytes }

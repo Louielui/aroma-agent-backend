@@ -10,7 +10,7 @@ function selection (input = {}) {
 async function checkSubscription (options = {}) {
   selection(options)
   let auth
-  try { auth = await (options.run || runClaude)(['--restricted', '--setting-sources', '', 'auth', 'status', '--json'], options) } catch (_) { throw new SubscriptionError('subscription_login_required') }
+  try { auth = await (options.run || runClaude)(['--restricted', '--setting-sources', '', 'auth', 'status', '--json'], options) } catch (error) { throw new SubscriptionError(error.message === 'claude_login_required' ? 'subscription_login_required' : 'subscription_unavailable') }
   if (auth.loggedIn !== true || auth.authMethod !== 'claude.ai' || auth.apiProvider !== 'firstParty' || auth.apiKeySource) throw new SubscriptionError('subscription_login_required')
   return { model: options.model || MODEL, billing: 'claude-subscription' }
 }
@@ -38,8 +38,10 @@ async function readCatalogue (options = {}) {
   return catalogueRows(result.models)
 }
 async function listModels (options = {}) {
-  try { await checkSubscription(options); const models = await readCatalogue(options); if (models.length) return { models } } catch (_) {}
-  return { models: [{ model: MODEL, name: 'Claude Sonnet', provider: 'claude', billing: 'claude-subscription', available: false, efforts: [] }] }
+  let code = 'subscription_unavailable'
+  try { await checkSubscription(options); const models = await readCatalogue(options); if (models.length) return { models, providers: { claude: { state: 'ready', code: null } } } }
+  catch (error) { if (error.code === 'subscription_login_required') code = error.code }
+  return { providers: { claude: { state: 'unavailable', code } }, models: [{ model: MODEL, name: 'Claude Sonnet', provider: 'claude', billing: 'claude-subscription', available: false, efforts: [] }] }
 }
 async function complete (options = {}, input) {
   selection(input)

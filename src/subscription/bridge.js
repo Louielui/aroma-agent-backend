@@ -80,7 +80,10 @@ function createBridge ({ token, clientOptions, memoryClientOptions = clientOptio
       const options = { ...clientOptions, session: catalogueSession, signal: AbortSignal.any([catalogueController.signal, AbortSignal.timeout(25000)]) }
       cataloguePending = Promise.allSettled([Promise.resolve().then(() => modelsFn(options)), Promise.resolve().then(() => claudeModelsFn(options))]).then(([gpt, claude]) => {
         const gptModels = gpt.status === 'fulfilled' ? gpt.value.models : require('./chatModels').CHAT_MODELS.map(m => ({ ...m, available: false, efforts: [] }))
-        return { billing: 'subscriptions', defaultModel: DEFAULT_BRAIN_MODEL, models: [...(claude.status === 'fulfilled' ? claude.value.models : [{ model: DEFAULT_BRAIN_MODEL, name: 'Claude Sonnet', available: false, efforts: [] }]), ...gptModels] }
+        const claudeModels = claude.status === 'fulfilled' ? claude.value.models : [{ model: DEFAULT_BRAIN_MODEL, name: 'Claude Sonnet', available: false, efforts: [] }]
+        const ready = claudeModels.some(m => m.available === true)
+        const code = claude.status === 'fulfilled' && claude.value.providers?.claude?.code === 'subscription_login_required' ? 'subscription_login_required' : 'subscription_unavailable'
+        return { billing: 'subscriptions', defaultModel: DEFAULT_BRAIN_MODEL, providers: { claude: { state: ready ? 'ready' : 'unavailable', code: ready ? null : code } }, models: [...claudeModels, ...gptModels] }
       }).finally(() => { cataloguePending = null; catalogueController = null })
     }
     return cataloguePending

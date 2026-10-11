@@ -159,7 +159,7 @@
 
   var SUBSCRIPTION_CHAT = /*SUBSCRIPTION_CHAT*/
   var CENTRAL_MODELS = /*MODEL_CENTER*/
-  var brainSelection = null, brainSaving = false, brainReady = false, modelsPromise = null
+  var brainSelection = null, brainSaving = false, brainReady = false, modelsPromise = null, modelProviderStates = {}
   var brainMode = document.getElementById('brain-mode'), brainStatus = document.getElementById('brain-status')
   var chatLevel = document.getElementById('chat-level')
   if (chatLevel && SUBSCRIPTION_CHAT) chatLevel.classList.remove('hidden')
@@ -3210,6 +3210,15 @@
     }
     if (SUBSCRIPTION_CHAT) pickerMenu.appendChild(el('div', 'opt-note subscription-note', brainCompany(chatModel) === 'claude' ? t('provider.claudeSubscriptionNote') : t('provider.subscriptionNote')))
   }
+  function brainAvailabilityMessage (selected) {
+    if (brainCompany(chatModel) === 'claude') {
+      var state = modelProviderStates.claude
+      if (state && state.code === 'subscription_login_required') return t('brain.claudeLoginRequired')
+      if (state && state.state === 'unavailable') return t('brain.claudeUnavailable')
+    }
+    if (!selected || !selected.available) return t('brain.modelUnavailable')
+    return t('brain.effortUnavailable')
+  }
   function loadChatModels () {
     if (!SUBSCRIPTION_CHAT || pending) return modelsPromise
     if (modelsLoading) return modelsPromise
@@ -3223,6 +3232,7 @@
         if (!['subscriptions', 'chatgpt-subscription'].includes(catalog.billing) || !Array.isArray(catalog.models) || !catalog.models.length) throw Error('models_unavailable')
         if (CENTRAL_MODELS && loadingConversation && (!catalog.selection || !catalog.selection.effective)) throw Error('models_unavailable')
         if (CENTRAL_MODELS && loadingConversation !== (active && active.cid)) return
+        modelProviderStates = catalog.providers || {}
         var notes = { 'claude-sonnet': t('provider.claudeSubscriptionNote'), 'gpt-6.1-sol': t('provider.solLatestNote'), 'gpt-6-astra': t('provider.astraNote'),
           'gpt-6-luna': t('provider.lunaNote'), 'gpt-6-sol': t('provider.solPreviousNote') }
         PROVIDERS = catalog.models.map(function (row) {
@@ -3234,7 +3244,7 @@
           brainSelection = catalog.selection; chatModel = brainSelection.effective.model; modelEfforts[chatModel] = brainSelection.effective.effort
           var chosen = PROVIDERS.find(function (p) { return p.model === chatModel })
           brainReady = !!chosen && chosen.available && (chosen.supportsEffort === false ? brainSelection.effective.effort === 'auto' : chosen.efforts.includes(brainSelection.effective.effort))
-          if (brainStatus) brainStatus.textContent = brainReady ? '' : t('brain.failed')
+          if (brainStatus) brainStatus.textContent = brainReady ? '' : brainAvailabilityMessage(chosen)
         }
         renderPicker()
       }).catch(function () {
@@ -3257,7 +3267,7 @@
         brainSelection = value.selection; chatModel = brainSelection.effective.model; modelEfforts[chatModel] = brainSelection.effective.effort
         var selectedProvider = PROVIDERS.find(function (p) { return p.model === chatModel })
         brainReady = !!selectedProvider && selectedProvider.available && (selectedProvider.supportsEffort === false ? brainSelection.effective.effort === 'auto' : selectedProvider.efforts.includes(brainSelection.effective.effort))
-        if (brainStatus) brainStatus.textContent = brainReady ? t('brain.selectionSaved') : t('brain.failed')
+        if (brainStatus) brainStatus.textContent = brainReady ? t('brain.selectionSaved') : brainAvailabilityMessage(selectedProvider)
       }
     } catch (_) { if (brainStatus) brainStatus.textContent = t('brain.failed') }
     finally { brainSaving = false; renderPicker(); refreshImages(); if (active !== conversation) loadChatModels() }
