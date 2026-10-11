@@ -52,3 +52,8 @@ Generic second-person explanations ("a receipt proves you paid") and demonstrati
 ("this means") do not identify business records. Possessive company references,
 specific records and current-state claims remain checked. A regression preserves
 these explanatory forms while withholding company/current claims in the same turn.
+The later live failure was traced to a first-person general recommendation containing
+a CJK number. First-person company/observed-result references remain checked; a
+general recommendation does not identify a business record. The corrected guard
+was replayed against all three original model answers before another load: each
+remained unchanged with zero false withholding. Raw withheld prose is not logged.

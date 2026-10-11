@@ -89,7 +89,7 @@ const ROUTE_EVIDENCE_NOTE_RE = /這一輪沒有查任何來源/
 // possessive and time-specific claims still pass through the original guard.
 // Generic "you pay" or "this means" explains a concept. Possessive company
 // references and specific records still designate facts that need evidence.
-const BUSINESS_REFERENT = /Aroma|Imagine|Xiangxiang|香香|我|你(?:的|嘅|公司|餐廳|餐厅)|佢(?:的|嘅)|本店|門店|门店|(?:這|这|那|呢|嗰)(?:張|张|批|筆|笔|間|间|份)|今日|今天|昨日|昨天|目前|現在|现在|最新|上星期|上週|上周|剛才|刚才|\b(?:our|my|your|current|latest|today|yesterday|now|previous|last)\b/i
+const BUSINESS_REFERENT = /Aroma|Imagine|Xiangxiang|香香|我(?:們|们|哋|(?:的|嘅)(?:公司|餐廳|餐厅|發票|发票|庫存|库存)|已|收到|查到|發現|发现)|你(?:的|嘅|公司|餐廳|餐厅)|佢(?:的|嘅)|本店|門店|门店|(?:這|这|那|呢|嗰)(?:張|张|批|筆|笔|間|间|份)|今日|今天|昨日|昨天|目前|現在|现在|最新|上星期|上週|上周|剛才|刚才|\b(?:our|my|your|current|latest|today|yesterday|now|previous|last)\b/i
 
 function numbersIn (s) {
   return String(s).match(/\d+(?:[.,]\d+)*|[零一二兩三四五六七八九十百千萬]+/g) || []

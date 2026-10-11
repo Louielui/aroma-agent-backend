@@ -51,6 +51,14 @@ test('generic second-person and demonstrative explanations are not business obse
   }
 })
 
+test('a general first-person recommendation does not assert a business state', () => {
+  const reply = '我建議核對發票、送貨單及採購單這三種文件。'
+  assert.equal(say(reply, '什麼是發票？').reply, reply)
+  for (const claim of ['我們有 3 張發票。', '我的公司有 3 張發票。', '我已收到 3 張發票。']) {
+    assert.equal(say(claim, '什麼是發票？').violated, true, claim)
+  }
+})
+
 /* ═══ 1. THE NUMERIC HALF — sentenceIsSupported against an empty index ════ */
 
 test('*** an operational number with nothing read is withheld, and said so ***', () => {
