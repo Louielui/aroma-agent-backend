@@ -20,6 +20,7 @@ test('bilingual desktop and mobile investigation approves once, shows saved cita
         const json = data => route.fulfill({ contentType: 'application/json', body: JSON.stringify(data) })
         if (p === '/demo') return route.fulfill({ contentType: 'text/html', body: pageHtml(lang) })
         if (p === '/api/v1/demo/models') return json({ ...modelCatalogue(), central: { model: 'claude-sonnet', effort: 'medium' }, selection: { mode: 'central', revision: 0, effective: { model: 'claude-sonnet', effort: 'medium' } } })
+        if (p === '/api/v1/execution-health' && method === 'GET') return json({state:'unavailable'})
         if (p === '/api/v1/conversations') return json({ ok: true, conversations: [{ id: cid, title: 'Investigate credit', updatedAt: new Date().toISOString(), messageCount: 2 }] })
         if (p === '/api/v1/conversations/' + cid) return json({ ok: true, conversation: { id: cid, messages: [{ role: 'user', content: 'Investigate credit' }, { role: 'assistant', content: 'Billing is not established.', investigationRunId: id }] } })
         if (p === '/api/v1/demo/investigations/' + id) return json({ run: { id, state: 'completed', investigation: shownReport, enquiryApprovalId: linked ? 'appr_fixture' : null } })

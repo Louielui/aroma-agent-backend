@@ -37,7 +37,10 @@ test('rejected planner output records the failing contract boundary without reta
 })
 test('planner provider schema and instructions expose the enforced size limits', () => {
   const { SCHEMA, SYSTEM, resultValidation } = require('./contract')
-  for (const field of ['steps', 'acceptanceChecks', 'questions', 'risks', 'citations']) assert.equal(SCHEMA.properties[field].maxItems, 8)
+  for (const field of ['steps', 'acceptanceChecks', 'questions', 'risks', 'citations']) {
+    assert.equal(SCHEMA.properties[field].maxItems, undefined)
+    assert.match(SCHEMA.properties[field].description, /[Aa]t most 8/)
+  }
   assert.equal(SCHEMA.properties.goal.maxLength, 2000)
   assert.match(SYSTEM, /at most 8/)
   const p = packet(), r = result(p)

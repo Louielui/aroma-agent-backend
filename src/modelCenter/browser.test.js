@@ -23,6 +23,7 @@ test('actual central settings and independent bilingual topic controls persist, 
       if (p === '/api/v1/model-center/brain') return response(await center.saveBrain(body))
       if (p.startsWith('/api/v1/model-center/selection/')) { const [, , , , , kind, id] = p.split('/'); return response({ selection: await center.saveSelection(kind, id, body) }) }
       if (p === '/api/v1/demo/models') { const topic = headers['x-xiangxiang-topic'], id = headers['x-xiangxiang-conversation']; return response({ ...catalog, central: center.read().brain, selection: topic ? center.selection('topic', topic) : id ? center.selection('conversation', id) : null }) }
+      if (p === '/api/v1/execution-health' && method === 'GET') return response({state:'unavailable'})
       if (p.startsWith('/api/v1/topic-workspaces/')) { const id = p.split('/')[4]; return response(method === 'POST' ? { workspace: topics.link(id, body.id) } : { ok: true, workspace: topics.get(id), conversations: [] }) }
       if (p === '/api/v1/demo/intake') { sent.push(body); return response({ lane: 'chat', reply: 'Fixture answer', servedBy: body.chatModel }) }
       const fixtures = { '/api/v1/demo/greeting': { line: 'Fixture' }, '/api/v1/demo/version': { build: 'model-center-fixture' }, '/api/v1/conversations': { ok: true, conversations: [] }, '/api/v1/home/settings': { entries: [] }, '/manifest.webmanifest': {} }

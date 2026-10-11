@@ -199,7 +199,7 @@
 
   /* ── markdown → DOM ───────────────────────────────────────────────────────
    * A deliberately small subset (headings, fenced + inline code, bold, italic, lists,
-   * blockquote, rule, paragraphs). It BUILDS NODES; it never produces a markup string,
+   * blockquote, pipe tables, rule, paragraphs). It BUILDS NODES; it never produces a markup string,
    * so there is no injection surface even for hostile model output. Anything it does
    * not recognise stays literal text — the safe failure. */
   function inline (parent, text) {
@@ -238,6 +238,29 @@
       para = null
     }
     function flushList () { if (list) { root.appendChild(list); list = null } }
+    function tableCells (line) {
+      var value = line.trim()
+      if (value.charAt(0) !== '|' || value.charAt(value.length - 1) !== '|') return null
+      var escapes = 0
+      for (var end = value.length - 2; end >= 0 && value.charAt(end) === '\\'; end--) escapes++
+      if (escapes % 2) return null
+      var cells = [], cell = ''
+      for (var c = 1; c < value.length - 1; c++) {
+        if (value.charAt(c) === '\\' && /[|\\]/.test(value.charAt(c + 1))) { cell += value.charAt(++c); continue }
+        if (value.charAt(c) === '|') { cells.push(cell.trim()); cell = '' } else cell += value.charAt(c)
+      }
+      cells.push(cell.trim())
+      return cells.length >= 2 ? cells : null
+    }
+    function tableRow (cells, header) {
+      var row = el('tr')
+      cells.forEach(function (value) {
+        var cell = el(header ? 'th' : 'td')
+        if (header) cell.scope = 'col'
+        inline(cell, value); row.appendChild(cell)
+      })
+      return row
+    }
 
     while (i < lines.length) {
       var line = lines[i]
@@ -252,6 +275,21 @@
         pre.appendChild(el('code', null, buf.join('\n')))
         root.appendChild(pre)
         continue
+      }
+
+      var columns = tableCells(line), separator = i + 1 < lines.length ? tableCells(lines[i + 1]) : null
+      if (columns && separator && columns.length === separator.length && separator.every(function (cell) { return /^:?-{3,}:?$/.test(cell) })) {
+        flushPara(); flushList()
+        var wrap = el('div', 'md-table-wrap'), table = el('table'), thead = el('thead'), tbody = el('tbody')
+        wrap.tabIndex = 0; wrap.setAttribute('role', 'region'); wrap.setAttribute('aria-label', columns.join(' / '))
+        thead.appendChild(tableRow(columns, true)); table.appendChild(thead); table.appendChild(tbody)
+        i += 2
+        while (i < lines.length) {
+          var values = tableCells(lines[i])
+          if (!values || values.length !== columns.length) break
+          tbody.appendChild(tableRow(values, false)); i++
+        }
+        wrap.appendChild(table); root.appendChild(wrap); continue
       }
 
       var h = line.match(/^(#{1,3})\s+(.*)$/)
@@ -1643,7 +1681,7 @@
       var currentPlanId = r.development && r.development.taskPlanRunId || r.taskPlanRunId
       if (currentPlanId && childId !== currentPlanId) { nested.replaceChildren(); childId = currentPlanId; renderTaskPlan({body:nested},childId) }
       var log = el('details'); log.appendChild(el('summary','',t('gap.details'))); log.appendChild(el('pre','',JSON.stringify({needs:r.proposal.needs,criteria:r.proposal.criteria,task:r.developmentTask,steps:r.steps},null,2))); content.appendChild(log)
-      if (r.resumeResult) content.appendChild(el('p','',r.resumeResult.reply))
+      if (r.resumeResult) content.appendChild(renderMarkdown(r.resumeResult.reply))
     }
     async function load () {
       if (!card.isConnected || conv !== active || document.visibilityState === 'hidden' || busy || loading) return

@@ -12,7 +12,7 @@ test('actual assembled bilingual mobile/desktop model controls follow the catalo
         const url = new URL(route.request().url()), p = url.pathname
         if (url.hostname !== 'xiangxiang.invalid' || route.request().method() !== 'GET') { unexpected.push(p); return route.abort() }
         if (p === '/demo') return route.fulfill({ contentType: 'text/html', body: html(locale) })
-        const fixtures = { '/api/v1/demo/models': modelCatalogue(), '/api/v1/conversations': { ok: true, conversations: [] }, '/api/v1/home/settings': { entries: [] }, '/api/v1/demo/greeting': { line: 'Fixture' }, '/api/v1/demo/version': { build: 'offline-browser-fixture' }, '/manifest.webmanifest': {} }
+        const fixtures = { '/api/v1/execution-health': {state:'unavailable'}, '/api/v1/demo/models': modelCatalogue(), '/api/v1/conversations': { ok: true, conversations: [] }, '/api/v1/home/settings': { entries: [] }, '/api/v1/demo/greeting': { line: 'Fixture' }, '/api/v1/demo/version': { build: 'offline-browser-fixture' }, '/manifest.webmanifest': {} }
         if (!Object.hasOwn(fixtures, p)) { unexpected.push(p); return route.abort() }
         return route.fulfill({ status: failedReads ? 503 : 200, contentType: 'application/json', body: JSON.stringify(fixtures[p]) })
       })

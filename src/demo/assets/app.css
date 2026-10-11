@@ -309,6 +309,11 @@ body {
 .md pre code { background: transparent; padding: 0; }
 .md blockquote { margin: 0 0 10px; padding-left: 12px; border-left: 3px solid var(--line); color: var(--muted); }
 .md hr { border: 0; border-top: 1px solid var(--line); margin: 14px 0; }
+.md-table-wrap { max-width: 100%; overflow-x: auto; margin: 0 0 10px; }
+.md-table-wrap:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.md table { width: 100%; border-collapse: collapse; font-size: var(--ui-size); line-height: var(--ui-line); }
+.md th, .md td { padding: 10px 12px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; min-width: 10ch; }
+.md th { font-weight: var(--weight-medium); color: var(--muted); background: var(--panel); }
 
 .err-note {
   border-left: 3px solid var(--bad); background: color-mix(in srgb, var(--bad) 8%, transparent);

@@ -77,6 +77,7 @@ const CLASS = Object.freeze({
 const FILE_CLASS = Object.freeze({
   'capabilities/gapContract.js': CLASS.INTERFACE,
   'capabilities/gapService.js': CLASS.MATCHING,
+  'context/sevenShiftsReport.js': CLASS.MATCHING, // Bounded input guards and separately bilingual output; translating the guards would alter routing.
   'intake/readObligationGap.js': CLASS.INTERFACE,
   'investigation/ownerBrief.js': CLASS.INTERFACE,
   'actions/view.js': CLASS.INTERFACE,

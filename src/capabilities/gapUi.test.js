@@ -8,7 +8,7 @@ function fixture(options={}){
   function el(tag,className='',textContent=''){return {tag,className,textContent,children:[],events:{},dataset:{},isConnected:true,appendChild(n){this.children.push(n)},replaceChildren(){this.children=[]},addEventListener(k,f){this.events[k]=f}}}
   const body=el('div'),conv={cid},flat=n=>[n,...n.children.flatMap(flat)]
   const source=fs.readFileSync(path.join(__dirname,'../demo/assets/app.js'),'utf8'),fn=source.slice(source.indexOf('  function renderCapabilityGap ('),source.indexOf('  function renderTaskPlan ('))
-  const sandbox={el,t:k=>k,body,runId:id,conv,initial:options.history?null:row,active:conv,document:{visibilityState:options.hidden?'hidden':'visible'},crypto:{randomUUID},AbortController,setTimeout:(f,ms)=>{timers.push({f,ms});return 1},clearTimeout(){},window:{confirm:s=>{confirms.push(s);return options.cancel!==true}},renderTaskPlan:(turn,child)=>nested.push(child),fetch:async(url,opts)=>{
+  const sandbox={el,renderMarkdown:text=>el('div','md',text),t:k=>k,body,runId:id,conv,initial:options.history?null:row,active:conv,document:{visibilityState:options.hidden?'hidden':'visible'},crypto:{randomUUID},AbortController,setTimeout:(f,ms)=>{timers.push({f,ms});return 1},clearTimeout(){},window:{confirm:s=>{confirms.push(s);return options.cancel!==true}},renderTaskPlan:(turn,child)=>nested.push(child),fetch:async(url,opts)=>{
     const b=opts.body?JSON.parse(opts.body):null;calls.push({url,body:b,credentials:opts.credentials,redirect:opts.redirect})
     if(!b&&options.waitRead)await options.waitRead
     if(b&&options.failWrite)throw Error('response lost')
@@ -61,4 +61,8 @@ test('registered planning embeds the existing progress card without coding comma
 test('a restored gap displays its verified replacement plan rather than the failed original card',async()=>{
   const oldId=randomUUID(),nextId=randomUUID(),f=fixture({history:true,row:{state:'development_planning',taskPlanRunId:oldId,development:{state:'coding',taskPlanRunId:nextId,workRunId:randomUUID()}}})
   await f.flush();assert.deepEqual(f.nested,[nextId]);assert.equal(f.calls.filter(c=>c.body).length,0)
+})
+test('saved continuation replies use the same safe markdown renderer as normal chat without issuing work',async()=>{
+  const reply='| Employee | Clock-out |\n|---|---|\n| Alice | 2026-10-09 20:00 |',f=fixture({history:true,row:{state:'completed',resumeResult:{reply}}})
+  await f.flush();assert.ok(f.nodes().some(n=>n.className==='md'&&n.textContent===reply));assert.equal(f.calls.filter(c=>c.body).length,0)
 })

@@ -66,6 +66,24 @@ current-boot evidence proves every approved reader and protected dependency hash
 is unchanged. A rollback, source drift, incomplete tests, stale packet, unavailable
 bridge or revoked access cannot enable continuation; no receipt is manufactured.
 
+Final authenticated UI acceptance exposed a separate display defect: the small
+chat markdown renderer did not implement tables, and saved gap replies bypassed
+it altogether. Normal chat and saved continuation now use the same node-built
+semantic tables with scoped column headers and a keyboard-accessible horizontal
+scroll region on narrow screens. Escaped pipes remain inside cells; malformed
+rows stay visible as literal text. HTML and executable links are never interpreted
+as markup. A synthetic 25-row regression proved all cells and the final source
+note survive rendering; no employee records are used in the test fixtures.
+
+Full-suite checks also caught report text-classification and acceptance-date
+template gaps. The report's bounded input guards are classified as matching text;
+the architecture view supplies measured dates/counts as slots. Planner array limits
+remain enforced by the server, with provider-compatible schema descriptions and
+the existing eight-item instruction rather than unsupported schema keywords.
+Browser fixtures cover the existing fixed read-only execution-health probe while
+still rejecting all unexpected requests; account-scope tests retain the Imagine
+name and continue to require explicitly unconfirmed per-job charges.
+
 References:
 - [List Time Punches](https://developers.7shifts.com/reference/gettimepunches)
 - [Retrieve User](https://developers.7shifts.com/reference/getuser)

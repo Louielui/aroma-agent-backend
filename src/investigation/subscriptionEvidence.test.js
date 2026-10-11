@@ -16,7 +16,7 @@ test('real adapter continues from missing legacy usage to subscription source, w
  assert.equal(r.evidenceModel.assertions.some(a=>a.facet==='estimated_usage'),false)
  for(const message of ['現在剩餘多少額度？','How much quota remains?']){
   const view=renderCostFindings(r,{message});assert.match(view.text,/20%/);assert.match(view.text,/15/);assert.match(view.text,/10000/);assert.match(view.text,/200/)
-  assert.match(view.text,/不只香香|not Xiangxiang only/);assert.match(view.text,/未確認|not confirmed/);assert.ok(view.references.some(x=>x.recordId==='codex-account-snapshot'))
+  assert.match(view.text,/不只香香|not (?:Imagine|Xiangxiang) only/);assert.match(view.text,/未確認|not confirmed/);assert.ok(view.references.some(x=>x.recordId==='codex-account-snapshot'))
  }
 })
 test('same-time conflicting account snapshots are withheld and quota cannot grant per-job charge evidence',()=>{
