@@ -1144,6 +1144,7 @@
             c.history.push({ role: 'user', text: text })
           } else {
             var tEl = addBot(text, c)
+            if (m[i] && m[i].evidenceReport && topicController) topicController.offer(tEl.body, { conversationId: c.cid, reportId: m[i].evidenceReport.id })
             if (m[i] && m[i].taskPlanRunId) renderTaskPlan(tEl, m[i].taskPlanRunId)
             if (m[i] && m[i].capabilityGapRunId) renderCapabilityGap(tEl, m[i].capabilityGapRunId, null, c)
             if (m[i] && m[i].investigationRunId) loadInvestigation(tEl, m[i].investigationRunId)
@@ -2399,7 +2400,12 @@
     if (res.workRequestClarification) return renderWorkRequestClarification(res.workRequestClarification, conv)
 
     if (res.demoOutcome === 'clarification') return renderProposal(res, conv)
-    if (res.talkOnly === true || res.mode === 'chat' || res.mode === 'ask' || res.mode === 'recommend') return addBot(res.reply || '', conv)
+    if (res.talkOnly === true || res.mode === 'chat' || res.mode === 'ask' || res.mode === 'recommend') {
+      var chatTurn = addBot(res.reply || '', conv)
+      if (res.followUpOffer && topicController) topicController.offer(chatTurn.body, res.followUpOffer)
+      if (res.historySaved === false) addMeta(chatTurn.body, t('workflow.historyFailed'))
+      return chatTurn
+    }
     return addError(t('err.unknownShape', { id: res.requestId || t('err.none') }), conv)
   }
 

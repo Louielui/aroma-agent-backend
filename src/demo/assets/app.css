@@ -1066,3 +1066,14 @@ button[disabled] { opacity: .45; cursor: default; }
 .scheduler-chat button { margin:6px 8px 6px 0; white-space:normal; }
 .scheduler-chat pre { white-space:pre-wrap; overflow-wrap:anywhere; max-height:220px; overflow:auto; font-size:var(--small-size); }
 .scheduler-target { padding:12px 0; border-top:1px solid var(--line); }
+.followup-prepare { margin:12px 0; padding:8px 14px; border:1px solid var(--line); border-radius:8px; background:transparent; color:inherit; cursor:pointer; }
+.followup-viewer { width:min(800px, calc(100vw - 32px)); max-height:85vh; border:1px solid var(--line); border-radius:16px; padding:20px; color:var(--ink); background:var(--paper, #fff); }
+.followup-viewer::backdrop { background:rgba(0,0,0,.25); }
+.followup-head, .followup-footer { display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; }
+.followup-candidates { max-height:50vh; overflow:auto; padding:8px 0; }
+.followup-candidate { border-top:1px solid var(--line); padding:12px 0; overflow-wrap:anywhere; }
+.followup-candidate label { display:flex; align-items:flex-start; gap:10px; }
+.followup-candidate input { flex:none; }
+.followup-evidence { font-size:var(--small-size); overflow-wrap:anywhere; }
+.followup-evidence summary { cursor:pointer; padding:8px 0; }
+.followup-viewer button { padding:8px 12px; border:1px solid var(--line); border-radius:8px; cursor:pointer; }

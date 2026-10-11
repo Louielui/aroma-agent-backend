@@ -154,7 +154,7 @@ function createConversationStore (options = {}) {
    * Called once per completed turn from the UI path and nowhere else. A turn is only
    * written after the reply exists, so a failed turn leaves no half-conversation behind.
    */
-  function appendTurn ({ id, userText, replyText, servedBy = null, now = null, images, operatingRunId = null, developmentPlanRunId = null, codeDiagnosisRunId = null, codeRepairRunId = null, projectWorkRunId = null, taskPlanRunId = null, planningOffer = null, planningContext = null, investigationRunId = null, capabilityGapRunId = null } = {}) {
+  function appendTurn ({ id, userText, replyText, servedBy = null, now = null, images, operatingRunId = null, developmentPlanRunId = null, codeDiagnosisRunId = null, codeRepairRunId = null, projectWorkRunId = null, taskPlanRunId = null, planningOffer = null, planningContext = null, investigationRunId = null, capabilityGapRunId = null, evidenceReport = null, evidenceReportAttempt = false } = {}) {
     if (!isValidId(id)) throw new Error('invalid_conversation_id')
     const attachments = images === undefined ? null : require('../chat/imageAttachments').validateImages(images)
     const ts = now || new Date().toISOString()
@@ -164,6 +164,13 @@ function createConversationStore (options = {}) {
     // precisely the erasure ac77ae1 removed from the truth store, and it would apply to
     // the Owner's transcripts rather than to metering.
     const existing = readOne(id, true)
+    if (evidenceReport !== null) {
+      const prior = existing?.messages.find(m => m.role === 'assistant' && m.evidenceReport?.id === evidenceReport.id)
+      if (prior) {
+        if (JSON.stringify(prior.evidenceReport) !== JSON.stringify(evidenceReport)) throw Error('evidence_report_conflict')
+        return { id, messageCount: existing.messages.length }
+      }
+    }
     const conversation = existing || {
       id,
       title: titleFrom(userText),
@@ -178,6 +185,11 @@ function createConversationStore (options = {}) {
 
     conversation.messages.push({ role: 'user', content: String(userText == null ? '' : userText), servedBy: null, ts, ...(attachments ? { images: attachments } : {}) })
     const assistantMessage = { role: 'assistant', content: String(replyText == null ? '' : replyText), servedBy: servedBy || null, ts }
+    if (evidenceReportAttempt === true) assistantMessage.evidenceReportAttempt = true
+    if (evidenceReport !== null) {
+      if (!require('../topics/evidenceFollowups').validSnapshot(evidenceReport)) throw Error('invalid_evidence_report')
+      assistantMessage.evidenceReport = structuredClone(evidenceReport)
+    }
     if (require('../core/operating/runStore').ID.test(investigationRunId || '')) assistantMessage.investigationRunId = investigationRunId
     if (require('../core/operating/runStore').ID.test(capabilityGapRunId || '')) assistantMessage.capabilityGapRunId = capabilityGapRunId
     if (require('../core/taskPlanner/continuation').validOffer(planningOffer, planningOffer?.revision)) assistantMessage.planningOffer = structuredClone(planningOffer)

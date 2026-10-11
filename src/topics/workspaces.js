@@ -5,7 +5,8 @@ const TOPICS = Object.freeze(['briefing', 'documents', 'operations', 'calendar',
 const STATES = Object.freeze(['todo', 'doing', 'done'])
 const exact = (o, keys) => o && typeof o === 'object' && !Array.isArray(o) && Object.keys(o).sort().join(',') === keys.slice().sort().join(',')
 const text = (v, max, empty = false) => typeof v === 'string' && v.length <= max && (empty || v.trim().length > 0)
-const validSource = s => s === null || exact(s, ['mailbox', 'messageId']) && ['owner', 'admin'].includes(s.mailbox) && /^[A-Za-z0-9_-]{1,100}$/.test(s.messageId)
+const validMailSource = s => exact(s, ['mailbox', 'messageId']) && ['owner', 'admin'].includes(s.mailbox) && /^[A-Za-z0-9_-]{1,100}$/.test(s.messageId)
+const validSource = s => s === null || validMailSource(s) || require('./evidenceFollowups').validEvidenceSource(s)
 function createTopicStore ({ dataDir }) {
   const file = path.join(dataDir, 'topic-workspaces.json')
   function topic (id) { if (!TOPICS.includes(id)) throw Error('invalid_topic'); return id }
@@ -19,7 +20,7 @@ function createTopicStore ({ dataDir }) {
       for (const [key, r] of Object.entries(d.topics)) {
         if (!TOPICS.includes(key) || !exact(r, ['conversationIds', 'lastConversationId', 'notes']) || !Array.isArray(r.conversationIds) || r.conversationIds.length > 1000 || new Set(r.conversationIds).size !== r.conversationIds.length || r.conversationIds.some(id => !isValidId(id) || seen.has(id)) || r.lastConversationId !== null && !r.conversationIds.includes(r.lastConversationId) || !Array.isArray(r.notes) || r.notes.length > 100) throw Error()
         for (const id of r.conversationIds) seen.add(id)
-        for (const n of r.notes) if (!exact(n, ['id', 'requestId', 'title', 'nextStep', 'source', 'origin', 'state', 'revision', 'createdAt', 'updatedAt']) || !isValidId(n.id) || !isValidId(n.requestId) || !text(n.title, 160) || !text(n.nextStep, 600, true) || !validSource(n.source) || n.origin !== 'owner_note' || !STATES.includes(n.state) || !Number.isInteger(n.revision) || n.revision < 1 || !Number.isFinite(Date.parse(n.createdAt)) || !Number.isFinite(Date.parse(n.updatedAt))) throw Error()
+        for (const n of r.notes) if (!exact(n, ['id', 'requestId', 'title', 'nextStep', 'source', 'origin', 'state', 'revision', 'createdAt', 'updatedAt']) || !isValidId(n.id) || !isValidId(n.requestId) || !text(n.title, 160) || !text(n.nextStep, 600, true) || !validSource(n.source) || !['owner_note', 'evidence_followup'].includes(n.origin) || (n.origin === 'evidence_followup' ? key !== 'hr' || n.source?.kind !== 'investigation' : n.source?.kind === 'investigation') || !STATES.includes(n.state) || !Number.isInteger(n.revision) || n.revision < 1 || !Number.isFinite(Date.parse(n.createdAt)) || !Number.isFinite(Date.parse(n.updatedAt))) throw Error()
       }
       return d
     } catch (e) { if (e.code === 'ENOENT') return fresh(); throw Error('topic_store_unavailable') }
@@ -41,7 +42,7 @@ function createTopicStore ({ dataDir }) {
   }
   function createNote (id, input) {
     topic(id)
-    if (!exact(input, ['requestId', 'title', 'nextStep', 'source']) || !isValidId(input.requestId) || !text(input.title, 160) || !text(input.nextStep, 600, true) || !validSource(input.source) || input.source && id !== 'email') throw Error('invalid_request')
+    if (!exact(input, ['requestId', 'title', 'nextStep', 'source']) || !isValidId(input.requestId) || !text(input.title, 160) || !text(input.nextStep, 600, true) || !(input.source === null || validMailSource(input.source)) || input.source && id !== 'email') throw Error('invalid_request')
     const d = read(), r = d.topics[id] ||= empty()
     const old = r.notes.find(n => n.requestId === input.requestId)
     if (old) { if (old.title !== input.title || old.nextStep !== input.nextStep || JSON.stringify(old.source) !== JSON.stringify(input.source)) throw Error('request_conflict'); return structuredClone(old) }
@@ -60,6 +61,20 @@ function createTopicStore ({ dataDir }) {
     if (!isValidId(id)) throw Error('invalid_request')
     return Object.entries(read().topics).find(([, row]) => row.conversationIds.includes(id))?.[0] || null
   }
-  return { get, link, createNote, updateNote, topicForConversation }
+  function createEvidenceNotes (id, inputs) {
+    if (topic(id) !== 'hr' || !Array.isArray(inputs) || !inputs.length || inputs.length > 100 || inputs.some(n => !exact(n, ['requestId', 'title', 'nextStep', 'source']) || !isValidId(n.requestId) || !text(n.title, 160) || !text(n.nextStep, 600, true) || !require('./evidenceFollowups').validEvidenceSource(n.source) || n.requestId !== n.source.snapshot.identity)) throw Error('invalid_request')
+    const d = read(), r = d.topics[id] ||= empty(), result = [], at = new Date().toISOString()
+    let reused = 0
+    for (const input of inputs) {
+      const old = r.notes.find(n => n.source?.kind === 'investigation' && n.source.snapshot.identity === input.source.snapshot.identity)
+      if (old) { reused++; result.push(old); continue }
+      if (r.notes.length >= 100) throw Error('workspace_capacity')
+      const n = { id: randomUUID(), ...structuredClone(input), origin: 'evidence_followup', state: 'todo', revision: 1, createdAt: at, updatedAt: at }
+      r.notes.push(n); result.push(n)
+    }
+    if (reused !== inputs.length) write(d)
+    return { notes: structuredClone(result), reused }
+  }
+  return { get, link, createNote, createEvidenceNotes, updateNote, topicForConversation }
 }
 module.exports = { TOPICS, STATES, createTopicStore }

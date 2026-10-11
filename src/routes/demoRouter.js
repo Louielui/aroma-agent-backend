@@ -581,6 +581,20 @@ function createDemoRouter ({ getAdapterFn = getAdapterForLane, processIntakeFn =
       const clockOutRequest = planningLane && sevenShiftsReport ? require('../context/sevenShiftsReport').clockOutRequest(message) : null
       const attendanceRequest = planningLane && sevenShiftsReport ? require('../context/sevenShiftsAttendance').attendanceRequest(message) : null
       const comparisonRequest = planningLane && sevenShiftsReport ? require('../context/sevenShiftsComparison').comparisonRequest(message) : null
+      if (planningLane && require('../topics/evidenceFollowups').followupRequest(message)) {
+        if (!require('../core/operating/chatRequest').sameOrigin(req)) return res.status(403).json({ error: 'same_origin_required' })
+        const conversationId = req.body.conversationId
+        if (!isValidConversationId(conversationId)) return res.status(400).json({ error: 'invalid_request_id' })
+        const language = /[\u3400-\u9fff]/u.test(message) ? 'zh' : 'en'
+        let report
+        try { report = require('../topics/evidenceFollowups').latestReport(conversationStore.get(conversationId)) } catch (_) { return res.status(503).json({ error: 'evidence_source_unavailable' }) }
+        const reply = report ? t('followup.offer', {}, language) : t('followup.noReport', {}, language)
+        let historySaved = true
+        try { conversationStore.appendTurn({ id: conversationId, userText: message, replyText: reply }) } catch (_) { historySaved = false }
+        return res.set('Cache-Control', 'no-store').json({ lane: 'chat', mode: 'chat', reply, servedBy: null, sourceBound: true,
+          historySaved,
+          ...(report ? { followUpOffer: { conversationId, reportId: report.id } } : {}) })
+      }
       if (clockOutRequest || attendanceRequest || comparisonRequest) {
         if (!require('../core/operating/chatRequest').sameOrigin(req)) return res.status(403).json({ error: 'same_origin_required' })
         const { conversationId, workflowRequestId } = req.body
@@ -604,8 +618,13 @@ function createDemoRouter ({ getAdapterFn = getAdapterForLane, processIntakeFn =
             gap: report.gap, model: req.body.chatModel || require('../subscription/chatModels').DEFAULT_BRAIN_MODEL,
             effort: require('../intake/chatSpeed').profileFor(req.body.chatLevel || 'medium').effort,
             readRequest: { window: 'dates', dates: [report.query.firstDate, report.query.lastDate] } })
-          try { conversationStore.appendTurn({ id: conversationId, userText: message, replyText: reply, ...(gapRun ? { capabilityGapRunId: gapRun.id } : {}) }) } catch (_) { historySaved = false }
+          let evidenceReport = null
+          try {
+            if (comparisonRequest || attendanceRequest) evidenceReport = require('../topics/evidenceFollowups').createSnapshot(comparisonRequest ? 'comparison' : 'attendance', report, workflowRequestId)
+            conversationStore.appendTurn({ id: conversationId, userText: message, replyText: reply, evidenceReport, evidenceReportAttempt: true, ...(gapRun ? { capabilityGapRunId: gapRun.id } : {}) })
+          } catch (_) { historySaved = false }
           return { lane: 'chat', mode: report.state === 'needs_date' ? 'ask' : 'chat', reply, ...(comparisonRequest ? { sevenShiftsComparison: report } : attendanceRequest ? { sevenShiftsAttendance: report } : { sevenShiftsReport: report }), sourceBound: true, historySaved, servedBy: null,
+            ...(historySaved && evidenceReport ? { followUpOffer: { conversationId, reportId: evidenceReport.id } } : {}),
             ...(gapRun ? { capabilityGapRunId: gapRun.id, capabilityGapResolution: gapRun } : {}) }
         })()
         clockOutReceipts.set(workflowRequestId, receipt)
