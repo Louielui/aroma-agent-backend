@@ -1077,3 +1077,7 @@ button[disabled] { opacity: .45; cursor: default; }
 .followup-evidence { font-size:var(--small-size); overflow-wrap:anywhere; }
 .followup-evidence summary { cursor:pointer; padding:8px 0; }
 .followup-viewer button { padding:8px 12px; border:1px solid var(--line); border-radius:8px; cursor:pointer; }
+.hr-recheck-all, .hr-recheck-latest { margin: 0 8px 10px 0; }
+.recheck-running { animation: recheck-pulse 1.4s ease-in-out infinite; }
+@keyframes recheck-pulse { 50% { opacity: .5; } }
+@media (prefers-reduced-motion: reduce) { .recheck-running { animation: none; } }

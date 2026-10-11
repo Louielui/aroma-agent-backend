@@ -53,9 +53,27 @@
       hrCompare.addEventListener('click', function () { prepareAttendance('compare') })
     }
     var tracking = n('details', null, 'topic-tracking'), trackingSummary = n('summary'), notes = n('div'), form = n('form', null, 'topic-note-form')
+    var recheckAll = null, latestRecheck = null
+    if (topic === 'hr') {
+      recheckAll = n('button', null, 'hr-recheck-all'); recheckAll.type = 'button'
+      latestRecheck = n('button', null, 'hr-recheck-latest'); latestRecheck.type = 'button'
+      tracking.append(recheckAll, latestRecheck)
+      recheckAll.addEventListener('click', async function () {
+        if (!data || !data.lastConversationId || recheckAll.disabled) return
+        recheckAll.disabled = true; recheckAll.classList.add('recheck-running'); status.textContent = t('recheck.running')
+        try {
+          var result = await api('/rechecks', 'POST', { conversationId: data.lastConversationId, requestId: root.crypto.randomUUID() })
+          data = (await api('')).workspace; draw(); status.textContent = ''; showRecheck(result.recheck)
+        } catch (error) { status.textContent = error.message === 'workspace_capacity' ? t('recheck.capacity') : t('recheck.failed') }
+        finally { recheckAll.disabled = false; recheckAll.classList.remove('recheck-running') }
+      })
+      latestRecheck.addEventListener('click', async function () {
+        try { var value = await api(''); data = value.workspace; draw(); var check = data.rechecks && data.rechecks[data.rechecks.length - 1]; if (check) showRecheck(check) } catch (_) { status.textContent = t('recheck.failed') }
+      })
+    }
     tracking.id = 'topic-follow-ups'; tracking.append(trackingSummary, notes, form); box.append(tracking)
     if (hrTools) {
-      var trackingPanel = n('div', null, 'department-tracking-panel'); trackingPanel.append(notes, form); tracking.append(trackingPanel)
+      var trackingPanel = n('div', null, 'department-tracking-panel'); if (recheckAll) trackingPanel.append(recheckAll, latestRecheck); trackingPanel.append(notes, form); tracking.append(trackingPanel)
       ;[hrTools, tracking].forEach(function (panel) {
         panel.addEventListener('toggle', function () { if (panel.open) (panel === hrTools ? tracking : hrTools).open = false })
       })
@@ -89,6 +107,7 @@
     }
     var stateName = { todo: function () { return t('topic.todo') }, doing: function () { return t('topic.doing') }, done: function () { return t('topic.done') } }
     function draw () {
+      if (recheckAll) { recheckAll.textContent = t('recheck.prepare'); recheckAll.disabled = !data || !data.lastConversationId; latestRecheck.textContent = t('recheck.latest'); latestRecheck.hidden = !data || !data.rechecks || !data.rechecks.length }
       trackingSummary.textContent = t('topic.followUps', { count: data ? data.notes.filter(function (v) { return v.state !== 'done' }).length : '?' })
       notes.replaceChildren(); if (!data) return
       if (!data.notes.length) notes.append(n('p', t('topic.empty'), 'topic-empty'))
@@ -97,6 +116,7 @@
         row.dataset.noteId = v.id; text.append(n('strong', v.title), n('p', t('topic.ownerNote'), 'topic-source'))
         if (v.source && v.source.kind === 'investigation') {
           text.append(evidenceDetails(v.source.snapshot, v.source))
+          if (v.lastRecheckId) { var checked = data.rechecks && data.rechecks.find(function (c) { return c.id === v.lastRecheckId }); if (checked) { var viewCheck = n('button', t('recheck.open')); viewCheck.type = 'button'; viewCheck.addEventListener('click', function () { showRecheck(checked) }); text.append(viewCheck) } }
           var recheck = n('button', t('followup.recheck')); recheck.type = 'button'; text.append(recheck)
           recheck.addEventListener('click', function () {
             var query = v.source.reportKind === 'comparison' ? t('department.comparisonRequest', { date: v.source.queryDate }) : t('department.missingRequest', { date: v.source.queryDate })
@@ -111,11 +131,11 @@
       sourceHint.textContent = source ? t('topic.mailReference', { mailbox: source.mailbox, id: source.messageId }) : ''
     }
     async function api (suffix, method, body) {
-      var controller = new AbortController(), timer = setTimeout(function () { controller.abort() }, 10000)
+      var controller = new AbortController(), timer = setTimeout(function () { controller.abort() }, suffix === '/rechecks' ? 300000 : 10000)
       try {
         var response = await fetch('/api/v1/topic-workspaces/' + topic + suffix, { signal: controller.signal, method: method || 'GET', credentials: 'same-origin', cache: 'no-store', headers: { 'Content-Type': 'application/json' }, ...(body ? { body: JSON.stringify(body) } : {}) })
         var value = await response.json()
-        if (!response.ok) throw Error(value.error === 'workspace_capacity' ? 'workspace_capacity' : 'topic_request_failed'); return value
+        if (!response.ok) throw Error(['workspace_capacity', 'revision_conflict', 'recheck_expired'].includes(value.error) ? value.error : 'topic_request_failed'); return value
       } finally { clearTimeout(timer) }
     }
     function findingText (key) {
@@ -144,6 +164,54 @@
       details.append(n('p', t('followup.reference', { id: report.reportId || report.id, conversation: report.conversationId })))
       details.append(n('p', e.findings.map(findingText).join(' · ')))
       return details
+    }
+    function resultLabel (value) {
+      if (value.state === 'changed') return t('recheck.changed')
+      if (value.state === 'unchanged') return t('recheck.unchanged')
+      if (value.state === 'unavailable') return t('recheck.unavailable')
+      return t('recheck.unknown')
+    }
+    function resultReason (value) {
+      if (value.reason === 'findings_cleared') return t('recheck.cleared')
+      if (value.reason === 'partial_scope') return t('recheck.partial')
+      if (value.reason === 'read_limit') return t('recheck.limit')
+      if (value.state === 'unavailable') return t('recheck.reasonUnavailable')
+      if (value.reason === 'stale_source' || value.reason === 'scope_mismatch') return t('recheck.stale')
+      if (value.state === 'unknown') return t('recheck.missing')
+      return t('recheck.retained')
+    }
+    function showRecheck (record) {
+      var viewer = n('dialog', null, 'followup-viewer hr-recheck-viewer'); viewer.setAttribute('aria-label', t('recheck.title'))
+      var head = n('div', null, 'followup-head'), close = n('button', t('report.closeTable')), list = n('div', null, 'followup-candidates'), footer = n('div', null, 'followup-footer'), save = n('button', t('recheck.confirm')), output = n('p', '', 'topic-status'), choices = []
+      close.type = 'button'; save.type = 'button'; save.disabled = true; output.setAttribute('role', 'status'); head.append(n('strong', t('recheck.title')), close)
+      viewer.append(head, n('p', t('recheck.boundary')), list, footer); footer.append(save, output)
+      record.items.forEach(function (item) {
+        var row = n('article', null, 'followup-candidate'), label = n('label'), check = n('input'), result = item.result
+        check.type = 'checkbox'; check.value = item.noteId; check.disabled = !['changed', 'unchanged'].includes(result.state) || record.acceptedIds.includes(item.noteId) || Date.parse(record.expiresAt) < Date.now()
+        label.append(check, n('strong', item.title)); row.append(label, n('p', resultLabel(result)), n('p', resultReason(result)), n('p', t('recheck.proposal', { state: stateName[result.suggestedState](), at: result.checkedAt || 'UNKNOWN' })))
+        var before = evidenceDetails(item.baseline ? item.baseline.snapshot : item.source.snapshot, item.baseline || item.source); before.firstChild.textContent = t('recheck.before'); row.append(before)
+        if (result.after) { var after = evidenceDetails(result.after, Object.assign({}, item.source, { retrievedAt: result.checkedAt, reportId: record.id, completeWithinScope: result.completeWithinScope })); after.firstChild.textContent = t('recheck.after'); row.append(after) }
+        if (record.acceptedIds.includes(item.noteId)) row.append(n('p', t('recheck.accepted')))
+        choices.push(check); list.append(row)
+      })
+      if (!record.items.length) list.append(n('p', t('recheck.empty')))
+      list.addEventListener('change', function () { save.disabled = !choices.some(function (c) { return c.checked && !c.disabled }) })
+      var saving = false
+      save.addEventListener('click', async function () {
+        if (saving) return; saving = true; save.disabled = true
+        try {
+          var result = await api('/recheck-updates', 'POST', { id: record.id, keys: choices.filter(function (c) { return c.checked && !c.disabled }).map(function (c) { return c.value }), confirmed: true })
+          record.acceptedIds = result.recheck.acceptedIds; data = (await api('')).workspace; draw(); output.textContent = t('recheck.saved')
+          choices.forEach(function (c) { if (record.acceptedIds.includes(c.value)) c.disabled = true })
+        } catch (error) { output.textContent = ['revision_conflict', 'recheck_expired'].includes(error.message) ? t('recheck.conflict') : t('recheck.failed') }
+        finally { saving = false; save.disabled = !choices.some(function (c) { return c.checked && !c.disabled }) }
+      })
+      close.addEventListener('click', function () { viewer.close() }); viewer.addEventListener('close', function () { viewer.remove() }); doc.body.append(viewer); viewer.showModal()
+    }
+    function recheckOffer (host, reference) {
+      if (topic !== 'hr' || !reference) return
+      var opener = n('button', t('recheck.open'), 'hr-recheck-open'); opener.type = 'button'; host.append(opener)
+      opener.addEventListener('click', async function () { opener.disabled = true; try { var value = await api('/rechecks/' + encodeURIComponent(reference.id)); showRecheck(value.recheck) } catch (_) { status.textContent = t('recheck.failed') } finally { opener.disabled = false } })
     }
     function offer (host, reference) {
       if (topic !== 'hr' || !reference) return
@@ -205,6 +273,7 @@
       selected: function (id) { if (data && data.conversationIds.includes(id) && id !== data.lastConversationId) this.link(id) },
       labels: labels,
       offer: offer,
+      recheckOffer: recheckOffer,
       submitted: function () { if (hrTools) { hrTools.open = false; tracking.open = false } }
     }
   }

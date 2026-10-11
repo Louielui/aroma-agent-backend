@@ -214,7 +214,7 @@ function buildWorkRequestResolution ({ req, message, offerDecision, conversation
   return null
 }
 
-function createDemoRouter ({ getAdapterFn = getAdapterForLane, processIntakeFn = processIntake, conversationStore = INERT_CONVERSATION_STORE, readBacklogFn = null, backlogTimeoutMs = 2500, errandStoreFn = null, operatingManager = null, memoryJournal = null, mailChat = null, liveContext = null, sevenShiftsReport = null, developmentPlan = null, codeDiagnosis = null, codeRepair = null, chatWork = null, taskPlanner = null, taskDialogue = null, schedulerChat = null, capabilityGaps = null, imageAdapterFn = selection => {
+function createDemoRouter ({ getAdapterFn = getAdapterForLane, processIntakeFn = processIntake, conversationStore = INERT_CONVERSATION_STORE, readBacklogFn = null, backlogTimeoutMs = 2500, errandStoreFn = null, operatingManager = null, memoryJournal = null, mailChat = null, liveContext = null, sevenShiftsReport = null, hrRechecks = null, developmentPlan = null, codeDiagnosis = null, codeRepair = null, chatWork = null, taskPlanner = null, taskDialogue = null, schedulerChat = null, capabilityGaps = null, imageAdapterFn = selection => {
   if (process.env.CHAT_BACKEND !== 'codex-subscription') throw Error('image_chat_unavailable')
   return new (require('../adapters/CodexSubscriptionAdapter').CodexSubscriptionAdapter)(selection)
 }, modelCenter = null, planningRevision = require('../governance/bootCommit').BOOT_COMMIT, modelsFn = async () => new (require('../adapters/CodexSubscriptionAdapter').CodexSubscriptionAdapter)().models() } = {}) {
@@ -581,6 +581,21 @@ function createDemoRouter ({ getAdapterFn = getAdapterForLane, processIntakeFn =
       const clockOutRequest = planningLane && sevenShiftsReport ? require('../context/sevenShiftsReport').clockOutRequest(message) : null
       const attendanceRequest = planningLane && sevenShiftsReport ? require('../context/sevenShiftsAttendance').attendanceRequest(message) : null
       const comparisonRequest = planningLane && sevenShiftsReport ? require('../context/sevenShiftsComparison').comparisonRequest(message) : null
+      if (planningLane && hrRechecks && require('../topics/followupIntent').recheckRequest(message)) {
+        if (!require('../core/operating/chatRequest').sameOrigin(req)) return res.status(403).json({ error: 'same_origin_required' })
+        const { conversationId, workflowRequestId } = req.body
+        if (!isValidConversationId(conversationId) || !require('../core/operating/runStore').ID.test(workflowRequestId || '')) return res.status(400).json({ error: 'invalid_request_id' })
+        try {
+          const check = await hrRechecks.prepare('hr', { conversationId, requestId: workflowRequestId })
+          const language = /[\u3400-\u9fff]/u.test(message) ? 'zh' : 'en'
+          const reply = t('recheck.reply', { count: check.items.length, changed: check.items.filter(i => i.result.state === 'changed').length, unknown: check.items.filter(i => ['unknown', 'unavailable'].includes(i.result.state)).length }, language)
+          let historySaved = true
+          try { conversationStore.appendTurn({ id: conversationId, userText: message, replyText: reply, hrRecheckId: check.id }) } catch (_) { historySaved = false }
+          return res.set('Cache-Control', 'no-store').json({ lane: 'chat', mode: 'chat', reply, servedBy: null, sourceBound: true, historySaved, hrRecheckOffer: { id: check.id } })
+        } catch (e) {
+          return res.status(e.message === 'source_topic_mismatch' ? 403 : e.message === 'request_conflict' ? 409 : 503).json({ error: 'hr_recheck_unavailable' })
+        }
+      }
       if (planningLane && require('../topics/evidenceFollowups').followupRequest(message)) {
         if (!require('../core/operating/chatRequest').sameOrigin(req)) return res.status(403).json({ error: 'same_origin_required' })
         const conversationId = req.body.conversationId

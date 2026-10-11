@@ -8,29 +8,32 @@ const identityFor = (kind, companyId, date, e) => hash(['seven_shifts', kind, co
 const positive = v => Number.isSafeInteger(v) && v > 0
 const instant = v => v === null || typeof v === 'string' && v.length <= 35 && Number.isFinite(Date.parse(v))
 const findings = ['later_clock_in', 'earlier_clock_in', 'earlier_clock_out', 'later_clock_out', 'unclosed_after_scheduled_end', 'unclosed_before_scheduled_end', 'no_linked_punch', 'approximate_match', 'auto_clocked_out', 'link_contradiction', 'unassigned_shift', 'no_punch_before_scheduled_start', 'unmatched_punch', 'unclosed_historical', 'unclosed_current']
-function validCandidate (c) {
+function validCandidate (c, allowAligned = false) {
   const e = c?.evidence
   return exact(c, ['key', 'identity', 'employeeName', 'evidence']) && /^[a-f0-9]{64}$/.test(c.key) && /^[a-f0-9]{64}$/.test(c.identity) &&
     (c.employeeName === null || typeof c.employeeName === 'string' && c.employeeName.length <= 200 && !/[\x00-\x1f\x7f-\x9f\u200e\u200f\u202a-\u202e\u2066-\u2069]/u.test(c.employeeName)) &&
     exact(e, ['userId', 'shiftId', 'punchIds', 'scheduledStart', 'scheduledEnd', 'clockedIn', 'clockedOut', 'matchState', 'findings', 'absenceState', 'currentlyWorkingState']) &&
     (e.userId === null || positive(e.userId)) && (e.shiftId === null || positive(e.shiftId)) && Array.isArray(e.punchIds) && e.punchIds.length <= 300 && e.punchIds.every(positive) && new Set(e.punchIds).size === e.punchIds.length &&
     (e.shiftId !== null || e.punchIds.length > 0) && [e.scheduledStart, e.scheduledEnd, e.clockedIn, e.clockedOut].every(instant) && ['CONFIRMED', 'SUPPORTED', 'CONTRADICTED', 'UNKNOWN'].includes(e.matchState) &&
-    Array.isArray(e.findings) && e.findings.length > 0 && e.findings.length <= findings.length && e.findings.every(f => findings.includes(f)) && e.absenceState === 'UNKNOWN' && e.currentlyWorkingState === 'UNKNOWN'
+    Array.isArray(e.findings) && (allowAligned || e.findings.length > 0) && e.findings.length <= findings.length && e.findings.every(f => findings.includes(f)) && e.absenceState === 'UNKNOWN' && e.currentlyWorkingState === 'UNKNOWN'
 }
-function validSnapshot (s) {
+function candidateFor (kind, companyId, date, row, reasons, shiftId, punchIds, matchState) {
+  const evidence = { userId: row.userId ?? null, shiftId, punchIds, scheduledStart: row.scheduledStart ?? null, scheduledEnd: row.scheduledEnd ?? null,
+    clockedIn: row.clockedIn ?? null, clockedOut: row.clockedOut ?? null, matchState, findings: reasons, absenceState: 'UNKNOWN', currentlyWorkingState: 'UNKNOWN' }
+  const identity = identityFor(kind, companyId, date, evidence)
+  return { key: hash([identity, evidence]), identity, employeeName: row.employeeName ?? null, evidence }
+}
+function validSnapshot (s, allowAligned = false) {
   return exact(s, ['version', 'id', 'kind', 'queryDate', 'timeZone', 'companyId', 'retrievedAt', 'completeWithinScope', 'candidates']) && s.version === 1 && isValidId(s.id) &&
     ['comparison', 'attendance'].includes(s.kind) && /^\d{4}-\d{2}-\d{2}$/.test(s.queryDate) && Number.isFinite(Date.parse(s.queryDate)) && s.timeZone === 'America/Winnipeg' &&
     positive(s.companyId) && typeof s.retrievedAt === 'string' && s.retrievedAt.length <= 35 && Number.isFinite(Date.parse(s.retrievedAt)) && typeof s.completeWithinScope === 'boolean' &&
-    Array.isArray(s.candidates) && s.candidates.length <= 600 && s.candidates.every(c => validCandidate(c) && c.identity === identityFor(s.kind, s.companyId, s.queryDate, c.evidence) && c.key === hash([c.identity, c.evidence])) && new Set(s.candidates.map(c => c.key)).size === s.candidates.length
+    Array.isArray(s.candidates) && s.candidates.length <= 600 && s.candidates.every(c => validCandidate(c, allowAligned) && c.identity === identityFor(s.kind, s.companyId, s.queryDate, c.evidence) && c.key === hash([c.identity, c.evidence])) && new Set(s.candidates.map(c => c.key)).size === s.candidates.length
 }
 function createSnapshot (kind, report, id) {
   if (report?.state !== 'live') return null
   const candidates = []
   function add (row, reasons, shiftId, punchIds, matchState) {
-    const evidence = { userId: row.userId ?? null, shiftId, punchIds, scheduledStart: row.scheduledStart ?? null, scheduledEnd: row.scheduledEnd ?? null,
-      clockedIn: row.clockedIn ?? null, clockedOut: row.clockedOut ?? null, matchState, findings: reasons, absenceState: 'UNKNOWN', currentlyWorkingState: 'UNKNOWN' }
-    const identity = identityFor(kind, report.companyId, report.query.firstDate, evidence)
-    candidates.push({ key: hash([identity, evidence]), identity, employeeName: row.employeeName ?? null, evidence })
+    candidates.push(candidateFor(kind, report.companyId, report.query.firstDate, row, reasons, shiftId, punchIds, matchState))
   }
   if (kind === 'comparison') {
     for (const row of report.rows) if (row.findings.length) add(row, row.findings, row.shiftId, row.punchIds, row.matchState)
@@ -42,9 +45,9 @@ function createSnapshot (kind, report, id) {
   if (!validSnapshot(snapshot)) throw Error('invalid_evidence_report')
   return structuredClone(snapshot)
 }
-function validEvidenceSource (s) {
+function validEvidenceSource (s, allowAligned = false) {
   return exact(s, ['kind', 'conversationId', 'reportId', 'queryDate', 'timeZone', 'companyId', 'retrievedAt', 'completeWithinScope', 'reportKind', 'snapshot']) && s.kind === 'investigation' &&
-    isValidId(s.conversationId) && validSnapshot({ version: 1, id: s.reportId, kind: s.reportKind, queryDate: s.queryDate, timeZone: s.timeZone, companyId: s.companyId, retrievedAt: s.retrievedAt, completeWithinScope: s.completeWithinScope, candidates: [s.snapshot] })
+    isValidId(s.conversationId) && validSnapshot({ version: 1, id: s.reportId, kind: s.reportKind, queryDate: s.queryDate, timeZone: s.timeZone, companyId: s.companyId, retrievedAt: s.retrievedAt, completeWithinScope: s.completeWithinScope, candidates: [s.snapshot] }, allowAligned)
 }
 function latestReport (conversation) {
   const message = (conversation?.messages || []).filter(m => m.role === 'assistant' && (m.evidenceReportAttempt || m.evidenceReport)).at(-1)
@@ -81,4 +84,4 @@ function createEvidenceFollowups ({ store, conversations }) {
   }
   return { prepare, accept }
 }
-module.exports = { createSnapshot, validSnapshot, validEvidenceSource, followupRequest: require('./followupIntent').followupRequest, latestReport, createEvidenceFollowups }
+module.exports = { createSnapshot, validSnapshot, validEvidenceSource, validCandidate, candidateFor, identityFor, hash, followupRequest: require('./followupIntent').followupRequest, latestReport, createEvidenceFollowups }

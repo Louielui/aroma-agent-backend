@@ -18,9 +18,10 @@ function createTopicStore ({ dataDir }) {
       if (!exact(d, ['version', 'topics']) || d.version !== 1 || !d.topics || typeof d.topics !== 'object' || Array.isArray(d.topics)) throw Error()
       const seen = new Set()
       for (const [key, r] of Object.entries(d.topics)) {
-        if (!TOPICS.includes(key) || !exact(r, ['conversationIds', 'lastConversationId', 'notes']) || !Array.isArray(r.conversationIds) || r.conversationIds.length > 1000 || new Set(r.conversationIds).size !== r.conversationIds.length || r.conversationIds.some(id => !isValidId(id) || seen.has(id)) || r.lastConversationId !== null && !r.conversationIds.includes(r.lastConversationId) || !Array.isArray(r.notes) || r.notes.length > 100) throw Error()
+        if (!TOPICS.includes(key) || !exact(r, ['conversationIds', 'lastConversationId', 'notes', ...(Object.hasOwn(r, 'rechecks') ? ['rechecks'] : [])]) || !Array.isArray(r.conversationIds) || r.conversationIds.length > 1000 || new Set(r.conversationIds).size !== r.conversationIds.length || r.conversationIds.some(id => !isValidId(id) || seen.has(id)) || r.lastConversationId !== null && !r.conversationIds.includes(r.lastConversationId) || !Array.isArray(r.notes) || r.notes.length > 100) throw Error()
+        if (Object.hasOwn(r, 'rechecks') && (key !== 'hr' || !Array.isArray(r.rechecks) || r.rechecks.length > 100 || new Set(r.rechecks.map(c => c.id)).size !== r.rechecks.length || r.rechecks.some(c => !require('./recheckContract').validRecheck(c)))) throw Error()
         for (const id of r.conversationIds) seen.add(id)
-        for (const n of r.notes) if (!exact(n, ['id', 'requestId', 'title', 'nextStep', 'source', 'origin', 'state', 'revision', 'createdAt', 'updatedAt']) || !isValidId(n.id) || !isValidId(n.requestId) || !text(n.title, 160) || !text(n.nextStep, 600, true) || !validSource(n.source) || !['owner_note', 'evidence_followup'].includes(n.origin) || (n.origin === 'evidence_followup' ? key !== 'hr' || n.source?.kind !== 'investigation' : n.source?.kind === 'investigation') || !STATES.includes(n.state) || !Number.isInteger(n.revision) || n.revision < 1 || !Number.isFinite(Date.parse(n.createdAt)) || !Number.isFinite(Date.parse(n.updatedAt))) throw Error()
+        for (const n of r.notes) if (!exact(n, ['id', 'requestId', 'title', 'nextStep', 'source', 'origin', 'state', 'revision', 'createdAt', 'updatedAt', ...(Object.hasOwn(n, 'lastRecheckId') ? ['lastRecheckId'] : [])]) || Object.hasOwn(n, 'lastRecheckId') && (n.origin !== 'evidence_followup' || !r.rechecks?.some(c => c.id === n.lastRecheckId && c.acceptedIds.includes(n.id))) || !isValidId(n.id) || !isValidId(n.requestId) || !text(n.title, 160) || !text(n.nextStep, 600, true) || !validSource(n.source) || !['owner_note', 'evidence_followup'].includes(n.origin) || (n.origin === 'evidence_followup' ? key !== 'hr' || n.source?.kind !== 'investigation' : n.source?.kind === 'investigation') || !STATES.includes(n.state) || !Number.isInteger(n.revision) || n.revision < 1 || !Number.isFinite(Date.parse(n.createdAt)) || !Number.isFinite(Date.parse(n.updatedAt))) throw Error()
       }
       return d
     } catch (e) { if (e.code === 'ENOENT') return fresh(); throw Error('topic_store_unavailable') }
@@ -75,6 +76,40 @@ function createTopicStore ({ dataDir }) {
     if (reused !== inputs.length) write(d)
     return { notes: structuredClone(result), reused }
   }
-  return { get, link, createNote, createEvidenceNotes, updateNote, topicForConversation }
+  function getRecheck (id, checkId) {
+    if (topic(id) !== 'hr' || !isValidId(checkId)) throw Error('invalid_request')
+    return structuredClone(read().topics[id]?.rechecks?.find(c => c.id === checkId) || null)
+  }
+  function saveRecheck (id, record) {
+    if (topic(id) !== 'hr' || !require('./recheckContract').validRecheck(record)) throw Error('invalid_request')
+    const d = read(), r = d.topics[id]
+    if (!r || !r.conversationIds.includes(record.conversationId)) throw Error('source_topic_mismatch')
+    const checks = r.rechecks ||= [], old = checks.find(c => c.id === record.id)
+    if (old) { if (JSON.stringify(old) !== JSON.stringify(record)) throw Error('request_conflict'); return structuredClone(old) }
+    if (checks.length >= 100) throw Error('workspace_capacity')
+    checks.push(structuredClone(record)); write(d); return structuredClone(record)
+  }
+  function confirmRecheck (id, checkId, keys, at) {
+    if (topic(id) !== 'hr') throw Error('source_topic_mismatch')
+    const d = read(), r = d.topics[id], check = r?.rechecks?.find(c => c.id === checkId)
+    if (!check) throw Error('recheck_not_found')
+    const chosen = keys.map(k => check.items.find(i => i.noteId === k))
+    if (chosen.some(i => !i)) throw Error('invalid_request')
+    if (chosen.some(i => !['changed', 'unchanged'].includes(i.result.state))) throw Error('unverified_recheck')
+    const pending = chosen.filter(i => !check.acceptedIds.includes(i.noteId))
+    if (pending.length && Date.parse(at) > Date.parse(check.expiresAt)) throw Error('recheck_expired')
+    for (const item of pending) {
+      const note = r.notes.find(n => n.id === item.noteId)
+      if (!note || note.revision !== item.revision || JSON.stringify(note.source) !== JSON.stringify(item.source)) throw Error('revision_conflict')
+    }
+    for (const item of pending) {
+      const note = r.notes.find(n => n.id === item.noteId)
+      Object.assign(note, { state: item.result.suggestedState, revision: note.revision + 1, updatedAt: at, lastRecheckId: checkId })
+      check.acceptedIds.push(item.noteId)
+    }
+    if (pending.length) write(d)
+    return { notes: structuredClone(chosen.map(i => r.notes.find(n => n.id === i.noteId))), recheck: structuredClone(check), reused: chosen.length - pending.length }
+  }
+  return { get, link, createNote, createEvidenceNotes, updateNote, topicForConversation, getRecheck, saveRecheck, confirmRecheck }
 }
 module.exports = { TOPICS, STATES, createTopicStore }

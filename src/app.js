@@ -1237,9 +1237,12 @@ function createApp (options = {}) {
   app.use(require('./actions/chatRoutes').createChatRouter({chat:schedulerChat}))
   app.use('/api/v1/model-center', requireOwner)
   app.use(require('./modelCenter/routes').createModelCenterRouter({ center: modelCenter, catalogue: brainCatalogue }))
+  const sevenShiftsReport = opts.sevenShiftsReport || require('./context/sevenShiftsReport').createSevenShiftsReport()
+  const hrRechecks = require('./topics/rechecks').createRechecks({ store: topicStore, reader: sevenShiftsReport })
   app.use('/api/v1/topic-workspaces', requireOwner, require('./topics/routes').createTopicRouter({
     store: topicStore,
-    conversations: capturedConversationStore
+    conversations: capturedConversationStore,
+    rechecks: hrRechecks
   }))
   const taskDialogue = opts.taskDialogue || (process.env.CHAT_BACKEND === 'codex-subscription' ? require('./core/taskPlanner/dialogue').createDialogue({
     store: capturedConversationStore, planner: taskPlanner, revision: BOOT_COMMIT,
@@ -1247,7 +1250,6 @@ function createApp (options = {}) {
     receipts: require('./core/operating/runStore').createRunStore({ dir: path.join(require('./store/dataDir').resolveDataDir(), 'dialogue-requests'), workflow: 'dialogue_request' })
   }) : null)
   app.locals.operationsBackgroundReader = require('./investigation/runtimeEvidence').createBackendRuntimeReader({mailMemory:companyMailMemory,mailScheduler,memory:governedMemory}).read
-  const sevenShiftsReport = opts.sevenShiftsReport || require('./context/sevenShiftsReport').createSevenShiftsReport()
   const capabilityGaps = opts.capabilityGaps || require('./capabilities/gapService').createGapService({
     store: require('./core/operating/runStore').createRunStore({dir:path.join(require('./store/dataDir').resolveDataDir(),'capability-gap-runs'), workflow:'capability_gap'}),
     conversations: capturedConversationStore, revision: BOOT_COMMIT, planner: taskPlanner,
@@ -1265,6 +1267,7 @@ function createApp (options = {}) {
   app.use('/api/v1/capability-gaps', requireOwner)
   app.use(require('./capabilities/gapRoutes').createGapRouter({service:capabilityGaps}))
   app.use(createDemoRouter({
+    hrRechecks,
     capabilityGaps,
     sevenShiftsReport,
     schedulerChat,
