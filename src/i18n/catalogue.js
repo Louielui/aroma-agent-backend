@@ -3420,6 +3420,11 @@ const CATALOGUE = Object.freeze({
   'department.workspace': { zh: '{name} · 部門工作區', en: '{name} workspace' },
   'department.plannedIntro': { zh: '可保存這個部門的對話與跟進事項；專屬資料工具尚未接通。', en: 'Save conversations and follow-ups for this department. Dedicated data tools are not connected yet.' },
   'department.attendance': { zh: '出勤查詢 · 7shifts', en: 'Attendance · 7shifts' },
+  'department.queryTools': { zh: '出勤查詢', en: 'Attendance tools' },
+  'report.expandTable': { zh: '放大查看表格', en: 'Expand table' },
+  'report.tableTitle': { zh: '完整表格 · 保留原始證據標示', en: 'Full table · original evidence labels' },
+  'report.closeTable': { zh: '返回對話', en: 'Back to conversation' },
+  'report.sourceDetails': { zh: '查看來源、核對時間與範圍', en: 'Source, checked time and scope' },
   'department.attendanceHint': { zh: '查下班時間、漏打下班卡或對照排班與打卡。先選 Winnipeg 日期，再準備查詢；送出時才讀取資料。時間差與未結束紀錄需要確認，不當作已證實違規。', en: 'Read clock-outs, investigate unclosed punches or compare schedules with punches. Choose a Winnipeg date and prepare a query; reads begin only when sent. Time differences and unclosed records require confirmation and do not establish misconduct.' },
   'department.date': { zh: '出勤日期（Winnipeg）', en: 'Attendance date (Winnipeg)' },
   'department.prepare': { zh: '準備下班查詢', en: 'Prepare clock-out query' },
@@ -3440,7 +3445,7 @@ const CATALOGUE = Object.freeze({
   'comparison.architectureCurrent': { zh: '固定公司 GET 已發佈 shifts、time_punches、users；按 Winnipeg 排班開始日及相鄰打卡日期讀取，優先核對排班 ID，保留推定配對及矛盾，合併同班多段打卡，顯示時間差、未結束、跨午夜與無法配對。中英文報告保存於對話，不呼叫模型。', en: 'Fixed-company GET published shifts, time_punches and users; Winnipeg scheduled-start day and adjacent punch days, exact shift links before inferred overlaps, explicit contradictions, split-punch aggregation, time differences, unclosed, overnight and unmatched records. Bilingual reports persist without model calls.' },
   'comparison.architectureLimits': { zh: '目前已發佈排班不證明當時版本；查詢有分頁及相鄰日期上限。無法配對不證明缺卡或缺勤；現場狀態、正式遲到／加班認定、歷史排班修訂、員工確認及任何打卡／薪資寫入未接通。', en: 'Currently published schedules do not prove historical versions; pagination and adjacent-day scope are bounded. Unmatched rows do not establish omissions or absence. On-site status, formal lateness/overtime, historical schedule revisions, employee confirmation and all punch/payroll writes remain unconnected.' },
   'department.architectureTitle': { zh: '部門工作區導航', en: 'Department workspace navigation' },
-  'department.current': { zh: '已接通 HR、採購、營運、會計及市場的獨立對話、手動跟進與話題模型設定；共用電郵、文件、行程入口保留。HR 可準備指定 Winnipeg 日期的 7shifts 唯讀下班查詢，送出才執行；連線及權限由既有讀取器核對。', en: 'HR, purchasing, operations, accounting and marketing have isolated conversations, manual follow-ups and topic model settings. Shared mail, documents and calendar remain available. HR prepares an explicit Winnipeg-date 7shifts read-only clock-out request; execution begins only after sending, with existing reader connection and access checks.' },
+  'department.current': { zh: '已接通 HR、採購、營運、會計及市場的獨立對話、手動跟進與話題模型設定；共用電郵、文件、行程入口保留。HR 可準備指定 Winnipeg 日期的 7shifts 唯讀查詢，送出才執行；連線及權限由既有讀取器核對。HR 工具預設收合，不壓縮對話；表格可放大查看，來源可展開，模型不可用時仍明示並阻止送出。', en: 'HR, purchasing, operations, accounting and marketing have isolated conversations, manual follow-ups and topic model settings. Shared mail, documents and calendar remain available. HR prepares explicit Winnipeg-date read-only queries; reads begin only after sending with existing connection and access checks. HR tools default to collapsed overlays, preserving transcript space. Tables expand into a full viewer and source notes remain available. Model unavailability stays visible and blocks sending.' },
   'department.limits': { zh: '部門不新增權限。採購、會計、市場專屬資料工具及 HR 正式遲到／加班認定、招聘尚未接通；沒有自動跟進、派工或打卡／薪資寫入。', en: 'Departments grant no additional permissions. Dedicated purchasing, accounting and marketing tools, formal HR lateness/overtime determinations and recruiting remain unconnected. No automatic follow-up, dispatch or punch/payroll writes.' },
   'punct.colon': { zh: '：', en: ': ' }
 })

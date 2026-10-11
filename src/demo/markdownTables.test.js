@@ -2,12 +2,12 @@
 const test = require('node:test'), assert = require('node:assert/strict'), fs = require('node:fs'), path = require('node:path'), vm = require('node:vm')
 function render (text) {
   function node (tag, text = '') {
-    const n = {tagName:tag.toUpperCase(), textContent:text, childNodes:[], attributes:{}, appendChild (child) { this.childNodes.push(child) }, setAttribute (key,value) { this.attributes[key]=String(value) }}
+    const n = {tagName:tag.toUpperCase(), textContent:text, childNodes:[], attributes:{}, appendChild (child) { this.childNodes.push(child) }, append (...children) { this.childNodes.push(...children) }, addEventListener () {}, setAttribute (key,value) { this.attributes[key]=String(value) }}
     return n
   }
   const source = fs.readFileSync(path.join(__dirname,'assets/app.js'),'utf8')
   const code = source.slice(source.indexOf('  function el ('),source.indexOf('  /* ── conversations'))
-  const ctx = {URL, document:{createElement:tag=>node(tag),createTextNode:text=>node('#text',text)}}
+  const ctx = {URL, t:key=>require('../i18n/catalogue').CATALOGUE[key].en, document:{createElement:tag=>node(tag),createTextNode:text=>node('#text',text)}}
   vm.createContext(ctx); vm.runInContext(code,ctx)
   return ctx.renderMarkdown(text)
 }

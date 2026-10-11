@@ -30,15 +30,18 @@
     else tools.remove()
     var frame = null
     tools.addEventListener('toggle', function () { if (toolPath && tools.open && !frame) { frame = n('iframe'); frame.src = toolPath; frame.title = topicName(); frame.className = 'topic-tool-frame'; tools.append(frame) } })
-    var hrForm = null, hrDateLabel, hrDate, hrPrepare, hrMissing, hrCompare, hrTitle, hrHint, hrFuture
+    var hrForm = null, hrDateLabel, hrDate, hrPrepare, hrMissing, hrCompare, hrTitle, hrHint, hrFuture, hrTools, hrSummary
     if (topic === 'hr') {
+      box.classList.add('department-compact')
+      subtitle.remove()
+      hrTools = n('details', null, 'department-tools'); hrTools.id = 'hr-tools'; hrSummary = n('summary'); hrTools.append(hrSummary); box.append(hrTools)
       var attendance = n('section', null, 'department-attendance')
       hrTitle = n('h3'); hrHint = n('p'); hrFuture = n('p', null, 'department-planned'); hrForm = n('form', null, 'department-query')
       hrDateLabel = n('label'); hrDate = n('input'); hrDate.id = 'hr-query-date'; hrDate.type = 'date'; hrDate.required = true
       hrDateLabel.append(n('span'), hrDate); hrPrepare = n('button'); hrPrepare.id = 'hr-query-prepare'; hrPrepare.type = 'submit'
       hrMissing = n('button'); hrMissing.id = 'hr-missing-prepare'; hrMissing.type = 'button'
       hrCompare = n('button'); hrCompare.id = 'hr-compare-prepare'; hrCompare.type = 'button'
-      hrForm.append(hrDateLabel, hrPrepare, hrMissing, hrCompare); attendance.append(hrTitle, hrHint, hrForm, hrFuture); box.append(attendance)
+      hrForm.append(hrDateLabel, hrPrepare, hrMissing, hrCompare); attendance.append(hrTitle, hrHint, hrForm, hrFuture); hrTools.append(attendance)
       function prepareAttendance (missing) {
         var date = hrDate.value
         if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !Number.isFinite(Date.parse(date)) || new Date(date).toISOString().slice(0, 10) !== date) { status.textContent = t('department.dateRequired'); return }
@@ -51,6 +54,18 @@
     }
     var tracking = n('details', null, 'topic-tracking'), trackingSummary = n('summary'), notes = n('div'), form = n('form', null, 'topic-note-form')
     tracking.id = 'topic-follow-ups'; tracking.append(trackingSummary, notes, form); box.append(tracking)
+    if (hrTools) {
+      var trackingPanel = n('div', null, 'department-tracking-panel'); trackingPanel.append(notes, form); tracking.append(trackingPanel)
+      ;[hrTools, tracking].forEach(function (panel) {
+        panel.addEventListener('toggle', function () { if (panel.open) (panel === hrTools ? tracking : hrTools).open = false })
+      })
+      doc.addEventListener('click', function (event) { if (!box.contains(event.target)) { hrTools.open = false; tracking.open = false } })
+      box.addEventListener('keydown', function (event) {
+        if (event.key !== 'Escape') return
+        var panel = hrTools.open ? hrTools : tracking.open ? tracking : null
+        if (panel) { panel.open = false; panel.querySelector('summary').focus(); event.stopPropagation() }
+      })
+    }
     var titleLabel = n('label'), nextLabel = n('label'), titleInput = n('input'), nextInput = n('input'), add = n('button'), sourceHint = n('p', '', 'topic-source')
     titleInput.id = 'topic-note-title'; titleInput.maxLength = 160; titleInput.required = true; nextInput.id = 'topic-note-next'; nextInput.maxLength = 600
     titleLabel.append(titleInput); nextLabel.append(nextInput); add.type = 'submit'; form.append(titleLabel, nextLabel, sourceHint, add)
@@ -60,6 +75,7 @@
       title.textContent = department ? t('department.workspace', { name: topicName() }) : t('topic.title', { name: topicName() })
       subtitle.textContent = ['purchasing', 'accounting', 'marketing'].includes(topic) ? t('department.plannedIntro') : t('topic.intro')
       if (hrForm) {
+        hrSummary.textContent = t('department.queryTools')
         hrTitle.textContent = t('department.attendance'); hrHint.textContent = t('department.attendanceHint'); hrFuture.textContent = t('department.hrPlanned')
         hrDateLabel.firstChild.textContent = t('department.date'); hrPrepare.textContent = t('department.prepare')
         hrMissing.textContent = t('department.prepareMissing')
@@ -114,7 +130,8 @@
       load: function () { return loaded },
       link: async function (id) { try { await loaded; var result = await api('/conversations', 'POST', { id: id }); data.conversationIds = result.workspace.conversationIds; data.lastConversationId = id; return true } catch (_) { status.textContent = t('topic.saveFailed'); return false } },
       selected: function (id) { if (data && data.conversationIds.includes(id) && id !== data.lastConversationId) this.link(id) },
-      labels: labels
+      labels: labels,
+      submitted: function () { if (hrTools) { hrTools.open = false; tracking.open = false } }
     }
   }
   root.XiangxiangTopics = { mount: mount }

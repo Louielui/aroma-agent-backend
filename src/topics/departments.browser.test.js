@@ -16,7 +16,7 @@ test('bilingual HR entry prepares an explicit-date read without sending, preserv
   const browser = await require('playwright-core').chromium.launch({ channel: 'msedge', headless: true }), errors = [], unexpected = [], sent = []
   try {
     for (const [lang, width] of [['zh', 1280], ['en', 390]]) {
-      const context = await browser.newContext({ viewport: { width, height: 1000 } })
+      const context = await browser.newContext({ viewport: { width, height: width > 760 ? 720 : 844 } })
       await context.route('**/*', async route => {
         const r = route.request(), url = new URL(r.url()), p = url.pathname, method = r.method(), body = r.postDataJSON()
         const response = value => route.fulfill({ contentType: 'application/json', body: JSON.stringify(value) })
@@ -56,8 +56,14 @@ test('bilingual HR entry prepares an explicit-date read without sending, preserv
       })
       const page = await context.newPage(); page.on('pageerror', e => errors.push(e.message))
       await page.goto('http://127.0.0.1:19091/demo?topic=hr')
-      await page.locator('#hr-query-date').waitFor()
+      await page.locator('#topic-workspace').waitFor()
       await page.waitForFunction(() => document.getElementById('log').textContent.includes('Saved attendance result'))
+      assert.ok(await page.evaluate(() => document.getElementById('topic-workspace').getBoundingClientRect().height < 110), 'closed HR tools leave space for the conversation at short viewport heights')
+      assert.ok(await page.evaluate(() => document.getElementById('log').getBoundingClientRect().height > innerHeight * .4), 'conversation is the primary reading area')
+      await page.locator('#hr-tools summary').click()
+      await page.locator('#hr-query-date').press('Escape')
+      assert.equal(await page.locator('#hr-tools').getAttribute('open'), null)
+      await page.locator('#hr-tools summary').click()
       assert.ok(!(await page.locator('#convs').textContent()).includes('Saved mail question'))
       assert.equal(await page.locator('#hr-query-date').inputValue(), '')
       const before = sent.length
@@ -73,6 +79,8 @@ test('bilingual HR entry prepares an explicit-date read without sending, preserv
       const reply = page.waitForResponse(r => r.url().endsWith('/api/v1/demo/intake')); await page.locator('#send').click(); await reply
       assert.equal(sent.at(-1).chatModel, 'gpt-6.1-sol'); assert.equal(sent.at(-1).chatLevel, 'high'); assert.equal(sent.at(-1).message, query)
       await page.waitForFunction(() => document.getElementById('log').textContent.includes('Fixture answer'))
+      assert.equal(await page.locator('#hr-tools').getAttribute('open'), null, 'tools close only after dispatch')
+      await page.locator('#hr-tools summary').click()
       await page.locator('#msg').fill('Owner draft'); await page.locator('#hr-missing-prepare').click(); assert.equal(await page.locator('#msg').inputValue(), 'Owner draft')
       await page.locator('#msg').fill(''); const beforeMissing = sent.length, priorTables = await page.locator('#log table').count()
       await page.locator('#hr-missing-prepare').click()
@@ -81,6 +89,7 @@ test('bilingual HR entry prepares an explicit-date read without sending, preserv
       const missingResponse = page.waitForResponse(r => r.url().endsWith('/api/v1/demo/intake')); await page.locator('#send').click(); await missingResponse
       await page.waitForFunction(n => document.querySelectorAll('#log table').length === n + 1, priorTables)
       assert.match(await page.locator('#log').textContent(), /UNKNOWN/); assert.match(await page.locator('#log table').last().textContent(), /CANDIDATE/)
+      await page.locator('#hr-tools summary').click()
       await page.locator('#msg').fill('Owner draft'); await page.locator('#hr-compare-prepare').click(); assert.equal(await page.locator('#msg').inputValue(), 'Owner draft')
       await page.locator('#msg').fill(''); const beforeCompare = sent.length
       await page.locator('#hr-compare-prepare').click()
@@ -89,10 +98,24 @@ test('bilingual HR entry prepares an explicit-date read without sending, preserv
       const compareResponse = page.waitForResponse(r => r.url().endsWith('/api/v1/demo/intake')); await page.locator('#send').click(); await compareResponse
       await page.waitForFunction(() => document.getElementById('log').textContent.includes('Comparison fixture'))
       assert.match(await page.locator('#log table').last().textContent(), /CONFIRMED/)
+      const tableText = await page.locator('#log table').last().textContent()
+      await page.locator('#log .table-expand').last().click()
+      assert.equal(await page.locator('.table-viewer table').textContent(), tableText, 'expanded view preserves every cell and evidence grade')
+      assert.ok(await page.locator('.table-viewer').evaluate(node => node.getBoundingClientRect().height > innerHeight * .7))
+      if (process.env.DEPARTMENT_SCREEN_DIR) await page.screenshot({ path: path.join(process.env.DEPARTMENT_SCREEN_DIR, 'hr-table-' + lang + '-' + width + '.png') })
+      await page.keyboard.press('Escape')
+      await page.locator('.table-viewer').waitFor({ state: 'detached' })
+      assert.equal(await page.locator('.table-viewer').count(), 0)
+      assert.equal(await page.locator('#log .table-expand').last().evaluate(node => node === document.activeElement), true, 'closing returns keyboard focus to the opener')
+      const provenance = page.locator('#log .report-source').last()
+      assert.equal(await provenance.getAttribute('open'), null)
+      assert.match(await provenance.textContent(), /7shifts.*GET/)
+      await provenance.locator('summary').click()
+      assert.equal(await provenance.locator('p').isVisible(), true, 'source scope and unknown limits remain available')
       await page.locator('#topic-follow-ups summary').click(); await page.locator('#topic-note-title').fill('Attendance follow-up ' + lang)
       await page.locator('#topic-note-next').fill('Verify with employee'); await page.locator('.topic-note-form button').click()
       await page.waitForFunction(() => document.querySelector('.topic-note strong') !== null)
-      await page.reload(); await page.locator('#hr-query-date').waitFor(); assert.equal(topics.get('email').notes.length, 0)
+      await page.reload(); await page.locator('#topic-workspace').waitFor(); assert.equal(topics.get('email').notes.length, 0)
       await page.waitForFunction(() => document.getElementById('log').textContent.includes('Saved attendance result'))
       assert.match(await page.locator('#log').textContent(), /Attendance fixture/)
       assert.match(await page.locator('#log').textContent(), /Comparison fixture/)
@@ -102,6 +125,13 @@ test('bilingual HR entry prepares an explicit-date read without sending, preserv
       await page.locator('#open-hr').focus(); await page.keyboard.press('Escape'); assert.equal(await page.locator('[data-sidebar-group="daily"]').getAttribute('open'), null)
       assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth))
       if (process.env.DEPARTMENT_SCREEN_DIR) await page.screenshot({ path: path.join(process.env.DEPARTMENT_SCREEN_DIR, 'hr-' + lang + '-' + width + '.png') })
+      await context.route('**/api/v1/demo/models', route => route.fulfill({ contentType: 'application/json', body: JSON.stringify({ ...catalog, models: catalog.models.map(v => ({ ...v, available: false })), central: center.read().brain, selection: center.selection('topic', 'hr') }) }))
+      await page.reload()
+      await page.waitForFunction(() => document.getElementById('brain-status').textContent.length > 0 && document.getElementById('send').disabled)
+      assert.equal(await page.locator('#brain-status').isVisible(), true, 'model availability failures remain visible in the compact footer')
+      await page.locator('#hr-tools summary').click(); await page.locator('#hr-query-date').fill('2026-10-09'); await page.locator('#msg').fill(''); await page.locator('#hr-query-prepare').click()
+      assert.equal(await page.locator('#hr-tools').getAttribute('open'), '', 'a prepared draft is not a dispatched query')
+      assert.ok(await page.locator('#msg').inputValue())
       await context.close()
     }
     assert.deepEqual(errors, []); assert.deepEqual(unexpected, [])

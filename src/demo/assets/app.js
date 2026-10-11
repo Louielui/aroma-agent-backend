@@ -234,7 +234,13 @@
     var para = null
 
     function flushPara () {
-      if (para && para.childNodes.length) root.appendChild(para)
+      if (para && para.childNodes.length) {
+        // Presentation only: retain the entire source note and its limits.
+        if (/^(\u4f86\u6e90\uff1a7shifts \u56fa\u5b9a GET|Source: fixed 7shifts GET)/.test(para.textContent)) {
+          var sourceDetails = el('details', 'report-source'), sourceSummary = el('summary', null, t('report.sourceDetails'))
+          sourceDetails.append(sourceSummary, para); root.appendChild(sourceDetails)
+        } else root.appendChild(para)
+      }
       para = null
     }
     function flushList () { if (list) { root.appendChild(list); list = null } }
@@ -289,7 +295,18 @@
           if (!values || values.length !== columns.length) break
           tbody.appendChild(tableRow(values, false)); i++
         }
-        wrap.appendChild(table); root.appendChild(wrap); continue
+        wrap.appendChild(table)
+        var expand = el('button', 'table-expand', t('report.expandTable')); expand.type = 'button'
+        expand.addEventListener('click', (function (sourceTable, opener, name) { return function () {
+          var viewer = el('dialog', 'table-viewer'), head = el('div', 'table-viewer-head'), title = el('strong', null, t('report.tableTitle')), close = el('button', null, t('report.closeTable'))
+          var scroll = el('div', 'md md-table-wrap table-viewer-scroll')
+          viewer.setAttribute('aria-label', t('report.tableTitle')); scroll.tabIndex = 0; scroll.setAttribute('role', 'region'); scroll.setAttribute('aria-label', name)
+          close.type = 'button'; head.append(title, close); scroll.append(sourceTable.cloneNode(true)); viewer.append(head, scroll); document.body.append(viewer)
+          close.addEventListener('click', function () { viewer.close() })
+          viewer.addEventListener('close', function () { viewer.remove(); if (opener.isConnected) opener.focus() })
+          viewer.showModal(); close.focus()
+        } })(table, expand, columns.join(' / ')))
+        root.append(expand, wrap); continue
       }
 
       var h = line.match(/^(#{1,3})\s+(.*)$/)
@@ -340,6 +357,7 @@
       }
 
       flushList()
+      if (/^(\u4f86\u6e90\uff1a7shifts \u56fa\u5b9a GET|Source: fixed 7shifts GET)/.test(line)) flushPara()
       if (!para) para = el('p')
       else para.appendChild(document.createTextNode('\n'))
       inline(para, line)
@@ -2222,6 +2240,7 @@
         SUBSCRIPTION_CHAT && chatLevel ? { chatLevel: chatLevel.value, chatModel: chatModel } : {}))
     }
     var response = pictures.length ? fetch('/api/v1/demo/image-intake', requestOptions) : fetch('/api/v1/demo/intake', requestOptions)
+    if (topicController) topicController.submitted()
     response.then(function (r) {
       return r.json().catch(function () { return {} }).then(function (j) { return { status: r.status, body: j } })
     }).then(function (o) {
