@@ -572,14 +572,15 @@ function createDemoRouter ({ getAdapterFn = getAdapterForLane, processIntakeFn =
       // Browser history can still contain the immediately displayed mail answer.
       // Replace it before ordinary intake; the source-bound lane rechecks access.
       const history = Array.isArray(req.body.history) ? req.body.history.map((entry, i, all) =>
-        entry?.role === 'assistant' && (entry.sourceBound === true || (all[i - 1]?.role === 'user' && (require('../company/mailIntent').parseMailRequest(all[i - 1].text || all[i - 1].content, all.slice(0, i - 1)) || require('../context/gmailContextService').gmailIntent(all[i - 1].text || all[i - 1].content) || require('../context/sevenShiftsReport').clockOutRequest(all[i - 1].text || all[i - 1].content))))
+        entry?.role === 'assistant' && (entry.sourceBound === true || (all[i - 1]?.role === 'user' && (require('../company/mailIntent').parseMailRequest(all[i - 1].text || all[i - 1].content, all.slice(0, i - 1)) || require('../context/gmailContextService').gmailIntent(all[i - 1].text || all[i - 1].content) || require('../context/sevenShiftsReport').clockOutRequest(all[i - 1].text || all[i - 1].content) || require('../context/sevenShiftsAttendance').attendanceRequest(all[i - 1].text || all[i - 1].content))))
           ? { ...entry, text: t('company.mailHistoryReceipt'), content: t('company.mailHistoryReceipt') } : entry) : req.body.history
       // Resolve a bounded development conversation before keyword-based mail lanes:
       // navigation labels and chat history are not requests to read a mailbox.
       // A semantic topic change returns null and preserves ordinary mail routing.
       const planningLane = !contextCard && !req.body.attachSection && (!req.body.interactionMode || req.body.interactionMode === 'chat')
       const clockOutRequest = planningLane && sevenShiftsReport ? require('../context/sevenShiftsReport').clockOutRequest(message) : null
-      if (clockOutRequest) {
+      const attendanceRequest = planningLane && sevenShiftsReport ? require('../context/sevenShiftsAttendance').attendanceRequest(message) : null
+      if (clockOutRequest || attendanceRequest) {
         if (!require('../core/operating/chatRequest').sameOrigin(req)) return res.status(403).json({ error: 'same_origin_required' })
         const { conversationId, workflowRequestId } = req.body
         if (!isValidConversationId(conversationId) || !require('../core/operating/runStore').ID.test(workflowRequestId || '')) return res.status(400).json({ error: 'invalid_request_id' })
@@ -593,16 +594,17 @@ function createDemoRouter ({ getAdapterFn = getAdapterForLane, processIntakeFn =
         const receipt = { conversationId, message }
         try { receipt.verify = sevenShiftsReport.captureAccess() } catch (_) { /* read() returns a safe unavailable report */ }
         receipt.result = (async () => {
-          const report = await sevenShiftsReport.read({ id: 'owner', role: 'owner' }, clockOutRequest)
+          const report = attendanceRequest ? await sevenShiftsReport.readAttendance({ id: 'owner', role: 'owner' }, attendanceRequest) : await sevenShiftsReport.read({ id: 'owner', role: 'owner' }, clockOutRequest)
           if (report.state === 'live') receipt.verify?.()
-          const reply = require('../context/sevenShiftsReport').reportReply(report, /[\u3400-\u9fff]/u.test(message) ? 'zh' : 'en')
+          const language = /[\u3400-\u9fff]/u.test(message) ? 'zh' : 'en'
+          const reply = attendanceRequest ? require('../context/sevenShiftsAttendance').attendanceReply(report, language) : require('../context/sevenShiftsReport').reportReply(report, language)
           let gapRun, historySaved = true
           if (report.gap && capabilityGaps) gapRun = capabilityGaps.offer({ id: 'owner', role: 'owner' }, { conversationId, requestId: workflowRequestId, message,
             gap: report.gap, model: req.body.chatModel || require('../subscription/chatModels').DEFAULT_BRAIN_MODEL,
             effort: require('../intake/chatSpeed').profileFor(req.body.chatLevel || 'medium').effort,
             readRequest: { window: 'dates', dates: [report.query.firstDate, report.query.lastDate] } })
           try { conversationStore.appendTurn({ id: conversationId, userText: message, replyText: reply, ...(gapRun ? { capabilityGapRunId: gapRun.id } : {}) }) } catch (_) { historySaved = false }
-          return { lane: 'chat', mode: report.state === 'needs_date' ? 'ask' : 'chat', reply, sevenShiftsReport: report, sourceBound: true, historySaved, servedBy: null,
+          return { lane: 'chat', mode: report.state === 'needs_date' ? 'ask' : 'chat', reply, ...(attendanceRequest ? { sevenShiftsAttendance: report } : { sevenShiftsReport: report }), sourceBound: true, historySaved, servedBy: null,
             ...(gapRun ? { capabilityGapRunId: gapRun.id, capabilityGapResolution: gapRun } : {}) }
         })()
         clockOutReceipts.set(workflowRequestId, receipt)

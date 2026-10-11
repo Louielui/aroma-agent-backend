@@ -47,3 +47,28 @@ test('the real HTTP report returns all scoped rows and cached replies become una
   assert.equal((await post(f.server, body)).status, 200); assert.equal(reads, 1)
   f.env.READ_ACCESS = 'off'; assert.equal((await post(f.server, body)).status, 503); assert.equal(reads, 1)
 })
+
+test('attendance HTTP intake reads once, saves a bilingual evidence report, rejects replay conflicts and never calls a model', async t => {
+  let reads = 0
+  const f = await fixture(t, { methods: { listAttendance: async q => { reads++; return {
+    results: [{ fields: { companyId: 123, userId: 7, punchId: 1, clockedIn: '2026-10-09T15:00:00Z', clockedOut: null, employeeName: 'Employee 7', nameState: 'confirmed' } }],
+    evidence: { trust: 'live', completeWithinScope: true, returnedRows: 1, queryScope: { companyId: 123, field: 'clocked_in', window: q.timeMin + '..' + q.timeMax } }
+  } } } })
+  for (const message of ['幫我查昨日有哪些員工漏打下班卡。', 'Which employees missed clock-out yesterday?']) {
+    const body = { message, conversationId: randomUUID(), workflowRequestId: randomUUID() }
+    const before = reads
+    assert.equal((await post(f.server, body, 'https://evil.test')).status, 403); assert.equal(reads, before)
+    const response = await post(f.server, body)
+    assert.equal(response.status, 200); assert.equal(response.value.sevenShiftsAttendance.rows[0].missingClockOutState, 'CANDIDATE')
+    assert.equal(response.value.sourceBound, true); assert.equal(response.value.servedBy, null); assert.equal(response.value.historySaved, true)
+    assert.match(response.value.reply, /Employee 7/); assert.equal(f.saved.get(body.conversationId).messages.length, 2)
+    assert.equal((await post(f.server, body)).status, 200); assert.equal(reads, before + 1)
+    assert.equal((await post(f.server, { ...body, message: message + ' changed' })).status, 409)
+    assert.equal((await post(f.server, { ...body, conversationId: randomUUID() })).status, 409)
+  }
+  const body = { message: '查 7shifts 漏打下班卡', conversationId: randomUUID(), workflowRequestId: randomUUID() }
+  const before = reads, result = await post(f.server, body)
+  assert.equal(result.value.mode, 'ask'); assert.equal(result.value.sevenShiftsAttendance.state, 'needs_date'); assert.equal(reads, before)
+  f.env.READ_ACCESS = 'off'; assert.equal((await post(f.server, body)).status, 503)
+  assert.equal(f.starts.length, 0)
+})

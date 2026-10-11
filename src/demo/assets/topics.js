@@ -30,19 +30,22 @@
     else tools.remove()
     var frame = null
     tools.addEventListener('toggle', function () { if (toolPath && tools.open && !frame) { frame = n('iframe'); frame.src = toolPath; frame.title = topicName(); frame.className = 'topic-tool-frame'; tools.append(frame) } })
-    var hrForm = null, hrDateLabel, hrDate, hrPrepare, hrTitle, hrHint, hrFuture
+    var hrForm = null, hrDateLabel, hrDate, hrPrepare, hrMissing, hrTitle, hrHint, hrFuture
     if (topic === 'hr') {
       var attendance = n('section', null, 'department-attendance')
       hrTitle = n('h3'); hrHint = n('p'); hrFuture = n('p', null, 'department-planned'); hrForm = n('form', null, 'department-query')
       hrDateLabel = n('label'); hrDate = n('input'); hrDate.id = 'hr-query-date'; hrDate.type = 'date'; hrDate.required = true
       hrDateLabel.append(n('span'), hrDate); hrPrepare = n('button'); hrPrepare.id = 'hr-query-prepare'; hrPrepare.type = 'submit'
-      hrForm.append(hrDateLabel, hrPrepare); attendance.append(hrTitle, hrHint, hrForm, hrFuture); box.append(attendance)
-      hrForm.addEventListener('submit', function (event) {
-        event.preventDefault()
+      hrMissing = n('button'); hrMissing.id = 'hr-missing-prepare'; hrMissing.type = 'button'
+      hrForm.append(hrDateLabel, hrPrepare, hrMissing); attendance.append(hrTitle, hrHint, hrForm, hrFuture); box.append(attendance)
+      function prepareAttendance (missing) {
         var date = hrDate.value
         if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !Number.isFinite(Date.parse(date)) || new Date(date).toISOString().slice(0, 10) !== date) { status.textContent = t('department.dateRequired'); return }
-        status.textContent = onDiscuss(t('department.clockOutRequest', { date: date })) === false ? t('topic.draftBusy') : t('department.queryPrepared')
-      })
+        var message = missing ? t('department.missingRequest', { date: date }) : t('department.clockOutRequest', { date: date })
+        status.textContent = onDiscuss(message) === false ? t('topic.draftBusy') : t('department.queryPrepared')
+      }
+      hrForm.addEventListener('submit', function (event) { event.preventDefault(); prepareAttendance(false) })
+      hrMissing.addEventListener('click', function () { prepareAttendance(true) })
     }
     var tracking = n('details', null, 'topic-tracking'), trackingSummary = n('summary'), notes = n('div'), form = n('form', null, 'topic-note-form')
     tracking.id = 'topic-follow-ups'; tracking.append(trackingSummary, notes, form); box.append(tracking)
@@ -57,6 +60,7 @@
       if (hrForm) {
         hrTitle.textContent = t('department.attendance'); hrHint.textContent = t('department.attendanceHint'); hrFuture.textContent = t('department.hrPlanned')
         hrDateLabel.firstChild.textContent = t('department.date'); hrPrepare.textContent = t('department.prepare')
+        hrMissing.textContent = t('department.prepareMissing')
       }
       toolSummary.textContent = t('topic.tools'); toolOpen.textContent = t('topic.original')
       titleLabel.firstChild === titleInput && titleLabel.insertBefore(n('span'), titleInput)

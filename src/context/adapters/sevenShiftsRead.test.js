@@ -14,7 +14,7 @@ test('reader binds GET transport and evidence to the exact company and clock-in 
   assert.equal(v.evidence.matchingTotal,2);assert.equal(v.evidence.sourceTotal,null)
   assert.equal(v.results[0].fields.clockedOut,punch().clocked_out);assert.equal(v.results[1].fields.clockedOut,null);assert.equal(v.results[0].sourceId,'123:1')
   for(const absent of ['synthetic-reader-secret','hourly_wage','private'])assert.equal(JSON.stringify(v).includes(absent),false)
-  assert.deepEqual(Object.keys(reader.methods),['listTimePunches','listClockOuts'])
+  assert.deepEqual(Object.keys(reader.methods),['listTimePunches','listClockOuts','listAttendance'])
 })
 
 test('missing authorisation or connection is unavailable without any egress; access changes during a read invalidate the result',async()=>{

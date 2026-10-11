@@ -31,7 +31,16 @@ test('bilingual HR entry prepares an explicit-date read without sending, preserv
           const workspace = topics.get(id)
           return response({ ok: true, workspace, conversations: conversations.list().filter(v => workspace.conversationIds.includes(v.id)) })
         }
-        if (p === '/api/v1/demo/intake') { sent.push(body); return response({ lane: 'chat', reply: 'Fixture answer', servedBy: body.chatModel }) }
+        if (p === '/api/v1/demo/intake') {
+          sent.push(body)
+          if (require('../context/sevenShiftsAttendance').attendanceRequest(body.message)) {
+            const report = require('../context/sevenShiftsAttendance').buildAttendance({ results: [{ fields: { companyId: 123, userId: 7, punchId: 11, employeeName: 'Attendance fixture', nameState: 'confirmed', clockedIn: '2026-10-09T16:00:00Z', clockedOut: null } }], evidence: { trust: 'live', completeWithinScope: true, returnedRows: 1, queryScope: { companyId: 123, field: 'clocked_in', window: '2026-10-09T05:00:00.000Z..2026-10-10T04:59:59.999Z' } } }, { window: 'dates', dates: ['2026-10-09'] }, '2026-10-10T18:00:00Z', 123)
+            const reply = require('../context/sevenShiftsAttendance').attendanceReply(report, lang)
+            conversations.appendTurn({ id: body.conversationId, userText: body.message, replyText: reply })
+            return response({ lane: 'chat', mode: 'chat', reply, sevenShiftsAttendance: report, sourceBound: true, servedBy: null })
+          }
+          return response({ lane: 'chat', mode: 'chat', reply: 'Fixture answer', servedBy: body.chatModel })
+        }
         const fixtures = { '/api/v1/demo/greeting': { line: 'Fixture' }, '/api/v1/demo/version': { build: 'department-fixture' }, '/api/v1/conversations': { ok: true, conversations: [] }, '/api/v1/home/briefing': { sections: [] }, '/api/v1/home/settings': { entries: [] }, '/api/v1/execution-health': { state: 'unavailable' }, '/manifest.webmanifest': {} }
         if (method === 'GET' && Object.hasOwn(fixtures, p)) return response(fixtures[p])
         unexpected.push(p); return route.abort()
@@ -44,6 +53,7 @@ test('bilingual HR entry prepares an explicit-date read without sending, preserv
       assert.equal(await page.locator('#hr-query-date').inputValue(), '')
       const before = sent.length
       await page.locator('#hr-query-prepare').click(); assert.equal(await page.locator('#msg').inputValue(), ''); assert.equal(sent.length, before)
+      await page.locator('#hr-missing-prepare').click(); assert.equal(await page.locator('#msg').inputValue(), ''); assert.equal(sent.length, before)
       await page.locator('#hr-query-date').fill('2026-10-09'); await page.locator('#hr-query-prepare').click()
       const query = await page.locator('#msg').inputValue()
       assert.deepEqual(require('../context/sevenShiftsReport').clockOutRequest(query), { window: 'dates', dates: ['2026-10-09'] })
@@ -52,11 +62,21 @@ test('bilingual HR entry prepares an explicit-date read without sending, preserv
       await page.locator('#msg').fill(query); await page.waitForFunction(() => !document.getElementById('send').disabled)
       const reply = page.waitForResponse(r => r.url().endsWith('/api/v1/demo/intake')); await page.locator('#send').click(); await reply
       assert.equal(sent.at(-1).chatModel, 'gpt-6.1-sol'); assert.equal(sent.at(-1).chatLevel, 'high'); assert.equal(sent.at(-1).message, query)
+      await page.waitForFunction(() => document.getElementById('log').textContent.includes('Fixture answer'))
+      await page.locator('#msg').fill('Owner draft'); await page.locator('#hr-missing-prepare').click(); assert.equal(await page.locator('#msg').inputValue(), 'Owner draft')
+      await page.locator('#msg').fill(''); const beforeMissing = sent.length, priorTables = await page.locator('#log table').count()
+      await page.locator('#hr-missing-prepare').click()
+      assert.deepEqual(require('../context/sevenShiftsAttendance').attendanceRequest(await page.locator('#msg').inputValue()), { window: 'dates', dates: ['2026-10-09'] })
+      assert.equal(sent.length, beforeMissing)
+      const missingResponse = page.waitForResponse(r => r.url().endsWith('/api/v1/demo/intake')); await page.locator('#send').click(); await missingResponse
+      await page.waitForFunction(n => document.querySelectorAll('#log table').length === n + 1, priorTables)
+      assert.match(await page.locator('#log').textContent(), /UNKNOWN/); assert.match(await page.locator('#log table').last().textContent(), /CANDIDATE/)
       await page.locator('#topic-follow-ups summary').click(); await page.locator('#topic-note-title').fill('Attendance follow-up ' + lang)
       await page.locator('#topic-note-next').fill('Verify with employee'); await page.locator('.topic-note-form button').click()
       await page.waitForFunction(() => document.querySelector('.topic-note strong') !== null)
       await page.reload(); await page.locator('#hr-query-date').waitFor(); assert.equal(topics.get('email').notes.length, 0)
       await page.waitForFunction(() => document.getElementById('log').textContent.includes('Saved attendance result'))
+      assert.match(await page.locator('#log').textContent(), /Attendance fixture/)
       assert.equal(topics.get('hr').lastConversationId, 'hr-saved')
       await page.locator('[data-sidebar-group="daily"] summary').click()
       for (const id of ['open-hr', 'open-purchasing', 'open-aroma-context', 'open-accounting', 'open-marketing', 'open-gmail-context', 'open-calendar-context']) assert.equal(await page.locator('#' + id).count(), 1)

@@ -20,6 +20,7 @@ function midnight (civil) {
   throw Error('timezone_boundary_unavailable')
 }
 function clockOutRequest (message) {
+  if (require('./sevenShiftsAttendance').attendanceRequest(message)) return null
   if (typeof message !== 'string' || message.length > 2000 || /(?:不要|不用查|唔好|不需要|don't|do not|批准|批核|刪除|修改|寄出|發送|pause|resume|delete|approve|update|send|payroll)/i.test(message) || /[「」“”"]/u.test(message)) return null
   if (!/(?:clock[ -]?out|下班打卡|下班.*時間)/i.test(message) ||
       !/(?:7\s*shifts?|所有員工|全部員工|all employees)/i.test(message)) return null
@@ -88,7 +89,24 @@ function createSevenShiftsReport ({ env = process.env, adapter, fetchFn, clock =
       return { state: 'unavailable', reason: ['invalid_request', 'read_access_disabled', 'connection_not_configured', 'source_access_changed', 'source_not_authorised', 'source_rate_limited', 'invalid_source_response'].includes(e.message) ? e.message : 'source_unavailable', retrievedAt, modelCalls: 0 }
     }
   }
-  return Object.freeze({ read, captureAccess })
+  async function readAttendance (actor, request) {
+    if (actor?.id !== 'owner' || actor.role !== 'owner') throw Error('permission_denied')
+    const retrievedAt = clock()
+    try {
+      const verify = captureAccess()
+      if (request?.window === 'unspecified') return { state: 'needs_date', retrievedAt, modelCalls: 0 }
+      if (request?.window === 'dates' && request.dates?.length !== 1) throw Error('invalid_request')
+      const query = queryWindow(request, retrievedAt)
+      if (Date.parse(query.start) > Date.parse(retrievedAt)) throw Error('invalid_request')
+      if (typeof source.methods?.listAttendance !== 'function') throw Error('attendance_reader_unavailable')
+      const result = await source.methods.listAttendance({ timeMin: query.start, timeMax: new Date(Date.parse(query.end) - 1).toISOString() })
+      verify()
+      return require('./sevenShiftsAttendance').buildAttendance(result, request, retrievedAt, Number(env.SEVEN_SHIFTS_COMPANY_ID))
+    } catch (e) {
+      return { state: 'unavailable', reason: ['invalid_request', 'attendance_reader_unavailable', 'read_access_disabled', 'connection_not_configured', 'source_access_changed', 'source_not_authorised', 'source_rate_limited', 'invalid_source_response'].includes(e.message) ? e.message : 'source_unavailable', retrievedAt, modelCalls: 0 }
+    }
+  }
+  return Object.freeze({ read, readAttendance, captureAccess })
 }
 function displayTime (iso) {
   const p = zoneParts(iso)

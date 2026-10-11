@@ -100,7 +100,9 @@ function createSevenShiftsReadAdapter ({env = process.env, fetchFn, clock = () =
       throw Error(safe.includes(e.message) ? e.message : 'source_unavailable')
     }
   }
-  async function listClockOuts (input) {
+  const listClockOuts = input => listNamedPunches(input, true)
+  const listAttendance = input => listNamedPunches(input, false)
+  async function listNamedPunches (input, clockOuts) {
     const query = validateClockOutQuery(input)
     let controller, timer, accessTimer
     try {
@@ -177,7 +179,8 @@ function createSevenShiftsReadAdapter ({env = process.env, fetchFn, clock = () =
       for (; pages < MAX_PAGES;) {
         check()
         const url = new URL(API + '/company/' + companyId + '/time_punches')
-        url.searchParams.set('clocked_out[gte]',query.timeMin); url.searchParams.set('clocked_out[lte]',query.timeMax)
+        const field = clockOuts ? 'clocked_out' : 'clocked_in'
+        url.searchParams.set(field + '[gte]',query.timeMin); url.searchParams.set(field + '[lte]',query.timeMax)
         url.searchParams.set('limit',String(PAGE_SIZE)); url.searchParams.set('deleted','false')
         if (cursor) url.searchParams.set('cursor',cursor)
         const value = await request(url,false)
@@ -186,9 +189,11 @@ function createSevenShiftsReadAdapter ({env = process.env, fetchFn, clock = () =
             value.data.length > PAGE_SIZE || value.object && value.object !== 'time_punches') throw Error('invalid_source_response')
         for (const p of value.data) {
           if (!p || typeof p !== 'object' || Array.isArray(p) || p.company_id !== companyId ||
-              !ID(p.id) || !ID(p.user_id) || !instant(p.clocked_in) || !instant(p.clocked_out) ||
-              p.deleted === true || ids.has(p.id) || Date.parse(p.clocked_out) < min || Date.parse(p.clocked_out) > max ||
-              Date.parse(p.clocked_out) < Date.parse(p.clocked_in)) throw Error('invalid_source_response')
+              !ID(p.id) || !ID(p.user_id) || !instant(p.clocked_in) ||
+              (clockOuts || p.clocked_out !== null) && !instant(p.clocked_out) ||
+              p.deleted === true || ids.has(p.id) || Date.parse(p[field]) < min || Date.parse(p[field]) > max ||
+              p.clocked_out !== null && Date.parse(p.clocked_out) < Date.parse(p.clocked_in) ||
+              p.clocked_out === null && p.auto_clocked_out === true) throw Error('invalid_source_response')
           ids.add(p.id)
           // Snapshot only the approved punch fields; never retain user profiles.
           punches.push({companyId,userId:p.user_id,punchId:p.id,clockedIn:p.clocked_in,clockedOut:p.clocked_out,
@@ -233,12 +238,12 @@ function createSevenShiftsReadAdapter ({env = process.env, fetchFn, clock = () =
           employeeName:name.employeeName,nameState:name.nameState,approved:p.approved,autoClockedOut:p.autoClockedOut}
         return makeContextResult({source:SOURCE,sourceId:companyId + ':' + p.punchId,
           title:name.employeeName || '7shifts employee ' + p.userId,entityType:'time_punch',retrievedAt,
-          originalDate:p.clockedOut,fields,content:JSON.stringify(fields),link:'https://app.7shifts.com/'})
+          originalDate:clockOuts ? p.clockedOut : p.clockedIn,fields,content:JSON.stringify(fields),link:'https://app.7shifts.com/'})
       })
       check()
       return {results:rows,evidence:{source:SOURCE,trust:'live',entityType:'time_punch',retrievedAt,
         completeness:complete ? 'complete' : 'partial',completeWithinScope:complete,
-        queryScope:{companyId,field:'clocked_out',window:query.timeMin + '..' + query.timeMax,filters:query,selection:'clocked_out_inclusive_utc'},
+        queryScope:{companyId,field:clockOuts ? 'clocked_out' : 'clocked_in',window:query.timeMin + '..' + query.timeMax,filters:query,selection:clockOuts ? 'clocked_out_inclusive_utc' : 'clocked_in_inclusive_utc'},
         returnedRows:rows.length,matchingTotal:complete ? rows.length : null,sourceTotal:null,truncated:pages === MAX_PAGES && !complete,
         provenance:{source:SOURCE,endpoint:'GET /v2/company/{company_id}/time_punches',apiVersion:'2025-03-01',pages,readOnly:true}}}
     } catch (e) {
@@ -250,6 +255,6 @@ function createSevenShiftsReadAdapter ({env = process.env, fetchFn, clock = () =
       if (controller) controller.abort()
     }
   }
-  return {source:SOURCE,methods:{listTimePunches,listClockOuts},rowLimits:{listTimePunches:null,listClockOuts:null},readTimeoutMs:9000}
+  return {source:SOURCE,methods:{listTimePunches,listClockOuts,listAttendance},rowLimits:{listTimePunches:null,listClockOuts:null,listAttendance:null},readTimeoutMs:9000}
 }
-module.exports = {SOURCE,MAX_PAGES,PAGE_SIZE,validateQuery,createSevenShiftsReadAdapter}
+module.exports = {SOURCE,MAX_PAGES,PAGE_SIZE,validateQuery,instant,createSevenShiftsReadAdapter}
