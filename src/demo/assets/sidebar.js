@@ -5,7 +5,7 @@
 })(typeof globalThis === 'object' ? globalThis : this, function () {
   'use strict'
   var DESTINATIONS = {
-    daily: ['open-manager', 'open-drive-context', 'open-aroma-context', 'open-calendar-context', 'open-gmail-context'],
+    daily: ['open-hr', 'open-purchasing', 'open-aroma-context', 'open-accounting', 'open-marketing', 'open-manager', 'open-drive-context', 'open-calendar-context', 'open-gmail-context'],
     development: ['open-live-context', 'open-development-plan', 'open-project-tasks', 'open-workers'],
     management: ['open-memory', 'open-connections', 'open-company-access', 'open-architecture']
   }
@@ -108,6 +108,9 @@
       groups[key] = group
       DESTINATIONS[key].forEach(function (id) {
         var item = doc.getElementById(id)
+        if (key === 'daily' && id === 'open-manager' && doc.getElementById('open-hr')) {
+          var divider = doc.createElement('p'); divider.id = 'shared-tools-label'; divider.className = 'top-menu-divider'; menu.appendChild(divider)
+        }
         if (item) menu.appendChild(item)
       })
       // Native summaries turn Enter/Space into clicks. Handle that click synchronously

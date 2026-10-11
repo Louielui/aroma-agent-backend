@@ -195,3 +195,4 @@
   .sidebar-layout > header.top-feature-header { padding-top: 4px; padding-bottom: 4px; }
 }
 @media (prefers-reduced-motion: reduce) { .sidebar-body #sidebar, .top-feature-header, .top-navigation, .top-menu { transition: none; scroll-behavior: auto; } }
+.top-menu-divider { margin:8px 8px 4px; padding-top:10px; border-top:1px solid var(--line); color:var(--muted); font-size:11px; }

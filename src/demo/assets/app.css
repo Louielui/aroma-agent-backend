@@ -3,6 +3,15 @@
 .topic-heading h2 { margin:0; font-size:18px; font-weight:600; }
 .topic-heading p,.topic-status,.topic-source,.topic-empty { margin:6px 0; color:var(--muted); font-size:13px; }
 .topic-status:empty { display:none; }
+.department-attendance { max-width:1000px; margin:14px auto 0; padding:14px 16px; border:1px solid var(--line); border-radius:12px; background:var(--card); }
+.department-attendance h3 { margin:0 0 6px; font-size:15px; font-weight:600; }
+.department-attendance p { margin:6px 0; font-size:13px; color:var(--muted); }
+.department-query { display:flex; align-items:end; gap:12px; flex-wrap:wrap; margin:12px 0; }
+.department-query label { display:grid; gap:6px; font-size:13px; color:var(--muted); }
+.department-query input,.department-query button { min-height:38px; border:1px solid var(--line); border-radius:8px; padding:8px 12px; color:var(--ink); background:var(--bg); font:inherit; max-width:100%; }
+.department-query button { cursor:pointer; font-size:13px; font-weight:600; }
+.department-query :focus-visible { outline:2px solid var(--ink); outline-offset:2px; }
+.department-planned { padding-top:8px; border-top:1px solid var(--line); }
 .topic-tools,.topic-tracking { max-width:1000px; margin:10px auto 0; }
 .topic-workspace summary { cursor:pointer; font-size:14px; padding:6px 0; }
 .topic-original { display:inline-block; font-size:13px; margin:6px 0; color:var(--muted); }

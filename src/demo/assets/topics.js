@@ -2,6 +2,7 @@
 ;(function (root) {
   'use strict'
   var TOPICS = {
+    hr: ['open-hr', null], purchasing: ['open-purchasing', null], accounting: ['open-accounting', null], marketing: ['open-marketing', null],
     briefing: ['open-manager', '/manager'], documents: ['open-drive-context', '/drive-context'], operations: ['open-aroma-context', '/aroma-context'],
     calendar: ['open-calendar-context', '/calendar-context'], email: ['open-gmail-context', '/gmail-context'], development: ['open-live-context', '/live-context'],
     plans: ['open-development-plan', '/development-plan'], tasks: ['open-project-tasks', '/project-tasks'], workers: ['open-workers', '/workers'],
@@ -24,9 +25,25 @@
     var topicName = function () { var b = doc.getElementById(TOPICS[topic][0]); return b ? b.textContent.trim() : topic }
     var title = n('h2'), subtitle = n('p'), tools = n('details', null, 'topic-tools'), toolSummary = n('summary'), toolOpen = n('a')
     heading.append(title, subtitle); box.append(heading, status, tools); tools.append(toolSummary, toolOpen)
-    toolOpen.href = TOPICS[topic][1]; toolOpen.target = '_blank'; toolOpen.rel = 'noopener'; toolOpen.className = 'topic-original'
+    var toolPath = TOPICS[topic][1]
+    if (toolPath) { toolOpen.href = toolPath; toolOpen.target = '_blank'; toolOpen.rel = 'noopener'; toolOpen.className = 'topic-original' }
+    else tools.remove()
     var frame = null
-    tools.addEventListener('toggle', function () { if (tools.open && !frame) { frame = n('iframe'); frame.src = TOPICS[topic][1]; frame.title = topicName(); frame.className = 'topic-tool-frame'; tools.append(frame) } })
+    tools.addEventListener('toggle', function () { if (toolPath && tools.open && !frame) { frame = n('iframe'); frame.src = toolPath; frame.title = topicName(); frame.className = 'topic-tool-frame'; tools.append(frame) } })
+    var hrForm = null, hrDateLabel, hrDate, hrPrepare, hrTitle, hrHint, hrFuture
+    if (topic === 'hr') {
+      var attendance = n('section', null, 'department-attendance')
+      hrTitle = n('h3'); hrHint = n('p'); hrFuture = n('p', null, 'department-planned'); hrForm = n('form', null, 'department-query')
+      hrDateLabel = n('label'); hrDate = n('input'); hrDate.id = 'hr-query-date'; hrDate.type = 'date'; hrDate.required = true
+      hrDateLabel.append(n('span'), hrDate); hrPrepare = n('button'); hrPrepare.id = 'hr-query-prepare'; hrPrepare.type = 'submit'
+      hrForm.append(hrDateLabel, hrPrepare); attendance.append(hrTitle, hrHint, hrForm, hrFuture); box.append(attendance)
+      hrForm.addEventListener('submit', function (event) {
+        event.preventDefault()
+        var date = hrDate.value
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !Number.isFinite(Date.parse(date)) || new Date(date).toISOString().slice(0, 10) !== date) { status.textContent = t('department.dateRequired'); return }
+        status.textContent = onDiscuss(t('department.clockOutRequest', { date: date })) === false ? t('topic.draftBusy') : t('department.queryPrepared')
+      })
+    }
     var tracking = n('details', null, 'topic-tracking'), trackingSummary = n('summary'), notes = n('div'), form = n('form', null, 'topic-note-form')
     tracking.id = 'topic-follow-ups'; tracking.append(trackingSummary, notes, form); box.append(tracking)
     var titleLabel = n('label'), nextLabel = n('label'), titleInput = n('input'), nextInput = n('input'), add = n('button'), sourceHint = n('p', '', 'topic-source')
@@ -34,7 +51,13 @@
     titleLabel.append(titleInput); nextLabel.append(nextInput); add.type = 'submit'; form.append(titleLabel, nextLabel, sourceHint, add)
     var data = null, source = null, requestId = root.crypto.randomUUID(), inflight = false
     function labels () {
-      title.textContent = t('topic.title', { name: topicName() }); subtitle.textContent = t('topic.intro')
+      var department = ['hr', 'purchasing', 'operations', 'accounting', 'marketing'].includes(topic)
+      title.textContent = department ? t('department.workspace', { name: topicName() }) : t('topic.title', { name: topicName() })
+      subtitle.textContent = ['purchasing', 'accounting', 'marketing'].includes(topic) ? t('department.plannedIntro') : t('topic.intro')
+      if (hrForm) {
+        hrTitle.textContent = t('department.attendance'); hrHint.textContent = t('department.attendanceHint'); hrFuture.textContent = t('department.hrPlanned')
+        hrDateLabel.firstChild.textContent = t('department.date'); hrPrepare.textContent = t('department.prepare')
+      }
       toolSummary.textContent = t('topic.tools'); toolOpen.textContent = t('topic.original')
       titleLabel.firstChild === titleInput && titleLabel.insertBefore(n('span'), titleInput)
       nextLabel.firstChild === nextInput && nextLabel.insertBefore(n('span'), nextInput)

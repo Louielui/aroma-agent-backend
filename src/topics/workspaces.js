@@ -1,7 +1,7 @@
 'use strict'
 const fs = require('node:fs'), path = require('node:path'), { randomUUID } = require('node:crypto')
 const { isValidId } = require('../store/conversationStore')
-const TOPICS = Object.freeze(['briefing', 'documents', 'operations', 'calendar', 'email', 'development', 'plans', 'tasks', 'workers', 'memory', 'connections', 'access', 'architecture'])
+const TOPICS = Object.freeze(['briefing', 'documents', 'operations', 'calendar', 'email', 'development', 'plans', 'tasks', 'workers', 'memory', 'connections', 'access', 'architecture', 'hr', 'purchasing', 'accounting', 'marketing'])
 const STATES = Object.freeze(['todo', 'doing', 'done'])
 const exact = (o, keys) => o && typeof o === 'object' && !Array.isArray(o) && Object.keys(o).sort().join(',') === keys.slice().sort().join(',')
 const text = (v, max, empty = false) => typeof v === 'string' && v.length <= max && (empty || v.trim().length > 0)

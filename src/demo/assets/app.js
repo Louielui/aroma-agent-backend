@@ -3522,6 +3522,11 @@
    * file, and a bilingual shell is not a reason to start.
    */
   var SHELL_TEXT = [
+    ['hr-label', 'text', function () { return t('department.hr') }],
+    ['purchasing-label', 'text', function () { return t('department.purchasing') }],
+    ['accounting-label', 'text', function () { return t('department.accounting') }],
+    ['marketing-label', 'text', function () { return t('department.marketing') }],
+    ['shared-tools-label', 'text', function () { return t('department.sharedTools') }],
     ['brand-name', 'text', function () { return t('shell.title') }],
     ['home-label', 'text', function () { return t('nav.home') }],
     ['new-chat-label', 'text', function () { return t('shell.newConversation') }],
@@ -3543,7 +3548,7 @@
     ['manager-label', 'text', function () { return t('manager.title') }],
     ['live-context-label', 'text', function () { return t('live.title') }],
     ['drive-context-label', 'text', function () { return t('driveContext.title') }],
-    ['aroma-context-label', 'text', function () { return t('aromaContext.title') }],
+    ['aroma-context-label', 'text', function () { return t('department.operations') }],
     ['calendar-context-label', 'text', function () { return t('calendarContext.title') }],
     ['gmail-context-label', 'text', function () { return t('gmailContext.title') }],
     ['development-plan-label', 'text', function () { return t('plan.title') }],
