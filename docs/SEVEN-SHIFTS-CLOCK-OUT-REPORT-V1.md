@@ -43,7 +43,20 @@ establish why an older discarded response was rejected or prove reader acceptanc
 The actual bounded coding worker produced the reader patch, six protected tests
 passed in Windows offline Sandbox, and independent Claude review passed. Adoption
 re-ran the same six tests and loaded commit efeac99a11c8cef7ef90582620512e547f701d1c.
-Original-request live acceptance is still pending.
+After the host verification-path fix, the original request resumed on loaded
+commit 674312de7b8fb43d04d13c55da8f2b531f69255e, retaining local date 2026-10-09.
+It returned 25 records for 13 employees, complete within scope, with zero
+unresolved names. All name/local-minute pairs matched the independently read
+7shifts website day filter (sorted multiset SHA-256
+c1b4061ad3748d1fb0e7e898822d781c4934db195c6f063b53d496db222500b8).
+Website display provides minute precision; seconds were not independently checked.
+The acceptance receipt retains hashes/counts, not raw staff rows or credentials.
+No time punches were changed and no payroll approval/submission was performed.
+This proves one registered read scope, not arbitrary self-expansion.
+
+Actual providers: Claude Opus 5.5 / Medium for planning, GPT-6.1 Sol / Medium for
+test drafting, GPT-6.1 Sol / High for coding, and Claude Sonnet 5.5 for independent
+test/patch review. The report itself is deterministic and performs no model call.
 
 The live handoff exposed a separate host defect: adoption records belong to the
 Owner bridge, while continuation read a backend-local adoption directory. Loaded
