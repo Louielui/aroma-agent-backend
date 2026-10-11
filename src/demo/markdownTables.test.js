@@ -46,3 +46,13 @@ test('tables in fenced code remain code and adjacent headings/lists retain their
   assert.equal(nodes.filter(n=>n.tagName==='LI').length,2); assert.equal(nodes.filter(n=>n.tagName==='H2').length,1)
   const pre=nodes.find(n=>n.tagName==='PRE'); assert.match(plain(pre),/\| Alice \| 20:00 \|/)
 })
+
+test('public summaries and freshness warnings remain visible; quotations collapse without loss in either language',()=>{
+ for(const heading of ['來源與核對細節','Source checks and excerpts']){
+  const root=render('Temperature: 7°C\n\nEarlier observation, not current.\n\n### '+heading+'\n\n> Official quotation at 16:00\n\n[Official](https://weather.gc.ca/)')
+  const details=flat(root).filter(n=>n.tagName==='DETAILS');assert.equal(details.length,1);assert.equal(details[0].attributes.open,undefined)
+  assert.match(plain(details[0]),/Official quotation at 16:00/)
+  assert.equal(root.childNodes.filter(n=>n.tagName!=='DETAILS').map(plain).join('').includes('Temperature: 7°C'),true)
+  assert.equal(root.childNodes.filter(n=>n.tagName!=='DETAILS').map(plain).join('').includes('Earlier observation'),true)
+ }
+})

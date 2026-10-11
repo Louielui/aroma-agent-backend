@@ -3,8 +3,8 @@ const { localRequest } = require('../../adapters/CodexSubscriptionAdapter')
 const { PROVIDER,MODEL,validInput } = require('../../subscription/publicSearch')
 const { makeSearchResult,UNAVAILABLE_REASON } = require('./publicSearchProvider')
 function createClaudeSubscriptionSearchProvider ({env=process.env,request=localRequest}={}) {
-  return {provider:PROVIDER,model:MODEL,readTimeoutMs:120000,async search({query,freshness=null,location=null}){
-    const input={query,freshness,location}
+  return {provider:PROVIDER,model:MODEL,readTimeoutMs:120000,async search({query,freshness=null,location=null,replyLanguage=null}){
+    const input={query,freshness,location,...(replyLanguage?{replyLanguage}:{})}
     try {
       if(!validInput(input)) throw Error('invalid')
       const out=await request('/public-search',input,env,AbortSignal.timeout(115000))

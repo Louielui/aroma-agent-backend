@@ -23,7 +23,10 @@ test('search requires a completed tool read and a source-bound cited statement, 
 })
 test('bounded subscription search preserves approved args and excludes files, shell, credentials, MCP, sessions and fallback', async () => {
   let captured
-  const out = await search({ check:async()=>{}, run:async(args,options)=>{ captured={args,options}; events().forEach(options.onEvent); return events().at(-1) }, clock:()=>now }, {query:'Winnipeg weather',freshness:'current',location:'Winnipeg'})
+  const out = await search({ check:async()=>{}, readPages:async()=>({pages:[],checks:[]}), run:async(args,options)=>{
+    if(args.includes('--json-schema')){assert.equal(args[args.indexOf('--tools')+1],'');assert.equal(JSON.parse(options.input).replyLanguage,'en');return {...events().at(-1),structured_output:{answerState:'supported',claims:[{sourceId:'s1',quote:'The current temperature is 10°C.',answer:'The recorded temperature is 10°C.'}]}}}
+    captured={args,options};events().forEach(options.onEvent);return events().at(-1)
+  }, clock:()=>now }, {query:'Winnipeg weather',freshness:'current',location:'Winnipeg',replyLanguage:'en'})
   assert.equal(out.status,'live'); assert.equal(out.billing,'claude-subscription')
   assert.equal(captured.args[captured.args.indexOf('--tools')+1],'WebSearch')
   assert.ok(captured.args.includes('--restricted')); assert.ok(captured.args.includes('--no-session-persistence'))
@@ -43,6 +46,16 @@ test('single-flight and TTL reuse retain original evidence time, do not cache fa
   time=60001;const third=cached({query:'weather',freshness:'current'}); await new Promise(r=>setImmediate(r));assert.equal(calls,2);release();await third
   let failed=0;const retry=createSearchCache(async()=>{failed++;return {status:'unavailable'}})
   await retry({query:'q'});await retry({query:'q'});assert.equal(failed,2)
+})
+
+test('failed composition preserves observed search usage and never triggers API or another provider',async()=>{
+ const out=await search({check:async()=>{},run:async(args,options)=>{events().forEach(options.onEvent);return events().at(-1)},readPages:async()=>({pages:[],checks:[]}),compose:async()=>{throw Error('composition_failed')},clock:()=>now},{query:'weather',replyLanguage:'en'})
+ assert.equal(out.status,'unavailable');assert.equal(out.webSearchCalls,1);assert.equal(out.usage.outputTokens,2);assert.equal(out.usageComplete,false);assert.equal(out.actualModel,'claude-opus-5-5')
+})
+
+test('reply languages have independent caches even when an upstream planner uses the same search words',async()=>{
+ let calls=0;const cache=createSearchCache(async()=>{calls++;return extractEvidence(events(),'weather',now)})
+ await cache({query:'weather',replyLanguage:'en'});await cache({query:'weather',replyLanguage:'zh'});assert.equal(calls,2)
 })
 test('explicit subscription provider works without OpenAI key and reports bridge presence instead of API credential', async () => {
   const env={READ_ACCESS:'on',CONTEXT_PUBLIC_KNOWLEDGE:'on',A4_KNOWLEDGE_ROUTING:'on',PUBLIC_SEARCH_PROVIDER:'claude-subscription',CODEX_CHAT_BRIDGE_TOKEN:'a'.repeat(64)}

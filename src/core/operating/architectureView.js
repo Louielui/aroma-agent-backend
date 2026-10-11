@@ -60,7 +60,7 @@ function buildArchitectureHtml () {
   ]
   const investigationRow = rows.find(row => row.id === 'operational-investigation')
   rows.push({id:'public-search',state:'partial',title:t('publicSearch.title'),purpose:t('publicSearch.purpose'),
-    component:'Owner-only query planner / explicit Claude subscription provider / WebSearch-only worker / observed tool evidence / source-bound cited summaries / bounded TTL and single-flight / usage receipts',
+    component:'Owner-only query planner / explicit Claude subscription provider / WebSearch-only discovery / registered public publisher GET / matched quotes / tool-free language composition / typed source times / stale read-back / bounded TTL and single-flight / usage receipts',
     current:t('publicSearch.current'),next:t('publicSearch.limits'),evidence:'src/subscription/publicSearch.js; src/subscription/publicSearch.test.js; src/context/providers/claudeSubscriptionSearchProvider.js; docs/CURRENT-PUBLIC-INFORMATION-V1.md'})
   rows.push({id:'action-gateway',state:'partial',title:t('actions.title'),purpose:t('actions.intro'),component:'Closed scheduler catalogue / bounded semantic capability selection / conversation and saved investigation binding / displayed proposal and typed confirmation / durable dialogue receipts / exact calendar coverage recommendation / Owner approval / fixed Windows adapter / durable target locks / read-back / inverse proposal',current:t('actions.current')+' '+t('actions.continuationCurrent')+' '+t('actions.semanticCurrent')+' '+t('actions.next'),next:t('actions.next'),evidence:'src/actions/; docs/ACTION-GATEWAY-V1.md; /action-center; /api/v1/scheduler-actions; /api/v1/demo/scheduler-actions'})
   investigationRow.current += ' ' + t('investigation.qualityCurrent')

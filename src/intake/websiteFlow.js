@@ -18,6 +18,9 @@ async function runWebsiteFlow ({ message, history = [], classify, search, record
       step('needs_input', { reason: 'sensitive_context' }); return answer(t('website.clarify'))
     }
     const plan = await classify(JSON.stringify({ previousOwnerTurn: previous[0] || null, latestOwnerTurn: message }))
+    // Navigation is a link deliverable, not a shortcut around factual retrieval.
+    // Conflicting/missing output evidence falls through to the existing query chain.
+    if(plan?.intent==='navigate' && plan.requestedOutput!=='website_url'){step('not_applicable');return null}
     if (plan?.intent === 'other') { step('not_applicable'); return null }
     if (plan?.intent === 'clarify') { step('needs_input'); return answer(t('website.clarify')) }
     if (plan?.intent !== 'navigate' || !validTarget(plan.target) || !owner.some(s => s.includes(plan.target))) throw Error('invalid_target')

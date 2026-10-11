@@ -6,7 +6,7 @@ const { runWebsiteFlow, candidate, publicUrl } = require('./websiteFlow')
 test('website intent uses owner context, dispatches, and returns measured result instead of a promise', async () => {
   const events = []; let dispatched = 0
   const result = await runWebsiteFlow({ message: '去business centre既網站', history: [{ role: 'user', text: '香香,幫我去costco的business centre' }, { role: 'assistant', text: 'SECRET FROM MEMORY' }],
-    classify: async prompt => { assert.ok(prompt.includes('costco')); assert.ok(!prompt.includes('SECRET')); return { intent: 'navigate', target: 'costco的business centre' } },
+    classify: async prompt => { assert.ok(prompt.includes('costco')); assert.ok(!prompt.includes('SECRET')); return { intent: 'navigate', target: 'costco的business centre',requestedOutput:'website_url' } },
     search: async target => { dispatched++; assert.equal(target, 'costco的business centre'); return { status: 'found', url: 'https://www.costcobusinesscentre.ca/', title: 'Costco Business Centre', searchCalls: 2, model: 'gpt-6-astra' } },
     record: e => events.push(e) })
   assert.equal(dispatched, 1); assert.match(result.reply, /https:\/\/www.costcobusinesscentre.ca\//)
@@ -19,10 +19,17 @@ test('no dispatch for other intent, invented target, or private URLs; failures a
   let calls = 0
   const options = { message: '去 example 網站', history: [], record: () => {}, search: async () => { calls++; throw Error('timeout') } }
   assert.equal(await runWebsiteFlow({ ...options, classify: async () => ({ intent: 'other', target: '' }) }), null)
-  const invented = await runWebsiteFlow({ ...options, classify: async () => ({ intent: 'navigate', target: 'private secret' }) })
+  const invented = await runWebsiteFlow({ ...options, classify: async () => ({ intent: 'navigate', target: 'private secret',requestedOutput:'website_url' }) })
   assert.equal(invented.website.state, 'failed'); assert.equal(calls, 0)
-  const failed = await runWebsiteFlow({ ...options, classify: async () => ({ intent: 'navigate', target: 'example' }) })
+  const failed = await runWebsiteFlow({ ...options, classify: async () => ({ intent: 'navigate', target: 'example',requestedOutput:'website_url' }) })
   assert.equal(failed.website.state, 'failed'); assert.ok(failed.reply); assert.equal(calls, 1)
+})
+
+test('a site mentioned as factual authority never dispatches the legacy link finder, even with a conflicting navigate label',async()=>{
+ for(const requestedOutput of ['factual_answer','other',undefined]){
+  const out=await runWebsiteFlow({message:'What are the opening hours according to the official website?',classify:async()=>({intent:'navigate',target:'official',requestedOutput}),search:()=>assert.fail('unexpected legacy search')})
+  assert.equal(out,null)
+ }
 })
 test('read switches and sensitive previous context stop before classification or web egress', async () => {
   const never = async () => { throw Error('must not call') }

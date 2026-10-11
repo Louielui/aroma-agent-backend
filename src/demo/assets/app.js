@@ -226,7 +226,7 @@
     if (last < text.length) parent.appendChild(document.createTextNode(text.slice(last)))
   }
 
-  function renderMarkdown (text) {
+  function renderMarkdown (text, collapsePublicDetails) {
     var root = el('div', 'md')
     var lines = String(text == null ? '' : text).split('\n')
     var i = 0
@@ -270,6 +270,14 @@
 
     while (i < lines.length) {
       var line = lines[i]
+      if (collapsePublicDetails !== false && (line === '### ' + t('publicSearch.detailsChinese') || line === '### ' + t('publicSearch.detailsEnglish'))) {
+        flushPara(); flushList()
+        var publicDetails = el('details', 'report-source')
+        publicDetails.appendChild(el('summary', null, t('publicSearch.details')))
+        publicDetails.appendChild(renderMarkdown(lines.slice(i + 1).join('\n'), false))
+        root.appendChild(publicDetails)
+        break
+      }
 
       if (line.slice(0, 3) === '```') {                       // fenced code
         flushPara(); flushList()

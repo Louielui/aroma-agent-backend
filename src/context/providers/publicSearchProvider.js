@@ -69,6 +69,7 @@ const UNAVAILABLE_REASON = Object.freeze({
  */
 const CONTENT_KIND = Object.freeze({
   WEB_SEARCH_CITED_SUMMARY: 'web_search_cited_summary',
+  PUBLISHER_CITED_SUMMARY: 'publisher_cited_summary',
   PUBLISHER_TEXT: 'publisher_direct_text'
 })
 const CONTENT_KINDS = new Set(Object.values(CONTENT_KIND))
@@ -119,7 +120,8 @@ function normaliseResult (r) {
     publishedAt: r.publishedAt == null ? null : String(r.publishedAt),
     // Enrichment only: was this URL among those the search actually consulted, or is it known
     // solely because the retrieval model cited it? Never a substitute for content.
-    consulted: r.consulted === true
+    consulted: r.consulted === true,
+    ...(r.sourceEvidence && ['publisher_page','search_summary'].includes(r.sourceEvidence.kind) && typeof r.sourceEvidence.quote==='string' && ['zh','en'].includes(r.sourceEvidence.language) ? {sourceEvidence:structuredClone(r.sourceEvidence)} : {})
   }
 }
 

@@ -11,7 +11,7 @@ test('real chat route reports active website work, persists its outcome and neve
   const id = require('node:crypto').randomUUID()
   const adapter = { preflight: async () => {}, complete: async () => { throw Error('unexpected legacy model') } }
   app.use(createDemoRouter({ getAdapterFn: () => adapter, processIntakeFn: (m, a, h, o) => processIntake(m, a, h, { ...o, openaiAdapter: adapter,
-    websiteDeps: { classify: async () => ({ intent: 'navigate', target: 'Costco Business Centre' }), search: () => { entered(); return new Promise(resolve => { release = resolve }) } } }) }))
+    websiteDeps: { classify: async () => ({ intent: 'navigate', target: 'Costco Business Centre',requestedOutput:'website_url' }), search: () => { entered(); return new Promise(resolve => { release = resolve }) } } }) }))
   const server = app.listen(0, '127.0.0.1'); await new Promise(resolve => server.once('listening', resolve))
   t.after(() => new Promise(resolve => { server.closeAllConnections(); server.close(resolve) }))
   const root = 'http://127.0.0.1:' + server.address().port

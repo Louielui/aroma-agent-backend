@@ -66,7 +66,7 @@ function createPublicKnowledgeReadAdapter (options = {}) {
      * the write-verb list, and there is no second method here — this source can fetch and
      * nothing else.
      */
-    async search ({ query, freshness = null, location = null, limit = MAX_RESULTS, requestId = null } = {}) {
+    async search ({ query, freshness = null, location = null, limit = MAX_RESULTS, requestId = null, replyLanguage = null } = {}) {
       if (!provider || typeof provider.search !== 'function') {
         // No executor wired. Throwing is correct: the connector turns it into UNAVAILABLE,
         // which is the honest state — nothing was learned. Returning [] here would have
@@ -74,7 +74,7 @@ function createPublicKnowledgeReadAdapter (options = {}) {
         throw new Error('public knowledge provider is not configured')
       }
 
-      const out = await provider.search({ query, freshness, location })
+      const out = await provider.search({ query, freshness, location, ...(replyLanguage?{replyLanguage}:{}) })
 
       logPublicSearch({
         requestId,
@@ -130,6 +130,7 @@ function createPublicKnowledgeReadAdapter (options = {}) {
           billing: out.provider === 'claude_subscription_search' ? 'claude-subscription' : null,
           publishedAt: r.publishedAt,
           contentKind: r.contentKind,
+          ...(r.sourceEvidence?{sourceEvidence:r.sourceEvidence}:{}),
           consulted: r.consulted === true
         }
       }))

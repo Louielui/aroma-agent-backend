@@ -671,6 +671,9 @@ function planFor (source, { keywords = [], message = '', now, env = {}, caps = C
         query: typeof a.query === 'string' ? capQuery(a.query) : null,
         freshness: typeof a.freshness === 'string' ? a.freshness : null,
         location: typeof a.location === 'string' ? a.location : null,
+        // Presentation metadata from Owner input, never from internal evidence
+        // or a model-authored query. The closed meaning schema is unchanged.
+        replyLanguage: /[\u3400-\u9fff]/.test(message || '') ? 'zh' : 'en',
         limit: n
       }
     }

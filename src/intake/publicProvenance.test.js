@@ -28,3 +28,23 @@ test('a public-only answer preserves the observed excerpt, units, uncertainty an
   const mixed = buildReadResultReply({ message: 'Compare public weather and company records', reply: 'A bounded comparison.', itemsBySource: [{ source: 'public_knowledge', items: [observed] }, { source: 'gmail', items: [{ source: 'gmail', trust: 'live' }] }] })
   assert.doesNotMatch(mixed.reply, /These are excerpts/)
 })
+
+test('official quote summaries lead with requested-language facts, preserve time meanings and collapseable source detail',()=>{
+ for(const language of ['zh','en']){
+  const observed={...row,content:language==='zh'?'**該次觀測：** 氣溫7°C。':'**Recorded observation:** Temperature 7°C.',fields:{...row.fields,contentKind:'publisher_cited_summary',sourceEvidence:{kind:'publisher_page',language,hash:'a'.repeat(64),quote:'Temperature: 7°C at 4 PM CDT.',times:[{kind:'observation',value:'2026-10-11T21:00:00Z'},{kind:'update',value:'2026-09-03T15:20:37Z'}],freshness:'recent_observation',pageChecks:[]}}}
+  const out=buildReadResultReply({message:language==='zh'?'天氣？':'Weather?',reply:'Invented 99°C currently.',itemsBySource:[{source:'public_knowledge',items:[observed]}]})
+  assert.ok(out.reply.startsWith('- '));assert.doesNotMatch(out.reply,/\\|\*\*|99°C|currently/);assert.match(out.reply,/Winnipeg/)
+  assert.match(out.reply,/觀測時間|Observation time/);assert.ok(out.reply.includes('16:00'));assert.match(out.reply,/### (來源與核對細節|Source checks and excerpts)/)
+  assert.ok(out.reply.includes(observed.fields.sourceEvidence.quote))
+  observed.fields.sourceEvidence.language=language==='en'?'zh':'en'
+  const wrong=buildReadResultReply({message:language==='zh'?'天氣？':'Weather?',itemsBySource:[{source:'public_knowledge',items:[observed]}]})
+  assert.doesNotMatch(wrong.reply,/Temperature 7°C|該次觀測/)
+ }
+})
+
+test('an insufficient result cannot expose unverified figures as its leading answer',()=>{
+ const observed={...row,content:'Unverified opening hours: 10:00–17:00.',fields:{...row.fields,contentKind:'web_search_cited_summary',sourceEvidence:{kind:'search_summary',language:'en',quote:'A different branch calendar has these hours.',times:[],freshness:'unknown',answerState:'insufficient'}}}
+ const out=buildReadResultReply({message:'What are the opening hours?',itemsBySource:[{source:'public_knowledge',items:[observed]}]})
+ const lead=out.reply.split('### Source checks and excerpts')[0]
+ assert.match(lead,/do not establish the requested information/);assert.doesNotMatch(lead,/10:00|17:00/)
+})
