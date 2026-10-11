@@ -42,6 +42,15 @@ test('generic definition details are not company evidence claims on the real rep
   assert.ok(mixed.reply.startsWith(reply))
 })
 
+test('generic second-person and demonstrative explanations are not business observations', () => {
+  for (const reply of ['發票叫你付款，收據證明你已經付款。', '這是發票的 3 個常見用途：請款、記帳和核對付款。', 'An invoice asks you to pay; a receipt proves you have already paid.']) {
+    assert.equal(say(reply, '什麼是發票？').reply, reply)
+  }
+  for (const claim of ['你的餐廳目前有 3 張發票。', '這批存貨全部充足。', '那張發票已經付款。']) {
+    assert.equal(say(claim, '什麼是發票？').violated, true, claim)
+  }
+})
+
 /* ═══ 1. THE NUMERIC HALF — sentenceIsSupported against an empty index ════ */
 
 test('*** an operational number with nothing read is withheld, and said so ***', () => {

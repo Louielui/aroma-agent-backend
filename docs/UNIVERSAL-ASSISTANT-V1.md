@@ -48,3 +48,7 @@ operational guard removed numeric invoice-definition details and asked for compa
 sources. A real reply-path regression now preserves generic definition sentences
 while retaining the guard for named-company, possessive and time-specific claims.
 This is a bounded heuristic, not an exemption for all prose on a general turn.
+Generic second-person explanations ("a receipt proves you paid") and demonstratives
+("this means") do not identify business records. Possessive company references,
+specific records and current-state claims remain checked. A regression preserves
+these explanatory forms while withholding company/current claims in the same turn.
