@@ -40,6 +40,19 @@ contract field, never the rejected model content. Citation spans and quotes stil
 require independent source validation. This fixes the diagnostic gap; it does not
 establish why an older discarded response was rejected or prove reader acceptance.
 
+The actual bounded coding worker produced the reader patch, six protected tests
+passed in Windows offline Sandbox, and independent Claude review passed. Adoption
+re-ran the same six tests and loaded commit efeac99a11c8cef7ef90582620512e547f701d1c.
+Original-request live acceptance is still pending.
+
+The live handoff exposed a separate host defect: adoption records belong to the
+Owner bridge, while continuation read a backend-local adoption directory. Loaded
+verification now reads the bridge's authoritative adoption list and its fixed
+committed-source endpoint. A later host-only commit may resume only when fresh
+current-boot evidence proves every approved reader and protected dependency hash
+is unchanged. A rollback, source drift, incomplete tests, stale packet, unavailable
+bridge or revoked access cannot enable continuation; no receipt is manufactured.
+
 References:
 - [List Time Punches](https://developers.7shifts.com/reference/gettimepunches)
 - [Retrieve User](https://developers.7shifts.com/reference/getuser)

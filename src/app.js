@@ -1251,10 +1251,7 @@ function createApp (options = {}) {
   const capabilityGaps = opts.capabilityGaps || require('./capabilities/gapService').createGapService({
     store: require('./core/operating/runStore').createRunStore({dir:path.join(require('./store/dataDir').resolveDataDir(),'capability-gap-runs'), workflow:'capability_gap'}),
     conversations: capturedConversationStore, revision: BOOT_COMMIT, planner: taskPlanner,
-    verifyLoaded: async ({workRunId}) => {
-      const records = require('./core/operating/runStore').createRunStore({workflow:'project_adoption'}).all()
-      return require('./capabilities/gapService').loadedProof(records,workRunId,BOOT_COMMIT)
-    },
+    verifyLoaded: require('./capabilities/loadedVerifier').createLoadedVerifier({bootCommit:BOOT_COMMIT}),
     resumeOriginal: async ({message,conversationId,model,effort,requestId,readRequest}) => {
       const clockOut = require('./context/sevenShiftsReport').clockOutRequest(message)
       if (clockOut) {
