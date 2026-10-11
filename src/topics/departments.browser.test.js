@@ -33,6 +33,15 @@ test('bilingual HR entry prepares an explicit-date read without sending, preserv
         }
         if (p === '/api/v1/demo/intake') {
           sent.push(body)
+          if (require('../context/sevenShiftsComparison').comparisonRequest(body.message)) {
+            const { buildComparison, comparisonReply, comparisonWindows } = require('../context/sevenShiftsComparison')
+            const request = { window: 'dates', dates: ['2026-10-09'] }, now = '2026-10-10T18:00:00Z', windows = comparisonWindows(request, now)
+            const value = (q, field, fields) => ({ results: fields.map(fields => ({ fields })), evidence: { trust: 'live', completeWithinScope: true, returnedRows: fields.length, queryScope: { companyId: 123, field, window: q.start + '..' + new Date(Date.parse(q.end) - 1).toISOString() } } })
+            const report = buildComparison(value(windows.query, 'start', [{ companyId: 123, userId: 7, shiftId: 9, locationId: 5, start: '2026-10-09T15:00:00Z', end: '2026-10-09T23:00:00Z', unassigned: false, published: true, employeeName: 'Comparison fixture', nameState: 'confirmed' }]), value(windows.punchQuery, 'clocked_in', [{ companyId: 123, userId: 7, punchId: 11, shiftId: 9, locationId: 5, clockedIn: '2026-10-09T15:10:00Z', clockedOut: null }]), request, now, 123)
+            const reply = comparisonReply(report, lang)
+            conversations.appendTurn({ id: body.conversationId, userText: body.message, replyText: reply })
+            return response({ lane: 'chat', mode: 'chat', reply, sevenShiftsComparison: report, sourceBound: true, servedBy: null })
+          }
           if (require('../context/sevenShiftsAttendance').attendanceRequest(body.message)) {
             const report = require('../context/sevenShiftsAttendance').buildAttendance({ results: [{ fields: { companyId: 123, userId: 7, punchId: 11, employeeName: 'Attendance fixture', nameState: 'confirmed', clockedIn: '2026-10-09T16:00:00Z', clockedOut: null } }], evidence: { trust: 'live', completeWithinScope: true, returnedRows: 1, queryScope: { companyId: 123, field: 'clocked_in', window: '2026-10-09T05:00:00.000Z..2026-10-10T04:59:59.999Z' } } }, { window: 'dates', dates: ['2026-10-09'] }, '2026-10-10T18:00:00Z', 123)
             const reply = require('../context/sevenShiftsAttendance').attendanceReply(report, lang)
@@ -54,6 +63,7 @@ test('bilingual HR entry prepares an explicit-date read without sending, preserv
       const before = sent.length
       await page.locator('#hr-query-prepare').click(); assert.equal(await page.locator('#msg').inputValue(), ''); assert.equal(sent.length, before)
       await page.locator('#hr-missing-prepare').click(); assert.equal(await page.locator('#msg').inputValue(), ''); assert.equal(sent.length, before)
+      await page.locator('#hr-compare-prepare').click(); assert.equal(await page.locator('#msg').inputValue(), ''); assert.equal(sent.length, before)
       await page.locator('#hr-query-date').fill('2026-10-09'); await page.locator('#hr-query-prepare').click()
       const query = await page.locator('#msg').inputValue()
       assert.deepEqual(require('../context/sevenShiftsReport').clockOutRequest(query), { window: 'dates', dates: ['2026-10-09'] })
@@ -71,12 +81,21 @@ test('bilingual HR entry prepares an explicit-date read without sending, preserv
       const missingResponse = page.waitForResponse(r => r.url().endsWith('/api/v1/demo/intake')); await page.locator('#send').click(); await missingResponse
       await page.waitForFunction(n => document.querySelectorAll('#log table').length === n + 1, priorTables)
       assert.match(await page.locator('#log').textContent(), /UNKNOWN/); assert.match(await page.locator('#log table').last().textContent(), /CANDIDATE/)
+      await page.locator('#msg').fill('Owner draft'); await page.locator('#hr-compare-prepare').click(); assert.equal(await page.locator('#msg').inputValue(), 'Owner draft')
+      await page.locator('#msg').fill(''); const beforeCompare = sent.length
+      await page.locator('#hr-compare-prepare').click()
+      assert.deepEqual(require('../context/sevenShiftsComparison').comparisonRequest(await page.locator('#msg').inputValue()), { window: 'dates', dates: ['2026-10-09'] })
+      assert.equal(sent.length, beforeCompare)
+      const compareResponse = page.waitForResponse(r => r.url().endsWith('/api/v1/demo/intake')); await page.locator('#send').click(); await compareResponse
+      await page.waitForFunction(() => document.getElementById('log').textContent.includes('Comparison fixture'))
+      assert.match(await page.locator('#log table').last().textContent(), /CONFIRMED/)
       await page.locator('#topic-follow-ups summary').click(); await page.locator('#topic-note-title').fill('Attendance follow-up ' + lang)
       await page.locator('#topic-note-next').fill('Verify with employee'); await page.locator('.topic-note-form button').click()
       await page.waitForFunction(() => document.querySelector('.topic-note strong') !== null)
       await page.reload(); await page.locator('#hr-query-date').waitFor(); assert.equal(topics.get('email').notes.length, 0)
       await page.waitForFunction(() => document.getElementById('log').textContent.includes('Saved attendance result'))
       assert.match(await page.locator('#log').textContent(), /Attendance fixture/)
+      assert.match(await page.locator('#log').textContent(), /Comparison fixture/)
       assert.equal(topics.get('hr').lastConversationId, 'hr-saved')
       await page.locator('[data-sidebar-group="daily"] summary').click()
       for (const id of ['open-hr', 'open-purchasing', 'open-aroma-context', 'open-accounting', 'open-marketing', 'open-gmail-context', 'open-calendar-context']) assert.equal(await page.locator('#' + id).count(), 1)

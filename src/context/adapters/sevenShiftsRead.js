@@ -102,7 +102,8 @@ function createSevenShiftsReadAdapter ({env = process.env, fetchFn, clock = () =
   }
   const listClockOuts = input => listNamedPunches(input, true)
   const listAttendance = input => listNamedPunches(input, false)
-  async function listNamedPunches (input, clockOuts) {
+  const listShifts = input => listNamedPunches(input, false, true)
+  async function listNamedPunches (input, clockOuts, shifts = false) {
     const query = validateClockOutQuery(input)
     let controller, timer, accessTimer
     try {
@@ -146,7 +147,7 @@ function createSevenShiftsReadAdapter ({env = process.env, fetchFn, clock = () =
         }
         const operation = async () => {
           const response = await transport(url.href,{method:'GET',redirect:'error',signal:requestController.signal,
-            headers:{Authorization:'Bearer ' + token,accept:'application/json','x-api-version':'2025-03-01'}})
+            headers:{Authorization:'Bearer ' + token,accept:'application/json','x-api-version':shifts ? '2026-01-01' : '2025-03-01'}})
           check()
           if (requestController.signal.aborted) throw Error(stopCode || 'source_unavailable')
           if ([401,403].includes(response?.status)) throw Error('source_not_authorised')
@@ -178,25 +179,38 @@ function createSevenShiftsReadAdapter ({env = process.env, fetchFn, clock = () =
       // Establish punch validity and pagination proof before optional enrichment.
       for (; pages < MAX_PAGES;) {
         check()
-        const url = new URL(API + '/company/' + companyId + '/time_punches')
-        const field = clockOuts ? 'clocked_out' : 'clocked_in'
+        const url = new URL(API + '/company/' + companyId + (shifts ? '/shifts' : '/time_punches'))
+        const field = shifts ? 'start' : clockOuts ? 'clocked_out' : 'clocked_in'
         url.searchParams.set(field + '[gte]',query.timeMin); url.searchParams.set(field + '[lte]',query.timeMax)
         url.searchParams.set('limit',String(PAGE_SIZE)); url.searchParams.set('deleted','false')
+        if (shifts) { url.searchParams.set('draft','false'); url.searchParams.set('consider_tz_in_ranges','true') }
         if (cursor) url.searchParams.set('cursor',cursor)
         const value = await request(url,false)
         check(); pages++
         if (!value || typeof value !== 'object' || Array.isArray(value) || !Array.isArray(value.data) ||
-            value.data.length > PAGE_SIZE || value.object && value.object !== 'time_punches') throw Error('invalid_source_response')
+            value.data.length > PAGE_SIZE || value.object && value.object !== (shifts ? 'shifts' : 'time_punches')) throw Error('invalid_source_response')
         for (const p of value.data) {
+          if (shifts) {
+            if (!p || typeof p !== 'object' || Array.isArray(p) || p.company_id !== companyId || !ID(p.id) || ids.has(p.id) ||
+                !(ID(p.user_id) || p.user_id === null && (p.unassigned === true || p.open === true)) || !ID(p.location_id) ||
+                !instant(p.start) || !instant(p.end) || Date.parse(p.end) <= Date.parse(p.start) ||
+                Date.parse(p.start) < min || Date.parse(p.start) > max || p.draft !== false || p.deleted !== false || p.publish_status !== 'published') throw Error('invalid_source_response')
+            ids.add(p.id)
+            punches.push({companyId,userId:p.user_id,shiftId:p.id,locationId:p.location_id,start:p.start,end:p.end,
+              unassigned:p.unassigned === true || p.open === true,published:true})
+            continue
+          }
           if (!p || typeof p !== 'object' || Array.isArray(p) || p.company_id !== companyId ||
               !ID(p.id) || !ID(p.user_id) || !instant(p.clocked_in) ||
               (clockOuts || p.clocked_out !== null) && !instant(p.clocked_out) ||
               p.deleted === true || ids.has(p.id) || Date.parse(p[field]) < min || Date.parse(p[field]) > max ||
               p.clocked_out !== null && Date.parse(p.clocked_out) < Date.parse(p.clocked_in) ||
-              p.clocked_out === null && p.auto_clocked_out === true) throw Error('invalid_source_response')
+              p.clocked_out === null && p.auto_clocked_out === true ||
+              p.shift_id != null && !ID(p.shift_id) || p.location_id != null && !ID(p.location_id)) throw Error('invalid_source_response')
           ids.add(p.id)
           // Snapshot only the approved punch fields; never retain user profiles.
           punches.push({companyId,userId:p.user_id,punchId:p.id,clockedIn:p.clocked_in,clockedOut:p.clocked_out,
+            shiftId:p.shift_id ?? null,locationId:p.location_id ?? null,
             approved:typeof p.approved === 'boolean' ? p.approved : null,
             autoClockedOut:typeof p.auto_clocked_out === 'boolean' ? p.auto_clocked_out : null})
         }
@@ -210,6 +224,7 @@ function createSevenShiftsReadAdapter ({env = process.env, fetchFn, clock = () =
       const fatalNameErrors = ['read_access_disabled','connection_not_configured','source_access_changed','source_not_authorised','live_transport_not_allowed_in_tests']
       for (const p of punches) {
         check()
+        if (p.userId === null) continue
         if (names.has(p.userId)) continue
         const name = {employeeName:null,nameState:'unavailable'}
         names.set(p.userId,name)
@@ -233,19 +248,18 @@ function createSevenShiftsReadAdapter ({env = process.env, fetchFn, clock = () =
       }
       check()
       const rows = punches.map(p => {
-        const name = names.get(p.userId)
-        const fields = {companyId,userId:p.userId,punchId:p.punchId,clockedIn:p.clockedIn,clockedOut:p.clockedOut,
-          employeeName:name.employeeName,nameState:name.nameState,approved:p.approved,autoClockedOut:p.autoClockedOut}
-        return makeContextResult({source:SOURCE,sourceId:companyId + ':' + p.punchId,
-          title:name.employeeName || '7shifts employee ' + p.userId,entityType:'time_punch',retrievedAt,
-          originalDate:clockOuts ? p.clockedOut : p.clockedIn,fields,content:JSON.stringify(fields),link:'https://app.7shifts.com/'})
+        const name = names.get(p.userId) || {employeeName:null,nameState:'unavailable'}
+        const fields = {...p,employeeName:name.employeeName,nameState:name.nameState}
+        return makeContextResult({source:SOURCE,sourceId:companyId + ':' + (shifts ? p.shiftId : p.punchId),
+          title:name.employeeName || '7shifts employee ' + p.userId,entityType:shifts ? 'scheduled_shift' : 'time_punch',retrievedAt,
+          originalDate:shifts ? p.start : clockOuts ? p.clockedOut : p.clockedIn,fields,content:JSON.stringify(fields),link:'https://app.7shifts.com/'})
       })
       check()
-      return {results:rows,evidence:{source:SOURCE,trust:'live',entityType:'time_punch',retrievedAt,
+      return {results:rows,evidence:{source:SOURCE,trust:'live',entityType:shifts ? 'scheduled_shift' : 'time_punch',retrievedAt,
         completeness:complete ? 'complete' : 'partial',completeWithinScope:complete,
-        queryScope:{companyId,field:clockOuts ? 'clocked_out' : 'clocked_in',window:query.timeMin + '..' + query.timeMax,filters:query,selection:clockOuts ? 'clocked_out_inclusive_utc' : 'clocked_in_inclusive_utc'},
+        queryScope:{companyId,field:shifts ? 'start' : clockOuts ? 'clocked_out' : 'clocked_in',window:query.timeMin + '..' + query.timeMax,filters:query,selection:shifts ? 'published_start_inclusive_utc' : clockOuts ? 'clocked_out_inclusive_utc' : 'clocked_in_inclusive_utc'},
         returnedRows:rows.length,matchingTotal:complete ? rows.length : null,sourceTotal:null,truncated:pages === MAX_PAGES && !complete,
-        provenance:{source:SOURCE,endpoint:'GET /v2/company/{company_id}/time_punches',apiVersion:'2025-03-01',pages,readOnly:true}}}
+        provenance:{source:SOURCE,endpoint:shifts ? 'GET /v2/company/{company_id}/shifts' : 'GET /v2/company/{company_id}/time_punches',apiVersion:shifts ? '2026-01-01' : '2025-03-01',pages,readOnly:true}}}
     } catch (e) {
       const safe = ['invalid_request','read_access_disabled','connection_not_configured','source_access_changed','source_not_authorised','source_rate_limited','invalid_source_response','live_transport_not_allowed_in_tests']
       throw Error(safe.includes(e?.message) ? e.message : 'source_unavailable')
@@ -255,6 +269,6 @@ function createSevenShiftsReadAdapter ({env = process.env, fetchFn, clock = () =
       if (controller) controller.abort()
     }
   }
-  return {source:SOURCE,methods:{listTimePunches,listClockOuts,listAttendance},rowLimits:{listTimePunches:null,listClockOuts:null,listAttendance:null},readTimeoutMs:9000}
+  return {source:SOURCE,methods:{listTimePunches,listClockOuts,listAttendance,listShifts},rowLimits:{listTimePunches:null,listClockOuts:null,listAttendance:null,listShifts:null},readTimeoutMs:9000}
 }
 module.exports = {SOURCE,MAX_PAGES,PAGE_SIZE,validateQuery,instant,createSevenShiftsReadAdapter}

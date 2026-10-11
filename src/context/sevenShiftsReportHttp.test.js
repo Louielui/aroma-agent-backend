@@ -72,3 +72,26 @@ test('attendance HTTP intake reads once, saves a bilingual evidence report, reje
   f.env.READ_ACCESS = 'off'; assert.equal((await post(f.server, body)).status, 503)
   assert.equal(f.starts.length, 0)
 })
+
+test('comparison real HTTP path is bilingual, Owner-origin bounded, idempotent, durable and model-free', async t => {
+  let reads = 0
+  const result = (q, field, fields) => ({ results: fields.map(fields => ({ fields })), evidence: { trust: 'live', completeWithinScope: true, returnedRows: fields.length, queryScope: { companyId: 123, field, window: q.timeMin + '..' + q.timeMax } } })
+  const f = await fixture(t, { methods: {
+    listShifts: async q => { reads++; return result(q, 'start', [{ companyId: 123, userId: 7, shiftId: 9, locationId: 5, start: '2026-10-09T15:00:00Z', end: '2026-10-09T23:00:00Z', published: true, unassigned: false, employeeName: 'Employee 7', nameState: 'confirmed' }]) },
+    listAttendance: async q => { reads++; return result(q, 'clocked_in', [{ companyId: 123, userId: 7, punchId: 1, shiftId: 9, locationId: 5, clockedIn: '2026-10-09T15:10:00Z', clockedOut: null }]) }
+  } })
+  for (const message of ['幫我查昨日哪些員工的打卡與排班不一致，列出原因和需要確認的項目。', 'Compare employee punches against scheduled shifts yesterday.']) {
+    const body = { message, conversationId: randomUUID(), workflowRequestId: randomUUID() }, before = reads
+    assert.equal((await post(f.server, body, 'https://evil.test')).status, 403); assert.equal(reads, before)
+    const response = await post(f.server, body), report = response.value.sevenShiftsComparison
+    assert.equal(response.status, 200); assert.equal(report.state, 'live'); assert.equal(report.rows[0].startDifferenceMinutes, 10)
+    assert.equal(report.rows[0].currentlyWorkingState, 'UNKNOWN'); assert.equal(report.modelCalls, 0); assert.equal(report.writes, false)
+    assert.equal(response.value.sourceBound, true); assert.equal(response.value.servedBy, null); assert.equal(response.value.historySaved, true)
+    assert.equal(f.saved.get(body.conversationId).messages.at(-1).content, response.value.reply)
+    assert.equal((await post(f.server, body)).status, 200); assert.equal(reads, before + 2)
+    assert.equal((await post(f.server, { ...body, message: message + ' changed' })).status, 409)
+  }
+  const body = { message: 'Compare employee punches with schedules', conversationId: randomUUID(), workflowRequestId: randomUUID() }, before = reads
+  assert.equal((await post(f.server, body)).value.sevenShiftsComparison.state, 'needs_date'); assert.equal(reads, before)
+  f.env.READ_ACCESS = 'off'; assert.equal((await post(f.server, body)).status, 503); assert.equal(reads, before); assert.equal(f.starts.length, 0)
+})

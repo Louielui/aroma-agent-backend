@@ -20,6 +20,7 @@ function midnight (civil) {
   throw Error('timezone_boundary_unavailable')
 }
 function clockOutRequest (message) {
+  if (require('./sevenShiftsComparison').comparisonRequest(message)) return null
   if (require('./sevenShiftsAttendance').attendanceRequest(message)) return null
   if (typeof message !== 'string' || message.length > 2000 || /(?:不要|不用查|唔好|不需要|don't|do not|批准|批核|刪除|修改|寄出|發送|pause|resume|delete|approve|update|send|payroll)/i.test(message) || /[「」“”"]/u.test(message)) return null
   if (!/(?:clock[ -]?out|下班打卡|下班.*時間)/i.test(message) ||
@@ -106,7 +107,27 @@ function createSevenShiftsReport ({ env = process.env, adapter, fetchFn, clock =
       return { state: 'unavailable', reason: ['invalid_request', 'attendance_reader_unavailable', 'read_access_disabled', 'connection_not_configured', 'source_access_changed', 'source_not_authorised', 'source_rate_limited', 'invalid_source_response'].includes(e.message) ? e.message : 'source_unavailable', retrievedAt, modelCalls: 0 }
     }
   }
-  return Object.freeze({ read, readAttendance, captureAccess })
+  async function readComparison (actor, request) {
+    if (actor?.id !== 'owner' || actor.role !== 'owner') throw Error('permission_denied')
+    const retrievedAt = clock()
+    try {
+      const verify = captureAccess()
+      if (request?.window === 'unspecified') return { state: 'needs_date', retrievedAt, modelCalls: 0, writes: false }
+      const { comparisonWindows, buildComparison } = require('./sevenShiftsComparison')
+      const { query, punchQuery } = comparisonWindows(request, retrievedAt)
+      if (typeof source.methods?.listShifts !== 'function' || typeof source.methods?.listAttendance !== 'function') throw Error('comparison_reader_unavailable')
+      const input = q => ({ timeMin: q.start, timeMax: new Date(Date.parse(q.end) - 1).toISOString() })
+      // Sequential bounded reads: a denied schedule read never triggers another source call.
+      const shifts = await source.methods.listShifts(input(query))
+      verify()
+      const punches = await source.methods.listAttendance(input(punchQuery))
+      verify()
+      return buildComparison(shifts, punches, request, retrievedAt, Number(env.SEVEN_SHIFTS_COMPANY_ID))
+    } catch (e) {
+      return { state: 'unavailable', reason: ['invalid_request', 'comparison_reader_unavailable', 'read_access_disabled', 'connection_not_configured', 'source_access_changed', 'source_not_authorised', 'source_rate_limited', 'invalid_source_response'].includes(e.message) ? e.message : 'source_unavailable', retrievedAt, modelCalls: 0, writes: false }
+    }
+  }
+  return Object.freeze({ read, readAttendance, readComparison, captureAccess })
 }
 function displayTime (iso) {
   const p = zoneParts(iso)

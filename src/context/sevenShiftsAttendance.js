@@ -2,6 +2,7 @@
 const { queryWindow, displayTime, TIME_ZONE } = require('./sevenShiftsReport')
 const { instant } = require('./adapters/sevenShiftsRead')
 function attendanceRequest (message) {
+  if (require('./sevenShiftsComparison').comparisonRequest(message)) return null
   if (typeof message !== 'string' || message.length > 2000 || /(?:不要|不用查|唔好|不需要|don't|do not|批准|批核|刪除|修改|寄出|發送|pause|resume|delete|approve|update|send|payroll|explain|what.*means)/i.test(message) || /[「」“”"]/u.test(message)) return null
   if (!/(?:漏打(?:下班)?卡|漏打下班|未打下班卡|未打卡下班|忘記.*下班.*打卡|missing[ -]?clock[ -]?outs?|missed[ -]?clock[ -]?outs?|(?:missing|missed|forgot).*clock[ -]?out|clock[ -]?out.*(?:missing|missed))/i.test(message)) return null
   if (!/(?:查|找|哪些|邊個|7\s*shifts?|employees?|check|find|show|who)/i.test(message)) return null
