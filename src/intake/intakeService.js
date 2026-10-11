@@ -593,7 +593,7 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
    * place, so it is allowed through.
    */
   const semanticEgressOk = (opts && typeof opts.semanticCallModel === 'function') || liveEgressAllowed()
-  if (!socialFastPath && semanticEgressOk && routeGoverns && routeDecision.route === 'CONVERSATION' && opts && opts.interactionMode === 'chat') {
+  if (!socialFastPath && routeDecision?.reason !== 'general_knowledge' && semanticEgressOk && routeGoverns && routeDecision.route === 'CONVERSATION' && opts && opts.interactionMode === 'chat') {
     // This classifier is advisory and fail-closed. A failed provider call once
     // held an Owner investigation for 111 seconds before the unchanged Goal
     // Decomposer could continue. Bound only these two intent opinions; never
@@ -772,6 +772,7 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
     // before the classifier (which stays last). With the flag off the guard list is
     // exactly [ACTION_HONESTY_GUARD], so the system string is byte-identical to today.
     const guards = [ACTION_HONESTY_GUARD]
+    if (require('./generalKnowledge').generalRequestKind(message)) guards.push(require('./generalKnowledge').GENERAL_RESPONSE)
     if (resolveConversationContract(process.env) === 'on') guards.push(CONVERSATION_CONTRACT)
     // OWNER SETTINGS — the Owner's own style + preferences, written on his settings page.
     //

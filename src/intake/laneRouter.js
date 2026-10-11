@@ -243,6 +243,7 @@ function isShortReply (text) {
 function routeLane (message, opts) {
   const text = typeof message === 'string' ? message.trim() : ''
   if (!text) return { lane: CHAT, reason: 'empty' }
+  if (require('./generalKnowledge').generalRequestKind(text)) return { lane: CHAT, reason: 'general_knowledge' }
 
   // A short reply continues what was already happening.
   if (isShortReply(text)) {

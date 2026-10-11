@@ -577,7 +577,8 @@ function createDemoRouter ({ getAdapterFn = getAdapterForLane, processIntakeFn =
       // Resolve a bounded development conversation before keyword-based mail lanes:
       // navigation labels and chat history are not requests to read a mailbox.
       // A semantic topic change returns null and preserves ordinary mail routing.
-      const planningLane = !contextCard && !req.body.attachSection && (!req.body.interactionMode || req.body.interactionMode === 'chat')
+      const generalRequest = require('../intake/generalKnowledge').generalRequestKind(message)
+      const planningLane = !generalRequest && !contextCard && !req.body.attachSection && (!req.body.interactionMode || req.body.interactionMode === 'chat')
       const clockOutRequest = planningLane && sevenShiftsReport ? require('../context/sevenShiftsReport').clockOutRequest(message) : null
       const attendanceRequest = planningLane && sevenShiftsReport ? require('../context/sevenShiftsAttendance').attendanceRequest(message) : null
       const comparisonRequest = planningLane && sevenShiftsReport ? require('../context/sevenShiftsComparison').comparisonRequest(message) : null
@@ -674,9 +675,9 @@ function createDemoRouter ({ getAdapterFn = getAdapterForLane, processIntakeFn =
           return res.status(['worker_busy', 'request_conflict', 'conversation_changed'].includes(e.message) ? 409 : 503).json({ error: { message: t('taskPlan.error'), retryable: false } })
         }
       }
-      const mailRequest = !contextCard && !req.body.attachSection && (!req.body.interactionMode || req.body.interactionMode === 'chat')
+      const mailRequest = !generalRequest && !contextCard && !req.body.attachSection && (!req.body.interactionMode || req.body.interactionMode === 'chat')
         ? require('../company/mailIntent').parseMailRequest(message, history) : null
-      const gmailRequest = liveContext?.gmail && !contextCard && !req.body.attachSection && (!req.body.interactionMode || req.body.interactionMode === 'chat')
+      const gmailRequest = !generalRequest && liveContext?.gmail && !contextCard && !req.body.attachSection && (!req.body.interactionMode || req.body.interactionMode === 'chat')
         ? require('../context/gmailContextService').gmailIntent(message) : null
       if (gmailRequest) {
         if (!require('../core/operating/chatRequest').sameOrigin(req)) return res.status(403).json({ error: 'same_origin_required' })

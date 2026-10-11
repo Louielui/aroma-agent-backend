@@ -134,6 +134,7 @@ function valueIn (message, e) {
 function explainSettingsOffer (input = {}) {
   const message = typeof input.message === 'string' ? input.message : ''
   if (!message) return { offer: null, reason: 'empty' }
+  if (require('../intake/generalKnowledge').generalRequestKind(message)) return { offer: null, reason: 'not_a_change_request' }
   if (!CHANGE_VERB.test(message)) return { offer: null, reason: 'not_a_change_request' }
   if (REFUSAL.test(message)) return { offer: null, reason: 'negated' }
 
