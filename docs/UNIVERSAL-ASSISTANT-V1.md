@@ -42,3 +42,9 @@ current-weather retrieval connected or promise universal correctness. No new sea
 subscription, credentials or background model calls are added. Recognition is
 bounded; broader ambiguous phrasing uses the existing semantic/goal/evidence pipeline.
 New live acceptance must match the running boot commit before delivery is claimed.
+
+The first loaded-build check exposed a further false withholding: the no-read
+operational guard removed numeric invoice-definition details and asked for company
+sources. A real reply-path regression now preserves generic definition sentences
+while retaining the guard for named-company, possessive and time-specific claims.
+This is a bounded heuristic, not an exemption for all prose on a general turn.

@@ -51,6 +51,7 @@
  */
 
 const { routeTurn } = require('./turnRouter')
+const { generalRequestKind } = require('./generalKnowledge')
 const { INTENTS } = require('../context/readContext')
 const { sentenceIsSupported, splitSentences, evidenceIndex, SOURCE_LABELS } = require('./answerPlan')
 
@@ -82,6 +83,11 @@ const OWN_OFFER = /(我可以|我能|我會幫|我幫你|要我|讓我|等我)/
 
 /** The server line, so the guard never trips over its own output. */
 const ROUTE_EVIDENCE_NOTE_RE = /這一輪沒有查任何來源/
+
+// Concept details (field counts, paid/unpaid definitions) are not observations of
+// this business. Keep this bounded to a whole-request definition; named-company,
+// possessive and time-specific claims still pass through the original guard.
+const BUSINESS_REFERENT = /Aroma|Imagine|Xiangxiang|香香|我|你|佢|本店|門店|门店|這|这|呢|嗰|那|今日|今天|昨日|昨天|目前|現在|现在|最新|上星期|上週|上周|剛才|刚才|\b(?:our|my|your|this|that|these|those|current|latest|today|yesterday|now|previous|last)\b/i
 
 function numbersIn (s) {
   return String(s).match(/\d+(?:[.,]\d+)*|[零一二兩三四五六七八九十百千萬]+/g) || []
@@ -127,6 +133,7 @@ function enforceRouteEvidence (input) {
   let route = null
   try { route = routeTurn(message) } catch (_) { return none }
   if (!route || route.route !== 'CONVERSATION') return none
+  const definition = generalRequestKind(message) === 'definition'
 
   const kept = []
   const withheld = []
@@ -134,6 +141,7 @@ function enforceRouteEvidence (input) {
   for (const sentence of splitSentences(reply)) {
     const s = String(sentence)
     if (!s.trim() || ASKING.test(s.trim()) || OWN_OFFER.test(s) || ROUTE_EVIDENCE_NOTE_RE.test(s)) { kept.push(s); continue }
+    if (definition && !BUSINESS_REFERENT.test(s)) { kept.push(s); continue }
 
     const noun = entityIn(s)
     // (a) THE NUMERIC HALF — precise, and not ours to reimplement. A bare number is not

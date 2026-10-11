@@ -29,6 +29,19 @@ const { enforceRouteEvidence, ROUTE_EVIDENCE_NOTE_RE } = require('./routeEvidenc
 const NO_EVIDENCE = { evidenceSets: [], perSource: [] }
 const say = (reply, message, extra) => enforceRouteEvidence(Object.assign({ reply, message }, NO_EVIDENCE, extra || {}))
 
+test('generic definition details are not company evidence claims on the real reply path', () => {
+  const reply = '發票有 3 個常見用途：請款、記帳和核對付款。已經付款的文件通常稱為收據。'
+  const out = require('./readResultView').buildReadResultReply({ reply, message: '什麼是發票？', answerPlan: null, evidenceSets: [], itemsBySource: [], perSource: [] })
+  assert.equal(out.reply, reply)
+  assert.equal(say('An invoice normally includes 3 fields: date, items and amount.', 'What is an invoice?').violated, false)
+  for (const claim of ['Aroma 的發票有 3 張。', '我們的發票已經全部付款。', '今日發票有 3 張。', '目前存貨全部充足。']) {
+    assert.equal(say(claim, '什麼是發票？').violated, true, claim)
+  }
+  const mixed = say(reply + 'Aroma 的發票有 3 張。', '什麼是發票？')
+  assert.equal(mixed.withheld.length, 1)
+  assert.ok(mixed.reply.startsWith(reply))
+})
+
 /* ═══ 1. THE NUMERIC HALF — sentenceIsSupported against an empty index ════ */
 
 test('*** an operational number with nothing read is withheld, and said so ***', () => {
