@@ -6,7 +6,7 @@ $serviceControlOwner = [Security.Principal.WindowsIdentity]::GetCurrent().User
 $serviceControlDescriptor = New-Object Security.AccessControl.RawSecurityDescriptor($serviceControlBefore)
 $serviceControlAce = New-Object Security.AccessControl.CommonAce([Security.AccessControl.AceFlags]::None,[Security.AccessControl.AceQualifier]::AccessAllowed,0x30,$serviceControlOwner,$false,$null)
 $serviceControlDescriptor.DiscretionaryAcl.InsertAce($serviceControlDescriptor.DiscretionaryAcl.Count,$serviceControlAce)
-$serviceControlAfter = $serviceControlDescriptor.GetSddlForm([Security.AccessControl.AccessControlSections]::Access)
+$serviceControlAfter = $serviceControlDescriptor.GetSddlForm([Security.AccessControl.AccessControlSections]::All)
 function DescriptorHash([string]$value) { $sha=[Security.Cryptography.SHA256]::Create(); try { return ([BitConverter]::ToString($sha.ComputeHash([Text.Encoding]::UTF8.GetBytes($value)))).Replace('-','').ToLowerInvariant() } finally { $sha.Dispose() } }
 $serviceControlDirectory = Join-Path $env:LOCALAPPDATA 'AromaXiangXiang/repository-promotion/permission-plans'
 New-Item -ItemType Directory -Path $serviceControlDirectory -Force | Out-Null

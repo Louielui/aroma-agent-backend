@@ -6312,6 +6312,7 @@ send is disabled until there is real input, and while a reply is in flight
 separate Owner consent provisions only dedicated topic/subscription and preserves existing IAM
 served page includes standalone sidebar assets in its fingerprint, supports both locales and mobile layout
 server transcript receipt survives reopen; latest topic change invalidates it and forged receipts fail closed
+service delegation preserves all descriptor sections and the native write is explicitly DACL-only
 service identity seals the bound repository while unrelated ownership remains untrusted and dirty targets are refused
 service source hands only the boot commit to the fixed Owner bridge route, with cancellation and deadline
 service source refuses revoked access, foreign actors, bad boot identity and mismatched/failed bridge before source acceptance

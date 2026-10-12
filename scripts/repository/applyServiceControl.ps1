@@ -13,13 +13,39 @@ if ($serviceControlPlan.id -ne $PlanId -or $serviceControlPlan.service -cne 'Aro
 $serviceControlExpected = New-Object Security.AccessControl.RawSecurityDescriptor($serviceControlPlan.before)
 $serviceControlSid = New-Object Security.Principal.SecurityIdentifier($serviceControlPlan.ownerSid)
 $serviceControlExpected.DiscretionaryAcl.InsertAce($serviceControlExpected.DiscretionaryAcl.Count,(New-Object Security.AccessControl.CommonAce([Security.AccessControl.AceFlags]::None,[Security.AccessControl.AceQualifier]::AccessAllowed,0x30,$serviceControlSid,$false,$null)))
-if ($serviceControlExpected.GetSddlForm([Security.AccessControl.AccessControlSections]::Access) -cne $serviceControlPlan.after) { throw 'UnexpectedPermissionDifference' }
+if ($serviceControlExpected.GetSddlForm([Security.AccessControl.AccessControlSections]::All) -cne $serviceControlPlan.after) { throw 'UnexpectedPermissionDifference' }
 $serviceControlObserved = ((& sc.exe sdshow AromaXiangXiangBackend) | Where-Object { $_ -match '^D:' }) -join ''
 $serviceControlExpectedCurrent = if ($Revoke) { $serviceControlPlan.after } else { $serviceControlPlan.before }
 if ($serviceControlObserved -cne $serviceControlExpectedCurrent) { throw 'ServiceDescriptorChanged' }
 $serviceControlTarget = if ($Revoke) { $serviceControlPlan.before } else { $serviceControlPlan.after }
-& sc.exe sdset AromaXiangXiangBackend $serviceControlTarget | Out-Null
-if ($LASTEXITCODE -ne 0) { throw 'ServicePermissionWriteFailed' }
+# Write only DACL_SECURITY_INFORMATION (0x4). Owner, group and audit/SACL are
+# not writable through this call, including audit entries hidden by sdshow.
+Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+public static class ImagineDaclWriter {
+  [DllImport("advapi32.dll",SetLastError=true,CharSet=CharSet.Unicode)] public static extern IntPtr OpenSCManager(string machine,string database,uint access);
+  [DllImport("advapi32.dll",SetLastError=true,CharSet=CharSet.Unicode)] public static extern IntPtr OpenService(IntPtr manager,string service,uint access);
+  [DllImport("advapi32.dll",SetLastError=true)] public static extern bool SetServiceObjectSecurity(IntPtr service,uint information,IntPtr descriptor);
+  [DllImport("advapi32.dll",SetLastError=true,CharSet=CharSet.Unicode)] public static extern bool ConvertStringSecurityDescriptorToSecurityDescriptor(string text,uint revision,out IntPtr descriptor,out uint size);
+  [DllImport("advapi32.dll",SetLastError=true)] public static extern bool CloseServiceHandle(IntPtr handle);
+  [DllImport("kernel32.dll")] public static extern IntPtr LocalFree(IntPtr memory);
+}
+'@
+$serviceControlManager=[ImagineDaclWriter]::OpenSCManager($null,$null,1)
+if ($serviceControlManager -eq [IntPtr]::Zero) { throw 'ServicePermissionWriteFailed' }
+$serviceControlHandle=[IntPtr]::Zero;$serviceControlNative=[IntPtr]::Zero
+try {
+  $serviceControlHandle=[ImagineDaclWriter]::OpenService($serviceControlManager,'AromaXiangXiangBackend',0x60000)
+  if ($serviceControlHandle -eq [IntPtr]::Zero) { throw 'ServicePermissionWriteFailed' }
+  $serviceControlSize=[uint32]0
+  if (-not [ImagineDaclWriter]::ConvertStringSecurityDescriptorToSecurityDescriptor($serviceControlTarget,1,[ref]$serviceControlNative,[ref]$serviceControlSize)) { throw 'ServicePermissionWriteFailed' }
+  if (-not [ImagineDaclWriter]::SetServiceObjectSecurity($serviceControlHandle,0x4,$serviceControlNative)) { throw 'ServicePermissionWriteFailed' }
+} finally {
+  if ($serviceControlNative -ne [IntPtr]::Zero) { [ImagineDaclWriter]::LocalFree($serviceControlNative) | Out-Null }
+  if ($serviceControlHandle -ne [IntPtr]::Zero) { [ImagineDaclWriter]::CloseServiceHandle($serviceControlHandle) | Out-Null }
+  [ImagineDaclWriter]::CloseServiceHandle($serviceControlManager) | Out-Null
+}
 $serviceControlReadBack = ((& sc.exe sdshow AromaXiangXiangBackend) | Where-Object { $_ -match '^D:' }) -join ''
 if ($serviceControlReadBack -cne $serviceControlTarget) { throw 'ServicePermissionReadBackFailed' }
 @{ id=$PlanId;state=$(if($Revoke){'revoked'}else{'granted'});scope=$serviceControlPlan.scope;accessMask=0x30;checkedAt=[DateTime]::UtcNow.ToString('o') } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $serviceControlDirectory ($PlanId+'.result.json')) -Encoding UTF8
