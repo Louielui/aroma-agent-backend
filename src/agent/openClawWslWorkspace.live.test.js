@@ -53,9 +53,16 @@ const ASIDE = SANDBOX_ROOT + '/appr_live_aside'
  * So the fixture launcher is held to the provider's own contract: the absolute trusted
  * launcher path, an empty environment, no shell.
  */
-const wsl = (argv) => spawnSync(WSL_EXE, ['-d', DISTRO, '--'].concat(argv), {
+//
+// ⛔ AND IT USES `--exec`, EXACTLY AS THE PROVIDER DOES (X4-B1).
+// `--` handed argv to the login shell: bash re-parsed our arguments. The fixture launcher
+// builds its argv through the same pure function the runner uses, so a drift between what
+// the tests measure and what production sends is impossible.
+const { windowsArgvFor, exactWslExec } = require('../agent/exactWslExecRunner')
+const wsl = (argv) => spawnSync(WSL_EXE, windowsArgvFor(argv), {
   env: CHILD_ENV, encoding: 'utf8', shell: false, windowsHide: true, timeout: 120000
 })
+/** A deliberate, explicit shell INSIDE the distro for test scripting — never on the provider's path. */
 const sh = (script) => wsl(['sh', '-c', script])
 
 /** Is the distro actually here? Never assume — a skipped test must be an observed fact. */
@@ -343,4 +350,60 @@ test('LIVE. the Windows filesystem is not reachable from the distro', opts, () =
   assert.strictEqual(sh('ls -A /mnt/c 2>/dev/null | wc -l').stdout.trim(), '0', '/mnt/c is empty')
   assert.notStrictEqual(sh('ls /mnt/c/Aroma 2>/dev/null && echo yes || echo no').stdout.trim(), 'yes',
     'the Windows production repo must not be visible')
+})
+
+/* ══════════════ X4-B1 — the real boundary is EXACT exec, measured ══════════════ */
+
+test('LIVE-EXEC. ⛔ shell metacharacters print literally through the production runner', opts, () => {
+  // Under `--` this element produced "B: command not found" and an "ambiguous redirect"
+  // (X4-A.1). Under `--exec` it must come back byte-for-byte, and the trailing `&&` and
+  // `echo SECOND` must be printed as arguments, never executed as a second command.
+  const HOSTILE = 'A|B;C>D$HOME`id`'
+  const r = exactWslExec(['/usr/bin/printf', '%s\n', HOSTILE, '&&', 'echo', 'SECOND'])
+  assert.strictEqual(r.status, 0, r.stderr)
+  assert.deepStrictEqual(r.stdout.split('\n').filter(Boolean), [HOSTILE, '&&', 'echo', 'SECOND'])
+  assert.ok(!r.stderr.includes('command not found'), 'no shell parsed the argv')
+})
+
+test('LIVE-EXEC. spaces preserve argv boundaries; $HOME and *.js are not expanded', opts, () => {
+  const r = exactWslExec(['/usr/bin/printf', '%s|', 'a b', 'c', '$HOME', '*.js'])
+  assert.strictEqual(r.status, 0, r.stderr)
+  assert.strictEqual(r.stdout, 'a b|c|$HOME|*.js|')
+})
+
+test('LIVE-EXEC. ⛔ a Windows sentinel does not cross under --exec either', opts, () => {
+  process.env.AROMA_LIVE_SENTINEL = 'live-sentinel-must-not-cross'
+  process.env.WSLENV = 'AROMA_LIVE_SENTINEL/u'
+  try {
+    // check only the named sentinel — never print the environment wholesale
+    const r = exactWslExec(['/usr/bin/env'])
+    assert.strictEqual(r.status, 0, r.stderr)
+    assert.ok(!r.stdout.includes('live-sentinel-must-not-cross'), 'the sentinel reached the distro')
+    assert.ok(!/^AROMA_LIVE_SENTINEL=/m.test(r.stdout))
+    assert.match(r.stdout, /^WSLENV=\s*$/m, 'WSLENV carries no names across')
+  } finally {
+    delete process.env.AROMA_LIVE_SENTINEL
+    delete process.env.WSLENV
+  }
+})
+
+test('LIVE-EXEC. a command succeeds through --exec, and a missing binary fails loudly', opts, () => {
+  const ok = exactWslExec(['/usr/bin/test', '-d', '/home/openclaw'])
+  assert.strictEqual(ok.status, 0, ok.stderr)
+  assert.strictEqual(ok.timedOut, false)
+
+  const missing = exactWslExec(['/nonexistent/aroma-x4b1-binary', 'x'])
+  assert.notStrictEqual(missing.status, 0)
+  assert.match(missing.stderr, /execvpe|No such file/i, 'the launcher itself refused — no shell fallback')
+})
+
+test('LIVE-EXEC. the provider really goes through the exact runner (a real stat, no shell)', opts, () => {
+  // The provider's own identity question, asked through the production path with nothing
+  // injected: `stat -c %d:%i -- <path>`. A `--` inside the LINUX argv is an ordinary
+  // argument to stat now, not a separator anything re-parses.
+  const ws = createOpenClawWslWorkspace({ verifyGrant })
+  const r = exactWslExec(['/usr/bin/stat', '-c', '%d:%i', '--', SANDBOX_ROOT])
+  assert.strictEqual(r.status, 0, r.stderr)
+  assert.match(r.stdout.trim(), /^\d+:\d+$/)
+  assert.strictEqual(ws.distro, DISTRO)
 })

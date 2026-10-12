@@ -61,3 +61,108 @@ test('prepare mints a sandbox under tmpdir and runs the injected init', () => {
     assert.equal(ws.containmentCheck(dir), assertSandboxUnderTmpdir(dir)) // it's contained
   } finally { fs.rmSync(dir, { recursive: true, force: true }) }
 })
+
+/* ══════════════ 2026-09-05: the mint register (workspace provenance) ══════════════ */
+
+const { assertMintedWorkspace } = require('./tmpdirSandbox')
+
+test('a workspace this provider really prepared is accepted, root and subdirectory alike', () => {
+  const ws = createTmpdirSandbox({ prepareSandbox: () => {} })
+  const { dir } = ws.prepare()
+  const sub = path.join(dir, 'copy'); fs.mkdirSync(sub)
+  try {
+    assert.equal(assertMintedWorkspace(ws, dir).path, fs.realpathSync(dir))
+    assert.equal(assertMintedWorkspace(ws, sub).root, fs.realpathSync(dir))
+  } finally { fs.rmSync(dir, { recursive: true, force: true }) }
+})
+
+test('⛔ a HAND-MADE directory with the same prefix is refused — a name is not a provenance', () => {
+  const ws = createTmpdirSandbox({ prepareSandbox: () => {} })
+  const lookalike = fs.mkdtempSync(path.join(os.tmpdir(), 'aroma-sandbox-'))
+  try {
+    assert.throws(() => assertMintedWorkspace(ws, lookalike), /was not minted by this provider/)
+  } finally { fs.rmSync(lookalike, { recursive: true, force: true }) }
+})
+
+test('⛔ a directory minted by provider A is refused for provider B', () => {
+  const a = createTmpdirSandbox({ prepareSandbox: () => {} })
+  const b = createTmpdirSandbox({ prepareSandbox: () => {} })
+  const { dir } = a.prepare()
+  try {
+    assert.equal(assertMintedWorkspace(a, dir).path, fs.realpathSync(dir))
+    assert.throws(() => assertMintedWorkspace(b, dir), /was not minted by this provider/)
+  } finally { fs.rmSync(dir, { recursive: true, force: true }) }
+})
+
+test('⛔ an object that is not one of our providers has no register at all', () => {
+  const impostor = { containmentCheck: (p) => p, mintedByThisProvider: () => true, prepare: () => ({ dir: os.tmpdir() }) }
+  const ws = createTmpdirSandbox({ prepareSandbox: () => {} })
+  const { dir } = ws.prepare()
+  try {
+    assert.throws(() => assertMintedWorkspace(impostor, dir), /not created by tmpdirSandbox/)
+    assert.throws(() => assertMintedWorkspace(null, dir), /not created by tmpdirSandbox/)
+  } finally { fs.rmSync(dir, { recursive: true, force: true }) }
+})
+
+test('⛔ a FAILED prepare registers nothing — a half-built sandbox is not a workspace', () => {
+  // ⛔ THE TEST CLEANS UP WHAT IT MADE, AND ONLY THAT.
+  // The first version scanned all of os.tmpdir() for aroma-sandbox-* and deleted the NEWEST —
+  // which is someone else's directory the moment anything else is running. The exact path is
+  // captured inside prepareSandbox, which is the only place that knows it.
+  let created = null
+  const ws = createTmpdirSandbox({ prepareSandbox: (dir) => { created = dir; throw new Error('init blew up') } })
+  assert.throws(() => ws.prepare(), /init blew up/)
+  assert.ok(created, 'the init hook must have seen the directory')
+
+  // A NEWER sandbox from an unrelated provider — it must survive this test untouched.
+  const bystander = createTmpdirSandbox({ prepareSandbox: () => {} })
+  const other = bystander.prepare().dir
+  try {
+    assert.throws(() => assertMintedWorkspace(ws, created), /was not minted by this provider/)
+    fs.rmSync(created, { recursive: true, force: true })
+    assert.equal(fs.existsSync(other), true, 'a newer, unrelated sandbox must NOT be deleted by this test')
+    assert.ok(assertMintedWorkspace(bystander, other), 'and it is still a valid minted workspace')
+  } finally {
+    try { fs.rmSync(created, { recursive: true, force: true }) } catch (_) {}
+    fs.rmSync(other, { recursive: true, force: true })
+  }
+})
+
+test('⛔ a root deleted and RECREATED at the same path is no longer the minted directory', () => {
+  const ws = createTmpdirSandbox({ prepareSandbox: () => {} })
+  const { dir } = ws.prepare()
+  assert.equal(assertMintedWorkspace(ws, dir).path, fs.realpathSync(dir))
+  fs.rmSync(dir, { recursive: true, force: true })
+  fs.mkdirSync(dir)
+  try {
+    assert.throws(() => assertMintedWorkspace(ws, dir), /identity changed|was not minted/)
+  } finally { fs.rmSync(dir, { recursive: true, force: true }) }
+})
+
+test('a deleted root is refused rather than reported as merely absent', () => {
+  const ws = createTmpdirSandbox({ prepareSandbox: () => {} })
+  const { dir } = ws.prepare()
+  fs.rmSync(dir, { recursive: true, force: true })
+  assert.throws(() => assertMintedWorkspace(ws, dir), /no longer exists|was not minted/)
+})
+
+test('⛔ IN-PROCESS PROVENANCE ONLY — not OS isolation, and not claimed to be', () => {
+  // The register proves a directory came from this module's prepare(). It says nothing about a
+  // hostile process running as the same user; such a process can create, move or replace
+  // directories regardless. The boundary is deliberate and stated so it is not over-read.
+  const ws = createTmpdirSandbox({ prepareSandbox: () => {} })
+  const { dir } = ws.prepare()
+  try { assert.ok(assertMintedWorkspace(ws, dir)) } finally { fs.rmSync(dir, { recursive: true, force: true }) }
+})
+
+test('a sandbox minted OUTSIDE os.tmpdir() still returns normally, but is not registered', () => {
+  // Back-compat: runWorkerInBackground may pass its own sandboxRoot. prepare() must behave
+  // exactly as before; the only consequence is that provenance cannot be claimed for it.
+  const root = fs.mkdtempSync(path.join(process.cwd(), 'aroma-outside-'))
+  try {
+    const ws = createTmpdirSandbox({ sandboxRoot: root, prepareSandbox: () => {} })
+    const { dir } = ws.prepare()
+    assert.equal(fs.existsSync(dir), true, 'prepare must not have thrown')
+    assert.throws(() => assertMintedWorkspace(ws, dir), /was not minted by this provider/)
+  } finally { fs.rmSync(root, { recursive: true, force: true }) }
+})

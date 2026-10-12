@@ -220,7 +220,7 @@ describe('the UI target is constructed, never supplied', () => {
     const before = await isListening(59997)
     const r = await runRaw(['-Port', '59997', '-Mode', 'Open', '-Url', 'node.exe', '-NoNotify'])
     assert.notEqual(r.code, 0, '⛔ the unknown parameter was accepted')
-    assert.match(r.out, /A parameter cannot be found/i, r.out)
+    assert.match(r.out, /A\s+parameter\s+cannot\s+be\s+found/i, r.out)
     assert.match(r.out, /NamedParameterNotFound/i, r.out)
     assert.equal(await isListening(59997), before, '⛔ something came up on the probed port')
   })

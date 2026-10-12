@@ -41,21 +41,26 @@ function main () {
   const taskRegistry = require('../../src/core/projectTasks/contract').createRegistry(taskStore)
   const resolveRecipe = taskRegistry.resolve
   const projectSource = require('../../src/core/projectWork/source').createSource({ root: repo, resolveRecipe })
+  const isolatedReceipt = id => {
+    if (!/^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/.test(id || '')) throw Error('accepted_evidence_changed')
+    const file = path.join(workspaceRoot, 'isolated-coding-runs', id + '.json'), stat = fs.lstatSync(file)
+    if (!stat.isFile() || stat.isSymbolicLink() || stat.nlink !== 1 || stat.size > 5000000) throw Error('accepted_evidence_changed')
+    return JSON.parse(fs.readFileSync(file, 'utf8'))
+  }
+  const repositoryPromotion = require('../../src/repositoryPromotion/acceptedWork').createAcceptedWork({
+    root: repo, artifacts: path.join(process.env.LOCALAPPDATA || process.env.TEMP, 'AromaXiangXiang', 'repository-promotion'),
+    privateRefs: ['refs/heads/backup/imagine-20261012-dirty-checkpoint'], resolveRecipe, isolated: isolatedReceipt, invocationLedger })
   const observeLive = require('../../src/core/projectWork/liveVerification').createClient({token:env.HUB_TOKEN || process.env.HUB_TOKEN})
   const projectWork = require('../../src/core/projectWork/service').createProjectWork({
     source: projectSource, providers: workerProviders, enabled, invocationLedger, observeLive, resolveRecipe, catalogueRecipes: taskRegistry.catalogue,
+    repositoryPreflight: () => repositoryPromotion.begin(), onAccepted: run => repositoryPromotion.enqueue(run),
     store: require('../../src/core/operating/runStore').createRunStore({ dir: path.join(workerRoot, 'project-runs'), workflow: 'project_work' }),
     onEvent: value => memoryRuntime && memoryRuntime.event('worker', 'project-work:' + value.id + ':' + value.stage + ':' + value.at, JSON.stringify(value), 'measured_result', value.at) })
   const repairClient = { executable: chatExecutable, cwd, allowCredits: env.CODEX_CHAT_ALLOW_CREDITS === 'true' }
   const projectAdoption = require('../../src/core/projectWork/adoption').createAdoption({ source: projectSource, resolveRecipe, observeLive,
     repository: require('../../src/core/projectWork/adoptionRepository').createRepository({ root: repo, source: projectSource, resolveRecipe }),
     executor: { run: pack => workerProviders.testOrder(pack), isBusy: () => workerProviders.executionBusy() }, work: projectWork, enabled,
-    isolated: id => {
-      if (!/^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/.test(id || '')) throw Error('accepted_evidence_changed')
-      const file = path.join(workspaceRoot, 'isolated-coding-runs', id + '.json'), stat = fs.lstatSync(file)
-      if (!stat.isFile() || stat.isSymbolicLink() || stat.nlink !== 1 || stat.size > 5000000) throw Error('accepted_evidence_changed')
-      return JSON.parse(fs.readFileSync(file, 'utf8'))
-    }, store: require('../../src/core/operating/runStore').createRunStore({ dir: path.join(workerRoot, 'adoptions'), workflow: 'project_adoption' }),
+    isolated: isolatedReceipt, store: require('../../src/core/operating/runStore').createRunStore({ dir: path.join(workerRoot, 'adoptions'), workflow: 'project_adoption' }),
     loader: require('../../src/core/projectWork/adoptionLoader').createLoader({ root: repo, resolveRecipe }),
     onEvent: value => memoryRuntime && memoryRuntime.event('worker', 'project-adoption:' + value.id + ':' + value.stage + ':' + value.at, JSON.stringify(value), 'measured_result', value.at) })
   const codexClient = require('../../src/subscription/codexClient')
