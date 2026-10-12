@@ -6489,6 +6489,7 @@ the absent sentence still reads as the calm, normal, manual state
 the accent survives everywhere it was NOT asked to change
 the accepted-work driver is detached from the bridge it may restart and cannot accept arbitrary commands
 the actual Owner composition wires tranche preflight and accepted-work promotion, not a dormant helper
+the actual PowerShell bridge guard survives disappearance and PID replacement, rejects foreign identity, and kills only the bound instance
 the actual acceptance reviewer accepts the closed 7shifts source packet
 the actual committed diff feeds content risk gates; authorized repository protocols remain protected by path
 the actual frontend rejects an untyped reply envelope
