@@ -17,7 +17,7 @@ function preflightDecision (f = {}) {
   if (f.originMain !== f.remoteMain) return { next:'blocked',reason:'tracking_ref_stale' }
   if (!SHA.test(f.runtimeExpected || '') || f.runtimeObserved !== f.runtimeExpected) return { next:'blocked',reason:'runtime_mismatch' }
   if (!Number.isSafeInteger(f.ahead) || !Number.isSafeInteger(f.behind) || f.ahead < 0 || f.behind < 0) return { next:'blocked',reason:'ancestry_unavailable' }
-  if (f.ahead > 0 && f.behind > 0) return { next:'preserve_then_reconcile',reason:'divergence' }
+  if (f.behind > 0) return { next:'preserve_then_reconcile',reason:f.ahead>0?'divergence':'base_behind' }
   if (!Array.isArray(f.unpublished) || !Array.isArray(f.dirty)) return { next:'blocked',reason:'working_tree_unaccounted' }
   return { next:f.unpublished.length || f.dirty.length ? 'preserve_then_develop' : 'develop',reason:null }
 }

@@ -17,7 +17,7 @@ function evidence () {
 test('preflight distinguishes unpublished work, stale tracking refs and real divergence', () => {
   const f = { branch: 'feature/example', head: HEAD, originMain: BASE, remoteMain: BASE, ahead: 2, behind: 0, unpublished: [HEAD], dirty: [], runtimeExpected: BASE, runtimeObserved: BASE, remoteInventoryComplete: true }
   assert.equal(preflightDecision(f).next, 'preserve_then_develop')
-  assert.equal(preflightDecision({ ...f, behind: 1 }).next, 'preserve_then_reconcile')
+  assert.equal(preflightDecision({ ...f, behind: 1 }).next, 'preserve_then_reconcile');assert.equal(preflightDecision({...f,ahead:0,behind:1}).reason,'base_behind')
   assert.equal(preflightDecision({ ...f, originMain: HEAD }).reason, 'tracking_ref_stale')
   assert.equal(preflightDecision({ ...f, runtimeObserved: HEAD }).reason, 'runtime_mismatch')
   assert.equal(preflightDecision({ ...f, remoteInventoryComplete: false }).reason, 'remote_inventory_unavailable')

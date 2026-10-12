@@ -49,3 +49,10 @@ test('history guard refuses alternate deletion, implicit main push and non-fast-
  for(const args of [['branch','-d','last'],['push','--delete=last','origin'],['push','origin','main'],['push','--mirror','origin'],['push','origin','+'+'a'.repeat(40)+':refs/heads/feature/safe'],['update-ref','refs/heads/main','a'.repeat(40)]])assert.throws(()=>safeGitArgs(args));
  assert.doesNotThrow(()=>safeGitArgs(['commit','-m','reset']));
 });
+
+test('a conflict-free integration candidate is recognized instead of recursively recreating reconciliation worktrees',async t=>{
+ const f=fixture(t),other=path.join(f.dir,'other');g(f.dir,'clone',f.remote,other);g(other,'checkout','main');fs.writeFileSync(path.join(other,'remote.js'),'remote\n');g(other,'add','.');g(other,'commit','-m','remote');g(other,'push','origin','main');
+ fs.writeFileSync(path.join(f.root,'file.js'),'local\n');g(f.root,'add','.');g(f.root,'commit','-m','local');const before=await f.repo.inspect();f.repo.preserve(before);const r=f.repo.reconcile(before);assert.equal(r.state,'candidate_ready');
+ const candidate=createRepository({root:r.worktree,runtimeRoot:f.root,artifacts:f.artifacts,remote:f.remote,runtimeReader:async()=>({bootCommit:g(f.root,'rev-parse','HEAD')})});const inspected=await candidate.inspect();assert.equal(inspected.reconciliationCandidate,true);assert.equal(inspected.next,'preserve_then_develop');assert.equal(inspected.mergeHead,before.remoteMain);
+ assert.equal(g(r.worktree,'show',before.head+':file.js'),'local');assert.equal(fs.readFileSync(path.join(r.worktree,'remote.js'),'utf8').trim(),'remote');
+});

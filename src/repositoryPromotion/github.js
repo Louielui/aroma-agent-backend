@@ -36,17 +36,40 @@ function createGitHub ({root,fetchImpl=fetch,tokenProvider=tokenFromGit}) {
   async function inspectPR (number) {
     if(!Number.isSafeInteger(number))throw Error('invalid_pr_request')
     const pr=await api(PREFIX+'/pulls/'+number)
+    async function pages (route,key=null) {
+      const rows=[],seen=new Set();let total=null
+      for(let page=1;page<=10;page++){
+        const data=await api(route+(route.includes('?')?'&':'?')+'per_page=100&page='+page),items=key?data?.[key]:data
+        if(!Array.isArray(items)||items.length>100)return{rows,complete:false}
+        if(key){
+          if(!Number.isSafeInteger(data.total_count)||data.total_count<0||total!==null&&data.total_count!==total)return{rows,complete:false}
+          total=data.total_count
+        }
+        for(const item of items){
+          const identity=key==='statuses'?item.context:item.id
+          if(identity===undefined||seen.has(identity))return{rows,complete:false}
+          seen.add(identity)
+        }
+        rows.push(...items)
+        if(items.length<100)return{rows,complete:total===null||rows.length===total}
+      }
+      return{rows,complete:false}
+    }
     const [statuses,checks,reviews,threads]=await Promise.all([
-      api(PREFIX+'/commits/'+pr.head.sha+'/status'),api(PREFIX+'/commits/'+pr.head.sha+'/check-runs'),api(PREFIX+'/pulls/'+number+'/reviews'),
+      pages(PREFIX+'/commits/'+pr.head.sha+'/status','statuses'),pages(PREFIX+'/commits/'+pr.head.sha+'/check-runs?filter=latest','check_runs'),pages(PREFIX+'/pulls/'+number+'/reviews'),
       api('/graphql',{method:'POST',body:{query:'query($number:Int!){repository(owner:"Louielui",name:"aroma-agent-backend"){pullRequest(number:$number){reviewThreads(first:100){nodes{isResolved}pageInfo{hasNextPage}}}}}',variables:{number}}})
     ])
     const reviewThreads=threads.data?.repository?.pullRequest?.reviewThreads
     if(threads.errors||!reviewThreads||reviewThreads.pageInfo?.hasNextPage)throw Error('review_threads_unavailable')
-    const latestReviews=new Map();for(const review of reviews)latestReviews.set(review.user?.login,review.state)
+    let completeEvidence=statuses.complete&&checks.complete&&reviews.complete
+    const latestReviews=new Map();for(const review of reviews.rows)if(['CHANGES_REQUESTED','APPROVED'].includes(review.state)){
+      if(typeof review.user?.login!=='string'||!review.user.login||review.user.login==='ghost'){completeEvidence=false;continue}
+      latestReviews.set(review.user.id||review.user.login,review.state)
+    }
     const requestedChanges=[...latestReviews.values()].some(x=>x==='CHANGES_REQUESTED')
-    const allStatuses=statuses.statuses||[],allChecks=checks.check_runs||[]
+    const allStatuses=statuses.rows,allChecks=checks.rows
     const ownPresent=CONTEXTS.every(context=>allStatuses.some(s=>s.context===context&&s.state==='success'))
-    const checksOk=ownPresent&&allStatuses.every(s=>s.state==='success')&&allChecks.every(c=>c.status==='completed'&&['success','neutral','skipped'].includes(c.conclusion))&&!requestedChanges
+    const checksOk=completeEvidence&&ownPresent&&allStatuses.every(s=>s.state==='success')&&allChecks.every(c=>c.status==='completed'&&['success','neutral','skipped'].includes(c.conclusion))&&!requestedChanges
     return{number,url:pr.html_url,head:pr.head.sha,base:pr.base.sha,state:pr.merged?'merged':pr.state,mergeable:pr.mergeable,mergeCommit:pr.merge_commit_sha,unresolvedThreads:reviewThreads.nodes.filter(x=>x.isResolved!==true).length+(requestedChanges?1:0),checksState:checksOk?'success':(allStatuses.some(s=>s.state==='failure'||s.state==='error')||allChecks.some(c=>c.conclusion==='failure')?'failure':'pending'),checkContexts:allStatuses.map(s=>({context:s.context,state:s.state})),checks:allChecks.map(c=>({name:c.name,state:c.status,conclusion:c.conclusion}))}
   }
   async function merge ({number,head,base}) {

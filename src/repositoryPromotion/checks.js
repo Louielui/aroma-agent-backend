@@ -98,7 +98,7 @@ async function runReview ({packet,directory,cwd,provider=require('../core/worker
     fs.writeFileSync(path.join(directory,`review-${i+1}.json`),JSON.stringify(receipt,null,2)+'\n')
     if(receipt.verdict!=='pass')break
   }
-  const result={...batches[0],verdict:batches.length===packet.batches.length&&batches.every(r=>r.verdict==='pass')?'pass':'changes_requested',findings:batches.flatMap(r=>r.findings),securityRegression:batches.some(r=>r.securityRegression),permissionRegression:batches.some(r=>r.permissionRegression),exceptionCategories:[...new Set(batches.flatMap(r=>r.exceptionCategories))],actualModel:[...new Set(batches.map(r=>r.actualModel))].join(', '),batches,finishedAt:new Date().toISOString()}
+  const result={...batches[0],summary:batches.map((r,i)=>'Batch '+(i+1)+': '+r.summary).join('\n').slice(0,6000),verdict:batches.length===packet.batches.length&&batches.every(r=>r.verdict==='pass')?'pass':'changes_requested',findings:batches.flatMap(r=>r.findings),securityRegression:batches.some(r=>r.securityRegression),permissionRegression:batches.some(r=>r.permissionRegression),exceptionCategories:[...new Set(batches.flatMap(r=>r.exceptionCategories))],actualModel:[...new Set(batches.map(r=>r.actualModel))].join(', '),batches,finishedAt:new Date().toISOString()}
   fs.writeFileSync(path.join(directory,'review.json'),JSON.stringify(result,null,2)+'\n')
   return result
 }

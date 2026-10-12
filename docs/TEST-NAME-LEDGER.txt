@@ -4236,6 +4236,7 @@ a completed enquiry reports CONCLUDED and the real cost
 a completed operational read satisfies an internal obligation without repeat reasoning or duplicate reads
 a configured credential is unverified until an actual bounded read; failures clear counts and do not erase last success
 a confirmed proposal cannot be confirmed twice — only one Run is ever created
+a conflict-free integration candidate is recognized instead of recursively recreating reconciliation worktrees
 a connector-level unavailable result becomes an UNAVAILABLE line
 a context/background classification is NON-COMMIT — no Decision, no Task
 a correctly alternating plan passes
@@ -6221,6 +6222,7 @@ review rejection stops the chain without coding or automatic retry
 review timeout and provider failure retain only safe diagnostics and never grant task authority
 reviewed prose cannot omit the observed runtime inventory from the actual saved Owner reply
 reviewer has no tools, no discovery and no API-key authentication fallback
+reviews retain a blocking request after later comments and checks beyond page one cannot be ignored
 revised originals reject stale semantic hits; current owner decision outranks unapproved claims
 revocation and canonical archival during retrieval cannot leak prior content
 revocation between local classifications stops subsequent commits while keeping the first checkpoint
