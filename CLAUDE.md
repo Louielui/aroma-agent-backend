@@ -26,22 +26,14 @@ specs, docs, commit messages: English.
 
 ## 2. THE WORKING RHYTHM — every round, in this order
 ```
-repository preflight + preservation → diagnose → accepted low-risk scope
-  → failing regression FIRST → implement in an isolated non-main worktree
-  → full isolated suite → exact accepted commit → feature/backup push + rollback
-  → PR + independent review → policy gates → automatic PR merge
-  → bounded local reload → live source/PID/commit + regression verification
-  → complete evidence, or forward-history rollback + failure report
+diagnose from evidence → propose → explicit GO → failing tests FIRST (shown red)
+  → implement → full suite → local merge to main → push → restart 8090
+  → confirm live PID + commit → REPORT (what changed / what did NOT / risk / rollback)
 ```
 **Never declare it working.** Report what was measured; the Owner decides what that means.
 
-The Owner's 2026-10-12 Autonomous Repository Promotion Policy pre-authorizes normal low-risk
-audit, preservation, accepted commits, non-main publication, tests, review, PR, gated merge,
-bounded local reload, verification and rollback. Do not ask again for these ordinary steps.
-Use `npm run repo:begin` before each tranche and `npm run repo:finish` after accepted changes;
-see `AGENTS.md` and `docs/AUTONOMOUS-REPOSITORY-PROMOTION.md`. Only the enumerated exceptions
-require Owner intervention. Review uses Claude subscription with actual model/usage receipts;
-no API-credit fallback is authorized. Windows security is respected, not bypassed.
+Standing approval covers ordinary work — git, tests, restarts, the launcher. Paid model calls
+and real agent execution are surfaced every time.
 
 ## 3. THE DISCIPLINE THIS PROJECT IS BUILT ON
 The recurring root cause, in the Owner's words: **「an unknown answered as a fact.」**

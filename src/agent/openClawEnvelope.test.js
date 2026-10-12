@@ -69,9 +69,7 @@ function grantFor (approvalId) {
 }
 
 
-// X4-B1: the injected mechanic receives the LINUX argv directly; there is no Windows-side
-// prefix to strip, and a `--` inside rm/stat argv is an ordinary argument, not a seam.
-const inner = (argv) => argv
+const inner = (argv) => argv.slice(argv.indexOf('--') + 1)
 function gitArgs (a) { let i = 0; while (a[i] === '-c') i += 2; return a.slice(i) }
 
 /**
@@ -303,7 +301,7 @@ test('E6d. ⛔ a symlink cannot make an outside path look contained', () => {
  */
 function retiredGrantFor (approvalId) {
   if (LEDGER.state(approvalId) === null) LEDGER.begin(approvalId)
-  if (LEDGER.state(approvalId) === LEDGER.STATES.PREPARED) LEDGER.markRunning(approvalId, { agentId: 'aroma-' + approvalId, sessionKey: 'agent:aroma-' + approvalId + ':' + approvalId, phase: 'executor_launch_attempting' })
+  if (LEDGER.state(approvalId) === LEDGER.STATES.PREPARED) LEDGER.markRunning(approvalId, { agentId: 'aroma-' + approvalId, sessionKey: 'agent:aroma-' + approvalId + ':' + approvalId, phase: 'agent_add_attempting' })
   if (LEDGER.state(approvalId) === LEDGER.STATES.RUNNING) LEDGER.observeTerminal(approvalId, 'lost')
   // Retire FIRST: removing an EXECUTED envelope now requires an executor-retired grant, and
   // that grant is only issuable once the session is provably unable to resume. Retiring also
