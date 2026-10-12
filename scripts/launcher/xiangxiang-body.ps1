@@ -140,6 +140,7 @@ $env:LLM_PROVIDER      = 'claude'
 # NOT YET KNOWN, and deliberately not asserted: whether this is opus, this prompt, or this
 # schema. Diagnosis continues with opus reachable in the harness only.
 $env:CLAUDE_MODEL      = 'claude-haiku-4-5-20251001'
+$env:CLAUDE_CHAT_MODEL = 'claude-opus-5'
 $env:AROMA_BIND_HOST   = '127.0.0.1'
 $env:PORT              = '8090'
 # DECISION_RECALL enabled for this resident entry (Owner GO) — chat-lane recall active.
