@@ -53,6 +53,20 @@ test('official quote summaries lead with requested-language facts, preserve time
  }
 })
 
+test('verified public technical paths retain Windows separators in the answer and source excerpt',()=>{
+ const command='tutorial-env\\Scripts\\activate',text='On Windows, run '+command+'. PS> python -m venv C:\\new\\env.'
+ const observed={...row,content:text,fields:{...row.fields,url:'https://docs.python.org/3/tutorial/venv.html',contentKind:'publisher_cited_summary',sourceEvidence:{kind:'publisher_page',language:'en',hash:'a'.repeat(64),quote:text,times:[],freshness:'unknown',answerState:'supported'}}}
+ const out=buildReadResultReply({message:'How do I activate a Python virtual environment?',itemsBySource:[{source:'public_knowledge',items:[observed]}]})
+ assert.ok(out.reply.includes('- '+text));assert.ok(out.reply.includes('> '+text));assert.doesNotMatch(out.reply,/tutorial-envScriptsactivate/)
+})
+
+test('summary-only fallback shows its unverified body warning before collapsed technical details',()=>{
+ const text='The search model reported public guidance.'
+ const observed={...row,content:text,fields:{...row.fields,contentKind:'web_search_cited_summary',sourceEvidence:{kind:'search_summary',language:'en',quote:text,times:[],freshness:'unknown',answerState:'supported',pageChecks:[{url:row.fields.url,state:'unavailable',reason:'access_required'}]}}}
+ const out=buildReadResultReply({message:'What does the public guidance say?',itemsBySource:[{source:'public_knowledge',items:[observed]}]})
+ assert.match(out.reply.split('### Source checks and excerpts')[0],/not every statement has been checked against its source page/)
+})
+
 test('an insufficient result cannot expose unverified figures as its leading answer',()=>{
  const observed={...row,content:'Unverified opening hours: 10:00–17:00.',fields:{...row.fields,contentKind:'web_search_cited_summary',sourceEvidence:{kind:'search_summary',language:'en',quote:'A different branch calendar has these hours.',times:[],freshness:'unknown',answerState:'insufficient'}}}
  const out=buildReadResultReply({message:'What are the opening hours?',itemsBySource:[{source:'public_knowledge',items:[observed]}]})

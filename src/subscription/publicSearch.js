@@ -23,7 +23,7 @@ function unavailable (query, at, reason = UNAVAILABLE_REASON.MALFORMED) {
   return {...makeSearchResult({provider:PROVIDER,query,retrievedAt:at,unavailable:true,reason}),model:MODEL,billing:'claude-subscription',webSearchCalls:0}
 }
 function sourceUrl (value) {
-  try { const u=new URL(value); return ['https:','http:'].includes(u.protocol) && !u.username && !u.password ? u.href : null } catch { return null }
+  return require('./publicPages').publicUrl(value)
 }
 function extractEvidence (events, query, at) {
   const fail = reason=>unavailable(query,at,reason)
@@ -66,7 +66,10 @@ function extractEvidence (events, query, at) {
   }
   const out=makeSearchResult({provider:PROVIDER,query,retrievedAt:at,results:results.slice(0,5),sourcesSeen:links.size})
   const {projectUsage}=require('../investigation/invocations')
-  return {...out,observedSources:Array.from(links,([url,title])=>({url,title})).slice(0,20),model:MODEL,actualModel:MODEL,billing:'claude-subscription',webSearchCalls:calls.size,
+  // Citation preference comes only from completed search output. It is a
+  // relevance hint, never proof that the website is official or its facts true.
+  const cited=new Set(results.map(r=>r.url)),ordered=Array.from(links,([url,title])=>({url,title,selectionBasis:cited.has(url)?'search_cited':'search_observed_alternate'})).sort((a,b)=>Number(cited.has(b.url))-Number(cited.has(a.url)))
+  return {...out,observedSources:ordered.slice(0,20),model:MODEL,actualModel:MODEL,billing:'claude-subscription',webSearchCalls:calls.size,
     usage:projectUsage(end.modelUsage[MODEL]),usageBasis:'provider_result_model_usage',
     usageByModel:used.map(model=>({model,usage:projectUsage(end.modelUsage[model])}))}
 }
@@ -110,9 +113,15 @@ async function search (options={}, input) {
     // A named directory link may itself expose a fixed JSON reference. Both
     // reads share the existing two-read budget; this is not recursive crawling.
     if(additionalReads>0&&additionalReads<2)await addSources(true)
+    // A search summary is not a read body. Try remaining observed publishers
+    // before settling for summary-only evidence after both initial reads fail.
+    if(!official.pages.length)await addSources(false)
     function evidenceSources(){
       const pages=official.pages.flatMap(p=>[...(p.structuredRecords||[]),{...p,kind:p.kind||'publisher_page'}]).sort((a,b)=>Number(b.kind==='publisher_structured')-Number(a.kind==='publisher_structured'))
-      return [...pages.map((p,i)=>({...p,id:'p'+(i+1)})),...found.results.map((r,i)=>({id:'s'+(i+1),kind:'search_summary',url:r.url,title:r.title,text:r.content,retrievedAt:found.retrievedAt,times:[],freshness:'unknown'}))]
+      // Once bodies are available, quotations must come from those bodies.
+      // Offering the search model's prose alongside them lets composition choose
+      // the easier paraphrase and silently evade publisher verification.
+      return pages.length?pages.map((p,i)=>({...p,id:'p'+(i+1)})):found.results.map((r,i)=>({id:'s'+(i+1),kind:'search_summary',url:r.url,title:r.title,text:r.content,retrievedAt:found.retrievedAt,times:[],freshness:'unknown'}))
     }
     let sources=evidenceSources()
     if(!sources.length){await addSources(false);sources=evidenceSources();if(!sources.length)return {...found,retrievalTiming:timing()}}
@@ -142,7 +151,7 @@ async function search (options={}, input) {
       }catch(_){/* Retain verified facts and their visible omissions; observed retry usage is already recorded. */}
     }
     const retrievalTiming=timing()
-    const results=composed.claims.map(({source,quote,answer})=>({title:source.title,url:source.url,content:answer,contentKind:source.kind==='search_summary'?'web_search_cited_summary':'publisher_cited_summary',publishedAt:source.publishedAt||null,consulted:true,sourceEvidence:{kind:source.kind,quote,language,readAt:source.retrievedAt,hash:source.hash||null,times:source.times,freshness:source.freshness,parentUrl:source.parentUrl||null,extraction:source.extraction||null,coverage:source.coverage||null,pageChecks:official.checks,omitted:composed.omitted||0,withheldReasons:composed.withheldReasons||{},hostScopeHandled:composed.hostScopeHandled||0,answerState:composed.answerState,repairAttempted:composed.repairAttempted===true,retrievalTiming}}))
+    const results=composed.claims.map(({source,quote,answer})=>({title:source.title,url:source.url,content:answer,contentKind:source.kind==='search_summary'?'web_search_cited_summary':'publisher_cited_summary',publishedAt:source.publishedAt||null,consulted:true,sourceEvidence:{kind:source.kind,quote,language,readAt:source.retrievedAt,hash:source.hash||null,accessBasis:source.accessBasis||null,finalUrl:source.finalUrl||null,times:source.times,freshness:source.freshness,parentUrl:source.parentUrl||null,extraction:source.extraction||null,coverage:source.coverage||null,pageChecks:official.checks,omitted:composed.omitted||0,withheldReasons:composed.withheldReasons||{},hostScopeHandled:composed.hostScopeHandled||0,answerState:composed.answerState,repairAttempted:composed.repairAttempted===true,retrievalTiming}}))
     // Both subscription calls contribute observed token usage; neither CLI USD
     // estimates nor search tool counts establish account billing.
     const usageByModel=combineUsage(found,compositionReceipts)

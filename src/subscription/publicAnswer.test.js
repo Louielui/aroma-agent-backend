@@ -2,6 +2,13 @@
 const test=require('node:test'),assert=require('node:assert/strict')
 const {admitClaims,compose}=require('./publicAnswer')
 const page={id:'p1',url:'https://weather.gc.ca/weather',title:'Weather',text:'At 4 PM CDT the temperature is 7°C. Wind north 28 km/h.',state:'read',retrievedAt:'2026-10-11T22:00:00Z',times:[],freshness:'unknown',hash:'a'.repeat(64)}
+test('observed passport translations cannot add Chinese age qualifiers absent from their exact quote',()=>{
+ const quote='上載同意這項申請的父、母或合法監護人的有效旅行證件副本（如他／她不是香港居民）；及 上載你的出生證明書副本。'
+ const source={...page,text:quote}
+ for(const answer of ['十六及十七歲的申請人還要上載有效旅行證件及出生證明書副本。','十一歲以下的兒童要上載出生證明書副本。'])assert.equal(admitClaims({claims:[{sourceId:'p1',quote,answer}]},[source],'zh').length,0)
+ const exact='十八歲或以上的申請人需填妥網上申請書。'
+ assert.equal(admitClaims({claims:[{sourceId:'p1',quote:exact,answer:exact}]},[{...page,text:exact}],'zh').length,1)
+})
 test('only exact source quotes survive; unrelated URLs, extra numbers and wrong-language answers are withheld',()=>{
  const claim={sourceId:'p1',quote:'the temperature is 7°C.',answer:'The temperature was 7°C.'}
  assert.equal(admitClaims({claims:[claim]},[page],'en').length,1)

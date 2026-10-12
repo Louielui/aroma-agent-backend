@@ -20,7 +20,8 @@ function reviewClaims(value,sources,language){
   if(/\b(?:right now|currently)\b|此刻|而家|現在實況/i.test(claim.answer)){reject('temporal_scope');continue}
   if(source.coverage?.kind==='recurring_hours'&&/\b(?:closed|today|tomorrow|tonight|holiday|Thanksgiving)\b|休息|休館|閉館|今天|今日|明天|今晚|假日|感恩節/i.test(claim.answer)){reject('temporal_scope');continue}
   const numbers=claim.answer.match(/\d+(?:[.,]\d+)*/g)||[],quoted=claim.quote.match(/\d+(?:[.,]\d+)*/g)||[]
-  if(numbers.some(n=>!quoted.includes(n))){reject('unverified_number');withheldClaims.push({sourceId:source.id,quote:claim.quote,reason:'unverified_number'});continue}
+  const quantities=text=>text.match(/[零〇一二三四五六七八九十百千萬兩]+(?=(?:[及或至到、－–-][零〇一二三四五六七八九十百千萬兩]+)*\s*(?:歲|年|月|天|日|小時|分鐘|秒|公里|公尺|米|公斤|克|張|份|次|個|條|隻|人|%|％))/g)||[]
+  if(numbers.some(n=>!quoted.includes(n))||quantities(claim.answer).some(n=>!quantities(claim.quote).includes(n))){reject('unverified_number');withheldClaims.push({sourceId:source.id,quote:claim.quote,reason:'unverified_number'});continue}
   result.push({source,quote:claim.quote,answer:claim.answer})
  }
  return {claims:result,omitted:Object.values(withheldReasons).reduce((a,b)=>a+b,0),hostScopeHandled,withheldReasons,withheldClaims}

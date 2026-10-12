@@ -41,7 +41,7 @@ function publicSummary (input) {
   }
   return sections.length ? t('publicSearch.summaryIntro', {}, locale) + '\n\n' + sections.join('\n\n') : null
 }
-function cleanText(text){return String(text||'').replace(/\[([^\]]*)\]\([^)]*\)/g,'$1').replace(/[\\\[\]*_`<>#]/g,'').replace(/\r/g,'')}
+function cleanText(text){return String(text||'').replace(/\[([^\]]*)\]\([^)]*\)/g,'$1').replace(/[\[\]*_`#]/g,'').replace(/\r/g,'')}
 function localTime(value,locale){return /^\d{4}-\d{2}-\d{2}$/.test(value)?value:Number.isFinite(Date.parse(value))?new Intl.DateTimeFormat(locale==='zh'?'zh-TW':'en-CA',{timeZone:'America/Winnipeg',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hour12:false}).format(new Date(value))+' (Winnipeg)':null}
 function preparedPublicSummary(input,{requiredWorlds,completedWorlds,investigation}={}){
  if(investigation||requiredWorlds?.public!==true||requiredWorlds.internal!==false||completedWorlds?.public!==true||completedWorlds.internal===true)return null
@@ -89,7 +89,7 @@ function composedSummary(rows,input,locale){
  const hostScope=rows.some(r=>r.fields.sourceEvidence.hostScopeHandled>0)?t('publicSearch.hostScope',{},locale):null
  const retrieval=rows[0].fields.sourceEvidence.retrievalTiming
  const latency=retrieval&&Number.isSafeInteger(retrieval.totalMs)&&retrieval.totalMs>=0&&Number.isSafeInteger(retrieval.modelCallCount)&&retrieval.modelCallCount>=0?t('publicSearch.retrievalTiming',{ms:retrieval.totalMs,calls:retrieval.modelCallCount},locale):null
- return [lead,scope,gaps,invalid?t('publicSearch.structuredInvalid',{count:invalid},locale):null,omitted,timing,limits,links,'### '+t('publicSearch.details',{},locale),note,checked?t('publicSearch.fallbackChecked',{count:checked},locale):null,hostScope,reasonsText,latency,details].filter(Boolean).join('\n\n')
+ return [lead,primary.length!==rows.length?note:null,scope,gaps,invalid?t('publicSearch.structuredInvalid',{count:invalid},locale):null,omitted,timing,limits,links,'### '+t('publicSearch.details',{},locale),primary.length===rows.length?note:null,checked?t('publicSearch.fallbackChecked',{count:checked},locale):null,hostScope,reasonsText,latency,details].filter(Boolean).join('\n\n')
 }
 function recurringTable(rows,locale){
  if(!rows.length||new Set(rows.map(r=>r.fields.url)).size!==1||rows.some(r=>r.fields.sourceEvidence?.kind!=='publisher_structured'||r.fields.sourceEvidence.coverage?.kind!=='recurring_hours'))return null
