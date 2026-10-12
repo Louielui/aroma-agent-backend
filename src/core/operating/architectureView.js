@@ -1,0 +1,150 @@
+'use strict'
+
+const fs = require('node:fs')
+const path = require('node:path')
+const { t, currentLocale } = require('../../i18n/t')
+const { registryView } = require('./registry')
+const escape = value => String(value).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]))
+
+// Release inventory, not a connection probe. Live source evidence stays in the
+// briefing. Read the same planned-integration states used by the tool registry.
+function buildArchitectureHtml () {
+  const labels = {
+    title: t('architecture.title'), intro: t('architecture.intro'), snapshot: t('architecture.snapshot', { date: '2026-10-08' }),
+    back: t('manager.back'), briefing: t('manager.title'), component: t('architecture.component'),
+    workbench: t('workerFlow.title'), developmentPlan: t('plan.title'), connections: t('connections.title'), companyAccess: t('company.title'), liveContext: t('live.title'), driveContext: t('driveContext.title'), aromaContext: t('aromaContext.title'), calendarContext: t('calendarContext.title'), gmailContext: t('gmailContext.title'),
+    current: t('architecture.current'), next: t('architecture.next'), details: t('architecture.details'),
+    foundation: t('architecture.foundation'), partial: t('architecture.partial'), connected: t('architecture.connected'),
+    pending_verification: t('architecture.pendingVerification'), statusGuide: t('architecture.statusGuide'),
+    stage: t('architecture.stage'), later: t('architecture.later'), integrationScope: t('architecture.integrationScope'),
+    not_connected: t('architecture.notConnected'), not_enabled: t('architecture.notEnabled'),
+    unknown: t('manager.unknown'), integrations: t('architecture.integrations'),
+    boundary: t('architecture.boundary'), boundaryText: t('architecture.boundaryText'),
+    priority: t('architecture.priority'), priorityText: t('architecture.priorityText', { drive: 'Aroma Base', pack: 'Context Pack' }),
+    owner: t('architecture.owner'), core: t('architecture.core'), tools: t('architecture.tools'),
+    result: t('architecture.result'), memory: t('architecture.memory'),
+    flow: t('architecture.flow'), roles: t('architecture.roles'), rolesText: t('architecture.rolesText'),
+    checklist: t('master.checklist'), capabilities: t('master.capabilities'), roadmap: t('master.roadmap'),
+    layers: t('master.layers'), modules: t('master.modules'), scope: t('master.scope'), status: t('master.status'),
+    worker: t('master.worker'), fallback: t('master.fallback'), routingNote: t('master.routingNote'),
+    ownership: t('master.ownership'), memoryStack: t('master.memoryStack'), moduleNote: t('master.moduleNote'),
+    timeline: t('master.timeline'), exclusions: t('master.exclusions'), exclusionsText: t('master.exclusionsText'),
+    deferred: t('master.deferred'), deferredText: t('master.deferredText', { businessProfile: 'Google Business Profile' }), agentOrder: t('master.agentOrder')
+  }
+  const rows = [
+    { id: 'universal-assistant', state: 'partial', title: t('assistant.archTitle'), purpose: t('assistant.archCurrent'), component: 'Existing chat entrance / bounded general definitions / supplied-text boundary / current-request routing / preserved evidence and approval gates', current: t('assistant.archCurrent'), next: t('assistant.archLimits'), evidence: 'src/intake/generalKnowledge.js; src/intake/generalKnowledge.test.js; docs/UNIVERSAL-ASSISTANT-V1.md; /api/v1/demo/intake' },
+    {id:'capability-gap-resolution',state:'partial',title:t('gap.architectureTitle'),purpose:t('gap.architecturePurpose'),component:'Judged goal/read states / durable proposals / exact scope approval / existing task planner / verified adoption / read-only original-goal continuation',current:t('gap.architectureCurrent', { verifiedDate: '2026-10-09', employeeCount: 13, punchCount: 25 }),next:t('gap.architectureNext'),evidence:'src/capabilities/gapContract.js; src/capabilities/gapService.js; src/capabilities/scopeRegistry.js; src/context/adapters/sevenShiftsRead.js; src/context/sevenShiftsReport.js; docs/SEVEN-SHIFTS-CLOCK-OUT-REPORT-V1.md; docs/CAPABILITY-GAP-DEVELOPMENT-HANDOFF-V1.md; /api/v1/capability-gaps'},
+    { id: 'operational-investigation', state: 'partial', title: t('investigation.title'), purpose: t('investigation.boundary'), component: 'Goal Decomposer / question-specific evidence evaluation / focus-prioritized finding budget / role-bound workflow titles / source-bound bilingual operational briefs / deterministic bounded cost findings with exact receipt references / server-saved follow-up reference / fresh same-record comparisons / exact scalar statement binding / bounded same-subscription semantic review / visible withheld claims / fixed Owner execution, work and Windows scheduler metadata / live background process probes / goal-selected local evidence sections / canonical six-state assertion evidence / historical-current facet separation / external-only investigation entry / freshness-checked runtime / single shared runtime snapshot / parallel source reads with measured durations / linked failure and adoption records / registered source hash comparison / bounded live workflow occupancy / independent metadata lane / pinned canonical paths / bounded prefix-tail coverage / cumulative token snapshot deduplication / deterministic evidence grades / structured contradictions and dated transitions / explicit billing and current-repair gaps / read-only recommendations / durable idempotent receipts / exact source citation enquiry / opening-act Chinese-English investigation routing before correspondence vocabulary', current: t('investigation.archCurrent') + ' ' + t('investigation.continuityCurrent') + ' ' + t('investigation.semanticCurrent') + ' ' + t('investigation.runtimeCurrent') + ' ' + t('investigation.invocationCurrent'), next: t('investigation.archNext'), evidence: 'src/intake/investigationLane.test.js; src/context/adapters/xiangxiangOperationsRead.js; src/context/adapters/xiangxiangOperationsRead.test.js; src/routes/contextSourceScope.test.js; src/intake/operationalInvestigation.test.js; src/investigation/costFindings.js; src/investigation/costFindings.test.js; src/investigation/; src/subscription/bridge.test.js; docs/INVESTIGATION-INTELLIGENCE-V1.md; docs/INVESTIGATION-EXPANSION-V1.md; docs/INVESTIGATION-CONTINUITY-V1.md; docs/INVESTIGATION-SEMANTIC-V1.md; docs/INVESTIGATION-RUNTIME-V1.md; docs/INVESTIGATION-INVOCATIONS-V1.md' },
+      { id: 'model-center', state: 'partial', title: t('brain.title'), purpose: t('brain.intro'), component: 'Durable central brain / independent topic and conversation selections / catalogue validation / optimistic revision / request-time capture', current: t('brain.current') + ' ' + t('brain.availabilityCurrent'), next: t('brain.limits'), evidence: 'src/modelCenter/; src/subscription/catalogueAvailability.test.js; src/modelCenter/availability.browser.test.js; src/routes/demoRouter.js; src/topics/workspaces.js; /model-center; /api/v1/model-center; docs/MODEL-CENTER-V1.md' },
+    { id: 'topic-workspaces', state: 'partial', title: t('topic.architectureTitle'), purpose: t('topic.intro'), component: 'Owner topic membership / durable chat history / revisioned manual follow-ups / source-ID-only email handoff / confirmed evidence-linked HR follow-ups / revision-bound HR rechecks', current: t('topic.current') + ' ' + t('followup.architectureCurrent') + ' ' + t('recheck.architecture'), next: t('followup.architectureLimits'), evidence: 'src/topics/; src/demo/assets/topics.js; src/context/gmailContextView.html; docs/TOPIC-WORKSPACES-V1.md; docs/EVIDENCE-FOLLOW-UPS-V1.md; docs/HR-FOLLOW-UP-RECHECKS-V1.md; /demo?topic=hr; /api/v1/topic-workspaces' },
+    { id: 'department-workspaces', state: 'partial', title: t('department.architectureTitle'), purpose: t('topic.intro'), component: 'Department navigation / isolated topic membership / explicit-date HR query preparation / compact tools / expandable report tables / existing permission-checked 7shifts reader', current: t('department.current'), next: t('department.limits'), evidence: 'src/topics/departments.test.js; src/topics/departments.browser.test.js; docs/DEPARTMENT-WORKSPACES-V1.md; docs/HR-WORKSPACE-LAYOUT-V1.md; /demo?topic=hr' },
+    { id: 'hr-attendance', state: 'partial', title: t('attendance.architectureTitle'), purpose: t('attendance.architecturePurpose'), component: 'Clock-in-day GET / named punches / evidence grading / historical-current classification / durable reply', current: t('attendance.architectureCurrent'), next: t('attendance.architectureLimits'), evidence: 'src/context/sevenShiftsAttendance.js; src/context/sevenShiftsAttendance.test.js; src/context/sevenShiftsReportHttp.test.js; docs/HR-ATTENDANCE-V1.md; /demo?topic=hr' },
+    { id: 'hr-schedule-comparison', state: 'partial', title: t('comparison.architectureTitle'), purpose: t('comparison.architecturePurpose'), component: 'Published schedule-day GET / adjacent punch days / exact-link or inferred pairing / discrepancies / saved report', current: t('comparison.architectureCurrent'), next: t('comparison.architectureLimits'), evidence: 'src/context/sevenShiftsComparison.js; src/context/sevenShiftsComparison.test.js; src/context/sevenShiftsReportHttp.test.js; docs/HR-SCHEDULE-COMPARISON-V1.md; /demo?topic=hr' },
+    { id: 'project-tasks', title: t('projectTask.title'), purpose: t('projectTask.intro'), component: 'Immutable task registry / closed Context and sidebar profiles / protected acceptance drafts / independent approvals / offline execution', state: 'partial', current: t('projectTask.current') + ' ' + t('dialogue.reviewChecks'), next: t('projectTask.next'), evidence: 'src/core/projectTasks/; src/core/workerFlow/providers.js; src/workers/execution/chatBrowser.cjs; docs/INTERFACE-TASKS-V1.md; docs/UI-REQUEST-FLOW.md; docs/PROVIDER-AWARE-UI-ACCEPTANCE.md; /project-tasks; /api/v1/project-tasks' },
+    { id: 'task-planner', title: t('taskPlan.title'), purpose: t('taskPlan.boundary'), component: 'Bound conversation-to-job handoff / whole-request capability assessment / fixed committed profiles / verified quotes / subscription planning / actual-pixel review', state: 'partial', current: t('taskPlan.current') + ' ' + t('taskPlan.handoffCurrent') + ' ' + t('dialogue.requestFlow') + ' ' + t('uiDesign.current') + ' ' + require('../projectWork/resultLabels').resultLabels().resultArchitecture, next: t('taskPlan.next') + ' ' + t('dialogue.requestFlowLimits') + ' ' + t('uiDesign.limits'), evidence: 'src/core/taskPlanner/; src/design/; skills/xiangxiang-ui-design/; docs/UI-REQUEST-FLOW.md; docs/UI-DESIGN-V1.md; /demo; /api/v1/task-plan' },
+    { id: 'project-adoption', state: 'partial', title: t('projectAdoption.title'), purpose: t('projectAdoption.intro'), component: 'Owner approval / whole-file-set source / offline retest / one local commit / verified reload / whole-set rollback / compact evidence views', current: t('projectAdoption.current'), next: t('projectAdoption.limits'), evidence: 'src/core/projectWork/adoption*.js; src/subscription/adoptionPayload.test.js; docs/PROJECT-MULTIFILE-V2.md; docs/UI-REQUEST-FLOW.md; /project-work' },
+    { id: 'project-work', state: 'partial', title: t('projectWork.title'), purpose: t('projectWork.intro'), component: 'Registered backend file sets / chat task planning / separate one-use approvals / in-chat progress / Windows Sandbox / Sol 6.1 High / Claude / bounded visual correction', current: t('projectWork.current') + ' ' + t('uiDesign.repairChecks'), next: t('projectWork.limits') + ' ' + t('uiDesign.limits'), evidence: 'src/core/projectWork/; src/workers/execution/visualRepairFeedback.js; docs/CHAT-PROJECT-WORK-V1.md; docs/UI-REQUEST-FLOW.md; /demo; /project-work' },
+    { id: 'worker-isolation', state: 'connected', title: t('isolation.title'), purpose: t('isolation.purpose'), component: 'Windows Sandbox / offline packaged workspace / text-only Codex / one-use approval', current: t('isolation.current'), next: t('isolation.next'), evidence: 'src/workers/execution/; docs/WORKER-ISOLATION-V1.md; /workers' },
+    { id: 'code-repair', state: 'partial', title: t('repair.title'), purpose: t('repair.intro'), component: 'Capability Registry / Policy / single-use Owner approval / Codex / fixed repair catalogue', current: t('repair.adoptionCurrent'), next: t('repair.limits'), evidence: 'src/core/codeRepair/; docs/CONTROLLED-REPAIR-V1.md; docs/CONTROLLED-REPAIR-ADOPTION-V1.md' },
+    { id: 'development-plan', state: 'partial', title: t('architecture.planTitle'), purpose: t('architecture.planPurpose'), component: 'Capability Registry / Policy / Dispatcher / Codex subscription', current: t('architecture.planCurrent'), next: t('architecture.planNext'), evidence: 'src/core/developmentPlan/; src/core/codeDiagnosis/; src/capability/requestRouter.js; docs/CONTROLLED-DISPATCH-V1.md' },
+    { id: 'mail-memory', state: 'partial', title: t('architecture.mailMemoryTitle'), purpose: t('architecture.mailMemoryPurpose'), component: 'PostgreSQL / Gmail / Hindsight / Claude subscription', current: t('architecture.mailMemoryCurrent'), next: t('architecture.mailMemoryNext'), evidence: 'src/company/mailMemory.js; mailSemantic.js; mailHistory.js; mailChat.test.js; docs/MEMORY-RECOVERY.md; docs/ADMIN-MAIL-NOTIFICATIONS.md' },
+    { id: 'chat-images', state: 'partial', title: t('imageChat.title'), purpose: t('imageChat.uploadNote'), component: 'Clipboard/file preview / bounded normalized PNG / selected subscription vision / protected conversation history', current: t('imageChat.current'), next: t('imageChat.limits'), evidence: 'docs/CHAT-IMAGES-V1.md; src/chat/; src/routes/imageChat.test.js; src/subscription/chatImages.test.js (service, adapter and bridge contract); /demo; /api/v1/demo/image-intake' },
+    { id: 'brain', state: 'foundation', title: t('architecture.brainTitle'), purpose: t('architecture.brainPurpose'), component: t('architecture.brainComponent'), current: t('architecture.brainCurrent'), next: t('architecture.brainNext'), evidence: 'src/adapters/; src/subscription/claudeBrain.test.js; src/subscription/providerCatalogue.test.js; docs/CLAUDE-BRAIN.md' },
+    { id: 'core', state: 'partial', title: t('architecture.coreTitle'), purpose: t('architecture.corePurpose'), component: t('architecture.coreComponent'), current: t('architecture.coreCurrent'), next: t('architecture.coreNext'), evidence: 'src/core/operating/registry.js; manager.js; gateway.js' },
+    { id: 'tools', state: 'partial', title: t('architecture.toolsTitle'), purpose: t('architecture.toolsPurpose'), component: t('architecture.toolsComponent'), current: t('architecture.toolsCurrent', { drive: 'Aroma Base', pack: 'Knowledge Context Pack', truthPack: 'Truth Context Pack' }), next: t('architecture.toolsNext'), evidence: 'src/context/; src/agent/; src/computer/' },
+    { id: 'workflow', state: 'partial', title: t('architecture.workflowTitle'), purpose: t('architecture.workflowPurpose'), component: t('architecture.workflowComponent'), current: t('architecture.workflowCurrent'), next: t('architecture.workflowNext'), evidence: 'src/core/operating/activityStore.js; src/store/; src/agent/' },
+    { id: 'memory', state: 'partial', title: t('architecture.memoryTitle'), purpose: t('architecture.memoryPurpose'), component: t('architecture.memoryComponent', { component: 'Memory Gateway' }), current: t('architecture.memoryCurrent'), next: t('architecture.memoryNext'), evidence: 'src/memory/governed.js; runtime.js; operations.js; backupScheduler.js; scripts/memory/serviceSupervisor.cjs; docs/MEMORY-SIX-LAYERS.md; docs/MEMORY-OWNER-V1-ACCEPTANCE.md' },
+    { id: 'truth', state: 'partial', title: t('architecture.truthTitle'), purpose: t('architecture.truthPurpose'), component: t('architecture.truthComponent'), current: t('architecture.truthCurrent', { pack: 'Truth Context Pack' }), next: t('architecture.truthNext'), evidence: 'src/context/adapters/aromaSystemRead.js; src/context/aromaContext.js; src/context/aromaContextService.js; docs/AROMA-LIVE-CONTEXT-V1.md' },
+    { id: 'knowledge', state: 'partial', title: t('architecture.knowledgeTitle'), purpose: t('architecture.knowledgePurpose'), component: t('architecture.knowledgeComponent'), current: t('architecture.knowledgeCurrent', { drive: 'Aroma Base', pack: 'Knowledge Context Pack' }), next: t('architecture.knowledgeNext'), evidence: 'src/context/driveContext.js; src/context/driveScope.js; src/context/toolGateway.js' },
+    { id: 'approval', state: 'partial', title: t('architecture.approvalTitle'), purpose: t('architecture.approvalPurpose'), component: t('architecture.approvalComponent'), current: t('architecture.approvalCurrent'), next: t('architecture.approvalNext'), evidence: 'src/governance/ownerAuth.js; src/company/; docs/COMPANY-ACCESS.md' }
+  ]
+  const investigationRow = rows.find(row => row.id === 'operational-investigation')
+  rows.push({id:'public-search',state:'partial',title:t('publicSearch.title'),purpose:t('publicSearch.purpose'),
+    component:'Owner-only query planner / Claude subscription / WebSearch discovery / per-query observed HTTPS scope / cited-source priority / fixed GET and public DNS boundary / subject-bound JSON-LD and publisher profiles / bounded alternate-source recovery / matched quotes / tool-free language composition / typed source times / recurring-vs-dated coverage / prepared verified public final / monotonic source timings / TTL and single-flight / observed usage receipts',
+    current:t('publicSearch.current')+' '+t('publicSearch.fallbackCurrent')+' '+t('publicSearch.qualityCurrent')+' '+t('publicCompletion.architecture'),next:t('publicSearch.limits'),evidence:'src/subscription/publicSearch.js; src/subscription/publicSearch.test.js; src/subscription/publicPages.js; src/subscription/publicGeneralization.test.js; src/subscription/publicStructured.js; src/subscription/publicStructured.test.js; src/intake/publicPreparedAnswer.test.js; src/context/providers/claudeSubscriptionSearchProvider.js; docs/PUBLIC-ANSWER-COMPLETION-V1.md; src/topics/publicAnswerFollowups.js; src/topics/publicAnswerFollowups.test.js; docs/GENERAL-PUBLIC-RETRIEVAL-V1.md; docs/CURRENT-PUBLIC-INFORMATION-V1.md; docs/PUBLIC-SOURCE-FALLBACK-V1.md; docs/PUBLIC-ANSWER-QUALITY-V1.md'})
+  rows.push({id:'action-gateway',state:'partial',title:t('actions.title'),purpose:t('actions.intro'),component:'Closed scheduler catalogue / bounded semantic capability selection / conversation and saved investigation binding / displayed proposal and typed confirmation / durable dialogue receipts / exact calendar coverage recommendation / Owner approval / fixed Windows adapter / durable target locks / read-back / inverse proposal',current:t('actions.current')+' '+t('actions.continuationCurrent')+' '+t('actions.semanticCurrent')+' '+t('actions.next'),next:t('actions.next'),evidence:'src/actions/; docs/ACTION-GATEWAY-V1.md; /action-center; /api/v1/scheduler-actions; /api/v1/demo/scheduler-actions'})
+  investigationRow.current += ' ' + t('investigation.qualityCurrent')
+  investigationRow.current += ' ' + t('investigation.accessCoverageCurrent')
+  investigationRow.current += ' ' + t('investigation.generalizationAcceptanceCurrent')
+  investigationRow.current += ' ' + t('investigation.repairChainCurrent')
+  investigationRow.current += ' ' + t('investigation.liveVerificationCurrent')
+  investigationRow.current += ' ' + t('investigation.backgroundGeneralizationCurrent')
+  investigationRow.current += ' ' + t('investigation.executionUsageCurrent')
+  investigationRow.current += ' ' + t('investigation.workerReceiptCurrent', { verifiedDate: '2026-10-09' })
+  investigationRow.current += ' ' + t('investigation.subscriptionCurrent')
+  investigationRow.current += ' ' + t('investigation.costAssessmentCurrent')
+  investigationRow.current += ' ' + t('investigation.adviceCurrent')
+  investigationRow.current += ' ' + t('investigation.progressCurrent')
+  investigationRow.current += ' ' + t('investigation.memoryFailureCurrent')
+  investigationRow.current += ' ' + t('investigation.memoryTraceCurrent')
+  investigationRow.next += ' ' + t('investigation.memoryFailureNext')
+  investigationRow.next += ' ' + t('investigation.memoryTraceNext')
+  investigationRow.evidence += '; src/investigation/memoryFailures.js; src/investigation/memoryFailures.test.js; docs/MEMORY-FAILURE-DIAGNOSIS-V1.md; src/investigation/workProgress.test.js (bilingual raw-only and source-only count rendering)'
+  investigationRow.evidence += '; src/investigation/memoryAttemptEvidence.js; src/investigation/memoryFailureCorrelation.js; src/investigation/memoryFailureCorrelation.test.js; src/memory/failureAttempts.test.js; docs/MEMORY-FAILURE-TRACE-V1.md'
+  investigationRow.next += ' ' + t('investigation.progressNext')
+  investigationRow.evidence += '; src/investigation/workPurpose.js; src/investigation/workProgress.test.js; docs/WORK-PURPOSE-RESULTS-V1.md'
+  investigationRow.next += ' ' + t('investigation.adviceNext')
+  investigationRow.evidence += '; src/investigation/decisionAdvice.js; src/investigation/decisionAdvice.test.js; docs/INVESTIGATION-DECISION-ADVICE-V1.md'
+  investigationRow.evidence += '; src/investigation/costAssessment.js; src/investigation/costAssessment.test.js; docs/COST-EVIDENCE-ASSESSMENT-V1.md'
+  investigationRow.evidence += '; src/subscription/subscriptionEvidence.js; docs/SUBSCRIPTION-QUOTA-EVIDENCE-V1.md'
+  investigationRow.component += ' / canonical registered worker run identities / host-only provider receipts / separate model and host outcomes / no billing inference'
+  investigationRow.evidence += '; src/investigation/workerInvocation.js; src/investigation/workerInvocation.test.js; docs/WORKER-EXECUTION-EVIDENCE-V1.md'
+    investigationRow.evidence += '; docs/EXTERNAL-EXECUTION-USAGE-V1.md'
+    investigationRow.evidence += '; src/investigation/workTrace.js; scripts/memory/work_trace_runtime.py; docs/WORK-RUN-USAGE-V1.md'
+  investigationRow.evidence += '; docs/INVESTIGATION-BACKGROUND-GENERALIZATION-V1.md'
+  investigationRow.component += ' / required-source access coverage without fabricated citations / authorized equivalent fallback / bilingual empty-versus-unavailable evidence'
+  investigationRow.evidence += '; docs/INVESTIGATION-GENERALIZATION-ACCEPTANCE-V1.md'
+  investigationRow.component += ' / revision-only fixed-answer guard / brief Owner conclusion with collapsed evidence / saved non-additive phase measurements and bounded stop'
+  investigationRow.evidence += '; src/investigation/ownerBrief.js; docs/INVESTIGATION-QUALITY-V1.md'
+  investigationRow.component += ' / shared read-only source-bound findings / conditional semantic review / bounded advisory intent wait / guarded direct source-bound answer / required authorised cross-source sample read and exact reference review / mixed local-and-mail intent routing / bounded email-to-invocation identifier comparison / closed provider-cost Gmail search profile'
+  investigationRow.current += ' ' + t('investigation.findingsCurrent') + ' ' + t('investigation.latencyCurrent') + ' ' + t('investigation.latencyMeasured') + ' ' + t('investigation.directAnswerCurrent') + ' ' + t('investigation.crossScenarioCurrent') + ' ' + t('investigation.mixedMailRouteCurrent') + ' ' + t('investigation.costComparisonCurrent') + ' ' + t('investigation.costMailSearchCurrent') + ' ' + t('investigation.followupCurrent') + ' ' + t('investigation.generalizationCurrent') + ' ' + t('investigation.gapRecoveryCurrent')
+  investigationRow.next += ' ' + t('investigation.findingsNext') + ' ' + t('investigation.latencyNext') + ' ' + t('investigation.crossScenarioNext') + ' ' + t('investigation.mixedMailRouteNext') + ' ' + t('investigation.costComparisonNext') + ' ' + t('investigation.generalizationNext')
+  investigationRow.evidence += '; src/investigation/sourceBoundFindings.js; src/investigation/answerFastPath.js; src/investigation/crossSourceEvidence.js; src/investigation/crossSourceEvidence.test.js; src/context/readContext.js; src/context/readContext.test.js; src/company/mailIntent.js; src/company/mailIntent.test.js; src/investigation/sourceBoundFindings.test.js; src/intake/operationalInvestigation.test.js; src/intake/semanticFallbackSafety.test.js; docs/INVESTIGATION-SOURCE-BOUND-V1.md; docs/INVESTIGATION-LATENCY-V1.md; docs/INVESTIGATION-CROSS-SCENARIO-V1.md'
+  const cards = rows.map(row => `<article class="card" data-component="${escape(row.id)}" data-state="${escape(row.state)}">
+    <div class="card-heading"><h2>${escape(row.title)}</h2><span class="badge ${escape(row.state)}">${escape(labels[row.state])}</span></div>
+    <p class="purpose">${escape(row.purpose)}</p><dl><dt>${escape(labels.component)}</dt><dd>${escape(row.component)}</dd>
+    <dt>${escape(labels.current)}</dt><dd>${escape(row.current)}</dd><dt>${escape(labels.next)}</dt><dd>${escape(row.next)}</dd></dl>
+    <details><summary>${escape(labels.details)}</summary><code>${escape(row.evidence)}</code></details></article>`).join('\n')
+  const integrationNames = { hindsight: 'Hindsight', memory_postgresql: t('architecture.memoryDatabase'), memory_pgvector: 'pgvector', qbo: 'QBO', '7shifts': '7shifts', business_write: t('architecture.businessWrite'),
+    google_business: 'Google Business Profile', pos: 'POS', cloudflare: 'Cloudflare', make: 'Make', whatsapp: 'WhatsApp Business', sms: 'SMS',
+    costco: 'Costco', wholesale_club: 'Wholesale Club', amazon: 'Amazon', supplier_portals: 'Supplier Portals', manus: 'Manus', grok: 'Grok' }
+  const registered = registryView().integrations
+  const stateOf = id => registered.find(item => item.id === id)?.state || 'unknown'
+  const integrations = registered.map(item => `<tr data-integration="${escape(item.id)}"><th scope="row">${item.number ? escape(item.number) + ' · ' : ''}${escape(integrationNames[item.id] || item.id)}</th><td><span class="badge ${escape(item.state)}">${escape(labels[item.state] || labels.unknown)}</span></td><td>${item.phase != null ? 'Phase ' + escape(item.phase) : escape(labels.later)}</td></tr>`).join('')
+  // The numbered inventory is a design/evidence snapshot, never a routable plan.
+  const connections = [
+    ['01', 'GitHub', 'partial', t('master.github')],
+    ['02', 'Google Drive', 'partial', t('master.drive', { drive: 'Aroma Base' })],
+    ['03', 'Aroma System API', 'partial', t('master.aroma')],
+    ['04', 'Google Calendar', 'partial', t('master.calendar')],
+    ['05', 'Gmail', 'partial', t('master.gmail')],
+    ['06', 'OpenAI / API', 'partial', t('master.openai')],
+    ['07', 'Codex', 'partial', t('master.codex')],
+    ['08', 'Claude / API', 'partial', t('master.claude')],
+    ['09', 'Aroma Memory Gateway', 'partial', t('master.memoryGateway')],
+    ['10', 'Hindsight', stateOf('hindsight'), t('master.hindsight')],
+    ['11', 'PostgreSQL', stateOf('memory_postgresql'), t('master.postgres')],
+    ['12', 'pgvector', stateOf('memory_pgvector'), t('master.pgvector')]
+  ]
+  const checklist = connections.map(([id, name, state, scope]) => `<tr data-connection="${id}" data-state="${escape(state)}"><th scope="row">${id} · ${escape(name)}</th><td><span class="badge ${escape(state)}">${escape(labels[state] || labels.unknown)}</span></td><td>${escape(scope)}</td></tr>`).join('')
+  const optional = t('master.optional')
+  labels.codeDiagnosis = t('work.title')
+  labels.codeRepair = t('repair.title')
+  const capabilities = [
+    ['coding', 'Coding', 'Codex', 'Claude'], ['browser', 'Browser', 'Codex', 'Manus · ' + optional],
+    ['computer', 'Computer Use', 'Codex', 'Manus · ' + optional], ['qa', 'System QA', 'Codex / Claude', 'Grok · ' + optional],
+    ['architecture', 'Architecture', 'Claude', 'OpenAI'], ['reasoning', 'General Reasoning', 'OpenAI / Claude', t('master.otherModels')],
+    ['research', 'Web Research', 'OpenAI', 'Grok · ' + optional], ['x-search', 'X Search · ' + optional, 'Grok · ' + optional, '—']
+  ].map(([id, name, worker, fallback]) => `<tr data-capability="${id}"><th scope="row">${escape(name)}</th><td>${escape(worker)}</td><td>${escape(fallback)}</td></tr>`).join('')
+  const phases = [t('master.phase0'), t('master.phase1'), t('master.phase2'), t('master.phase3'), t('master.phase4'), t('master.phase5'), t('master.phase6'), t('master.phase7'), t('master.phase8')]
+    .map((text, id) => `<li data-phase="${id}"><strong>Phase ${id}</strong> · ${escape(text)}</li>`).join('')
+  const modules = [t('master.capture'), t('master.context'), t('master.planner'), t('master.router'), t('master.dispatcher'), t('master.toolGateway'), t('master.memoryModule'), t('master.policy'), t('master.permission'), t('master.approval'), t('master.runTimeline'), t('master.audit'), t('master.briefing')]
+    .map(text => `<li>${escape(text)}</li>`).join('')
+  const replacements = { ...labels, lang: currentLocale() === 'en' ? 'en' : 'zh-Hant' }
+  return fs.readFileSync(path.join(__dirname, 'architecture.html'), 'utf8')
+    .replace(/\{\{(\w+)\}\}/g, (_, key) => escape(replacements[key]))
+    .replace('<!--CARDS-->', () => cards).replace('<!--INTEGRATIONS-->', () => integrations)
+    .replace('<!--CHECKLIST-->', () => checklist).replace('<!--CAPABILITIES-->', () => capabilities)
+    .replace('<!--PHASES-->', () => phases).replace('<!--MODULES-->', () => modules)
+}
+module.exports = { buildArchitectureHtml }

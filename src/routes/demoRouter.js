@@ -214,8 +214,54 @@ function buildWorkRequestResolution ({ req, message, offerDecision, conversation
   return null
 }
 
-function createDemoRouter ({ getAdapterFn = getAdapterForLane, processIntakeFn = processIntake, conversationStore = INERT_CONVERSATION_STORE, readBacklogFn = null, backlogTimeoutMs = 2500, errandStoreFn = null } = {}) {
+function createDemoRouter ({ getAdapterFn = getAdapterForLane, processIntakeFn = processIntake, conversationStore = INERT_CONVERSATION_STORE, readBacklogFn = null, backlogTimeoutMs = 2500, errandStoreFn = null, operatingManager = null, memoryJournal = null, mailChat = null, liveContext = null, sevenShiftsReport = null, hrRechecks = null, developmentPlan = null, codeDiagnosis = null, codeRepair = null, chatWork = null, taskPlanner = null, taskDialogue = null, schedulerChat = null, capabilityGaps = null, publicCompletion = require('../topics/publicAnswerFollowups').createService(), imageAdapterFn = selection => {
+  if (process.env.CHAT_BACKEND !== 'codex-subscription') throw Error('image_chat_unavailable')
+  return new (require('../adapters/CodexSubscriptionAdapter').CodexSubscriptionAdapter)(selection)
+}, modelCenter = null, planningRevision = require('../governance/bootCommit').BOOT_COMMIT, modelsFn = async () => new (require('../adapters/CodexSubscriptionAdapter').CodexSubscriptionAdapter)().models() } = {}) {
+  const contextReceipts = new Map()
+  const clockOutReceipts = new Map()
+  const chatWorkReceipts = new Map()
   const router = express.Router()
+  const investigationReceipts = require('../investigation/receipts').createReceipts()
+  router.get('/api/v1/demo/investigations/:id', demoGuard, (req, res) => {
+    if (!require('../core/operating/runStore').ID.test(req.params.id)) return res.status(400).json({ error: 'invalid_run_id' })
+    try { res.set('Cache-Control', 'no-store').json({ run: investigationReceipts.get(req.params.id) }) }
+    catch (_) { res.status(503).json({ error: 'investigation_unavailable' }) }
+  })
+  // This image-only chat entrance never reaches tools, mail reads, planning,
+  // execution, the research archive or automatic long-term memory ingestion.
+  router.post('/api/v1/demo/image-intake', demoGuard, async (req, res) => {
+    res.set('Cache-Control', 'no-store')
+    if (!require('../core/operating/chatRequest').sameOrigin(req)) return res.status(403).json({ error: { message: t('imageChat.invalid'), retryable: false } })
+    let images, input = req.body
+    try {
+      const allowed = ['message', 'images', 'conversationId', 'chatModel', 'chatLevel']
+      if (!input || Array.isArray(input) || Object.keys(input).some(k => !allowed.includes(k)) || typeof input.message !== 'string' || !input.message.trim() || input.message.length > 2000 || !isValidConversationId(input.conversationId)) throw Error('invalid_request')
+      if (input.chatModel !== undefined && !require('../subscription/chatModels').isBrainModel(input.chatModel)) throw Error('invalid_request')
+      if (input.chatLevel !== undefined && !require('../subscription/chatModels').REASONING_EFFORTS.includes(input.chatLevel)) throw Error('invalid_request')
+      images = require('../chat/imageAttachments').validateImages(input.images).map(i => i.dataUrl)
+    } catch (_) { return res.status(400).json({ error: { message: t('imageChat.invalid'), retryable: false } }) }
+    const imageOwnerSession = ownerSessionIdOf(req)
+    if (imageOwnerSession) pendingResolutions.supersede(imageOwnerSession, input.conversationId)
+    try {
+      const existing = conversationStore.get(input.conversationId)
+      if (modelCenter) {
+        const chosen = modelCenter.resolveConversation(input.conversationId)
+        input = { ...input, chatModel: chosen.model, chatLevel: chosen.effort }
+      }
+      const adapter = imageAdapterFn({ model: input.chatModel || require('../subscription/chatModels').DEFAULT_BRAIN_MODEL, effort: input.chatLevel || require('../subscription/chatModels').DEFAULT_EFFORT })
+      const result = await require('../chat/imageChat').processImageChat({ message: input.message.trim(), images, history: existing?.messages || [] }, adapter)
+      let historySaved = true
+      try { conversationStore.appendTurn({ id: input.conversationId, userText: input.message.trim(), replyText: result.reply, servedBy: result.servedBy, images }) } catch (_) { historySaved = false }
+      return res.json({ ...result, historySaved })
+    } catch (_) { return res.status(503).json({ error: { message: t('imageChat.failed'), retryable: false } }) }
+  })
+  router.get('/api/v1/demo/website-status/:id', demoGuard, (req, res) => {
+    const store = require('../store/websiteRunStore')
+    if (!store.ID.test(req.params.id)) return res.status(400).json({ error: 'invalid_run_id' })
+    try { res.set('Cache-Control', 'no-store').json({ run: store.get(req.params.id) }) }
+    catch (_) { res.status(503).json({ error: 'status_unavailable' }) }
+  })
 
   // ── CONVERSATION HISTORY v1 — read, load, delete ─────────────────────────
   // Behind the SAME demo guard and the same owner session as the page that calls them.
@@ -447,6 +493,29 @@ function createDemoRouter ({ getAdapterFn = getAdapterForLane, processIntakeFn =
     res.type('application/manifest+json').send(MANIFEST_JSON)
   })
 
+  router.get('/api/v1/demo/models', demoGuard, async (req, res) => {
+    res.setHeader('Cache-Control', 'no-store')
+    if (process.env.CHAT_BACKEND !== 'codex-subscription') return res.status(503).json({ code: 'subscription_unavailable' })
+    try {
+      const catalog = await modelsFn()
+      if (!modelCenter) return res.json(catalog)
+      const topic = req.get('X-Xiangxiang-Topic'), cid = req.get('X-Xiangxiang-Conversation')
+      const settings = modelCenter.read()
+      const selection = topic ? modelCenter.selection('topic', topic) : cid ? modelCenter.selection('conversation', cid) : null
+      res.json({ ...catalog, defaultModel: settings.brain.model, central: settings.brain, centralRevision: settings.revision, selection })
+    }
+    catch (_) { res.status(503).json({ code: 'subscription_unavailable' }) }
+  })
+
+  // Serialize stored turns within a conversation so an action confirmation cannot
+  // race a topic-changing intake. The lock lasts until the handler settles.
+  const intakeTurns=new Set()
+  const serializedIntake=handler=>async(req,res)=>{
+    const id=req.body?.conversationId,locked=!!(schedulerChat || capabilityGaps || publicCompletion)&&isValidConversationId(id)
+    if(locked&&intakeTurns.has(id))return res.status(409).json({error:{code:'conversation_busy',message:t('actions.continuationBusy'),retryable:true}})
+    if(locked)intakeTurns.add(id)
+    try{return await handler(req,res)}finally{if(locked)intakeTurns.delete(id)}
+  }
   // POST /api/v1/demo/intake — deterministic-mode intake (guarded).
   router.post(
     '/api/v1/demo/intake',
@@ -465,9 +534,11 @@ function createDemoRouter ({ getAdapterFn = getAdapterForLane, processIntakeFn =
         .optional()
         .isString().withMessage('interactionMode must be a string')
         .bail()
-        .isIn(INTERACTION_MODES).withMessage('interactionMode must be one of chat|email_draft|proposal')
+        .isIn(INTERACTION_MODES).withMessage('interactionMode must be one of chat|email_draft|proposal'),
+      body('chatLevel').optional().isString().bail().isIn(['auto', 'none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra', 'fast', 'standard', 'deep']),
+      body('chatModel').optional().custom(require('../subscription/chatModels').isBrainModel)
     ],
-    async (req, res) => {
+    serializedIntake(async (req, res) => {
       // Server-owned correlation id. A browser-supplied requestId is IGNORED.
       const correlationId = uuidv4()
       // OBSERVABILITY v1: exactly ONE outcome line per request — success, handled
@@ -487,7 +558,360 @@ function createDemoRouter ({ getAdapterFn = getAdapterForLane, processIntakeFn =
         return res.status(400).json({ error: 'Validation failed', details: errors.array() })
       }
 
-      const { message, history, contextCard, providerHint } = req.body
+      // Resolve once before any asynchronous routing/model work. The immutable
+      // selection belongs to this accepted request, not to a later settings edit.
+      if (modelCenter && process.env.CHAT_BACKEND === 'codex-subscription') {
+        try {
+          if (!isValidConversationId(req.body.conversationId)) throw Error('invalid_request')
+          const chosen = modelCenter.resolveConversation(req.body.conversationId)
+          req.body = { ...req.body, chatModel: chosen.model, chatLevel: chosen.effort }
+        } catch (_) { return res.status(503).json({ error: { message: t('brain.failed'), retryable: false } }) }
+      }
+
+      const { message, contextCard, providerHint } = req.body
+      // Browser history can still contain the immediately displayed mail answer.
+      // Replace it before ordinary intake; the source-bound lane rechecks access.
+      const history = Array.isArray(req.body.history) ? req.body.history.map((entry, i, all) =>
+        entry?.role === 'assistant' && (entry.sourceBound === true || (all[i - 1]?.role === 'user' && (require('../company/mailIntent').parseMailRequest(all[i - 1].text || all[i - 1].content, all.slice(0, i - 1)) || require('../context/gmailContextService').gmailIntent(all[i - 1].text || all[i - 1].content) || require('../context/sevenShiftsReport').clockOutRequest(all[i - 1].text || all[i - 1].content) || require('../context/sevenShiftsAttendance').attendanceRequest(all[i - 1].text || all[i - 1].content) || require('../context/sevenShiftsComparison').comparisonRequest(all[i - 1].text || all[i - 1].content))))
+          ? { ...entry, text: t('company.mailHistoryReceipt'), content: t('company.mailHistoryReceipt') } : entry) : req.body.history
+      // Resolve a bounded development conversation before keyword-based mail lanes:
+      // navigation labels and chat history are not requests to read a mailbox.
+      // A semantic topic change returns null and preserves ordinary mail routing.
+      const generalRequest = require('../intake/generalKnowledge').generalRequestKind(message)
+      const planningLane = !generalRequest && !contextCard && !req.body.attachSection && (!req.body.interactionMode || req.body.interactionMode === 'chat')
+      const clockOutRequest = planningLane && sevenShiftsReport ? require('../context/sevenShiftsReport').clockOutRequest(message) : null
+      const attendanceRequest = planningLane && sevenShiftsReport ? require('../context/sevenShiftsAttendance').attendanceRequest(message) : null
+      const comparisonRequest = planningLane && sevenShiftsReport ? require('../context/sevenShiftsComparison').comparisonRequest(message) : null
+      const publicFollowups = require('../topics/publicAnswerFollowups')
+      const publicFollowupKind = planningLane && publicCompletion ? publicFollowups.requestKind(message) : null
+      if (publicFollowupKind) {
+        if (!require('../core/operating/chatRequest').sameOrigin(req)) return res.status(403).json({error:'same_origin_required'})
+        const {conversationId}=req.body, requestId=req.body.websiteRequestId || req.body.workflowRequestId
+        if (!isValidConversationId(conversationId) || !require('../core/operating/runStore').ID.test(requestId || '')) return res.status(400).json({error:'invalid_request_id'})
+        const language=/[\u3400-\u9fff]/u.test(message)?'zh':'en'
+        let conversation
+        try { conversation=conversationStore.get(conversationId) } catch (_) { return res.status(503).json({error:'public_completion_store_unavailable'}) }
+        const priorIndex=conversation?.messages.findIndex(m=>m.role==='assistant'&&m.publicCompletionRequestId===requestId) ?? -1
+        if(priorIndex>=0){
+          if(conversation.messages[priorIndex-1]?.content!==message)return res.status(409).json({error:'request_conflict'})
+          const prior=conversation.messages[priorIndex]
+          return res.set('Cache-Control','no-store').json({lane:'chat',mode:'chat',reply:prior.content,servedBy:prior.servedBy,historySaved:true,reused:true})
+        }
+        const receipt=publicFollowups.latestReceipt(conversation)
+        let reply=receipt?publicFollowups.explain(receipt,language):t('publicCompletion.noContext',{},language)
+        let next=receipt, expected=receipt, servedBy=null
+        if(publicFollowupKind==='complete'&&receipt?.gaps.length){
+          if(receipt.completionAttempted)reply+='\n\n'+t('publicCompletion.budgetUsed',{},language)
+          else {
+            next={...receipt,completionAttempted:true}
+            try {
+              expected=conversationStore.reservePublicCompletion(conversationId,receipt,requestId)
+              const completed=await publicCompletion.complete(receipt,{language,requestId:correlationId})
+              if(!publicFollowups.validReceipt(completed?.receipt)||!completed.receipt.completionAttempted||JSON.stringify(completed.receipt.query)!==JSON.stringify(receipt.query)||typeof completed.reply!=='string')throw Error('public_completion_invalid')
+              reply+='\n\n'+t('publicCompletion.result',{},language)+'\n\n'+completed.reply
+              next=completed.receipt;servedBy='claude-opus-5-5'
+            } catch (_) { reply+='\n\n'+t('publicCompletion.failed',{},language) }
+          }
+        }
+        // Image intake and other source-bound routes can append while a read is
+        // pending. Never publish an old-topic result over the new latest turn.
+        try { if(JSON.stringify(publicFollowups.latestReceipt(conversationStore.get(conversationId)))!==JSON.stringify(expected))return res.status(409).json({error:'public_completion_context_changed'}) }
+        catch (_) { return res.status(503).json({error:'public_completion_store_unavailable'}) }
+        let historySaved=true
+        try { conversationStore.appendTurn({id:conversationId,userText:message,replyText:reply,servedBy,publicAnswerReceipt:next,publicCompletionRequestId:requestId}) } catch (_) { historySaved=false }
+        emit(historySaved?'success':'persistence_failed',200,null)
+        return res.set('Cache-Control','no-store').json({lane:'chat',mode:'chat',reply,servedBy,historySaved,publicCompletion:{kind:publicFollowupKind,attempted:next?.completionAttempted===true,gapsRemaining:next?.gaps.length??null}})
+      }
+      if (planningLane && hrRechecks && require('../topics/followupIntent').recheckRequest(message)) {
+        if (!require('../core/operating/chatRequest').sameOrigin(req)) return res.status(403).json({ error: 'same_origin_required' })
+        const { conversationId, workflowRequestId } = req.body
+        if (!isValidConversationId(conversationId) || !require('../core/operating/runStore').ID.test(workflowRequestId || '')) return res.status(400).json({ error: 'invalid_request_id' })
+        try {
+          const check = await hrRechecks.prepare('hr', { conversationId, requestId: workflowRequestId })
+          const language = /[\u3400-\u9fff]/u.test(message) ? 'zh' : 'en'
+          const reply = t('recheck.reply', { count: check.items.length, changed: check.items.filter(i => i.result.state === 'changed').length, unknown: check.items.filter(i => ['unknown', 'unavailable'].includes(i.result.state)).length }, language)
+          let historySaved = true
+          try { conversationStore.appendTurn({ id: conversationId, userText: message, replyText: reply, hrRecheckId: check.id }) } catch (_) { historySaved = false }
+          return res.set('Cache-Control', 'no-store').json({ lane: 'chat', mode: 'chat', reply, servedBy: null, sourceBound: true, historySaved, hrRecheckOffer: { id: check.id } })
+        } catch (e) {
+          return res.status(e.message === 'source_topic_mismatch' ? 403 : e.message === 'request_conflict' ? 409 : 503).json({ error: 'hr_recheck_unavailable' })
+        }
+      }
+      if (planningLane && require('../topics/evidenceFollowups').followupRequest(message)) {
+        if (!require('../core/operating/chatRequest').sameOrigin(req)) return res.status(403).json({ error: 'same_origin_required' })
+        const conversationId = req.body.conversationId
+        if (!isValidConversationId(conversationId)) return res.status(400).json({ error: 'invalid_request_id' })
+        const language = /[\u3400-\u9fff]/u.test(message) ? 'zh' : 'en'
+        let report
+        try { report = require('../topics/evidenceFollowups').latestReport(conversationStore.get(conversationId)) } catch (_) { return res.status(503).json({ error: 'evidence_source_unavailable' }) }
+        const reply = report ? t('followup.offer', {}, language) : t('followup.noReport', {}, language)
+        let historySaved = true
+        try { conversationStore.appendTurn({ id: conversationId, userText: message, replyText: reply }) } catch (_) { historySaved = false }
+        return res.set('Cache-Control', 'no-store').json({ lane: 'chat', mode: 'chat', reply, servedBy: null, sourceBound: true,
+          historySaved,
+          ...(report ? { followUpOffer: { conversationId, reportId: report.id } } : {}) })
+      }
+      if (clockOutRequest || attendanceRequest || comparisonRequest) {
+        if (!require('../core/operating/chatRequest').sameOrigin(req)) return res.status(403).json({ error: 'same_origin_required' })
+        const { conversationId, workflowRequestId } = req.body
+        if (!isValidConversationId(conversationId) || !require('../core/operating/runStore').ID.test(workflowRequestId || '')) return res.status(400).json({ error: 'invalid_request_id' })
+        const prior = clockOutReceipts.get(workflowRequestId)
+        if (prior && (prior.conversationId !== conversationId || prior.message !== message)) return res.status(409).json({ error: 'request_conflict' })
+        if (prior) {
+          try { prior.verify?.(); const result = await prior.result; prior.verify?.(); return res.set('Cache-Control', 'no-store').json(result) }
+          catch (_) { return res.status(503).json({ error: 'source_access_changed' }) }
+        }
+        if (clockOutReceipts.size >= 500) return res.status(409).json({ error: 'request_limit' })
+        const receipt = { conversationId, message }
+        try { receipt.verify = sevenShiftsReport.captureAccess() } catch (_) { /* read() returns a safe unavailable report */ }
+        receipt.result = (async () => {
+          const report = comparisonRequest ? await sevenShiftsReport.readComparison({ id: 'owner', role: 'owner' }, comparisonRequest) : attendanceRequest ? await sevenShiftsReport.readAttendance({ id: 'owner', role: 'owner' }, attendanceRequest) : await sevenShiftsReport.read({ id: 'owner', role: 'owner' }, clockOutRequest)
+          if (report.state === 'live') receipt.verify?.()
+          const language = /[\u3400-\u9fff]/u.test(message) ? 'zh' : 'en'
+          const reply = comparisonRequest ? require('../context/sevenShiftsComparison').comparisonReply(report, language) : attendanceRequest ? require('../context/sevenShiftsAttendance').attendanceReply(report, language) : require('../context/sevenShiftsReport').reportReply(report, language)
+          let gapRun, historySaved = true
+          if (report.gap && capabilityGaps) gapRun = capabilityGaps.offer({ id: 'owner', role: 'owner' }, { conversationId, requestId: workflowRequestId, message,
+            gap: report.gap, model: req.body.chatModel || require('../subscription/chatModels').DEFAULT_BRAIN_MODEL,
+            effort: require('../intake/chatSpeed').profileFor(req.body.chatLevel || 'medium').effort,
+            readRequest: { window: 'dates', dates: [report.query.firstDate, report.query.lastDate] } })
+          let evidenceReport = null
+          try {
+            if (comparisonRequest || attendanceRequest) evidenceReport = require('../topics/evidenceFollowups').createSnapshot(comparisonRequest ? 'comparison' : 'attendance', report, workflowRequestId)
+            conversationStore.appendTurn({ id: conversationId, userText: message, replyText: reply, evidenceReport, evidenceReportAttempt: true, ...(gapRun ? { capabilityGapRunId: gapRun.id } : {}) })
+          } catch (_) { historySaved = false }
+          return { lane: 'chat', mode: report.state === 'needs_date' ? 'ask' : 'chat', reply, ...(comparisonRequest ? { sevenShiftsComparison: report } : attendanceRequest ? { sevenShiftsAttendance: report } : { sevenShiftsReport: report }), sourceBound: true, historySaved, servedBy: null,
+            ...(historySaved && evidenceReport ? { followUpOffer: { conversationId, reportId: evidenceReport.id } } : {}),
+            ...(gapRun ? { capabilityGapRunId: gapRun.id, capabilityGapResolution: gapRun } : {}) }
+        })()
+        clockOutReceipts.set(workflowRequestId, receipt)
+        try { return res.set('Cache-Control', 'no-store').json(await receipt.result) }
+        catch (_) { return res.status(503).json({ error: 'clock_out_report_unavailable' }) }
+      }
+      if (planningLane && capabilityGaps && capabilityGaps.candidate(message, req.body.conversationId)) {
+        if (!require('../core/operating/chatRequest').sameOrigin(req)) return res.status(403).json({ error: 'same_origin_required' })
+        const allowed = ['message','conversationId','workflowRequestId','websiteRequestId','history','providerHint','previousLane','chatLevel','chatModel','interactionMode']
+        if (Object.keys(req.body).some(k => !allowed.includes(k))) return res.status(400).json({ error: 'invalid_request' })
+        try { return res.set('Cache-Control','no-store').json(await capabilityGaps.confirm({id:'owner',role:'owner'}, message, req.body.conversationId)) }
+        catch (_) { return res.status(409).json({ error: { message: t('gap.failed'), retryable: false } }) }
+      }
+      if (planningLane && schedulerChat && schedulerChat.candidate(message,req.body.conversationId,req.body.websiteRequestId || req.body.workflowRequestId)) {
+        if (!require('../core/operating/chatRequest').sameOrigin(req)) return res.status(403).json({ error:'same_origin_required' })
+        const allowed=['message','conversationId','workflowRequestId','websiteRequestId','history','providerHint','previousLane','chatLevel','chatModel','interactionMode']
+        if(Object.keys(req.body).some(k=>!allowed.includes(k)))return res.status(400).json({error:'invalid_request'})
+        try {
+          const answer=await schedulerChat.start({message,conversationId:req.body.conversationId,requestId:req.body.websiteRequestId || req.body.workflowRequestId,model:req.body.chatModel,effort:req.body.chatLevel})
+          if(answer){emit('scheduler_proposal',200,null);return res.set('Cache-Control','no-store').json(answer)}
+        }catch(_){return res.status(409).json({error:{message:t('actions.failure'),retryable:false}})}
+      }
+      if (planningLane && taskDialogue && taskDialogue.candidate(message, req.body.conversationId)) {
+        if (!require('../core/operating/chatRequest').sameOrigin(req)) return res.status(403).json({ error: 'same_origin_required' })
+        const allowed = ['message', 'conversationId', 'workflowRequestId', 'websiteRequestId', 'history', 'providerHint', 'previousLane', 'chatLevel', 'chatModel', 'interactionMode']
+        if (Object.keys(req.body).some(k => !allowed.includes(k)) || !isValidConversationId(req.body.conversationId) || !require('../core/operating/runStore').ID.test(req.body.workflowRequestId || '')) return res.status(400).json({ error: 'invalid_request' })
+        try {
+          const answer = await taskDialogue.handle({ id: 'owner', role: 'owner' }, { message, conversationId: req.body.conversationId, requestId: req.body.workflowRequestId, effort: require('../intake/chatSpeed').profileFor(req.body.chatLevel || 'medium').effort, model: req.body.chatModel || require('../subscription/chatModels').DEFAULT_BRAIN_MODEL })
+          if (answer) { emit('development_dialogue', 200, null); return res.set('Cache-Control', 'no-store').json(answer) }
+        } catch (e) {
+          emit('development_dialogue_failed', 503, 'dialogue_unavailable')
+          return res.status(['worker_busy', 'request_conflict', 'conversation_changed'].includes(e.message) ? 409 : 503).json({ error: { message: t('taskPlan.error'), retryable: false } })
+        }
+      }
+      const mailRequest = !generalRequest && !contextCard && !req.body.attachSection && (!req.body.interactionMode || req.body.interactionMode === 'chat')
+        ? require('../company/mailIntent').parseMailRequest(message, history) : null
+      const gmailRequest = !generalRequest && liveContext?.gmail && !contextCard && !req.body.attachSection && (!req.body.interactionMode || req.body.interactionMode === 'chat')
+        ? require('../context/gmailContextService').gmailIntent(message) : null
+      if (gmailRequest) {
+        if (!require('../core/operating/chatRequest').sameOrigin(req)) return res.status(403).json({ error: 'same_origin_required' })
+        const { conversationId, workflowRequestId } = req.body
+        if (!isValidConversationId(conversationId) || !require('../core/operating/runStore').ID.test(workflowRequestId || '')) return res.status(400).json({ error: 'invalid_request_id' })
+        const previous = contextReceipts.get(workflowRequestId)
+        if (previous && (previous.conversationId !== conversationId || previous.message !== message)) return res.status(409).json({ error: 'request_conflict' })
+        if (previous) {
+          try { previous.gmailAccess(); const result = await previous.result; previous.gmailAccess(); return res.set('Cache-Control', 'no-store').json(result) }
+          catch (_) { return res.status(503).json({ error: { message: t('gmailContext.error'), retryable: false } }) }
+        }
+        const receipt = { conversationId, message }
+        try { receipt.gmailAccess = liveContext.gmail.captureAccess(gmailRequest.resource) }
+        catch (_) { return res.status(503).json({ error: { message: t('gmailContext.error'), retryable: false } }) }
+        receipt.result = (async () => {
+          const report = await liveContext.gmail.read({ id: 'owner', role: 'owner' }, gmailRequest.resource, gmailRequest.operation, gmailRequest.input)
+          receipt.gmailAccess()
+          const reply = require('../context/gmailContextView').gmailReply(report)
+          let historySaved = true
+          try { conversationStore.appendTurn({ id: conversationId, userText: message, replyText: t('company.mailHistoryReceipt') }) } catch (_) { historySaved = false }
+          emit('context_read', 200, historySaved ? null : 'conversation_write_failed')
+          return { lane: 'chat', mode: 'chat', reply, gmailContext: report, sourceBound: true, historySaved, servedBy: null }
+        })()
+        contextReceipts.set(workflowRequestId, receipt)
+        if (contextReceipts.size > 100) contextReceipts.delete(contextReceipts.keys().next().value)
+        try { return res.set('Cache-Control', 'no-store').json(await receipt.result) }
+        catch (_) { contextReceipts.delete(workflowRequestId); emit('context_read_failed', 503, 'context_unavailable'); return res.status(503).json({ error: { message: t('gmailContext.error'), retryable: false } }) }
+      }
+      // Mail content is transient. Only a neutral receipt enters conversation history;
+      // it never enters the automatic memory journal or a later model's history.
+      if (mailChat && mailRequest) {
+        if (!require('../core/operating/chatRequest').sameOrigin(req)) return res.status(403).json({ error: 'same_origin_required' })
+        res.setHeader('Cache-Control', 'no-store')
+        try {
+          const result = await mailChat.answer(mailRequest, message, req.body.chatLevel || 'medium', req.body.chatModel)
+          let historySaved = false
+          if (isValidConversationId(req.body.conversationId)) {
+            try { conversationStore.appendTurn({ id: req.body.conversationId, userText: message, replyText: t('company.mailHistoryReceipt') }); historySaved = true } catch (_) {}
+          }
+          emit('mail_read', 200, null)
+          return res.json({ lane: 'chat', ...result, sourceBound: true, historySaved })
+        } catch (_) {
+          emit('mail_unavailable', 503, 'mail_unavailable')
+          return res.status(503).json({ error: { message: t('company.mailReadFailed'), retryable: true } })
+        }
+      }
+      // The conversation store captures the accepted request. Its terminal worker
+      // receipt comes from the job itself; HTTP acceptance is not job completion.
+      const planContinuation = require('../core/taskPlanner/continuation')
+      let continued = null
+      if (planningLane && planContinuation.confirmation(message)) {
+        try { continued = planContinuation.resolveConfirmation(message, conversationStore.get?.(req.body.conversationId), planningRevision) }
+        catch (_) { continued = { clarification: true } }
+      }
+      const planning = planningLane ? (continued || require('../core/taskPlanner/contract').classify(message)) : null
+      if (planning) {
+        if (!require('../core/operating/chatRequest').sameOrigin(req)) return res.status(403).json({ error: 'same_origin_required' })
+        const allowed = ['message', 'conversationId', 'workflowRequestId', 'websiteRequestId', 'history', 'providerHint', 'previousLane', 'chatLevel', 'chatModel', 'interactionMode']
+        if (Object.keys(req.body).some(k => !allowed.includes(k)) || !isValidConversationId(req.body.conversationId) || !require('../core/operating/runStore').ID.test(req.body.workflowRequestId || '')) return res.status(400).json({ error: 'invalid_request' })
+        if (planning.clarification) {
+          const reply = continued ? t('taskPlan.confirmClarify') : t('taskPlan.clarify')
+          let historySaved = true
+          // Persist a visible clarification without authority or an old receipt.
+          try { conversationStore.appendTurn({ id: req.body.conversationId, userText: message, replyText: reply }) } catch (_) { historySaved = false }
+          return res.set('Cache-Control', 'no-store').json({ lane: 'chat', mode: 'ask', reply, historySaved, servedBy: null })
+        }
+        try {
+          if (!taskPlanner) throw Error('not_enabled')
+          const run = continued?.runId ? taskPlanner.get({ id: 'owner', role: 'owner' }, continued.runId) : taskPlanner.start({ id: 'owner', role: 'owner' }, { message: continued?.message || message, requestId: continued?.requestId || req.body.workflowRequestId, conversationId: req.body.conversationId, model: req.body.chatModel || require('../subscription/chatModels').DEFAULT_BRAIN_MODEL, effort: require('../intake/chatSpeed').profileFor(req.body.chatLevel || 'medium').effort })
+          if (!run || (continued?.runId && run.conversationId !== req.body.conversationId)) throw Error('invalid_request')
+          let historySaved = true
+          const reply = continued?.runId ? t('taskPlan.alreadyStarted') : t('taskPlan.started')
+          if (!run.reused && !continued?.runId) { try { conversationStore.appendTurn({ id: req.body.conversationId, userText: message, replyText: reply, taskPlanRunId: run.id }) } catch (_) { historySaved = false } }
+          return res.set('Cache-Control', 'no-store').json({ lane: 'chat', mode: 'chat', reply, taskPlanRunId: run.id, historySaved, servedBy: null })
+        } catch (e) { return res.status(['worker_busy', 'request_conflict'].includes(e.message) ? 409 : 503).json({ error: { message: t('taskPlan.error'), retryable: false } }) }
+      }
+      const chatTask = !contextCard && !req.body.attachSection && (!req.body.interactionMode || req.body.interactionMode === 'chat') ? require('../core/projectWork/chat').classify(message) : null
+      if (chatTask) {
+        if (!require('../core/operating/chatRequest').sameOrigin(req)) return res.status(403).json({ error: 'same_origin_required' })
+        const allowed = ['message', 'conversationId', 'workflowRequestId', 'websiteRequestId', 'history', 'providerHint', 'previousLane', 'chatLevel', 'chatModel', 'interactionMode']
+        if (Object.keys(req.body).some(k => !allowed.includes(k)) || !isValidConversationId(req.body.conversationId) || !require('../core/operating/runStore').ID.test(req.body.workflowRequestId || '')) return res.status(400).json({ error: 'invalid_request' })
+        if (chatTask.clarification) return res.json({ lane: 'chat', mode: 'chat', reply: t('chatWork.clarify'), servedBy: null })
+        const key = req.body.workflowRequestId, identity = JSON.stringify([req.body.conversationId, message])
+        const prior = chatWorkReceipts.get(key)
+        if (prior) {
+          if (prior.identity !== identity || !prior.runId) return res.status(409).json({ error: 'request_conflict' })
+          return res.set('Cache-Control', 'no-store').json({ lane: 'chat', mode: 'chat', reply: t('chatWork.prepared'), projectWorkRunId: prior.runId, historySaved: prior.historySaved, servedBy: null })
+        }
+        // Keep uncertain requests without a ticket; replay must not issue authority.
+        if (chatWorkReceipts.size >= 500) return res.status(409).json({ error: 'request_limit' })
+        const receipt = { identity, runId: null }; chatWorkReceipts.set(key, receipt)
+        try {
+          if (!chatWork) throw Error('not_enabled')
+          const prepared = await chatWork.prepare({ id: 'owner', role: 'owner' }, { message, requestId: req.body.workflowRequestId })
+          const reply = t('chatWork.prepared'); let historySaved = true
+          // A persisted reference is display-only. Never persist the approval nonce.
+          if (prepared.approval) { try { conversationStore.appendTurn({ id: req.body.conversationId, userText: message, replyText: reply, projectWorkRunId: prepared.run.id }) } catch (_) { historySaved = false } }
+          receipt.runId = prepared.run.id; receipt.historySaved = historySaved
+          emit('project_work_prepared', 200, historySaved ? null : 'conversation_write_failed')
+          return res.set('Cache-Control', 'no-store').json({ lane: 'chat', mode: 'chat', reply, projectWorkRunId: prepared.run.id, projectWork: prepared, historySaved, servedBy: null })
+        } catch (e) { return res.status(e.message === 'worker_busy' ? 409 : 503).json({ error: { message: t('chatWork.error'), retryable: false } }) }
+      }
+      const workRoute = !contextCard && !req.body.attachSection && (!req.body.interactionMode || req.body.interactionMode === 'chat') ? require('../capability/requestRouter').routeWorkRequest(message) : null
+      const workService = workRoute?.service === 'developmentPlan' ? developmentPlan : workRoute?.service === 'codeDiagnosis' ? codeDiagnosis : workRoute?.service === 'codeRepair' ? codeRepair : null
+      if (workRoute && workService) {
+        if (['codeDiagnosis','codeRepair'].includes(workRoute.service) && Object.keys(req.body).some(key => !['message', 'conversationId', 'workflowRequestId', 'websiteRequestId', 'history', 'providerHint', 'previousLane', 'chatLevel', 'chatModel', 'interactionMode'].includes(key))) return res.status(400).json({ error: 'invalid_request' })
+        if (!require('../core/operating/chatRequest').sameOrigin(req)) return res.status(403).json({ error: 'same_origin_required' })
+        if (!isValidConversationId(req.body.conversationId) || !require('../core/operating/runStore').ID.test(req.body.workflowRequestId || '')) return res.status(400).json({ error: 'invalid_request_id' })
+        try {
+          const run = await workService.start({ id: 'owner', role: 'owner' }, { recipe: workRoute.recipe, requestId: req.body.workflowRequestId, conversationId: req.body.conversationId })
+          const reply = workRoute.service === 'codeRepair' ? t('repair.accepted', { url: workRoute.url + '?run=' + run.id }) : workRoute.service === 'codeDiagnosis' ? t('work.accepted', { url: workRoute.url + '?run=' + run.id }) : t('plan.accepted', { url: workRoute.url + '?run=' + run.id }); let historySaved = true
+          const field = workRoute.service === 'codeRepair' ? 'codeRepairRunId' : workRoute.service === 'codeDiagnosis' ? 'codeDiagnosisRunId' : 'developmentPlanRunId'
+          if (!run.reused) { try { conversationStore.appendTurn({ id: req.body.conversationId, userText: message, replyText: reply, [field]: run.id }) } catch (_) { historySaved = false } }
+          emit('development_plan_started', 200, historySaved ? null : 'conversation_write_failed')
+          return res.set('Cache-Control', 'no-store').json({ lane: 'chat', mode: 'chat', reply, [field]: run.id, historySaved, servedBy: null })
+        } catch (e) { return res.status(e.message === 'worker_busy' ? 409 : 503).json({ error: { message: t('plan.error'), retryable: false } }) }
+      }
+      // Persist receipt before any model call. A failed generation is still an observed event.
+      if (memoryJournal) {
+        try {
+          const receipt = memoryJournal.event('conversation', correlationId + ':received', message, 'owner_statement', new Date().toISOString(), { conversationId: isValidConversationId(req.body.conversationId) ? req.body.conversationId : null })
+          res.setHeader('X-Memory-Receipt', receipt.state)
+          let working = null
+          if (receipt.state === 'queued') {
+            try { working = await memoryJournal.gateway.working({ id: 'owner', role: 'owner' }, { subject: message.slice(0, 240), goal: message, project: 'Xiangxiang', worker: 'xiangxiang', runId: correlationId, context: [receipt.id], ttlSeconds: 3600, scope: 'private:owner' }) } catch (_) { res.setHeader('X-Memory-Receipt', 'partial') }
+          }
+          const sendJson = res.json.bind(res)
+          res.json = body => {
+            try {
+              if (receipt.state === 'queued') memoryJournal.event('conversation', correlationId + ':result',
+                typeof body?.reply === 'string' ? body.reply : JSON.stringify({ httpStatus: res.statusCode, completed: res.statusCode < 400 }),
+                typeof body?.reply === 'string' ? 'assistant_claim' : 'measured_result')
+              if (working) void memoryJournal.gateway.finishWork({ id: 'owner', role: 'owner' }, working.id, working.version, res.statusCode < 400 ? 'completed' : 'failed').catch(() => {})
+            } catch (_) { res.setHeader('X-Memory-Receipt', 'unavailable') }
+            return sendJson(body)
+          }
+        } catch (_) { res.setHeader('X-Memory-Receipt', 'unavailable') }
+      }
+
+      const briefingRequest = require('../core/operating/chatRequest')
+      const driveRequest = liveContext?.drive ? require('../context/driveContextService').driveIntent(message) : null
+      const aromaRequest = liveContext?.aroma ? require('../context/aromaContextService').aromaIntent(message) : null
+      const calendarRequest = liveContext?.calendar ? require('../context/calendarContextService').calendarIntent(message) : null
+      if (liveContext && !contextCard && !req.body.attachSection && (!req.body.interactionMode || req.body.interactionMode === 'chat') &&
+          (calendarRequest || aromaRequest || driveRequest || require('../context/developmentContext').isDevelopmentRequest(message))) {
+        if (!briefingRequest.sameOrigin(req)) return res.status(403).json({ error: 'same_origin_required' })
+        const { conversationId, workflowRequestId } = req.body
+        if (!isValidConversationId(conversationId) || !require('../core/operating/runStore').ID.test(workflowRequestId || '')) return res.status(400).json({ error: 'invalid_request_id' })
+        const previous = contextReceipts.get(workflowRequestId)
+        if (previous && (previous.conversationId !== conversationId || previous.message !== message)) return res.status(409).json({ error: 'request_conflict' })
+        if (previous) {
+          try { if (calendarRequest) { liveContext.calendar.verify(); previous.calendarAccess() } if (aromaRequest) liveContext.aroma.verify(); const result = await previous.result; if (calendarRequest) previous.calendarAccess(); if (aromaRequest) liveContext.aroma.verify(); return res.set('Cache-Control', 'no-store').json(result) }
+          catch (_) { return res.status(503).json({ error: { message: t('live.error'), retryable: false } }) }
+        }
+        const receipt = { conversationId, message }
+        if (calendarRequest) {
+          try { receipt.calendarAccess = liveContext.calendar.captureAccess() }
+          catch (_) { return res.status(503).json({ error: { message: t('live.error'), retryable: false } }) }
+        }
+        receipt.result = (async () => {
+          const report = calendarRequest ? await liveContext.calendar.read({ id: 'owner', role: 'owner' }, calendarRequest.operation, calendarRequest.input) : aromaRequest ? await liveContext.aroma.read({ id: 'owner', role: 'owner' }, aromaRequest.resource, aromaRequest.operation, aromaRequest.input) : driveRequest ? await liveContext.drive.read({ id: 'owner', role: 'owner' }, driveRequest.operation, driveRequest.input) : await liveContext.read({ id: 'owner', role: 'owner' })
+          if (calendarRequest) receipt.calendarAccess()
+          const reply = calendarRequest ? require('../context/calendarContextView').calendarReply(report) : aromaRequest ? require('../context/aromaContextView').aromaReply(report) : driveRequest ? require('../context/driveContextView').driveReply(report) : require('../context/liveContextView').developmentReply(report)
+          let historySaved = true
+          try { conversationStore.appendTurn({ id: conversationId, userText: message, replyText: reply }) } catch (_) { historySaved = false }
+          emit('context_read', 200, historySaved ? null : 'conversation_write_failed')
+          return { lane: 'chat', mode: 'chat', reply, ...(calendarRequest ? { calendarContext: report } : aromaRequest ? { aromaContext: report } : driveRequest ? { driveContext: report } : { liveContext: report }), historySaved, servedBy: null }
+        })()
+        contextReceipts.set(workflowRequestId, receipt)
+        if (contextReceipts.size > 100) contextReceipts.delete(contextReceipts.keys().next().value)
+        try { return res.set('Cache-Control', 'no-store').json(await receipt.result) }
+        catch (_) { contextReceipts.delete(workflowRequestId); emit('context_read_failed', 503, 'context_unavailable'); return res.status(503).json({ error: { message: t('live.error'), retryable: false } }) }
+      }
+      if (operatingManager && !contextCard && !req.body.attachSection &&
+          (!req.body.interactionMode || req.body.interactionMode === 'chat') && briefingRequest.isBriefingRequest(message)) {
+        if (!briefingRequest.sameOrigin(req)) { emit('validation_rejected', 403, 'same_origin_required'); return res.status(403).json({ error: 'same_origin_required' }) }
+        try {
+          const conversationId = req.body.conversationId
+          if (!isValidConversationId(conversationId) || !require('../core/operating/runStore').ID.test(req.body.workflowRequestId || '')) throw Error('invalid_request_id')
+          const run = operatingManager.start({ id: 'owner', role: 'owner' }, { requestId: req.body.workflowRequestId, conversationId })
+          const reply = t('workflow.accepted')
+          let historySaved = true
+          if (!run.reused) {
+            try { conversationStore.appendTurn({ id: conversationId, userText: message, replyText: reply, operatingRunId: run.id }) }
+            catch (_) { historySaved = false }
+          }
+          emit('workflow_started', 200, historySaved ? null : 'conversation_write_failed')
+          return res.json({ lane: 'chat', reply, operatingRunId: run.id, historySaved, servedBy: null })
+        } catch (e) {
+          const busy = e.message === 'briefing_busy'
+          emit('workflow_rejected', busy ? 429 : 503, busy ? 'briefing_busy' : 'workflow_unavailable')
+          return res.status(busy ? 429 : 503).json({ error: { message: busy ? t('workflow.busy') : t('workflow.error'), retryable: false } })
+        }
+      }
 
       // ── ROUTE FIRST, FETCH SECOND (Owner's order, do not invert) ────────────
       // The lane is decided here, from the user's words alone, BEFORE any context is
@@ -526,6 +950,38 @@ function createDemoRouter ({ getAdapterFn = getAdapterForLane, processIntakeFn =
           providerHint
         })
         opts.telemetry = telemetry
+        if (interactionMode === 'chat') {
+          opts.ownerInvestigation = true
+          opts.operationsBackgroundReader = req.app.locals.operationsBackgroundReader
+        }
+        if (interactionMode === 'chat' && process.env.CONTEXT_XIANGXIANG_OPERATIONS === 'on') {
+          opts.previousInvestigation = require('../investigation/continuity').previousInvestigation({ conversationId: req.body.conversationId, conversationStore, receipts: investigationReceipts })
+        }
+        const investigationId = require('../core/operating/runStore').ID.test(req.body.websiteRequestId || '') ? req.body.websiteRequestId : correlationId
+        let investigationStarted = false, investigationSaveFailed = false
+        if (interactionMode === 'chat' && process.env.CONTEXT_XIANGXIANG_OPERATIONS === 'on') {
+          const requestHash = require('node:crypto').createHash('sha256').update(JSON.stringify({ message, conversationId: req.body.conversationId || null })).digest('hex')
+          try {
+            const prior = investigationReceipts.get(investigationId)
+            if (prior) {
+              if (prior.requestHash !== requestHash) return res.status(409).json({ error: 'investigation_request_conflict' })
+              if (prior.state === 'completed' && prior.response) return res.json({ ...prior.response, ...(prior.investigation ? { investigationRunId: investigationId } : {}), replayed: true })
+              return res.status(409).json({ error: 'investigation_already_started', state: prior.state, investigationRunId: investigationId })
+            }
+            investigationReceipts.begin(investigationId, req.body.conversationId || null, requestHash)
+            investigationStarted = true
+          } catch (_) { return res.status(503).json({ error: 'investigation_store_unavailable' }) }
+        }
+        if (interactionMode === 'chat') opts.onInvestigation = event => {
+          if (process.env.CONTEXT_XIANGXIANG_OPERATIONS !== 'on' || investigationSaveFailed) return
+          try {
+            if (!investigationStarted) { investigationReceipts.begin(investigationId, req.body.conversationId || null); investigationStarted = true }
+            investigationReceipts.record(investigationId, event)
+          } catch (_) { investigationSaveFailed = true }
+        }
+        if (interactionMode === 'chat') opts.chatLevel = req.body.chatLevel || 'medium'
+        if (interactionMode === 'chat' && req.body.chatModel !== undefined) opts.chatModel = req.body.chatModel
+        if (interactionMode === 'chat' && require('../store/websiteRunStore').ID.test(req.body.websiteRequestId || '')) opts.websiteRequestId = req.body.websiteRequestId
 
         /**
          * ⛔ A4'S RUNTIME DEPENDENCIES — ATTACHED HERE BECAUSE THIS IS WHERE CHAT LIVES.
@@ -558,7 +1014,7 @@ function createDemoRouter ({ getAdapterFn = getAdapterForLane, processIntakeFn =
             // Test seam only — production sets nothing and gets the pinned role adapters.
             verifierAdapterFactory: req.app.locals && req.app.locals.a4VerifierAdapterFactory
           })
-          if (composed.deps) {
+          if (composed.deps && process.env.CHAT_BACKEND !== 'codex-subscription') {
             a4Runtime.logA4Composition(composed, req.app.locals && req.app.locals.a4CompositionSink)
             opts.readContextDeps = Object.assign(
               {},
@@ -608,7 +1064,24 @@ function createDemoRouter ({ getAdapterFn = getAdapterForLane, processIntakeFn =
         }
 
         // ALWAYS 4-arg — never the legacy 3-arg processIntake.
-        const result = await processIntakeFn(message, adapter, history || [], opts)
+        let result
+        try { result = await processIntakeFn(message, adapter, history || [], opts) }
+        catch (e) { if (investigationStarted) { try { investigationReceipts.finish(investigationId, null, true) } catch (_) {} } throw e }
+        if (interactionMode === 'chat' && result?.capabilityGap && capabilityGaps && isValidConversationId(req.body.conversationId)) {
+          try {
+            const run = capabilityGaps.offer({id:'owner',role:'owner'}, { conversationId:req.body.conversationId, requestId:correlationId, message,
+              gap:result.capabilityGap, model:req.body.chatModel || require('../subscription/chatModels').DEFAULT_BRAIN_MODEL, effort:require('../intake/chatSpeed').profileFor(req.body.chatLevel || 'medium').effort })
+            result.capabilityGapRunId = run.id; result.capabilityGapResolution = run
+          } catch (_) { result.capabilityGapPersistence = 'unavailable' }
+        }
+        if (result?.investigation) result.investigation.persistenceState = investigationStarted && !investigationSaveFailed ? 'saved' : 'unavailable'
+        if (investigationStarted && !investigationSaveFailed) {
+          try { investigationReceipts.finish(investigationId, result) } catch (_) { investigationSaveFailed = true }
+        }
+        if (result?.investigation) {
+          if (investigationStarted && !investigationSaveFailed) result.investigationRunId = investigationId
+          else result.investigation.persistenceState = 'unavailable'
+        }
 
         // ── THE OFFER DECISION, COMPUTED BEFORE THE LINE IS WRITTEN ───────────
         // It used to be computed a hundred lines below, AFTER emit() had already written
@@ -844,6 +1317,7 @@ function createDemoRouter ({ getAdapterFn = getAdapterForLane, processIntakeFn =
         // holds the rendered reply — retrieved rows and all. That is a deliberate
         // widening of what sits on disk and is reported to the Owner as such.
         const conversationId = typeof req.body.conversationId === 'string' ? req.body.conversationId : null
+        let publicHistorySaved=false
         if (conversationId && isValidConversationId(conversationId)) {
           try {
             const shown = (withOffer && typeof withOffer === 'object' && typeof withOffer.reply === 'string')
@@ -854,8 +1328,13 @@ function createDemoRouter ({ getAdapterFn = getAdapterForLane, processIntakeFn =
                 id: conversationId,
                 userText: message,
                 replyText: shown,
+                publicAnswerReceipt: withOffer.publicAnswerReceipt || null,
+                investigationRunId: withOffer.investigationRunId || null,
+                capabilityGapRunId: withOffer.capabilityGapRunId || null,
+                planningOffer: planningLane ? planContinuation.makeOffer(message, withOffer.mode, conversationStore.get?.(conversationId)?.messages?.at(-1)?.planningOffer, planningRevision) : null,
                 servedBy: (telemetry && typeof telemetry.model === 'string' && telemetry.model) ? telemetry.model : null
               })
+              publicHistorySaved=true
             }
           } catch (err) {
             // FAIL-OPEN FOR THE REPLY, BUT NEVER SILENT.
@@ -885,7 +1364,7 @@ function createDemoRouter ({ getAdapterFn = getAdapterForLane, processIntakeFn =
           }
         }
 
-        return res.status(200).json(withClarification)
+        return res.status(200).json(withClarification.publicAnswerReceipt ? {...withClarification,historySaved:publicHistorySaved} : withClarification)
       } catch (err) {
         // Reuse the existing safe-disclosure boundary. Never leak provider body/stack/key/prompt.
         let mapped
@@ -899,7 +1378,7 @@ function createDemoRouter ({ getAdapterFn = getAdapterForLane, processIntakeFn =
         emit(telemetry.provider ? 'handled_error' : 'early_error', mapped.status, mapped.body && mapped.body.error && mapped.body.error.code)
         return res.status(mapped.status).json(mapped.body)
       }
-    }
+    })
   )
 
   return router

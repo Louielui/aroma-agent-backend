@@ -14,7 +14,7 @@ const { test, afterEach } = require('node:test')
 const assert = require('node:assert/strict')
 
 const { CONVERSATION_CONTRACT, resolveConversationContract } = require('./conversationContract')
-const { buildPersonaSystemFromPersona, buildPersonaSystem, PERSONA_IDENTITY, CONTEXT_CARD_GUARD, ACTION_HONESTY_GUARD } = require('./xiangxiang')
+const { buildPersonaSystemFromPersona, buildPersonaSystem, PERSONA_IDENTITY, CONTEXT_CARD_GUARD, ACTION_HONESTY_GUARD, BRAND_NAME_GUARD } = require('./xiangxiang')
 const { SYSTEM_PROMPT } = require('../intake/distillPrompt')
 const { processIntake } = require('../intake/intakeService')
 
@@ -100,7 +100,7 @@ test('PERSONA_IDENTITY is untouched: no contract text leaked into it', () => {
   assert.ok(!PERSONA_IDENTITY.includes('對話體驗約定'))
   assert.ok(!PERSONA_IDENTITY.includes(CONVERSATION_CONTRACT))
   // the 2-arg legacy composer must remain byte-identical (its own frozen test also covers this)
-  assert.equal(buildPersonaSystem('CLASSIFIER'), [PERSONA_IDENTITY, CONTEXT_CARD_GUARD, 'CLASSIFIER'].join('\n\n'))
+  assert.equal(buildPersonaSystem('CLASSIFIER'), [PERSONA_IDENTITY, CONTEXT_CARD_GUARD, BRAND_NAME_GUARD, 'CLASSIFIER'].join('\n\n'))
 })
 
 /* ── content constraints from the brief ───────────────────────────────────── */

@@ -44,13 +44,16 @@ test('*** the flag is set when the turn is sent, on the conversation itself ***'
 })
 
 test('*** there is no global working flag — two conversations can work at once ***', () => {
+  // The activity view computes a local snapshot flag per card; it is not a
+  // conversation/global flag. Its independence is exercised in workActivityUi.test.
+  const conversationSource = APP_JS.slice(0, APP_JS.indexOf('  function createWorkActivity (')) + APP_JS.slice(APP_JS.indexOf('  function renderTaskPlan ('))
   // A page-level flag would be a second source of truth, and the two would disagree the
   // first time the Owner sent a second message while the first was still in flight.
-  assert.equal(/^\s*var working\b/m.test(APP_JS), false, 'no module-level working variable')
+  assert.equal(/^\s*var working\b/m.test(conversationSource), false, 'no module-level working variable')
   // Counting the word was the wrong instrument twice over — a comment mentions it, and the
   // CSS class `conv-working` contains it. What actually matters is that nothing ever reads
   // or writes a BARE `working` identifier: every use is a property of a conversation.
-  const code = APP_JS.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '')
+  const code = conversationSource.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '')
   assert.equal(/(^|[^.\w-])working\s*=/.test(code), false, 'nothing assigns a bare `working`')
   assert.equal(/(var|let|const)\s+working\b/.test(code), false, 'and nothing declares one')
   assert.ok(/conv\.working = true/.test(code) && /conv\.working = false/.test(code),

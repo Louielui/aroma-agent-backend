@@ -45,7 +45,7 @@ describe('⛔ a dynamic key cannot reach the translator', () => {
         const st = fs.statSync(p)
         if (st.isDirectory()) { if (n !== 'node_modules') walk(p) } else if (/\.js$/.test(n) && !/\.test\.js$/.test(n)) {
           const src = codeOnly(fs.readFileSync(p, 'utf8'))
-          for (const m of src.matchAll(/\bt\(\s*([^)]{0,80})/g)) {
+          for (const m of src.matchAll(/(?<!\\)\bt\(\s*([^)]{0,80})/g)) {
             out.push({ file: path.relative(root, p).split(path.sep).join('/'), arg: m[1].trim() })
           }
         }
@@ -69,6 +69,7 @@ describe('⛔ a dynamic key cannot reach the translator', () => {
     try {
       fs.writeFileSync(path.join(dir, 'good.js'), "const a = t('briefing.nothingWaiting')\nconst b = t('errand.recallNone', { ingredient: x })\n")
       fs.writeFileSync(path.join(dir, 'bad.js'), "const c = t('supplier.' + name)\n")
+      fs.writeFileSync(path.join(dir, 'regex.js'), String.raw`const tab = /\t([^x]+)/`)
       const found = callSites(dir)
       assert.strictEqual(found.length, 3, 'the walker must see all three call sites')
       const bad = found.filter((c) => !isLiteralKeyArg(c.arg))

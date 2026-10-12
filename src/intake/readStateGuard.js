@@ -84,6 +84,7 @@ const { isReadRequest } = require('./laneRouter') // 「did he ask me to look」
 
 // Human vocabulary only — what the Owner CALLS a thing, never the list of what exists.
 const VOCABULARY = Object.freeze({
+  seven_shifts: { words: ['7shifts', '7shift'], label: () => '7shifts' },
   // ⛔ THE `words` ARE MATCHING TOKENS — they are compared against WHAT HE TYPES and are
   // NEVER translated. Only `label` is interface. Two classes, one table, marked in place
   // because textClasses is per-file. See governance/textClasses.js.

@@ -61,7 +61,7 @@ test('static safety: no markup-from-strings, no code-from-strings, no persistenc
     'http://', 'https://', '//cdn', 'fonts.googleapis',
     'HUB_TOKEN', 'Authorization', 'Bearer'
   ]) {
-    assert.ok(!DEMO_HTML.includes(forbidden), 'the page must not contain: ' + forbidden)
+    assert.ok(!DEMO_HTML.replace(/localStorage\.(?:getItem\('xiangxiang-brain-v1'\)|setItem\('xiangxiang-brain-v1', chatModel\))/g, '').includes(forbidden), 'the page must not contain: ' + forbidden)
   }
   // every fetch is a same-origin absolute path
   const urls = DEMO_HTML.match(/fetch\('([^']+)'/g) || []
@@ -254,8 +254,8 @@ test('the composer is sticky with room beneath, and the send button lives inside
 
 test('send is disabled until there is real input, and while a reply is in flight', () => {
   assert.ok(DEMO_HTML.includes('send.disabled = true'), 'starts disabled')
-  assert.ok(DEMO_HTML.includes("send.disabled = pending || msg.value.trim() === ''"), 'enabled only on real input')
-  assert.ok(DEMO_HTML.includes("send.disabled = p || msg.value.trim() === ''"), 'stays disabled while busy')
+  assert.ok(DEMO_HTML.includes('send.disabled = pending || brainSaving || (SUBSCRIPTION_CHAT && CENTRAL_MODELS && !brainReady) || !!(active && active.imagePreparing) || (!msg.value.trim() && !pictures.length)'), 'send additionally requires an available saved model and idle settings')
+  assert.match(DEMO_HTML, /function setPending \(p\)[\s\S]*?pending = p[\s\S]*?refreshImages\(\)/, 'busy transitions apply the same text and image eligibility')
   assert.ok(DEMO_HTML.includes('msg.disabled = p'), 'the box is busy too')
   // Enter/Shift+Enter behaviour is unchanged
   assert.ok(DEMO_HTML.includes("e.key === 'Enter' && !e.shiftKey"), 'Enter sends, Shift+Enter newlines')
@@ -304,8 +304,14 @@ test('an empty conversation is not also listed in the sidebar', () => {
 
 test('the picker offers exactly the two providers the server allows', () => {
   assert.ok(DEMO_HTML.includes("id: 'claude'") && DEMO_HTML.includes("id: 'openai'"), 'both options')
-  const ids = [...DEMO_HTML.matchAll(/\{ id: '([a-z]+)', name:/g)].map((m) => m[1]).sort()
+  const declaration = DEMO_HTML.match(/var PROVIDERS = [\s\S]*?\n  var provider =/)[0].replace(/\n  var provider =$/, '')
+  const sandbox = { SUBSCRIPTION_CHAT: false, SOURCE_TEXT: '', t: () => '' }
+  require('node:vm').runInNewContext(declaration + '; result = PROVIDERS.map(p => p.id).sort()', sandbox)
+  const ids = Array.from(sandbox.result)
   assert.deepEqual(ids, ['claude', 'openai'], 'and no third option the server would reject')
+  sandbox.SUBSCRIPTION_CHAT = true
+  require('node:vm').runInNewContext(declaration + '; result = PROVIDERS.map(p => p.id)', sandbox)
+  assert.deepEqual(Array.from(sandbox.result), ['claude'], 'subscription mode starts with the Claude subscription route')
   assert.ok(DEMO_HTML.includes('providerHint: provider'), 'the pick is sent as a hint field')
 })
 

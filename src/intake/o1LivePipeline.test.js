@@ -18,9 +18,10 @@ const { processIntake } = require('./intakeService')
 
 /** Counts what the turn actually did. */
 function harness (scriptedPairs) {
-  const seen = { semanticCalls: 0, connectorReads: 0, preConsensusReads: 0, consensusReached: false }
+  const seen = { semanticCalls: 0, semanticSignals: [], connectorReads: 0, preConsensusReads: 0, consensusReached: false }
   let n = 0
-  const semanticCallModel = async () => {
+  const semanticCallModel = async ({ signal }) => {
+    seen.semanticSignals.push(signal)
     // A read here would mean the pipeline read BEFORE the classifier had agreed.
     if (!seen.consensusReached) seen.preConsensusReads += seen.connectorReads
     const reply = scriptedPairs[Math.min(n++, scriptedPairs.length - 1)]
@@ -76,6 +77,8 @@ test('*** B — THE LIVE CALL SITE: a deterministic miss reaches the classifier,
   // If the intakeService call site is deleted, this is the assertion that fails.
   const { seen } = await turn('叫咗嘅貨到咗未？', [HI('purchase_order'), HI('purchase_order')])
   assert.equal(seen.semanticCalls, 2, '⛔ the live call site is gone, or is not asking twice')
+  assert.ok(seen.semanticSignals[0] instanceof AbortSignal)
+  assert.equal(seen.semanticSignals[0], seen.semanticSignals[1], 'both advisory opinions must share one deadline')
   assert.equal(seen.preConsensusReads, 0, '⛔ something read before consensus')
 })
 

@@ -29,6 +29,36 @@ const { enforceRouteEvidence, ROUTE_EVIDENCE_NOTE_RE } = require('./routeEvidenc
 const NO_EVIDENCE = { evidenceSets: [], perSource: [] }
 const say = (reply, message, extra) => enforceRouteEvidence(Object.assign({ reply, message }, NO_EVIDENCE, extra || {}))
 
+test('generic definition details are not company evidence claims on the real reply path', () => {
+  const reply = '發票有 3 個常見用途：請款、記帳和核對付款。已經付款的文件通常稱為收據。'
+  const out = require('./readResultView').buildReadResultReply({ reply, message: '什麼是發票？', answerPlan: null, evidenceSets: [], itemsBySource: [], perSource: [] })
+  assert.equal(out.reply, reply)
+  assert.equal(say('An invoice normally includes 3 fields: date, items and amount.', 'What is an invoice?').violated, false)
+  for (const claim of ['Aroma 的發票有 3 張。', '我們的發票已經全部付款。', '今日發票有 3 張。', '目前存貨全部充足。']) {
+    assert.equal(say(claim, '什麼是發票？').violated, true, claim)
+  }
+  const mixed = say(reply + 'Aroma 的發票有 3 張。', '什麼是發票？')
+  assert.equal(mixed.withheld.length, 1)
+  assert.ok(mixed.reply.startsWith(reply))
+})
+
+test('generic second-person and demonstrative explanations are not business observations', () => {
+  for (const reply of ['發票叫你付款，收據證明你已經付款。', '這是發票的 3 個常見用途：請款、記帳和核對付款。', 'An invoice asks you to pay; a receipt proves you have already paid.']) {
+    assert.equal(say(reply, '什麼是發票？').reply, reply)
+  }
+  for (const claim of ['你的餐廳目前有 3 張發票。', '這批存貨全部充足。', '那張發票已經付款。']) {
+    assert.equal(say(claim, '什麼是發票？').violated, true, claim)
+  }
+})
+
+test('a general first-person recommendation does not assert a business state', () => {
+  const reply = '我建議核對發票、送貨單及採購單這三種文件。'
+  assert.equal(say(reply, '什麼是發票？').reply, reply)
+  for (const claim of ['我們有 3 張發票。', '我的公司有 3 張發票。', '我已收到 3 張發票。']) {
+    assert.equal(say(claim, '什麼是發票？').violated, true, claim)
+  }
+})
+
 /* ═══ 1. THE NUMERIC HALF — sentenceIsSupported against an empty index ════ */
 
 test('*** an operational number with nothing read is withheld, and said so ***', () => {

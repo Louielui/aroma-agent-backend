@@ -22,7 +22,7 @@ const { projectConnections } = require('../context/connectionState') // READ-ONL
 
 function createContextRouter (deps = {}) {
   const router = express.Router()
-  const buildConnector = deps.buildConnector || ((env) => createLiveReadConnector({ env }))
+  const buildConnector = deps.buildConnector || ((env, options = {}) => createLiveReadConnector({ env, ...options }))
   const build = deps.buildReadContextFn || buildReadContext
 
   function gate (req, res, next) {
@@ -52,9 +52,15 @@ function createContextRouter (deps = {}) {
 
   router.get('/api/v1/context/recent', gate, async (req, res) => {
     try {
-      const sources = enabledSources(process.env)
+      let sources = enabledSources(process.env)
+      if (req.query.sources !== undefined) {
+        if (typeof req.query.sources !== 'string' || req.query.sources.length > 512) return res.status(400).json({ error: 'invalid_source_scope' })
+        const requested = [...new Set(req.query.sources.split(',').map(s => s.trim()))]
+        if (!requested.length || requested.some(s => !sources.includes(s))) return res.status(400).json({ error: 'invalid_source_scope' })
+        sources = requested
+      }
       if (sources.length === 0) return res.json({ sources: [], status: 'NO_SOURCES', perSource: [], block: null })
-      const { connector } = buildConnector(process.env)
+      const { connector } = buildConnector(process.env, { operationsOptions: { backgroundReader: req.app.locals.operationsBackgroundReader } })
       const rc = await build({ connector, message: String(req.query.q || ''), sources, env: process.env })
       res.json({ sources, status: rc.status, perSource: rc.perSource, block: rc.block })
     } catch (err) {

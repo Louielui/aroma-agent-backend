@@ -181,7 +181,7 @@ class ClaudeAdapter extends LLMAdapter {
 
   /**
    * @param {string} prompt
-   * @param {{ maxTokens?: number, temperature?: number, system?: string }} [opts]
+   * @param {{ maxTokens?: number, temperature?: number, system?: string, signal?: AbortSignal }} [opts]
    * @returns {Promise<{ text: string, usage: object, model: string, latencyMs: number, stopReason: (string|null) }>}
    */
   async complete (prompt, opts = {}) {
@@ -267,7 +267,7 @@ class ClaudeAdapter extends LLMAdapter {
       response = await this._post(
         `${this._apiBase}/messages`,
         body,
-        { headers, timeout: REQUEST_TIMEOUT_MS }
+        { headers, timeout: REQUEST_TIMEOUT_MS, signal: opts.signal }
       )
     } catch (err) {
       // Re-throw without leaking the API key in the error message

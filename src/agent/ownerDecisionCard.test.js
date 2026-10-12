@@ -97,6 +97,9 @@ test('mutating ANY displayed canonical value changes both the hash and the card'
     costCapUsd: 999,
     branch: 'main',
     approvalId: 'appr_other1',
+    // The KIND of grant. Swapping it must move the hash AND visibly change the card — a
+    // read-only card says 「想讀一個檔案」 where a code-change card says 「想改一個檔案」.
+    taskKind: 'read_only_enquiry',
     currentExcerpt: '假的現時內容',
     currentExcerptTruncated: true,
     intendedChange: '其實想做別的事',

@@ -108,6 +108,8 @@ function buildPrompt (question, catalogue, contextBlocks, workingContext) {
     JSON.stringify(catalogue, null, 1),
     '',
     '規則：',
+    '- Investigation in any language: identify the goal, then evidence needs, then matching operations. Do not require the Owner to name sources. Development diagnosis needs work records, source revision and candidate tests versus loaded-version verification; background questions need configuration, enablement, history and a live runtime witness. Select external sources only when they can supply relevant evidence. Configuration and saved running states are not live activity. Map investigation_evidence to the evidence needed, never to an invented tool.',
+    '- Memory processing failure diagnosis (Chinese or English) is background investigation, not a failed development task. Include memory_failures evidence and xiangxiang_operations: current canonical index/consolidation diagnostics, recorded error categories, retry schedules/limits and retained success/failure times. Raw-only and empty consolidation are valid outcomes, not failures. Recorded generic unavailability does not establish authentication, quota or model root causes. Keep investigation read-only.',
     '- 最多 ' + MAX_FACTS + ' 樣事實。',
     '- 每樣事實要指明 operation、entity、同你需要嘅欄位名。',
     '- 如果冇任何 operation 承載得到某樣事實，operation 同 entity 都填 null。**唔好就近搵一個似樣嘅頂替。**',
@@ -119,6 +121,7 @@ function buildPrompt (question, catalogue, contextBlocks, workingContext) {
      * authorisation is still decided entirely by sourcesForPlan and the Owner's own flags.
      */
     '- 提到一個來源嘅名，唔等於要讀嗰個來源。討論、舉例、或者明講「唔好讀」，都唔算需要嗰啲資料。',
+    '- Owner 本機調查：如果某個來源可以直接補足這個問題的證據，但不是首輪必要資料，可列 enriching；伺服器只會在證據不足及已授權時有限補查。不要填入無關或 Owner 禁止讀取的來源。',
     '- executive_frame 要填晒：taskType、decisionNeeded、successDefinition、answerPosture。',
     '- executive_frame 唔係推理過程。唔好喺度寫思考步驟、分析或者理由，淨係填嗰四格。'
   ].join(String.fromCharCode(10))

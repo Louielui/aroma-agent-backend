@@ -146,6 +146,46 @@ const READ = (capability) => ({ intent: 'question', mode: 'chat', reply: '', nex
 const FINAL = (reply, over) => Object.assign({ intent: 'question', mode: 'chat', reply, nextRead: null, answerPlan: null }, over)
 const ASK = (reply) => ({ intent: 'question', mode: 'ask', reply, nextRead: null, answerPlan: null })
 
+test('an unmet read obligation with no mapped required operation reports the gap without recovery calls', async () => {
+  await withEnv({}, async () => {
+    const out = await turn({
+      message: '我想你幫我到7shift批員工的clock out時間',
+      plan: planOf([fact('員工打卡紀錄', null)]),
+      verifier: 'require_internal', intent: 'internal',
+      script: [FINAL('UNVERIFIED_MODEL_REPLY')]
+    })
+    assert.equal(out.mainPrompts.length, 1, 'an unrelated internal source cannot satisfy an unmapped goal')
+    assert.deepEqual(out.readsAttempted, [])
+    assert.ok(out.res.reply.includes('未找到對應的已登記讀取操作'), out.res.reply)
+    assert.ok(out.res.reply.includes('未執行任何修改'), out.res.reply)
+    assert.equal(out.res.reply.includes('UNVERIFIED_MODEL_REPLY'), false)
+    assert.equal(out.res.reply.includes('呢個回合冇產生'), false)
+    assert.deepEqual(out.res.tasks, [])
+    assert.equal(out.res.capabilityGap.version, 1)
+    assert.equal(out.res.capabilityGap.kind, 'unmapped_read')
+    assert.equal(out.res.capabilityGap.facts[0].need, '員工打卡紀錄')
+    assert.equal(out.res.capabilityGap.facts[0].state, 'no_system_operation')
+    assert.equal(out.res.capabilityGap.capability, null, 'an external capability must not be invented')
+  })
+})
+
+test('English unmapped requests receive the same bounded gap outcome', async () => {
+  await withEnv({}, async () => {
+    const out = await turn({
+      message: 'Please approve employee clock-out times in the staff scheduling service.',
+      plan: planOf([fact('Employee time punches', null)]),
+      verifier: 'require_internal', intent: 'internal',
+      script: [FINAL('UNVERIFIED_MODEL_REPLY')]
+    })
+    assert.equal(out.mainPrompts.length, 1)
+    assert.deepEqual(out.readsAttempted, [])
+    assert.ok(out.res.reply.includes('registered read operation'), out.res.reply)
+    assert.ok(out.res.reply.includes('No changes were made'), out.res.reply)
+    assert.equal(out.res.capabilityGap.kind, 'unmapped_read')
+    assert.equal(out.res.reply.includes('UNVERIFIED_MODEL_REPLY'), false)
+  })
+})
+
 
 const distinct = (a) => [...new Set(a)]
 /**

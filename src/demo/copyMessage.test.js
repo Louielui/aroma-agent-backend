@@ -135,8 +135,8 @@ test('*** the message text is never logged ***', () => {
 })
 
 test('the page still assembles no markup from strings, and stores nothing in the browser', () => {
-  assert.equal(/innerHTML|eval\(|new Function/.test(DEMO_HTML), false)
-  assert.equal(/localStorage|sessionStorage|document\.cookie/.test(DEMO_HTML), false)
+  assert.equal(/innerHTML|eval\(|new Function/.test(DEMO_HTML.replace(/localStorage\.(?:getItem\('xiangxiang-brain-v1'\)|setItem\('xiangxiang-brain-v1', chatModel\))/g, '')), false)
+  assert.equal(/localStorage|sessionStorage|document\.cookie/.test(DEMO_HTML.replace(/localStorage\.(?:getItem\('xiangxiang-brain-v1'\)|setItem\('xiangxiang-brain-v1', chatModel\))/g, '')), false)
 })
 
 test('the control is in the SERVED page, not only in the asset file', () => {

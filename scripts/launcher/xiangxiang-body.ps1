@@ -247,7 +247,8 @@ $env:CONVERSATION_RECALL = 'on'
 # throwaway clone with no remotes and can only Read/Edit/Write; the result is a .patch file
 # in C:AromaAgentPatches which the Owner applies by hand. v1 never applies anything.
 # NOTE: the four-flag gate means COMPUTER_OPERATOR must stay off while this is on.
-$env:AGENT_BRIDGE = 'on'
+$env:AGENT_BRIDGE = 'off'
+$env:READONLY_ENQUIRY = 'on'
 
 # repo MUST be on main (never auto-checkout)
 try { $branch = (& git -C $Repo rev-parse --abbrev-ref HEAD 2>$null).Trim() } catch { $branch = '' }

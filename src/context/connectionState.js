@@ -97,10 +97,10 @@ const HEALTH = Object.freeze({
  * what it actually registers equals this list. Add a builder there without adding it here, or
  * the reverse, and that test turns red.
  */
-const BUILDABLE_SOURCES = Object.freeze(['drive', 'gmail', 'calendar', 'github', 'aroma_system', 'public_knowledge'])
+const BUILDABLE_SOURCES = Object.freeze(['drive', 'gmail', 'calendar', 'github', 'aroma_system', 'public_knowledge', 'xiangxiang_operations', 'seven_shifts'])
 
 /** Sources that need no credential because they never leave this machine. */
-const LOCAL_SOURCES = Object.freeze(['development_record'])
+const LOCAL_SOURCES = Object.freeze(['development_record', 'xiangxiang_operations'])
 
 /** The only source with an egress side: reading it sends the Owner's words outward. */
 const EGRESS_SOURCES = Object.freeze(['public_knowledge'])
@@ -111,6 +111,7 @@ const GOOGLE_SOURCES = Object.freeze(['drive', 'gmail', 'calendar'])
 const CREDENTIAL_ENV = Object.freeze({
   github: 'GITHUB_READ_TOKEN',
   aroma_system: AROMA_KEY_ENV,
+  seven_shifts: 'SEVEN_SHIFTS_ACCESS_TOKEN',
   public_knowledge: PUBLIC_KEY_ENV
 })
 
@@ -119,6 +120,9 @@ const CREDENTIAL_ENV = Object.freeze({
  * This says only 「is there credential material to try with, and is any needed at all」.
  */
 function credentialStateFor (source, env, credsPresent) {
+  if (source === 'public_knowledge' && env.PUBLIC_SEARCH_PROVIDER === 'claude-subscription') {
+    return require('../subscription/bridge').validToken(env.CODEX_CHAT_BRIDGE_TOKEN) ? CREDENTIAL.PRESENT : CREDENTIAL.MISSING
+  }
   // Local: there is no credential to have or to lack. Saying either would be a claim about
   // something that does not exist.
   if (LOCAL_SOURCES.includes(source)) return CREDENTIAL.NOT_REQUIRED

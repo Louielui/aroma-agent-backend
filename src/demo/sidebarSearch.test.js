@@ -1,0 +1,20 @@
+'use strict'
+const test = require('node:test')
+const assert = require('node:assert/strict')
+const fs = require('node:fs')
+const path = require('node:path')
+const vm = require('node:vm')
+const source = fs.readFileSync(path.join(__dirname, 'assets/app.js'), 'utf8')
+
+test('sidebar title filtering handles Chinese, case, whitespace and literal punctuation without modifying history', () => {
+  const match = source.match(/function matchesConversation \(c, query\) \{[\s\S]*?\n  \}/)
+  assert.ok(match, 'a pure title filter is available')
+  const matches = vm.runInNewContext('(' + match[0] + ')')
+  const c = Object.freeze({ title: 'Costco 採購 [下週]', history: ['private body'] })
+  assert.equal(matches(c, '  COSTCO '), true)
+  assert.equal(matches(c, '採購'), true)
+  assert.equal(matches(c, '['), true)
+  assert.equal(matches(c, 'private body'), false, 'search promises titles only')
+  assert.equal(matches(c, '不存在'), false)
+  assert.equal(matches(c, ''), true)
+})

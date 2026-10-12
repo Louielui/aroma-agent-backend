@@ -311,6 +311,7 @@ async function runEnquiry (input = {}) {
       evidence: has('evidence') ? r.evidence : undefined,
       notEstablished: has('notEstablished') ? r.notEstablished : undefined,
       termination: has('termination') ? r.termination : undefined,
+      diagnostics: has('diagnostics') ? r.diagnostics : undefined,
       costUsd: costKnown ? r.costUsd : null,
       numTurns: r.numTurns ?? null,
       sessionId,

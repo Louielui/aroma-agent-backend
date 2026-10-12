@@ -319,6 +319,7 @@ function operationForIntentKey (intentKey) {
 module.exports = { operationForIntentKey, bindOperationForIntent,
   AROMA_SOURCE,
   AROMA_OPERATIONS,
+  PUBLIC_OPERATIONS,
   SOURCE_LEVEL_OPERATIONS,
   isSourceLevelOperation,
   operationsForSources,

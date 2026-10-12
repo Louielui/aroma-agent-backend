@@ -88,6 +88,9 @@ const UNIT_LABELS = Object.freeze({
 
 /** The Owner-facing status words. Keys are the API's own values. */
 const STATUS_LABELS = Object.freeze({
+  PAUSED: () => t('investigation.paused'),
+  NOT_INSTALLED: () => t('investigation.notInstalled'),
+  unconnected: () => t('investigation.unconnected'),
   // ⛔ Thunks, not key strings — a table lookup handed to t() is a DYNAMIC key (HR-48).
   needs_review: () => t('status.needsReview'),
   approved: () => t('status.approved'),
@@ -597,6 +600,49 @@ function resolveRowRef (index, ref) {
   return index.byId.get([...owners][0]) || null
 }
 
+// The operational adapter projects allowlisted records as nested evidence. Preserve exact
+// scalar matching; stringifying arrays would hide their real values behind [object Object].
+function operationalValues (fields) {
+  const out = []
+  function visit (v, depth) {
+    if (v == null || depth > 8 || out.length >= 1000) return
+    if (['string', 'number', 'boolean'].includes(typeof v)) out.push(v)
+    else if (typeof v === 'object') for (const child of Object.values(v)) visit(child, depth + 1)
+  }
+  visit(fields, 0)
+  return out
+}
+
+function operationalRecord (row, title) {
+  if (row.source !== 'xiangxiang_operations' || typeof title !== 'string') return null
+  const matches = [...(row.fields?.records || []), ...(row.fields?.workflows || [])].filter(record => record.name === title || record.sourceId === title || record.role === title)
+  return matches.length === 1 ? matches[0] : null
+}
+
+function operationalTitle (row, record) {
+  if (row.source !== 'xiangxiang_operations') return row.title
+  if (record) {
+    if (record.name || record.sourceId) return record.name || record.sourceId
+    switch (record.role) {
+      case 'test_draft': return t('investigation.testDraftWorkflow')
+      case 'development': return t('investigation.developmentWorkflow')
+      case 'review': return t('investigation.reviewWorkflow')
+      case 'adoption': return t('investigation.adoptionWorkflow')
+      default: return record.role
+    }
+  }
+  switch (row.fields?.section) {
+    case 'configuration': return t('investigation.configuration')
+    case 'schedules': return t('investigation.schedules')
+    case 'work': return t('investigation.work')
+    case 'history': return t('investigation.history')
+    case 'execution': return t('investigation.execution')
+    case 'usage': return t('investigation.usage')
+    case 'billing': return t('investigation.billing')
+    default: return row.title
+  }
+}
+
 function evidenceIndex (evidenceSets = [], itemsBySource = []) {
   const byId = new Map()
   // legacy alias -> the set of canonical refs claiming it. Size 1 resolves; more fails closed.
@@ -645,7 +691,7 @@ function evidenceIndex (evidenceSets = [], itemsBySource = []) {
       }
       alias(String(row.sourceId))
       if (row.source) alias(`${row.source}#${row.sourceId}`)
-      for (const v of Object.values(row.fields || {})) {
+      for (const v of (row.source === 'xiangxiang_operations' ? operationalValues(row.fields) : Object.values(row.fields || {}))) {
         values.add(String(v))
         // BOTH FORMS. The row carries `cs`; she writes 箱. Indexing only the raw code made
         // every translated unit and status unverifiable — she has to guess which spelling
@@ -1604,6 +1650,7 @@ function validatePlan (plan, { evidenceSets = [], itemsBySource = [], message = 
         drops.push({ kind: 'item', sourceId: sourceId.slice(0, LIMITS.maxDropIdChars) })
         continue
       }
+      const record = operationalRecord(row, it.title)
       const facts = []
       const labels = metrics.get(row.source) || EMPTY_LABELS
       // TWO ALLOWANCES, COUNTED SEPARATELY. The ordinary cap is unchanged; a declared
@@ -1661,7 +1708,9 @@ function validatePlan (plan, { evidenceSets = [], itemsBySource = [], message = 
 
         // Everything else: unchanged. Verbatim, the translation of one, or the same
         // quantity written differently — never a substring, never fuzzy.
-        const m = matchValue(f.value, index)
+        // An operational fact must belong to the cited section, not another section.
+        const factIndex = row.source === 'xiangxiang_operations' ? evidenceIndex([], [{ source: row.source, items: [record ? { ...row, fields: record } : row] }]) : index
+        const m = matchValue(f.value, factIndex)
         if (!m.ok) {
           droppedFacts++
           drops.push(Object.assign({ kind: 'fact', sourceId: sourceId.slice(0, LIMITS.maxDropIdChars), field: field.slice(0, LIMITS.maxDropIdChars), why: m.why }, describeValue(f.value, index)))
@@ -1696,7 +1745,7 @@ function validatePlan (plan, { evidenceSets = [], itemsBySource = [], message = 
        */
       items.push({
         sourceId,
-        title: row.title || String(it.title || ''),
+        title: operationalTitle(row, record) || String(it.title || ''),
         facts,
         canonical: canonicalOf(row),
         readKey: (typeof row.readKey === 'string' && row.readKey) ? row.readKey : null
@@ -2169,6 +2218,7 @@ const ENTITY_LABELS = Object.freeze({
 })
 
 const SOURCE_LABELS = Object.freeze({
+  xiangxiang_operations: () => t('investigation.operations'),
   aroma_system: () => t('source.aromaSystem'),
   gmail: () => 'Gmail',
   drive: () => 'Drive',

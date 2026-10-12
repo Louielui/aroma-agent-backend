@@ -75,11 +75,77 @@ const CLASS = Object.freeze({
  * the test checks COVERAGE (is every such file listed), never the number.
  */
 const FILE_CLASS = Object.freeze({
+  'capabilities/gapContract.js': CLASS.INTERFACE,
+  'capabilities/gapService.js': CLASS.MATCHING,
+  'subscription/publicAnswer.js': CLASS.MATCHING, // Bilingual output guards; translating patterns would change evidence admission.
+  'context/sevenShiftsReport.js': CLASS.MATCHING, // Bounded input guards and separately bilingual output; translating the guards would alter routing.
+  'context/sevenShiftsAttendance.js': CLASS.MATCHING, // Bounded attendance intent guards and separately bilingual evidence output; guards must not be translated.
+  'context/sevenShiftsComparison.js': CLASS.MATCHING, // Bounded bilingual intent guards and deterministic comparison output; no model instructions.
+  'intake/readObligationGap.js': CLASS.INTERFACE,
+  'investigation/ownerBrief.js': CLASS.INTERFACE,
+  'actions/view.js': CLASS.INTERFACE,
+    'actions/chat.js': CLASS.INTERFACE,
+    'actions/understanding.js': CLASS.MODEL, // Structured interpretation prompt and bounded input matching; no display strings.
+  'investigation/workCorrelation.js': CLASS.INTERFACE, // Receipt-bound bilingual explanation; identities are compared without language matching.
+  'investigation/repairChainView.js': CLASS.INTERFACE, // Fixed bilingual stage labels, never source routing.
+  'investigation/enquiryOffer.js': CLASS.MODEL,
+  // Backward-compatible report focus reads historical question vocabulary;
+  // translating it would change old receipt presentation, never source routing.
+  'investigation/intelligence.js': CLASS.MATCHING,
+  'investigation/operationalBrief.js': CLASS.INTERFACE, // Receipt-bound presentation; script detection chooses locale only.
+  'investigation/semanticView.js': CLASS.INTERFACE, // Reviewed statement presentation, separated from model contracts.
+  'investigation/invocationBrief.js': CLASS.INTERFACE, // Receipt-bound call summary; no model prompt or intent routing.
+  'investigation/costFindings.js': CLASS.INTERFACE, // Receipt-bound cost presentation; no model prompt, routing or new reads.
+  'investigation/costAssessmentView.js': CLASS.INTERFACE, // Fixed receipt-bound conclusion, no source routing or prompts.
+  'investigation/decisionAdviceView.js': CLASS.INTERFACE, // Fixed bilingual options over bounded evidence, no authority or prompts.
+  'investigation/workPurpose.js': CLASS.INTERFACE, // Closed bilingual component-purpose and canonical-progress presentation.
+  'investigation/memoryFailures.js': CLASS.INTERFACE, // Safe bookkeeping projection and bilingual diagnostics; no authority or routing.
+  'investigation/memoryFailureCorrelation.js': CLASS.INTERFACE, // Exact host identity evidence and bilingual presentation only.
+  'investigation/executionUsageView.js': CLASS.INTERFACE, // Fixed receipt-bound usage presentation; no source routing or model prompts.
+  'investigation/subscriptionEvidenceView.js': CLASS.INTERFACE, // Fixed account receipt presentation; no model or routing instructions.
+  'investigation/sourceBoundFindings.js': CLASS.INTERFACE, // Shared receipt-bound presentation; no source choice or new reads.
+  'investigation/generalizationView.js': CLASS.INTERFACE, // Assertion-bound bilingual presentation only.
+  'investigation/followupReads.js': CLASS.INTERFACE, // All Chinese is receipt presentation; source selection uses fixed enums, not prose.
+  'investigation/crossSourceEvidence.js': CLASS.INTERFACE, // Receipt-bound comparison text; script detection selects locale only.
+  'routes/ownerApprovalRouter.js': CLASS.INTERFACE,
+  'modelCenter/client.js': CLASS.INTERFACE,
+  'modelCenter/routes.js': CLASS.INTERFACE,
+  'demo/assets/topics.js': CLASS.INTERFACE,
+  'topics/publicAnswerFollowups.js': CLASS.INTERFACE, // Host receipt presentation; no input matching or model prompts.
+  'topics/evidenceFollowups.js': CLASS.INTERFACE, // Receipt-bound note presentation, never input matching.
+  'topics/followupIntent.js': CLASS.MATCHING, // Bounded bilingual request matching must not be translated.
+  'core/codeRepair/view.js': CLASS.INTERFACE, // Owner repair scope, approval and evidence labels
+  'core/codeRepair/recipes.js': CLASS.INTERFACE, // Display titles only; executable recipe bytes are never translated
+  'core/projectWork/view.html': CLASS.INTERFACE, // Bilingual screenshot language captions, not model instructions
   // ── INTERFACE ──────────────────────────────────────────────────────────────
   'demo/assets/app.js': CLASS.INTERFACE,              // 139 — the screen itself
+  'core/operating/view.js': CLASS.INTERFACE,           // Owner-facing operations briefing labels
+  'context/liveContextView.js': CLASS.INTERFACE,
+  'context/driveContextView.js': CLASS.INTERFACE,
+  'context/aromaContextView.js': CLASS.INTERFACE,
+  'context/calendarContextView.js': CLASS.INTERFACE,
+  'context/calendarContextService.js': CLASS.MATCHING,
+  'context/gmailContextView.js': CLASS.INTERFACE,
+  'context/gmailContextService.js': CLASS.MATCHING,
+  'core/operating/architectureView.js': CLASS.INTERFACE, // Owner-facing architecture inventory
+  'core/workerFlow/view.js': CLASS.INTERFACE, // Owner-facing worker acceptance labels
+  'core/projectTasks/view.js': CLASS.INTERFACE, // Owner-facing registration labels only
+  'core/projectWork/resultLabels.js': 'INTERFACE',
+  'core/projectWork/view.js': CLASS.INTERFACE, // Owner-facing source work order labels; no source or model text is translated
+  'core/developmentPlan/view.js': CLASS.INTERFACE, // Owner-facing proposal and work-order labels
   'agent/workOrderView.js': CLASS.INTERFACE,          //  39
   'agent/agentResultView.js': CLASS.INTERFACE,        //  33
   'intake/answerPlan.js': CLASS.INTERFACE,            //  32 — unit + status labels
+  'intake/websiteFlow.js': CLASS.INTERFACE,
+  'memory/view.js': CLASS.INTERFACE,
+  'memory/governedView.js': CLASS.INTERFACE,
+  'memory/recallReply.js': CLASS.INTERFACE,
+  'memory/capturePolicy.js': CLASS.MATCHING,
+  'connections/view.js': CLASS.INTERFACE,
+  'company/view.js': CLASS.INTERFACE,
+  'company/mailChat.js': CLASS.INTERFACE,
+  'company/mailLabels.js': CLASS.INTERFACE,
+  'company/mailIntent.js': CLASS.MATCHING,
   // B, the goal decomposer. MODEL text: these strings are read by a model, not by the Owner.
   'intake/goal/operationCatalogue.js': CLASS.MODEL,   //   1 — the 「(空)」 marker in the catalogue
   'intake/goal/goalDecomposer.js': CLASS.MODEL,       //  10 — the decomposer's whole instruction
@@ -94,6 +160,8 @@ const FILE_CLASS = Object.freeze({
   // S1: the SELF CAPABILITY block she is SHOWN, plus each capability's Owner-facing label.
   // Translating 「未實作」 into something softer changes what she believes she can do, which is
   // the one thing this registry exists to keep true. MODEL.
+  'chat/imageChat.js': CLASS.MODEL,                 // Image-chat instructions are model context.
+  'chat/imageBodyParser.js': CLASS.INTERFACE,
   'governance/selfCapability.js': CLASS.MODEL,        //  S1 — the capability block and labels
   'intake/executiveJudgment.js': CLASS.MODEL,        //  X3 — the judgement directive and the rendered position labels
   'intake/investigationState.js': CLASS.MODEL,       //  X4 — the investigation block and its read-state labels
@@ -136,6 +204,7 @@ const FILE_CLASS = Object.freeze({
   // what the check decides — the alarm/report split lives in shapeDrift.js, which has no text.
   'errands/shapeDriftRunner.js': CLASS.INTERFACE,     //   6 — the drift summary sentence
   'intake/readResultView.js': CLASS.INTERFACE,        //  19
+  'intake/publicProvenance.js': CLASS.INTERFACE,      // Display-only public evidence excerpts; no model prompt or matching.
   'demo/assets/settings.js': CLASS.INTERFACE,         //  18
   'home/errandKinds.js': CLASS.INTERFACE,             //  18 — titles + duration words
   'agent/workOrderProducer.js': CLASS.INTERFACE,      //  16 — refusal messages
@@ -248,6 +317,10 @@ const FILE_CLASS = Object.freeze({
   //                                                          leaves six opaque names to guess among.
 
   // ── MATCHING — his words are compared against this. ────────────────────────
+  'core/taskPlanner/continuation.js': CLASS.MATCHING, // Current Owner confirmation and bounded design scope.
+  'core/taskPlanner/dialogue.js': CLASS.INTERFACE, // Host action receipts in the current dialogue language.
+  'core/taskPlanner/boundPlan.js': CLASS.INTERFACE, // Bound confirmation and localized actual job status.
+  'core/taskPlanner/dialogueIntent.js': CLASS.MODEL, // Semantic intent prompt and fixed surface vocabulary must not be translated.
   'intake/scopeNotes.js': CLASS.MATCHING,             //   3 — 「哪個倉」/「邊個倉」 both spellings
   'persona/ownerSettings.js': CLASS.MATCHING,         //   2 — injection patterns
   'intake/traditionalGuard.js': CLASS.MATCHING,       //   2 — the simplified charset IS the guard

@@ -3,39 +3,68 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Xiangxiang</title>
+<title>Imagine</title>
 <link rel="icon" type="image/svg+xml" href="/*FAVICON_URI*/">
 <link rel="manifest" href="/manifest.webmanifest">
 <meta name="theme-color" content="#faf7f2" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#1c1b19" media="(prefers-color-scheme: dark)">
-<meta name="apple-mobile-web-app-title" content="Xiangxiang">
+<meta name="apple-mobile-web-app-title" content="Imagine">
 <style>/*INLINE_CSS*/</style>
 </head>
 <body>
   <div id="app">
     <aside id="sidebar">
       <div class="side-top">
-        <button id="collapse" class="icon-btn" type="button">☰</button>
+        <span class="side-brand-dot" aria-hidden="true"></span>
         <span class="brand" id="brand-name"></span>
+        <button id="collapse" class="icon-btn" type="button"><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M4 4h16v16H4z M9 4v16"/></svg></button>
       </div>
       <!-- ⛔ DESTINATIONS, ABOVE AND SEPARATE FROM THE CONVERSATION LIST.
            Sitting between 開新對話 and the list, 首頁 read as another conversation — which is
-           what it is not. It is a place, like Claude's Home. 營運 / 財務 / 行政 stay in
-           PRODUCT-IA and OFF this nav until each has something conversation does badly,
-           asserted by src/demo/sidebar.test.js. -->
+           what it is not. Department workspaces are Owner-requested conversation scopes;
+           they do not grant capabilities or connector permissions. -->
       <nav id="places" class="places">
         <button id="open-home" class="place-btn" type="button">
-          <span class="side-item-icon" aria-hidden="true">◱</span><span id="home-label"></span>
+          <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="m3 10 9-7 9 7 M5 9v12h14V9 M9 21v-8h6v8"/></svg><span id="home-label"></span>
         </button>
       </nav>
-      <button id="new-chat" class="new-chat" type="button"></button>
+      <button id="new-chat" class="new-chat" type="button"><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 4H5a1 1 0 0 0-1 1v14a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-7 M10 14l1-4L19 2l3 3-8 8z"/></svg><span id="new-chat-label"></span></button>
+      <div class="side-search">
+        <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M10 3a7 7 0 1 0 0 14 7 7 0 0 0 0-14 M15 15l6 6"/></svg>
+        <input id="conversation-search" type="search" autocomplete="off" spellcheck="false">
+      </div>
+      <details class="side-workspace" open>
+        <summary id="workspace-label"></summary>
+        <nav id="workspace-nav">
+          <button id="open-hr" class="side-item" type="button"><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8 M2 21v-3a7 7 0 0 1 14 0v3 M17 4a4 4 0 0 1 0 7 M22 21v-3a7 7 0 0 0-4-6"/></svg><span id="hr-label"></span></button>
+          <button id="open-purchasing" class="side-item" type="button"><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M3 3h2l3 13h11l2-9H6 M9 21h1 M18 21h1"/></svg><span id="purchasing-label"></span></button>
+          <button id="open-accounting" class="side-item" type="button"><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M5 3h14v18H5z M8 7h8 M8 12h2 M14 12h2 M8 16h2 M14 16h2"/></svg><span id="accounting-label"></span></button>
+          <button id="open-marketing" class="side-item" type="button"><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M3 9h5l13-5v16L8 15H3z M8 15l2 6h4l-2-5"/></svg><span id="marketing-label"></span></button>
+          <button id="open-manager" class="side-item" type="button"><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M4 4h16v16H4z M8 8h8 M8 12h8 M8 16h4"/></svg><span id="manager-label"></span></button>
+          <button id="open-live-context" class="side-item" type="button"><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M3 12s3-6 9-6 9 6 9 6-3 6-9 6-9-6-9-6z M12 9a3 3 0 1 0 0 6 3 3 0 0 0 0-6"/></svg><span id="live-context-label"></span></button>
+          <button id="open-development-plan" class="side-item" type="button"><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M4 4h16v16H4z M8 9h8 M8 13h8 M8 17h4"/></svg><span id="development-plan-label"></span></button>
+          <button id="open-drive-context" class="side-item" type="button"><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M5 3h9l5 5v13H5z M14 3v5h5 M8 12h8 M8 16h8"/></svg><span id="drive-context-label"></span></button>
+          <button id="open-aroma-context" class="side-item" type="button"><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M4 20V4h16v16z M8 16v-4 M12 16V8 M16 16v-6"/></svg><span id="aroma-context-label"></span></button>
+          <button id="open-calendar-context" class="side-item" type="button"><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M4 5h16v16H4z M4 10h16 M8 3v4 M16 3v4"/></svg><span id="calendar-context-label"></span></button>
+          <button id="open-gmail-context" class="side-item" type="button"><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M3 5h18v14H3z M3 5l9 7 9-7"/></svg><span id="gmail-context-label"></span></button>
+          <button id="open-memory" class="side-item" type="button"><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M8 4H6a3 3 0 0 0-3 3v10a3 3 0 0 0 3 3h2 M16 4h2a3 3 0 0 1 3 3v10a3 3 0 0 1-3 3h-2 M9 7h6v10H9z M12 3v4 M12 17v4"/></svg><span id="memory-label"></span></button>
+          <button id="open-connections" class="side-item" type="button"><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M10 13a5 5 0 0 0 7.07 0l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71 M14 11a5 5 0 0 0-7.07 0l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg><span id="connections-label"></span></button>
+          <button id="open-company-access" class="side-item" type="button"><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 3 4 6v6c0 5 8 9 8 9s8-4 8-9V6z M8 12l3 3 5-6"/></svg><span id="company-access-label"></span></button>
+          <button id="open-workers" class="side-item" type="button"><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="m8 7-5 5 5 5 M16 7l5 5-5 5 M14 4l-4 16"/></svg><span id="workers-label"></span></button>
+        </nav>
+      </details>
+      <div class="side-history-heading"><span id="history-label"></span><span id="history-count"></span></div>
       <nav id="convs" class="convs"></nav>
+      <div class="side-bottom">
+      <button id="open-project-tasks" class="side-item" type="button"><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M5 3h14v18H5z M8 8h8 M8 12h8 M8 16h5"/></svg><span id="project-tasks-label"></span></button>
+      <button id="open-architecture" class="side-item" type="button"><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M9 3h6v5H9z M3 16h6v5H3z M15 16h6v5h-6z M12 8v4 M6 16v-4h12v4"/></svg><span id="architecture-label"></span></button>
       <button id="open-settings" class="side-item" type="button" aria-haspopup="dialog" aria-expanded="false">
-        <span class="side-item-icon" aria-hidden="true">⚙</span><span id="settings-label"></span>
+        <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M4 7h16 M4 17h16 M8 4v6 M16 14v6"/></svg><span id="settings-label"></span>
       </button>
       <div class="side-foot">
         <span class="dot" id="conn-dot" aria-hidden="true"></span>
         <span id="conn-text"></span>
+      </div>
       </div>
     </aside>
 
@@ -54,6 +83,9 @@
                anything is typed. Filled from the server's own preview, never composed here. -->
           <div id="attach-preview" class="attach-preview hidden" aria-live="polite"></div>
           <div id="composer-box">
+            <div id="image-preview" class="image-preview hidden" aria-live="polite"></div>
+            <div id="image-error" class="image-error hidden" role="alert"></div>
+            <input id="image-files" class="hidden" type="file" accept="image/png,image/jpeg,image/webp" multiple>
             <textarea id="msg" rows="1"></textarea>
             <div class="composer-bar">
               <div id="plus-wrap">
@@ -61,7 +93,16 @@
                 <div id="plus-menu" class="hidden" role="menu"></div>
               </div>
               <span id="lane-hint" class="lane-hint"></span>
-              <div class="bar-right">
+                <div class="bar-right">
+                  <select id="brain-mode" class="hidden"></select>
+                <select id="brain-company" class="hidden"><option value="claude">Claude</option><option value="openai">GPT</option></select>
+                <select id="chat-level" class="hidden">
+                  <option id="chat-level-low" value="low"></option>
+                  <option id="chat-level-medium" value="medium" selected></option>
+                  <option id="chat-level-high" value="high"></option>
+                  <option id="chat-level-xhigh" value="xhigh"></option>
+                  <option id="chat-level-max" value="max"></option>
+                </select>
                 <div id="picker-wrap">
                   <button id="picker" type="button" aria-haspopup="listbox" aria-expanded="false">
                     <span id="picker-label"></span><span class="caret">▾</span>
@@ -72,7 +113,11 @@
               </div>
             </div>
           </div>
+          <div class="composer-status">
           <p class="composer-note" id="composer-note"></p>
+          <p class="composer-note" id="brain-status" role="status" aria-live="polite"></p>
+          <p class="composer-note" id="execution-status" role="status" aria-live="polite"></p>
+          </div>
         </div>
       </div>
     </main>
@@ -91,6 +136,7 @@
       </div>
 
       <div class="sheet-body">
+        <section class="set-sec"><a id="model-center-link" href="/model-center"></a></section>
         <section class="set-sec">
           <h3 id="set-style-h"></h3>
           <p class="set-hint" id="set-style-hint"></p>

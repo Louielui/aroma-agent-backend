@@ -6,7 +6,8 @@
  * ⛔ TWO NATURAL FAILURES, THE SAME GAP.
  *
  * 「我沒法貼圖給你,你好像還沒有這個功能」 — he was right, and she could not say so: there is
- * no image input anywhere in this product and nothing that knew it.
+ * there was no image input in that build and nothing that knew it. Chat image input is now
+ * implemented; reachability still depends on the selected subscription model answering.
  *
  * 「我下月23號會出席一個meeting,幫我加到calendar」 — calendarRead.js is list/get only and the
  * read connector refuses write-shaped method names at registration. No event could ever have
@@ -55,6 +56,7 @@ const KIND = Object.freeze({
  */
 const REGISTRY = Object.freeze([
   Object.freeze({ capability: 'aroma_system.read', kind: KIND.READ, implementation: IMPLEMENTATION.IMPLEMENTED, label: 'Aroma System 唯讀' }),
+  Object.freeze({ capability: 'seven_shifts.read', kind: KIND.READ, implementation: IMPLEMENTATION.IMPLEMENTED, label: '7shifts 打卡資料唯讀（連線及權限另行核對）' }),
   Object.freeze({ capability: 'aroma_system.write', kind: KIND.WRITE, implementation: IMPLEMENTATION.NOT_IMPLEMENTED, label: '改 Aroma System 資料' }),
   Object.freeze({ capability: 'gmail.read', kind: KIND.READ, implementation: IMPLEMENTATION.IMPLEMENTED, label: '讀 Gmail' }),
   Object.freeze({ capability: 'gmail.send', kind: KIND.WRITE, implementation: IMPLEMENTATION.NOT_IMPLEMENTED, label: 'send／回覆郵件' }),
@@ -64,14 +66,14 @@ const REGISTRY = Object.freeze([
   Object.freeze({ capability: 'calendar.write', kind: KIND.WRITE, implementation: IMPLEMENTATION.NOT_IMPLEMENTED, label: '加／改 Calendar 事件' }),
   Object.freeze({ capability: 'github.read', kind: KIND.READ, implementation: IMPLEMENTATION.IMPLEMENTED, label: '讀 GitHub' }),
   Object.freeze({ capability: 'github.write', kind: KIND.WRITE, implementation: IMPLEMENTATION.NOT_IMPLEMENTED, label: '改 GitHub' }),
+  Object.freeze({ capability: 'xiangxiang_operations.read', kind: KIND.READ, implementation: IMPLEMENTATION.IMPLEMENTED, label: 'Read own settings, schedules, work, history and legacy usage; provider billing is not connected' }),
   Object.freeze({ capability: 'public_knowledge.search', kind: KIND.READ, implementation: IMPLEMENTATION.IMPLEMENTED, label: '搵公開資料' }),
   /**
    * ⛔ ONE VISUAL-INPUT CAPABILITY, NOT TWO. The product draws no line between 「貼圖」 and
-   * 「上載圖」 because it has neither: the intake route accepts `message` and `interactionMode`,
-   * both strings, and no adapter builds an image block. Inventing `image.upload` beside
-   * `image.input` would be describing a distinction this build does not make.
+   * 「上載圖」: both feed the same bounded raster-only visual chat entrance.
+   * This says nothing about desktop capture or arbitrary file attachment support.
    */
-  Object.freeze({ capability: 'image.input', kind: KIND.INPUT, implementation: IMPLEMENTATION.NOT_IMPLEMENTED, label: '睇圖／收圖' }),
+  Object.freeze({ capability: 'image.input', kind: KIND.INPUT, implementation: IMPLEMENTATION.IMPLEMENTED, label: '睇圖／收圖' }),
   Object.freeze({ capability: 'file.input', kind: KIND.INPUT, implementation: IMPLEMENTATION.NOT_IMPLEMENTED, label: '收檔案附件' }),
   Object.freeze({ capability: 'decision_recall', kind: KIND.MEMORY, implementation: IMPLEMENTATION.IMPLEMENTED, label: '記得過往決定' }),
   Object.freeze({ capability: 'conversation_recall', kind: KIND.MEMORY, implementation: IMPLEMENTATION.IMPLEMENTED, label: '記得過往對話' }),
@@ -120,6 +122,8 @@ function capabilityBlock () {
     '規則：',
     '· 「已實作」唔等於而家連得到。要知道而家讀唔讀得到，要真係讀一次先知。',
     '· 「未實作」係確定嘅：嗰件事呢個版本做唔到，唔好應承、唔好當係暫時connection問題。',
+    '· 收圖係對話貼上／上傳嘅圖片，唔係自行查看桌面；未附圖嘅一轉唔好話已經睇到。',
+    '· 已有批准後派工嘅開發流程，但只限已登記嘅本機修改範圍；唔等於可以無限制自行改系統。',
     '· 呢一段唔係生意資料嘅證據，亦唔會批准任何來源、寫入或者執行。'
   ].join('\n')
 }

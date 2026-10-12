@@ -41,7 +41,7 @@
 
 const {
   operationEntry, operationNames, entityTypes, fieldTier, coverageOf, FIELD_TIER,
-  isSourceLevelOperation
+  isSourceLevelOperation, isPublicSearchOperation
 } = require('./operationCatalogue')
 const { executiveFrameSchema, judgeExecutiveFrame } = require('./executiveFrame')
 const { CAPABILITY_NAMES, capabilityEntry } = require('../../governance/selfCapability')
@@ -98,10 +98,13 @@ function goalPlanSchema () {
      * that the role is now asked what he is trying to ACCOMPLISH before it is asked which
      * facts that would take, and both answers now travel.
      */
-    required: ['question_restated', 'executive_frame', 'requested_capability', 'facts', 'joins'],
+    required: ['question_restated', 'executive_frame', 'requested_capability', 'investigation_focus', 'investigation_reference', 'investigation_evidence', 'facts', 'joins'],
     properties: {
       question_restated: { type: 'string', description: '你理解到嘅問題，用一句講返。Owner 會用呢句捉錯意。' },
       executive_frame: executiveFrameSchema(),
+      investigation_evidence: { type: 'array', items: { type: 'string', enum: Object.keys(require('../../investigation/generalRouter').NEEDS) }, description: 'Evidence needed to answer the goal, not a list of tools or permission. Separate configuration, enablement, historical execution, current live runtime, candidate tests and repair verification. Empty for non-investigation questions.' },
+      investigation_focus: { anyOf: [{ type: 'string', enum: ['cost', 'work_failure', 'background', 'general'] }, { type: 'null' }], description: 'For enquiries about Imagine itself: cost/credits, previous development work failure and whether repaired, background jobs/models/progress including memory indexing and consolidation failures, or general investigation. Memory processing diagnosis uses background and memory_failures evidence. Null for other questions. This is a report focus, never permission or evidence.' },
+      investigation_reference: { anyOf: [{ type: 'string', enum: ['previous'] }, { type: 'null' }], description: 'Select previous only if this question continues the server-saved previous investigation supplied as context. Null for a new topic or no saved reference. This grants no access and cannot satisfy current evidence needs.' },
       /**
        * ⛔ S1 — WHICH OF HER OWN ABILITIES HE IS ASKING FOR, OR NULL.
        *
@@ -183,7 +186,8 @@ function goalPlanSchema () {
              *
              * So the model declares it, and the judge still applies redundancy arithmetic on
              * top — a required fact whose fields are all obtainable elsewhere is dropped
-             * regardless of what it called itself. Only `required` facts become reads.
+             * regardless of what it called itself. Required facts initiate reads; Owner local investigations may also read
+             * authorised enriching facts in one bounded round when evidence remains incomplete.
              */
             necessity: {
               type: 'string',
@@ -237,7 +241,7 @@ function judgeFact (fact) {
    * ⛔ AND IT IS STILL A CLOSED SET. Membership comes from the derived table, so `dropbox`,
    * `gmail2` and `aroma_system.fake` fall through to UNKNOWN_OPERATION exactly as before.
    */
-  if (isSourceLevelOperation(base.operation)) {
+  if (isSourceLevelOperation(base.operation) || isPublicSearchOperation(base.operation)) {
     return Object.assign({}, base, {
       status: STATUS.PARTIAL,
       reason: REASON.SOURCE_LEVEL_NO_FIELD_PROOF,
@@ -471,6 +475,9 @@ function judgeGoalPlan (raw) {
     ok: true,
     plan: Object.freeze({
       questionRestated: String(raw.question_restated || ''),
+      investigationFocus: ['cost', 'work_failure', 'background', 'general'].includes(raw.investigation_focus) ? raw.investigation_focus : null,
+      investigationEvidence: Object.freeze([...new Set((Array.isArray(raw.investigation_evidence) ? raw.investigation_evidence : []).filter(n => Object.hasOwn(require('../../investigation/generalRouter').NEEDS, n)))]),
+      investigationReference: raw.investigation_reference === 'previous' ? 'previous' : null,
         /**
          * ⛔ FAIL-SOFT, AND THE FACTS DO NOT GO DOWN WITH IT. A frame that cannot be judged
          * becomes `null` and the fact plan proceeds under the rules it always had — X1 must

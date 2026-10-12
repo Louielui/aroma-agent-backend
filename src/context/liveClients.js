@@ -39,7 +39,7 @@ const { a4SemanticRoutingEnabled } = require('../intake/a4Contract')
 // governed. It is now a first-class source subject to the ordinary rules — and to two extra
 // ones below — so activation is a decision someone makes, not a line someone has to add.
 const PUBLIC_KEY_ENV = 'OPENAI_API_KEY'
-const ALL_SOURCES = Object.freeze(['drive', 'gmail', 'calendar', 'github', 'aroma_system', 'development_record', 'public_knowledge'])
+const ALL_SOURCES = Object.freeze(['drive', 'gmail', 'calendar', 'github', 'aroma_system', 'development_record', 'public_knowledge', 'xiangxiang_operations', 'seven_shifts'])
 
 /** Sources whose master+per-source flags are both exactly 'on'. */
 function enabledSources (env = process.env) {
@@ -67,6 +67,11 @@ function createLiveReadConnector (options = {}) {
     : googleAuthMod.service(name, version))
 
   const builders = {
+    seven_shifts: () => {
+      if (!env.SEVEN_SHIFTS_ACCESS_TOKEN?.trim() || !Number.isSafeInteger(Number(env.SEVEN_SHIFTS_COMPANY_ID)) || Number(env.SEVEN_SHIFTS_COMPANY_ID) < 1) throw Error('7shifts connection not configured')
+      return require('./adapters/sevenShiftsRead').createSevenShiftsReadAdapter({env,clock:options.clock,fetchFn:options.sevenShiftsFetch})
+    },
+    xiangxiang_operations: () => require('./adapters/xiangxiangOperationsRead').createXiangxiangOperationsReadAdapter({ ...options.operationsOptions, env, clock: options.clock }),
     drive: () => createDriveReadAdapter({ client: googleSvc('drive', 'v3'), clock: options.clock }),
     gmail: () => createGmailReadAdapter({ client: googleSvc('gmail', 'v1'), clock: options.clock }),
     calendar: () => createCalendarReadAdapter({ client: googleSvc('calendar', 'v3'), clock: options.clock }),
@@ -105,6 +110,13 @@ function createLiveReadConnector (options = {}) {
      * would move the Owner's words to a company he never agreed to.
      */
     public_knowledge: () => {
+      if (env.PUBLIC_SEARCH_PROVIDER === 'claude-subscription') {
+        if (!a4SemanticRoutingEnabled(env)) throw new Error('A4_KNOWLEDGE_ROUTING off')
+        if (!require('../subscription/bridge').validToken(env.CODEX_CHAT_BRIDGE_TOKEN)) throw new Error('CODEX_CHAT_BRIDGE_TOKEN not set')
+        return createPublicKnowledgeReadAdapter({clock:options.clock,provider:
+          require('./providers/claudeSubscriptionSearchProvider').createClaudeSubscriptionSearchProvider({env,request:options.publicSubscriptionRequest})})
+      }
+      if (env.PUBLIC_SEARCH_PROVIDER && env.PUBLIC_SEARCH_PROVIDER !== 'openai-api') throw new Error('unknown public search provider')
       const key = env[PUBLIC_KEY_ENV]
       if (!key) throw new Error(PUBLIC_KEY_ENV + ' not set')
       if (!a4SemanticRoutingEnabled(env)) throw new Error('A4_KNOWLEDGE_ROUTING off')
@@ -126,6 +138,15 @@ function createLiveReadConnector (options = {}) {
     }
   }
 
+  if (options.observeSource || (env.XIANGXIANG_MEMORY === 'on' && !require('../testProcess').isTestProcess())) {
+    const observe = options.observeSource || ((source, result) => require('../memory/runtime').runtime().observeRead(source, result))
+    const read = connector.read.bind(connector)
+    connector.read = async (...args) => {
+      const result = await read(...args)
+      try { const memoryCapture = observe(args[0], result); return { ...result, memoryCapture } }
+      catch (_) { return { ...result, memoryCapture: { state: 'unavailable' } } }
+    }
+  }
   return { connector, registered, skipped }
 }
 

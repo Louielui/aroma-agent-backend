@@ -1,0 +1,239 @@
+'use strict'
+const test = require('node:test')
+const assert = require('node:assert/strict')
+const fs = require('node:fs')
+const os = require('node:os')
+const path = require('node:path')
+const { createXiangxiangOperationsReadAdapter, SECTIONS } = require('./xiangxiangOperationsRead')
+const { createReadConnector } = require('../readConnector')
+const { buildReadContext } = require('../readContext')
+const { validatePlan } = require('../../intake/answerPlan')
+test('project execution metadata joins the governed read receipts with scope and no model dispatch', async t => {
+  const { dir } = fixture(t), events = []
+  const a = createXiangxiangOperationsReadAdapter({ dataDir: dir, scheduler: async () => ({ state: 'NOT_INSTALLED' }), executionReader: async () => ({ state: 'partial', retrievedAt: '2026-10-07T01:00:00Z', provesCharge: false, records: [{ sourceId: 'codex-session:fixture', model: 'gpt-6.1-sol', usage: { total_tokens: 123 } }], coverage: { scope: 'registered_project_sessions', sampledFiles: 1 } }), onProgress: e => events.push(e) })
+  const { results } = await a.methods.readInvestigation()
+  const r = results.find(r => r.fields.section === 'execution')
+  assert.equal(r.fields.records[0].usage.total_tokens, 123)
+  assert.equal(r.fields.coverage.sampledFiles, 1)
+  assert.equal(r.fields.provesCharge, false)
+  assert.equal(events.filter(e => e.section === 'execution').length, 2)
+})
+
+function fixture (t) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'xx-investigation-'))
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }))
+  const put = (name, value) => { const f = path.join(dir, name); fs.mkdirSync(path.dirname(f), { recursive: true }); fs.writeFileSync(f, typeof value === 'string' ? value : JSON.stringify(value)) }
+  put('model-center.json', { brain: { model: 'claude-sonnet', effort: 'medium' }, revision: 3 })
+  put('aroma-truth.json', { llm_usage: [{ model: 'gpt-6.1-sol', at: '2026-10-01T10:00:00Z', estimated_tokens: 200 }], decisions: [] })
+  put('project-work-runs/11111111-1111-4111-8111-111111111111.json', { id: '11111111-1111-4111-8111-111111111111', status: 'completed', createdAt: '2026-10-01T10:00:00Z', model: 'gpt-6.1-sol', secret: 'DO_NOT_EXPOSE', steps: [{ id: 'code', state: 'completed' }] })
+  put('conversations/11111111-1111-4111-8111-111111111111.json', { id: '11111111-1111-4111-8111-111111111111', title: 'Credit usage', updatedAt: '2026-10-01T11:00:00Z', messages: [{ role: 'user', text: 'Why was credit consumed?' }, { role: 'assistant', text: 'An old hypothesis, not a bill.' }] })
+  return { dir, put }
+}
+
+test('independent sources overlap and share one Owner runtime read; receipt order and failures remain explicit', async t => {
+  const {dir}=fixture(t);let runtimeReads=0,workEntered=false,executionEntered=false
+  let release;const barrier=new Promise(r=>{release=r})
+  const a=createXiangxiangOperationsReadAdapter({dataDir:dir,
+    runtimeReader:async()=>{runtimeReads++;return {state:'partial',scheduler:{state:'INSTALLED',scheduled:true,currentRunningState:'idle',readAt:Date.now()},records:[{sourceId:'bridge:memory_completion',role:'memory_completion',model:'claude-sonnet',provider:'claude',effort:'low',currentRunningState:'idle',at:'2026-10-07T20:00:00Z',modelBasis:'bridge_route_configuration'}]}},
+    backgroundReader:async()=>({state:'partial',records:[{sourceId:'backend:mail_analysis',role:'mail_analysis',model:null,currentRunningState:'active',at:'2026-10-07T20:00:00Z',evidenceBasis:'live_process_snapshot'}]}),
+    workReader:async()=>{workEntered=true;await barrier;return {state:'partial',records:[]}},
+    executionReader:async()=>{executionEntered=true;await barrier;throw Error('denied')}})
+  const pending=a.methods.readInvestigation()
+  await new Promise(r=>setTimeout(r,40));const overlapped=workEntered&&executionEntered;release()
+  const {results}=await pending
+  assert.equal(overlapped,true)
+  assert.equal(runtimeReads,1)
+  assert.deepEqual(results.map(x=>x.fields.section),SECTIONS)
+  assert.equal(results.find(x=>x.fields.section==='schedules').fields.records[0].state,'INSTALLED')
+  const records=results.find(x=>x.fields.section==='configuration').fields.records
+  assert.equal(records.find(x=>x.role==='mail_analysis').currentRunningState,'active')
+  assert.equal(records.find(x=>x.role==='mail_analysis').model,'claude-sonnet')
+  assert.equal(records.find(x=>x.role==='mail_analysis').modelBasis,'bridge_route_configuration')
+  assert.equal(results.find(x=>x.fields.section==='execution').fields.state,'unavailable')
+  assert.ok(results.every(x=>Number.isFinite(x.fields.readDurationMs)))
+})
+
+test('investigation retains failed task reasons and distinguishes candidate tests from current source verification', async t => {
+  const { dir, put } = fixture(t)
+  put('project-task-runs/22222222-2222-4222-8222-222222222222.json', { state: 'failed', reason: 'worker_timeout', finishedAt: '2026-10-07T01:00:00Z', input: { goal: 'Improve navigation', bootCommit: 'a'.repeat(40) }, taskRunId: '33333333-3333-4333-8333-333333333333', secret: 'PRIVATE_TOKEN', failureDiagnostic: { exitCode: 1, subtype: 'error_max_turns', stderr: 'PRIVATE_TOKEN' } })
+  const { results } = await createXiangxiangOperationsReadAdapter({ dataDir: dir, scheduler: async () => ({ state: 'NOT_INSTALLED' }) }).methods.readInvestigation({ query: 'Why did the previous development task fail?' })
+  const work = results.find(r => r.fields.section === 'work').fields
+  const failed = work.records.find(r => r.reason === 'worker_timeout')
+  assert.ok(failed)
+  assert.equal(failed.goal, 'Improve navigation')
+  assert.equal(failed.sourceRevision, 'a'.repeat(40))
+  assert.equal(failed.failureDiagnostic.exitCode, 1)
+  assert.equal(failed.currentRunningState, 'unknown')
+  assert.equal(failed.fixedInCurrentVersion, null)
+  assert.doesNotMatch(JSON.stringify(work), /PRIVATE_TOKEN|stderr/)
+})
+
+test('latest failure sample includes explicit linked work and adoption rather than declaring an unrelated success a fix', async t => {
+  const { dir, put } = fixture(t), failedId = '22222222-2222-4222-8222-222222222222', successId = '33333333-3333-4333-8333-333333333333'
+  put('test-workers/project-runs/' + failedId + '.json', { state: 'failed', reason: 'invalid_worker_result', finishedAt: '2026-10-07T01:00:00Z', workOrder: { goal: 'Navigation task' }, result: { model: 'gpt-6.1-sol', tests: { total: 9, passed: 8, failed: 1, exitCode: 1 }, before: 'PRIVATE_CODE' } })
+  put('test-workers/project-runs/' + successId + '.json', { state: 'completed', finishedAt: '2026-10-07T02:00:00Z', workOrder: { goal: 'Unrelated task' }, result: { tests: { total: 9, passed: 9, failed: 0, exitCode: 0 } }, appliedToLive: false })
+  put('test-workers/adoptions/44444444-4444-4444-8444-444444444444.json', { state: 'completed', workRunId: successId, action: 'adopt', appliedToLive: true, finishedAt: '2026-10-07T03:00:00Z', commit: 'b'.repeat(40), loaded: { bootCommit: 'b'.repeat(40) } })
+  const { results } = await createXiangxiangOperationsReadAdapter({ dataDir: dir, scheduler: async () => ({ state: 'NOT_INSTALLED' }) }).methods.readInvestigation({ query: '上一個開發任務為什麼失敗？現在修好了嗎？' })
+  const work = results.find(r => r.fields.section === 'work').fields
+  const failed = work.records.find(r => r.sourceId === failedId)
+  assert.equal(failed.tests.failed, 1)
+  assert.equal(failed.model, 'gpt-6.1-sol')
+  assert.equal(failed.fixedInCurrentVersion, null)
+  assert.ok(work.records.some(r => r.workRunId === successId && r.appliedToLive === true))
+  assert.doesNotMatch(JSON.stringify(work), /PRIVATE_CODE/)
+})
+
+test('service-configured Owner roots provide automations and worker evidence independently of the service profile', async t => {
+  const { dir, put } = fixture(t)
+  put('owner-automations/fixture/automation.toml', 'name = "Owner scheduled investigation"\nstatus = "PAUSED"\nrrule = "FREQ=HOURLY"')
+  put('owner-workers/project-runs/22222222-2222-4222-8222-222222222222.json', { status: 'completed', model: 'fixture-worker-model', updatedAt: '2026-10-06T15:00:00Z' })
+  const a = createXiangxiangOperationsReadAdapter({ dataDir: dir, env: { XIANGXIANG_OPERATIONS_AUTOMATION_DIR: path.join(dir, 'owner-automations'), XIANGXIANG_OPERATIONS_WORKER_ROOT: path.join(dir, 'owner-workers') }, scheduler: async () => ({ state: 'NOT_INSTALLED' }) })
+  const { results } = await a.methods.readInvestigation()
+  assert.equal(results.find(r => r.fields.section === 'schedules').fields.records[1].name, 'Owner scheduled investigation')
+  assert.ok(results.find(r => r.fields.section === 'work').fields.records.some(r => r.model === 'fixture-worker-model'))
+})
+
+test('unreadable automation directories and rejected files are explicit coverage gaps, never proof that no automation exists', async t => {
+  const { dir, put } = fixture(t)
+  put('not-a-directory', 'not a directory')
+  const inspect = async automationDir => (await createXiangxiangOperationsReadAdapter({ dataDir: dir, automationDir, scheduler: async () => ({ state: 'NOT_INSTALLED' }) }).methods.readInvestigation()).results.find(r => r.fields.section === 'schedules').fields
+  const inaccessible = await inspect(path.join(dir, 'not-a-directory'))
+  assert.equal(inaccessible.automationReadState, 'unavailable')
+  assert.equal(inaccessible.missingAutomationDirectory, false)
+  put('partial-automations/rejected/automation.toml', 'x'.repeat(66000))
+  const rejected = await inspect(path.join(dir, 'partial-automations'))
+  assert.equal(rejected.automationReadState, 'partial')
+  assert.equal(rejected.automationReadErrors, 1)
+})
+
+test('reading an allowed source does not require metadata access above its configured root', async t => {
+  const { dir, put } = fixture(t)
+  put('automations/fixture/automation.toml', 'name = "Readable task"\nstatus = "PAUSED"')
+  const originalStat = fs.lstatSync
+  t.mock.method(fs, 'lstatSync', function (p, ...args) {
+    if (path.resolve(p) === path.dirname(dir)) throw Object.assign(Error('Parent metadata denied'), { code: 'EACCES' })
+    return originalStat.call(fs, p, ...args)
+  })
+  const out = await createXiangxiangOperationsReadAdapter({ dataDir: dir, automationDir: path.join(dir, 'automations'), scheduler: async () => ({ state: 'NOT_INSTALLED' }) }).methods.readInvestigation()
+  assert.equal(out.results.find(r => r.fields.section === 'schedules').fields.records[1]?.name, 'Readable task')
+})
+
+test('a junction cannot redirect an operational source to a different canonical directory', async t => {
+  const { dir, put } = fixture(t)
+  put('actual/fixture/automation.toml', 'name = "Redirected task"\nstatus = "PAUSED"')
+  fs.symlinkSync(path.join(dir, 'actual'), path.join(dir, 'redirect'), 'junction')
+  const out = await createXiangxiangOperationsReadAdapter({ dataDir: dir, automationDir: path.join(dir, 'redirect'), scheduler: async () => ({ state: 'NOT_INSTALLED' }) }).methods.readInvestigation()
+  const schedules = out.results.find(r => r.fields.section === 'schedules').fields
+  assert.equal(schedules.automationReadErrors, 1)
+  assert.ok(!schedules.records.some(r => r.name === 'Redirected task'))
+})
+
+test('nested operational facts survive the real answer guard while invented and cross-section values are rejected', async t => {
+  const { dir, put } = fixture(t)
+  put('automations/fixture/automation.toml', 'name = "Owner scheduled investigation"\nstatus = "PAUSED"\nrrule = "FREQ=HOURLY"')
+  const { results } = await createXiangxiangOperationsReadAdapter({ dataDir: dir, automationDir: path.join(dir, 'automations'), scheduler: async () => ({ state: 'NOT_INSTALLED' }) }).methods.readInvestigation()
+  const row = results.find(r => r.fields.section === 'schedules')
+  const checked = validatePlan({ directAnswer: '', sections: [{ heading: '', items: [{ sourceId: row.sourceId, title: 'Ignored', facts: [{ field: 'Name', value: 'Owner scheduled investigation' }, { field: 'State', value: 'PAUSED' }, { field: 'Invented', value: 'Invented charge cause' }, { field: 'Wrong section', value: 'claude-sonnet' }] }] }], limitations: [], followUp: null }, { itemsBySource: [{ source: row.source, items: results }] })
+  const item = checked.plan.sections[0].items[0]
+  assert.equal(item.title, '排程與自動工作')
+  assert.deepEqual(item.facts.map(f => f.value), ['Owner scheduled investigation', '已暫停'])
+  assert.equal(checked.droppedFacts, 2)
+})
+
+test('named operational records retain their identity and cannot borrow facts from a sibling record', async t => {
+  const { dir, put } = fixture(t)
+  put('automations/first/automation.toml', 'name = "First task"\nstatus = "PAUSED"\nrrule = "FREQ=HOURLY"')
+  put('automations/second/automation.toml', 'name = "Second task"\nstatus = "ACTIVE"\nrrule = "FREQ=DAILY"')
+  const { results } = await createXiangxiangOperationsReadAdapter({ dataDir: dir, automationDir: path.join(dir, 'automations'), scheduler: async () => ({ state: 'NOT_INSTALLED' }) }).methods.readInvestigation()
+  const row = results.find(r => r.fields.section === 'schedules')
+  const checked = validatePlan({ directAnswer: '', sections: [{ heading: '', items: [{ sourceId: row.sourceId, title: 'First task', facts: [{ field: 'State', value: 'PAUSED' }, { field: 'Wrong task', value: 'ACTIVE' }] }] }], limitations: [], followUp: null }, { itemsBySource: [{ source: row.source, items: results }] })
+  assert.equal(checked.plan.sections[0].items[0].title, 'First task')
+  assert.deepEqual(checked.plan.sections[0].items[0].facts, [{ field: 'State', value: '已暫停' }])
+  assert.equal(checked.droppedFacts, 1)
+  const task = row.fields.records.find(r => r.name === 'First task')
+  assert.equal(task.executionHistoryState, 'unconnected')
+  assert.equal(Object.hasOwn(task, 'lastRunAt'), false, 'An unconnected execution source must not masquerade as a read null result')
+})
+
+test('local investigation continues across missing sources, distinguishes historic statements and billing, and preserves evidence', async t => {
+  const { dir } = fixture(t)
+  const seen = []
+  const a = createXiangxiangOperationsReadAdapter({ dataDir: dir, env: { CHAT_BACKEND: 'codex-subscription', OPENAI_API_KEY: 'DO_NOT_EXPOSE' }, automationDir: path.join(dir, 'absent'), scheduler: async () => ({ state: 'DISABLED', lastRunAt: null }), clock: () => '2026-10-06T12:00:00Z', onProgress: e => seen.push(e) })
+  const out = await a.methods.readInvestigation({ query: 'What kept consuming credit?' })
+  assert.deepEqual(out.results.map(r => r.fields.section), SECTIONS)
+  const rows = Object.fromEntries(out.results.map(r => [r.fields.section, r]))
+  assert.equal(rows.billing.fields.state, 'unconnected')
+  assert.equal(rows.billing.fields.evidenceState, 'not_established')
+  assert.equal(rows.usage.fields.records[0].estimated_tokens, 200)
+  assert.equal(rows.usage.fields.provesCharge, false)
+  assert.equal(rows.history.fields.records[0].sourceId, '11111111-1111-4111-8111-111111111111')
+  assert.equal(rows.history.fields.evidenceState, 'supported')
+  assert.equal(rows.schedules.fields.records[0].state, 'DISABLED')
+  assert.equal(rows.configuration.fields.records[0].model, 'claude-sonnet')
+  assert.doesNotMatch(JSON.stringify(out), /DO_NOT_EXPOSE/)
+  assert.equal(new Set(seen.map(e => e.section)).size, SECTIONS.length)
+  for (const row of out.results) {
+    assert.match(row.fields.sha256, /^[a-f0-9]{64}$/)
+    assert.equal(row.retrievedAt, '2026-10-06T12:00:00Z')
+    assert.ok(row.sourceId)
+  }
+})
+
+test('corrupt, missing, empty and truncated records remain distinguishable; a section failure does not stop the others', async t => {
+  const { dir, put } = fixture(t)
+  put('aroma-truth.json', '{bad')
+  const a = createXiangxiangOperationsReadAdapter({ dataDir: dir, automationDir: path.join(dir, 'absent'), scheduler: async () => { throw Error('SECRET_PATH') } })
+  const out = await a.methods.readInvestigation({ query: 'credit' })
+  const rows = Object.fromEntries(out.results.map(r => [r.fields.section, r.fields]))
+  assert.equal(rows.usage.state, 'unavailable')
+  assert.equal(rows.schedules.state, 'unavailable')
+  assert.equal(rows.work.state, 'partial')
+  assert.doesNotMatch(JSON.stringify(out), /SECRET_PATH/)
+  assert.ok(rows.work.records.length > 0)
+})
+
+test('read gate is off by default and the normal read layer retains all section receipts including the billing gap', async t => {
+  const { dir } = fixture(t)
+  const env = { READ_ACCESS: 'on', CONTEXT_XIANGXIANG_OPERATIONS: 'on' }
+  const c = createReadConnector({ env })
+  c.register(createXiangxiangOperationsReadAdapter({ dataDir: dir, automationDir: path.join(dir, 'absent'), scheduler: async () => ({ state: 'DISABLED' }) }))
+  const r = await buildReadContext({ connector: c, message: '之前有什麼會導致不停扣 credit？', sources: ['xiangxiang_operations'], env })
+  assert.equal(r.itemsBySource[0].items.length, SECTIONS.length)
+  assert.match(r.block, /billing/)
+  assert.match(r.block, /not_established/)
+  env.CONTEXT_XIANGXIANG_OPERATIONS = 'off'
+  assert.equal((await c.read('xiangxiang_operations', 'readInvestigation', {})).trust, 'unavailable')
+  assert.equal(c.hasWriteMethod(), false)
+})
+
+test('source catalogue offers operational investigation without treating a model choice as permission', () => {
+  const { catalogueForPrompt } = require('../../intake/goal/operationCatalogue')
+  const { sourcesForPlan } = require('../../intake/goal/goalGate')
+  const row = catalogueForPrompt().find(r => r.operation === 'xiangxiang_operations')
+  assert.match(row.label, /schedules|排程/)
+  assert.deepEqual(sourcesForPlan({ facts: [{ necessity: 'required', operation: row.operation }] }, []), [])
+})
+
+test('schedule witness failure stays visible beside usable automation definitions and no source exposes write methods', async t => {
+  const { dir, put } = fixture(t)
+  put('automations/fixture/automation.toml', 'name = "Fixture task"\nstatus = "PAUSED"\nrrule = "FREQ=HOURLY"\nprompt = "PRIVATE INSTRUCTIONS"')
+  const a = createXiangxiangOperationsReadAdapter({ dataDir: dir, automationDir: path.join(dir, 'automations'), scheduler: async () => { throw Error('unavailable') } })
+  const out = await a.methods.readInvestigation({ path: 'C:/private', command: 'delete', query: 'credit' })
+  const schedules = out.results.find(r => r.fields.section === 'schedules').fields
+  assert.equal(schedules.state, 'partial')
+  assert.equal(schedules.witnessUnavailable, true)
+  assert.equal(schedules.records[0].state, 'PAUSED')
+  assert.doesNotMatch(JSON.stringify(out), /PRIVATE INSTRUCTIONS|C:\/private/)
+  assert.deepEqual(Object.keys(a.methods), ['readInvestigation'])
+  for (const r of out.results) assert.notEqual(r.fields.provesCharge, true)
+})
+
+
+test('selected evidence sections do not invoke unrelated readers and malformed selection never broadens scope',async t=>{
+ const {dir}=fixture(t);const reads=[]
+ const a=createXiangxiangOperationsReadAdapter({dataDir:dir,workReader:async()=>{reads.push('work');return {state:'ok',records:[]}},executionReader:async()=>{reads.push('execution');throw Error('must not call')},runtimeReader:async()=>{reads.push('runtime');throw Error('must not call')}})
+ const x=await a.methods.readInvestigation({sections:['work']})
+ assert.deepEqual(x.results.map(r=>r.fields.section),['work']);assert.deepEqual(reads,['work'])
+ for(const sections of [[],['arbitrary'],['work','../../credentials'],'work'])await assert.rejects(()=>a.methods.readInvestigation({sections}),/invalid_investigation_sections/)
+ assert.deepEqual(reads,['work'])
+})

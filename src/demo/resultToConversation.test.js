@@ -235,8 +235,8 @@ test('*** L — ORDINARY CHAT IS UNTOUCHED UNTIL A RUN FINISHES ***', () => {
   const send = APP_JS.slice(APP_JS.indexOf("conv.history.push({ role: 'user'"), APP_JS.indexOf('renderConvList() // the conversation has content now'))
   assert.equal(/claimTerminalResult|presentedResults/.test(send), false,
     '⛔ the ordinary chat turn now runs result-presentation code')
-  assert.ok(send.includes("conv.history.push({ role: 'assistant', text: o.body.reply })"),
-    'and it still records the real reply exactly as before')
+  assert.ok(send.includes('conv.history.push(assistantHistory(o.body))'),
+    'the existing history entry point records the reply through its source-bound privacy guard')
 })
 
 test('*** the message lands in the conversation the request came from ***', () => {

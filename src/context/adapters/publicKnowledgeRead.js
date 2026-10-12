@@ -66,7 +66,7 @@ function createPublicKnowledgeReadAdapter (options = {}) {
      * the write-verb list, and there is no second method here — this source can fetch and
      * nothing else.
      */
-    async search ({ query, freshness = null, location = null, limit = MAX_RESULTS, requestId = null } = {}) {
+    async search ({ query, freshness = null, location = null, limit = MAX_RESULTS, requestId = null, replyLanguage = null, refresh = false } = {}) {
       if (!provider || typeof provider.search !== 'function') {
         // No executor wired. Throwing is correct: the connector turns it into UNAVAILABLE,
         // which is the honest state — nothing was learned. Returning [] here would have
@@ -74,7 +74,7 @@ function createPublicKnowledgeReadAdapter (options = {}) {
         throw new Error('public knowledge provider is not configured')
       }
 
-      const out = await provider.search({ query, freshness, location })
+      const out = await provider.search({ query, freshness, location, ...(replyLanguage?{replyLanguage}:{}), ...(refresh?{refresh:true}:{}) })
 
       logPublicSearch({
         requestId,
@@ -97,7 +97,7 @@ function createPublicKnowledgeReadAdapter (options = {}) {
         throw new Error('public search unavailable: ' + (out.reason || 'unknown'))
       }
 
-      const retrievedAt = clock()
+      const retrievedAt = out.retrievedAt || clock()
       return out.results.slice(0, Math.max(0, Math.min(limit, MAX_RESULTS))).map((r, i) => makeContextResult({
         source: 'public_knowledge',
         // Stable within the turn and derived from position, so two rows from one page cannot
@@ -126,8 +126,11 @@ function createPublicKnowledgeReadAdapter (options = {}) {
           url: r.url,
           sourceTitle: r.title,
           provider: out.provider,
+          cache: out.cache || null,
+          billing: out.provider === 'claude_subscription_search' ? 'claude-subscription' : null,
           publishedAt: r.publishedAt,
           contentKind: r.contentKind,
+          ...(r.sourceEvidence?{sourceEvidence:r.sourceEvidence}:{}),
           consulted: r.consulted === true
         }
       }))
@@ -139,7 +142,7 @@ function createPublicKnowledgeReadAdapter (options = {}) {
     methods,
     // Declared as adapter metadata, honoured generically by the connector. Nothing in the
     // connector learns what this source is; it only reads a number.
-    readTimeoutMs: PUBLIC_READ_TIMEOUT_MS,
+    readTimeoutMs: provider?.readTimeoutMs || PUBLIC_READ_TIMEOUT_MS,
     ready: () => !!(provider && typeof provider.search === 'function')
   }
 }

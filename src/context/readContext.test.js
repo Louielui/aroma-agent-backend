@@ -23,6 +23,15 @@ const { processIntake } = require('../intake/intakeService')
 // Same reasoning, and same recorded cost, as the TURN_ROUTER:'off' pins already here.
 const FLAGS_ON = { A4_KNOWLEDGE_ROUTING: 'off', READ_ACCESS: 'on', CONTEXT_DRIVE: 'on', CONTEXT_GMAIL: 'on', CONTEXT_CALENDAR: 'on', CONTEXT_GITHUB: 'on' }
 const NOW = '2026-07-25T12:00:00.000Z'
+
+test('investigation revision read pins repository and exact SHA and never falls back to recent records',()=>{
+ const options={readProfile:'investigation_revision',env:{GITHUB_READ_REPO:'owner/repo'},args:{revision:'a'.repeat(40)}}
+ const p=planFor('github',options)
+ assert.equal(p.method,'listCommits');assert.equal(p.params.sha,'a'.repeat(40));assert.equal(p.params.per_page,1)
+ assert.equal(p.fallback,undefined)
+ for(const revision of [null,'main','../../secrets','a'.repeat(39)])assert.ok(planFor('github',{...options,args:{revision}}).unavailable)
+ assert.ok(planFor('github',{...options,env:{}}).unavailable)
+})
 const live = (over = {}) => Object.assign({ source: 'drive', sourceId: 'x1', title: 'T', retrievedAt: NOW, originalDate: '2026-07-01', content: 'body', link: 'https://l/1', trust: 'live', error: null }, over)
 
 /** Fake connector: scripted per (source, method); records every read. */
@@ -119,6 +128,25 @@ test('gmail: terms are OR-ed (not the whole question AND-ed), capped, with newer
   assert.ok(p.params.q.length <= CAPS.maxQueryChars)
   assert.equal(p.fallback.params.q, 'newer_than:7d')
   assert.equal(p.hydrate.method, 'getMessage')
+})
+test('Owner cost profile searches provider billing candidates without unrelated recent fallback', async () => {
+  const message = '之前有什麼會導致不停扣 credit？請同時查本機紀錄與相關供應商電郵。'
+  const p = planFor('gmail', { keywords: extractKeywords(message), message, readProfile: 'cost_provider_mail' })
+  assert.match(p.params.q, /OpenAI.*Anthropic.*Claude/)
+  assert.match(p.params.q, /billing.*usage.*credit/)
+  assert.match(p.params.q, /newer_than:2y/)
+  assert.equal(p.params.maxResults, 4)
+  assert.equal(p.fallback, undefined)
+  assert.ok(p.params.q.length <= CAPS.maxQueryChars)
+  const c = fakeConnector({ 'gmail.searchMessages': okList('gmail', []) })
+  const r = await buildReadContext({ connector: c, message, sources: ['gmail'], now: NOW, readProfile: 'cost_provider_mail' })
+  assert.equal(c.calls.length, 1)
+  assert.equal(c.calls[0].params.q, p.params.q)
+  assert.equal(r.perSource[0].count, 0)
+  assert.equal(r.perSource[0].usedFallback, false)
+  assert.equal(r.perSource[0].trust, 'live')
+  assert.match(r.block, /read OK — no matching results/)
+  assert.ok(planFor('gmail', { keywords: ['credit'] }).fallback, 'ordinary Gmail reads keep their fallback')
 })
 test('github: state=all (not open-only) with a recent-commits fallback', () => {
   const p = planFor('github', { keywords: ['x'], now: NOW, env: { GITHUB_READ_REPO: 'Louielui/aroma-agent-backend' }, caps: CAPS })

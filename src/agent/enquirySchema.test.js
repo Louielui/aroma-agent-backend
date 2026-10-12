@@ -41,7 +41,10 @@ describe('the schema we hand to --json-schema', () => {
 
   test('every string is bounded, so a result cannot be an essay', () => {
     assert.ok(ENQUIRY_JSON_SCHEMA.properties.answer.maxLength > 0)
-    assert.ok(ENQUIRY_JSON_SCHEMA.properties.citations.maxItems > 0)
+    // Provider schemas omit unsupported array bounds; our validator enforces them.
+    assert.strictEqual(ENQUIRY_JSON_SCHEMA.properties.citations.maxItems, undefined)
+    assert.strictEqual(validateEnquiryPayload({ ...good(), citations: Array(101).fill(good().citations[0]) }).reason, REASON.OUT_OF_BOUNDS)
+    assert.strictEqual(validateEnquiryPayload({ ...good(), notEstablished: Array(51).fill('unknown') }).reason, REASON.OUT_OF_BOUNDS)
     assert.ok(ENQUIRY_JSON_SCHEMA.properties.citations.items.properties.quote.maxLength > 0)
   })
 })

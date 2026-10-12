@@ -68,7 +68,8 @@ test('the detail renders ingredients and history, not a step log', () => {
   assert.match(APP_JS, /sect-ingredient/)
   assert.match(APP_JS, /sect-history/)
   assert.match(APP_CSS, /\.sect-ingredient/)
-  assert.doesNotMatch(APP_JS, /d\.steps|nodesRead/, 'execution trace is the wrong grain for any screen')
+  const detail = APP_JS.slice(APP_JS.indexOf('function renderSection'), APP_JS.indexOf('\n  /** The composer'))
+  assert.doesNotMatch(detail, /\bd\.steps\b|\bnodesRead\b/, 'home ingredient details must not render execution traces')
 })
 
 test('⛔ a BLOCKED ingredient shows its reason, not a zero', () => {

@@ -114,6 +114,10 @@ const CAPABILITY_ENQUIRY = new RegExp(
 // A request to COMPOSE correspondence. The act is what matters, not the noun: a message
 // merely mentioning email is not a request to write one.
 const WRITE_ACT = /(回覆|回复|覆返|覆下|回信|寫信|寫封|寫個|寫一封|草擬|擬稿|起稿|draft|reply to|write (?:an? )?(?:e-?mail|reply|letter)|respond to)/i
+// A primary request to investigate stays read-only even when its subject names
+// replies/drafts. Match only the opening act, not a read verb inside a real mail
+// instruction such as "Reply to Rob after checking the records".
+const PRIMARY_INVESTIGATION = /^(?:(?:香香|Imagine|Xiangxiang)[，,:：\s]*)?(?:(?:請|请|幫我|帮我|麻煩|麻烦)\s*)?(?:查明|查清|查核|查詢|查询|查看|查|調查|调查|核對|核对|追查)|^(?:(?:Imagine|Xiangxiang)[，,:：\s]+)?(?:(?:please|help me)\s+)?(?:investigate|check|look into|find out|verify|audit)\b/i
 const MAIL_OBJECT = /(e-?mail|電郵|郵件|信|回信|mail)/i
 // A recipient makes the act unambiguous even without the word "email": 「幫我回覆 Rob」.
 const RECIPIENT = /(?:回覆|回复|覆|回|reply to|respond to|畀|俾|比|給|to)\s*[「"']?([A-Za-z][A-Za-z.\- ]{1,30}|[一-鿿]{2,6})[」"']?/
@@ -239,6 +243,7 @@ function isShortReply (text) {
 function routeLane (message, opts) {
   const text = typeof message === 'string' ? message.trim() : ''
   if (!text) return { lane: CHAT, reason: 'empty' }
+  if (require('./generalKnowledge').generalRequestKind(text)) return { lane: CHAT, reason: 'general_knowledge' }
 
   // A short reply continues what was already happening.
   if (isShortReply(text)) {
@@ -250,6 +255,7 @@ function routeLane (message, opts) {
 
   // 1. "Can you …?" is a question about capability, not a request. Chat.
   if (isCapabilityQuestion(text)) return { lane: CHAT, reason: 'capability_question' }
+  if (PRIMARY_INVESTIGATION.test(text)) return { lane: CHAT, reason: 'investigation_request' }
 
   // 2. EMAIL — an explicit act of composing correspondence. The act is required; a
   //    message that merely mentions email is not a request to write one.

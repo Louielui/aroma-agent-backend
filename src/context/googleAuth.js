@@ -15,6 +15,7 @@
 
 const fs = require('node:fs')
 const path = require('node:path')
+const { randomUUID } = require('node:crypto')
 const { isTestProcess } = require('../testProcess')
 
 const SECRETS_DIR = 'C:\\Aroma\\secrets'
@@ -115,6 +116,128 @@ function loadGoogleapis () { return require('googleapis').google } // lazy — o
 
 function credsPresent () { return fs.existsSync(CLIENT_FILE) && fs.existsSync(TOKEN_FILE) }
 
+// Metadata only; like credsPresent, this never reads credential content.
+function credentialConfiguration () {
+  const stamp = p => { try { const s = fs.statSync(p); return s.size + ':' + s.mtimeMs } catch (_) { return null } }
+  const client = stamp(CLIENT_FILE); const token = stamp(TOKEN_FILE)
+  return { client: !!client, token: !!token, revision: String(client) + '/' + String(token), canAuthorize: !!client }
+}
+
+const CONSENT_REDIRECT = 'http://127.0.0.1:8090/oauth/google/callback'
+const MEMBER_REDIRECT = 'http://127.0.0.1:8090/company/oauth/callback'
+const ADMIN_MAIL_REDIRECT = 'http://127.0.0.1:8090/company/mail/callback'
+const ADMIN_MAIL_DIR = 'C:\\ProgramData\\AromaXiangXiang\\admin-mail-secrets'
+const ADMIN_MAIL_FILE = path.join(ADMIN_MAIL_DIR, 'google-admin-mail-token.json')
+function createAdminMailConsentClient () {
+  assertGoogleLiveAuthAllowed()
+  // Check the dedicated service-writable store before asking the Owner to consent.
+  const probe = path.join(ADMIN_MAIL_DIR, randomUUID() + '.probe')
+  fs.writeFileSync(probe, '', { flag: 'wx', mode: 0o600 })
+  fs.unlinkSync(probe)
+  const raw = JSON.parse(fs.readFileSync(CLIENT_FILE, 'utf8')); const c = raw.installed || raw.web
+  if (!c || !c.client_id || !c.client_secret || (!raw.installed && !c.redirect_uris?.includes(ADMIN_MAIL_REDIRECT))) throw Error('oauth_configuration')
+  const google = loadGoogleapis()
+  const client = new google.auth.OAuth2(c.client_id, c.client_secret, ADMIN_MAIL_REDIRECT)
+  Object.assign(client.transporter.defaults, { timeout: 10000, retry: false })
+  return { client, audience: c.client_id }
+}
+function adminMailPresent () { return fs.existsSync(ADMIN_MAIL_FILE) }
+function adminMailCredentialConfiguration () {
+  const stamp = p => { try { const s = fs.statSync(p); return s.size + ':' + s.mtimeMs } catch (_) { return null } }
+  const client = stamp(CLIENT_FILE), token = stamp(ADMIN_MAIL_FILE)
+  return { client: !!client, token: !!token, revision: String(client) + '/' + String(token) }
+}
+// A retrieval must never run the consent store's write probe or expose its mutators.
+function loadAdminMailReadOnlyGrant () {
+  assertGoogleLiveAuthAllowed()
+  const grant = JSON.parse(fs.readFileSync(ADMIN_MAIL_FILE, 'utf8'))
+  if (!['email', 'sub', 'refresh_token'].every(k => typeof grant[k] === 'string' && grant[k])) throw Error('incomplete_grant')
+  const raw = JSON.parse(fs.readFileSync(CLIENT_FILE, 'utf8')), c = raw.installed || raw.web
+  if (!c?.client_id || !c.client_secret) throw Error('oauth_configuration')
+  const client = new (loadGoogleapis().auth.OAuth2)(c.client_id, c.client_secret, ADMIN_MAIL_REDIRECT)
+  client.setCredentials({ refresh_token: grant.refresh_token })
+  return { client, email: grant.email }
+}
+function saveAdminMailGrant (grant) {
+  assertGoogleLiveAuthAllowed()
+  if (!grant || !['email', 'sub', 'refresh_token'].every(k => typeof grant[k] === 'string' && grant[k])) throw Error('incomplete_grant')
+  const temp = ADMIN_MAIL_FILE + '.' + randomUUID() + '.tmp'
+  // Inherit the dedicated private directory ACL; never use the operational store.
+  fs.writeFileSync(temp, JSON.stringify({ email: grant.email, sub: grant.sub, refresh_token: grant.refresh_token }), { flag: 'wx', mode: 0o600 })
+  try { fs.renameSync(temp, ADMIN_MAIL_FILE) } catch (e) { fs.unlinkSync(temp); throw e }
+}
+function loadAdminMailGrant () {
+  assertGoogleLiveAuthAllowed()
+  const grant = JSON.parse(fs.readFileSync(ADMIN_MAIL_FILE, 'utf8'))
+  if (!grant.email || !grant.sub || !grant.refresh_token) throw Error('incomplete_grant')
+  const { client } = createAdminMailConsentClient()
+  client.setCredentials({ refresh_token: grant.refresh_token })
+  return { client, email: grant.email, sub: grant.sub }
+}
+function clearAdminMailGrant () {
+  assertGoogleLiveAuthAllowed()
+  if (fs.existsSync(ADMIN_MAIL_FILE)) fs.unlinkSync(ADMIN_MAIL_FILE)
+}
+const PUBSUB_REDIRECT = 'http://127.0.0.1:8090/company/mail-notifications/callback'
+const PUBSUB_FILE = path.join(ADMIN_MAIL_DIR, 'google-pubsub-token.json')
+function createPubsubConsentClient () {
+  assertGoogleLiveAuthAllowed()
+  const raw = JSON.parse(fs.readFileSync(CLIENT_FILE, 'utf8')); const c = raw.installed || raw.web
+  if (!c?.client_id || !c.client_secret || !/^[a-z][a-z0-9-]{4,62}$/.test(c.project_id) || (!raw.installed && !c.redirect_uris?.includes(PUBSUB_REDIRECT))) throw Error('oauth_configuration')
+  const probe = path.join(path.dirname(PUBSUB_FILE), randomUUID() + '.probe')
+  fs.writeFileSync(probe, '', { flag: 'wx', mode: 0o600 }); fs.unlinkSync(probe)
+  const client = new (loadGoogleapis().auth.OAuth2)(c.client_id, c.client_secret, PUBSUB_REDIRECT)
+  Object.assign(client.transporter.defaults, { timeout: 30000, retry: false })
+  return { client, audience: c.client_id, project: c.project_id }
+}
+const pubsubGrantStore = {
+  present: () => fs.existsSync(PUBSUB_FILE),
+  load () { assertGoogleLiveAuthAllowed(); return JSON.parse(fs.readFileSync(PUBSUB_FILE, 'utf8')) },
+  save (grant) {
+    assertGoogleLiveAuthAllowed()
+    const temp = PUBSUB_FILE + '.' + randomUUID() + '.tmp'
+    fs.writeFileSync(temp, JSON.stringify(grant), { flag: 'wx', mode: 0o600 })
+    try { fs.renameSync(temp, PUBSUB_FILE) } catch (e) { fs.unlinkSync(temp); throw e }
+  },
+  clear () { assertGoogleLiveAuthAllowed(); if (fs.existsSync(PUBSUB_FILE)) fs.unlinkSync(PUBSUB_FILE) }
+}
+function pubsubWithOAuth (client) { assertGoogleLiveAuthAllowed(); return loadGoogleapis().pubsub({ version: 'v1', auth: client }) }
+
+function createMemberConsentClient () {
+  assertGoogleLiveAuthAllowed()
+  // Share application configuration only, never the Owner refresh token.
+  const raw = JSON.parse(fs.readFileSync(CLIENT_FILE, 'utf8')); const c = raw.installed || raw.web
+  if (!c || !c.client_id || !c.client_secret || (!raw.installed && !c.redirect_uris?.includes(MEMBER_REDIRECT))) throw Error('oauth_configuration')
+  const google = loadGoogleapis()
+  const client = new google.auth.OAuth2(c.client_id, c.client_secret, MEMBER_REDIRECT)
+  Object.assign(client.transporter.defaults, { timeout: 10000, retry: false })
+  return { client, audience: c.client_id }
+}
+function createConsentClient () {
+  assertGoogleLiveAuthAllowed()
+  const raw = JSON.parse(fs.readFileSync(CLIENT_FILE, 'utf8')); const c = raw.installed || raw.web
+  if (!c || !c.client_id || !c.client_secret || (!raw.installed && !c.redirect_uris?.includes(CONSENT_REDIRECT))) throw Error('oauth_configuration')
+  const google = loadGoogleapis()
+  const client = new google.auth.OAuth2(c.client_id, c.client_secret, CONSENT_REDIRECT)
+  Object.assign(client.transporter.defaults, { timeout: 10000, retry: false })
+  return client
+}
+
+function persistRefreshToken (token) {
+  assertGoogleLiveAuthAllowed()
+  if (typeof token !== 'string' || !token) throw Error('incomplete_grant')
+  const tmp = TOKEN_FILE + '.' + randomUUID() + '.tmp'
+  fs.writeFileSync(tmp, JSON.stringify({ refresh_token: token, updatedAt: new Date().toISOString() }), { flag: 'wx', mode: 0o600 })
+  try { fs.renameSync(tmp, TOKEN_FILE) } catch (e) { fs.unlinkSync(tmp); throw e }
+}
+
+function serviceWithOAuth (name, version, oauth) {
+  assertGoogleLiveAuthAllowed()
+  if (!['gmail', 'drive', 'calendar'].includes(name)) throw Error('invalid_google_service')
+  const google = loadGoogleapis()
+  return google[name]({ version, auth: oauth })
+}
+
 function createOAuthClient () {
   // ⛔ FIRST EXECUTABLE ACTION. Nothing may precede it — not an existence check, not the SDK
   // load, and above all not a read. See the block above; a survey test pins this ordering.
@@ -143,6 +266,24 @@ module.exports = {
   TOKEN_FILE,
   READONLY_SCOPES,
   credsPresent,
+  credentialConfiguration,
+  CONSENT_REDIRECT,
+  MEMBER_REDIRECT,
+  ADMIN_MAIL_REDIRECT,
+  createAdminMailConsentClient,
+  createPubsubConsentClient,
+  pubsubGrantStore,
+  pubsubWithOAuth,
+  adminMailPresent,
+  adminMailCredentialConfiguration,
+  loadAdminMailReadOnlyGrant,
+  saveAdminMailGrant,
+  loadAdminMailGrant,
+  clearAdminMailGrant,
+  createMemberConsentClient,
+  createConsentClient,
+  persistRefreshToken,
+  serviceWithOAuth,
   createOAuthClient,
   service,
   loadGoogleapis,

@@ -25,6 +25,14 @@ const INVENTORY = 'aroma_system.inventory'
 
 // Facts default to required so existing cases keep their meaning.
 const plan = (facts, joins) => judgeGoalPlan({ question_restated: 'q', facts: facts.map((f) => Object.assign({ necessity: 'required' }, f)), joins: joins || [] })
+test('judged investigation focus is a closed report hint and never a new operation or permission', () => {
+  const raw = { question_restated: 'What background jobs and models are configured?', investigation_focus: 'background', facts: [{ id: 'own-work', need: 'Background definitions and historical workers', operation: 'xiangxiang_operations', entity: null, fields: [], necessity: 'required' }], joins: [] }
+  const r = judgeGoalPlan(raw)
+  assert.equal(r.ok, true)
+  assert.equal(r.plan.investigationFocus, 'background')
+  assert.equal(r.plan.sufficient, false)
+  assert.equal(judgeGoalPlan({ ...raw, investigation_focus: 'run_shell' }).plan.investigationFocus, null)
+})
 
 /* ═══ THE CATALOGUE ASSEMBLES, AND DESCRIBES NOTHING ITSELF ════════════════ */
 
@@ -131,10 +139,11 @@ test('*** ⛔ there is no cost entity and no costing operation to name in the fi
    * Comparing the whole list, in order, against both declarations is strictly stronger than
    * the length check it replaces — a wrong name of the right count used to pass.
    */
-  const { SOURCE_LEVEL_OPERATIONS } = require('../../context/readOperations')
+  const { SOURCE_LEVEL_OPERATIONS, PUBLIC_OPERATIONS } = require('../../context/readOperations')
   const declared = [
     ...AROMA_OPERATIONS.map((o) => o.operation),
-    ...SOURCE_LEVEL_OPERATIONS.map((o) => o.operation)
+    ...SOURCE_LEVEL_OPERATIONS.map((o) => o.operation),
+    ...PUBLIC_OPERATIONS.map((o) => o.operation)
   ]
   assert.deepEqual(ops.filter(Boolean), declared, 'the enum IS the closed list')
 })

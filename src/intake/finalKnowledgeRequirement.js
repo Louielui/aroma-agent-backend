@@ -44,7 +44,7 @@
 const { ownerAuthoredContext } = require('./publicQueryEgressPlanner')
 
 /**
- * ⛔ FIVE OUTCOMES, AND `question` IS ONLY EVER POPULATED BY ONE.
+ * ⛔ SIX OUTCOMES, AND `question` IS ONLY EVER POPULATED BY ONE.
  *
  * There is no `reason`, `rationale`, `confidence`, `analysis`, `thinking`, `tool`,
  * `capability`, `provider`, `query`, `source` or `readKey` field, and there will not be one —
@@ -62,12 +62,12 @@ const FINAL_SCHEMA = Object.freeze({
   properties: {
     decision: {
       type: 'string',
-      enum: ['allow_final', 'clarify', 'require_internal', 'require_public', 'require_mixed'],
-      description: 'allow_final＝唔使查嘢都答得；require_internal＝要我哋自己嘅實際資料；require_public＝要出面公開資料；require_mixed＝兩邊都要；clarify＝意思真係唔清楚。'
+      enum: ['allow_final', 'clarify', 'require_memory', 'require_internal', 'require_public', 'require_mixed'],
+      description: 'allow_final: supplied facts or general knowledge; require_memory: past dialogue only; require_internal: official internal business facts; require_public: outside public facts; require_mixed: both business worlds; clarify: genuinely ambiguous meaning.'
     },
     question: {
       type: ['string', 'null'],
-      description: '淨係 clarify 先填：一句簡短嘅澄清問題。其餘四個一定要填 null。'
+      description: 'Only clarify carries a short meaning question. Every other decision must return null.'
     }
   }
 })
@@ -75,6 +75,7 @@ const FINAL_SCHEMA = Object.freeze({
 const DECISION = Object.freeze({
   ALLOW: 'allow_final',
   CLARIFY: 'clarify',
+  MEMORY: 'require_memory',
   INTERNAL: 'require_internal',
   PUBLIC: 'require_public',
   MIXED: 'require_mixed'
@@ -84,6 +85,8 @@ const DECISION = Object.freeze({
 const WORLDS_FOR = Object.freeze({
   [DECISION.ALLOW]: null,
   [DECISION.CLARIFY]: null,
+  // Past dialogue is checked against the separately retrieved memory context, never live business evidence.
+  [DECISION.MEMORY]: null,
   [DECISION.INTERNAL]: Object.freeze({ internal: true, public: false }),
   [DECISION.PUBLIC]: Object.freeze({ internal: false, public: true }),
   [DECISION.MIXED]: Object.freeze({ internal: true, public: true })
@@ -106,9 +109,13 @@ const FINAL_SYSTEM = `你係一個好窄嘅判斷閘。你唔係答問題嘅人�
 
 Louie 問咗一個問題。你唯一要判斷嘅係：**要答得準，使唔使真係去攞資料？**
 
+先判斷最新一句真正要求做甚麼；較早的說話只供理解指代，不能取代當前目標。
+提到一個對象、畫面、功能或資料名稱，不等於要查其內容。要分清楚討論某樣東西與查詢其實際紀錄。
+
 allow_final —— 唔使攞資料：
 - 佢已經自己俾晒需要嘅數字或事實
 - 或者係一般常識、定義、計算、寫嘢，唔靠任何即時或私人資料
+- 或者是討論、設計、取捨或建議，基於他已描述的問題便可提出初步方案；未要求查證的現況不能被宣稱為已確認，但不因此強迫他改問一個業務問題。
 
 require_internal —— 要我哋自己嘅實際情況（我哋自己嘅紀錄、現況、實際數字）
 
@@ -116,18 +123,21 @@ require_public —— 要出面公開世界嘅情況（市場、行情、外面�
 
 require_mixed —— 佢明確要兩邊一齊，例如要攞我哋自己嘅嘢同出面嘅嘢比較
 
+require_memory — the entire question asks only what the owner said, requested, preferred, or recorded in a past conversation. This requires historical dialogue recall, not a new live business read. Do not use this outcome for current operational facts, official business records, or a question combining past dialogue with a current fact check; those still require the relevant internal/public world. Classify from the owner's words alone, without assuming recall succeeded. The application separately checks whether that memory was retrieved. Return question: null.
+
 clarify —— 只喺以下情況：
 - 「我哋自己」同「出面」兩種意思都同樣講得通
 - 而揀邊一邊會變成答緊另一條問題
 - 而佢自己同之前嘅對話都冇講明
+- 不要把清楚的建議要求當作查資料的範圍不明。可以先說明假設而給有用建議時，選 allow_final。
 
 規則：
-- 唔好答佢個業務問題。
+- 唔好替佢回答問題；只判斷是否需要取資料。
 - 唔好揀工具、來源或者操作，亦唔好提任何系統或功能名。
 - 唔好解釋你點諗。
 - 唔好因為某樣嘢查起上嚟麻煩就話唔使查。要攞就係要攞。
 - 除咗 clarify，question 一定要係 null。
-- clarify 嗰句只可以問「意思」，用生意語言，一句。`
+- clarify 嗰句只可以問真正未清楚的「意思」，沿用他當前討論的主題，一句。`
 
 /** A clarification may never leak implementation vocabulary to the Owner. */
 const IMPLEMENTATION_TERMS = /public_knowledge|aroma_system|nextRead|capability|connector|readKey|schema|operation|A4|API|endpoint|provider|tool/i
@@ -139,6 +149,7 @@ const OUTCOME = Object.freeze({
   UNAVAILABLE: 'unavailable', // no verifier, throw, or unusable output ⇒ FINAL not released
   ALLOW: DECISION.ALLOW,
   CLARIFY: DECISION.CLARIFY,
+  MEMORY: DECISION.MEMORY,
   INTERNAL: DECISION.INTERNAL,
   PUBLIC: DECISION.PUBLIC,
   MIXED: DECISION.MIXED

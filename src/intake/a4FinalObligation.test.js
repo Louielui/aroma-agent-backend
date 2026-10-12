@@ -129,6 +129,7 @@ const AW = { internal: true, public: true }
 /* ═══ A–H — THE VERIFIER'S CLASSIFICATION ═══════════════════════════════ */
 
 const CLASSES = [
+  ['M past dialogue   ', 'require_memory', null],
   ['A supplied facts   ', DECISION.ALLOW, null],
   ['B stable knowledge ', DECISION.ALLOW, null],
   ['C clear internal   ', DECISION.INTERNAL, { internal: true, public: false }],
@@ -313,6 +314,8 @@ test('*** P — ⛔ an UNAVAILABLE read does not satisfy the required world ***'
     assert.equal(a.calls.length, 1 + 3)
     assert.equal(String(out.reply || '').includes('試過唔得。'), false,
       '⛔ an answer was released although the required world never produced evidence')
+    assert.equal(out.reply.includes('呢個回合冇產生'), false, 'a known evidence gap must not become an empty-response fault')
+    assert.ok(out.reply.includes('尚未取得所需的即時資料'), out.reply)
   })
 })
 
@@ -542,7 +545,7 @@ test('*** ⛔ the schema is strict, closed, and carries no reasoning field ***',
   assert.deepEqual(FINAL_SCHEMA.required.slice().sort(), ['decision', 'question'])
   assert.deepEqual(Object.keys(FINAL_SCHEMA.properties).sort(), ['decision', 'question'])
   assert.deepEqual(FINAL_SCHEMA.properties.decision.enum.slice().sort(),
-    ['allow_final', 'clarify', 'require_internal', 'require_mixed', 'require_public'])
+    ['allow_final', 'clarify', 'require_internal', 'require_memory', 'require_mixed', 'require_public'])
   for (const banned of ['reason', 'rationale', 'confidence', 'analysis', 'thinking', 'tool',
     'capability', 'provider', 'query', 'source', 'readKey']) {
     assert.equal(Object.prototype.hasOwnProperty.call(FINAL_SCHEMA.properties, banned), false, `⛔ ${banned}`)

@@ -1,0 +1,31 @@
+'use strict'
+const test = require('node:test')
+const assert = require('node:assert/strict')
+const express = require('express')
+const http = require('node:http')
+const { randomUUID } = require('node:crypto')
+const { createDemoRouter } = require('../../routes/demoRouter')
+const { createManager } = require('./manager')
+const { createMemoryRunStore } = require('./runStore')
+test('chat briefing dispatch uses owner words and zero model calls, persists a run link, and rejects cross-origin starts', async t => {
+  let models = 0; const saved = []; const store = createMemoryRunStore()
+  const manager = createManager({ runStore: store, activity: { append () {}, list: () => [] }, gateway: { read: async () => ({ state: 'ok', count: 1, rows: [] }) } })
+  const app = express(); app.locals.conversationDemo = true; app.use(express.json())
+  app.use(createDemoRouter({ operatingManager: manager, conversationStore: { appendTurn: row => saved.push(row) },
+    getAdapterFn: () => { models++; throw Error('model must not run') } }))
+  const server = app.listen(0, '127.0.0.1'); await new Promise(r => server.once('listening', r)); t.after(() => new Promise(r => { server.closeAllConnections(); server.close(r) }))
+  const send = (origin, key) => new Promise((resolve, reject) => {
+    const req = http.request({ host: '127.0.0.1', port: server.address().port, path: '/api/v1/demo/intake', method: 'POST',
+      headers: { host: '127.0.0.1:8090', origin, 'content-type': 'application/json' } }, res => { let text = ''; res.on('data', c => { text += c }); res.on('end', () => resolve({ status: res.statusCode, body: JSON.parse(text) })) })
+    req.on('error', reject); req.end(JSON.stringify({ message: '香香，幫我整理今日營運簡報', conversationId: 'briefing-test', workflowRequestId: key }))
+  })
+  const key = randomUUID()
+  assert.equal((await send('https://evil.test', key)).status, 403); assert.equal(store.all().length, 0)
+  const result = await send('http://127.0.0.1:8090', key)
+  assert.equal(result.status, 200); assert.ok(result.body.operatingRunId); assert.equal(models, 0)
+  await manager.wait(result.body.operatingRunId)
+  assert.equal(manager.get(result.body.operatingRunId).state, 'completed')
+  assert.equal(saved[0].operatingRunId, result.body.operatingRunId)
+  const again = await send('http://127.0.0.1:8090', key)
+  assert.equal(again.body.operatingRunId, result.body.operatingRunId); assert.equal(saved.length, 1)
+})

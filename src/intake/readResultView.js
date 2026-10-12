@@ -709,7 +709,8 @@ function buildReadResultReply (input = {}) {
   const routed = enforceRouteEvidence({
     reply: out && typeof out.reply === 'string' ? out.reply : '',
     message: input.message,
-    evidenceSets: Array.isArray(input.evidenceSets) ? input.evidenceSets : []
+    evidenceSets: Array.isArray(input.evidenceSets) ? input.evidenceSets : [],
+    historicalMemoryAnswer: input.historicalMemoryAnswer === true
   })
   let afterRoute = out
   if (routed.violated) {
@@ -723,6 +724,11 @@ function buildReadResultReply (input = {}) {
     } catch (_) {}
     afterRoute = Object.assign({}, out, { reply: routed.reply, routeEvidenceWithheld: routed.withheld.length })
   }
+  const publicView = require('./publicProvenance')
+  const summary = publicView.publicSummary(input)
+  const provenance = summary ? null : publicView.publicProvenance(input)
+  if (summary) afterRoute = { ...afterRoute, reply: summary, publicSummaryRendered: true, publicAnswerReceipt: require('../topics/publicAnswerFollowups').createReceipt(input) }
+  else if (provenance) afterRoute = { ...afterRoute, reply: afterRoute.reply + '\n\n' + provenance }
   return withFinalReadStateBoundary(afterRoute, input)
 }
 

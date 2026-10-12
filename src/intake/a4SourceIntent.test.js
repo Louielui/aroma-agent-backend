@@ -386,7 +386,8 @@ test('*** ⛔ the resolver is NOT told the proposed world or what is available *
 test('*** every other A4 semantic prompt is unchanged ***', () => {
   const h = (s) => crypto.createHash('sha256').update(s).digest('hex').slice(0, 16)
   assert.equal(h(require('./sourceAmbiguityGate').VERIFIER_SYSTEM), '3417149904e7d898')
-  assert.equal(h(require('./finalKnowledgeRequirement').FINAL_SYSTEM), '94e1582a004db4f3')
+  // 2026-10-04: advice from supplied observations is distinct from dialogue recall or business retrieval.
+  assert.equal(h(require('./finalKnowledgeRequirement').FINAL_SYSTEM), 'b56fda0cd2230d7a')
   assert.equal(h(require('./mixedKnowledgeRequirement').MIXED_SYSTEM), 'b7602decbe0dc59a')
   assert.equal(h(require('./publicQueryEgressPlanner').PLANNER_SYSTEM), '20c2e930db2262f4')
   assert.equal(h(require('./recoveryDecisionWorker').WORKER_SYSTEM), '01a5979a04a87343')

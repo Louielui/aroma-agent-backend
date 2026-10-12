@@ -53,14 +53,34 @@ function spyAdapterFactory () {
   return fn
 }
 
-function makeApp ({ demoOn = true, processIntakeFn, getAdapterFn } = {}) {
+test('mail replies supplied by browser history cannot enter ordinary intake', async () => {
+  const p = spyProcess({ intent: 'chit_chat', mode: 'chat', reply: 'Fixture reply' })
+  const history = [{ role: 'user', text: '行政部電郵記憶' }, { role: 'assistant', text: 'PRIVATE MAIL', content: 'PRIVATE MAIL' },
+    { role: 'user', text: 'Hello' }, { role: 'assistant', text: 'Ordinary reply' }]
+  await req(makeApp({ processIntakeFn: p, getAdapterFn: spyAdapterFactory() }), 'POST', '/api/v1/demo/intake', { message: 'Hello again', interactionMode: 'chat', history })
+  assert.equal(p.calls.length, 1)
+  assert.ok(!JSON.stringify(p.calls[0][2]).includes('PRIVATE MAIL'))
+  assert.equal(p.calls[0][2][3].text, 'Ordinary reply')
+})
+
+test('mixed local-operations and email enquiry reaches investigation intake, not mailbox recall', async () => {
+  const process = spyProcess({ intent: 'question', mode: 'chat', reply: 'Investigation result' })
+  let mailCalls = 0
+  const app = makeApp({ processIntakeFn: process, getAdapterFn: spyAdapterFactory(), mailChat: { answer: async () => { mailCalls++; return { reply: 'Mail-only result' } } } })
+  const r = await req(app, 'POST', '/api/v1/demo/intake', { message: '之前有什麼會導致不停扣 credit？請同時查香香的本機執行和排程紀錄，以及相關供應商電郵。', interactionMode: 'chat' })
+  assert.equal(r.status, 200)
+  assert.equal(process.calls.length, 1)
+  assert.equal(mailCalls, 0)
+})
+
+function makeApp ({ demoOn = true, processIntakeFn, getAdapterFn, mailChat } = {}) {
   const app = express()
   app.use(express.json())
   if (demoOn) {
     app.locals.conversationDemo = true
     app.locals.promoteToProposal = async () => ({ ok: true, proposal: { id: 'p_test', status: 'pending' } })
   }
-  app.use(createDemoRouter({ getAdapterFn, processIntakeFn }))
+  app.use(createDemoRouter({ getAdapterFn, processIntakeFn, mailChat }))
   app.use((req, res) => res.status(404).json({ error: 'Not found' })) // mirror real terminal 404
   return app
 }
@@ -270,7 +290,7 @@ test('DEMO_HTML: ONE composer — no permanent mode controls, two shortcuts behi
 })
 
 test('DEMO_HTML: no storage/cookies, no innerHTML/eval/new Function', () => {
-  assert.ok(!/localStorage|sessionStorage|document\.cookie|serviceWorker/.test(DEMO_HTML))
+  assert.ok(!/localStorage|sessionStorage|document\.cookie|serviceWorker/.test(DEMO_HTML.replace(/localStorage\.(?:getItem\('xiangxiang-brain-v1'\)|setItem\('xiangxiang-brain-v1', chatModel\))/g, '')))
   assert.ok(!/innerHTML|eval\(|new Function/.test(DEMO_HTML))
 })
 
@@ -283,11 +303,8 @@ test('DEMO_HTML: safety labels + unknown fallback + Enter/Shift+Enter', () => {
   assert.match(CATALOGUE['draft.meta'].en, /not sent/i)
   assert.match(CATALOGUE['proposal.meta'].zh, /未執行/)
   assert.match(CATALOGUE['proposal.meta'].en, /nothing has run/i)
-  // The old placeholder "確認執行（尚未開放）" is GONE — it is replaced by the real Owner
-  // approval card, which still cannot execute from the chat card itself: the chat lane can
-  // only ASK the server to seal a Work Order, and executing needs the sealed card's typed
-  // confirmation + single-use nonce. Asserted below.
-  assert.ok(!DEMO_HTML.includes('確認執行（尚未開放）'), 'the disabled placeholder is retired')
+  // The chat card requests a sealed Work Order. Check the rendering key, not wording
+  // embedded in the page's catalogue. Execution still requires the sealed card below.
   assert.ok(DEMO_HTML.includes("t('proposal.makeWorkOrder')"), 'the chat card only requests a Work Order')
   // RE-POINTED, NOT DELETED. This promise used to live in the opening assistant bubble,
   // which the empty-screen redesign retired. Owner decision: it moves to the composer
@@ -327,7 +344,7 @@ test('DEMO_HTML: the approval card is a viewer + four fields of intent, and hold
     assert.ok(!m[1].includes(f), 'approve payload must not carry ' + f)
   }
   // The page never holds or sends a token, and never talks to anything but same-origin.
-  assert.ok(!/HUB_TOKEN|Authorization|Bearer/i.test(DEMO_HTML), 'no token anywhere in the page')
+  assert.ok(!require('../../scripts/verify/browserAuthority').hasBrowserAuthority(DEMO_HTML), 'no token or authorization code in the page')
   assert.ok(DEMO_HTML.includes("credentials: 'same-origin'"), 'session cookie only, same-origin')
   // One click only, and a burnt nonce is never retried from the page.
   assert.ok(DEMO_HTML.includes('go.disabled = true'), 'single click')

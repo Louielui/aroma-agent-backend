@@ -25,6 +25,8 @@ const path = require('node:path')
 const { iconDataUri } = require('./appManifest') // the padded square: favicon + app icon
 
 const ASSET_DIR = path.join(__dirname, 'assets')
+// Runtime pages and isolated browser acceptance share the same pure assembly.
+const { assemblePage, SCRIPT_BOUNDARY } = require('./pageTemplate')
 
 function readAsset (name) {
   const p = path.join(ASSET_DIR, name)
@@ -61,7 +63,7 @@ function inlineSvg (name) {
  * source list lives inside app.js and only exists in `out` once the script has been
  * inlined. The loop below walks this array in order, so the new key belongs at the end.
  */
-const PLACEHOLDERS = ['/*INLINE_I18N*/', '/*INLINE_CSS*/', '/*INLINE_JS*/', '/*INLINE_DOT*/', '/*FAVICON_URI*/', '/*READ_SOURCE_LABELS*/', '/*BUILD_STAMP*/']
+const PLACEHOLDERS = ['/*INLINE_I18N*/', '/*INLINE_CSS*/', '/*INLINE_JS*/', '/*INLINE_DOT*/', '/*FAVICON_URI*/', '/*READ_SOURCE_LABELS*/', '/*BUILD_STAMP*/', '/*SUBSCRIPTION_CHAT*/']
 
 /**
  * ── THE BUILD STAMP: how a stale tab tells on itself ─────────────────────────
@@ -87,7 +89,7 @@ function computeBuildStamp (overrides = {}) {
   const h = crypto.createHash('sha256')
   // Exactly the assets that can go stale in a browser. index.html is included because the
   // placeholders and structure live there too.
-  for (const name of ['app.js', 'app.css', 'index.html']) {
+  for (const name of ['app.js', 'app.css', 'index.html', 'sidebar.js', 'sidebar.css', 'topics.js']) {
     h.update(name)
     h.update(Object.prototype.hasOwnProperty.call(overrides, name) ? overrides[name] : readAsset(name))
   }
@@ -99,7 +101,9 @@ function computeBuildStamp (overrides = {}) {
    * catch, re-entering through the door this round opened.
    */
   h.update('i18n')
+  h.update(String(process.env.CHAT_BACKEND === 'codex-subscription'))
   h.update(require('../i18n/browserResolver').browserI18nSource())
+  h.update(SCRIPT_BOUNDARY)
   return h.digest('hex').slice(0, 12)
 }
 
@@ -126,26 +130,10 @@ function readSourceLabelsJson () {
  * otherwise be interpreted as a substitution pattern and silently corrupt the asset.
  */
 function buildDemoHtml () {
-  const parts = {
-    // ⛔ BEFORE the script in the document: app.js closes over CATALOGUE and createResolver.
-    '/*INLINE_I18N*/': require('../i18n/browserResolver').browserI18nSource(),
-    '/*INLINE_CSS*/': readAsset('app.css'),
-    '/*INLINE_JS*/': readAsset('app.js'),
-    // The same dot fills both the header mark and the avatar template, so one entry
-    // replaces both occurrences.
-    '/*INLINE_DOT*/': inlineSvg('dot.svg'),
-    // The favicon is the padded SQUARE form, shared with the installed app icon so the
-    // tab and the taskbar show the same thing. appManifest owns that geometry.
-    '/*FAVICON_URI*/': iconDataUri(),
-    '/*READ_SOURCE_LABELS*/': readSourceLabelsJson(),
-    '/*BUILD_STAMP*/': BUILD_STAMP
-  }
-  let out = readAsset('index.html')
-  for (const key of PLACEHOLDERS) out = out.split(key).join(parts[key])
-  for (const key of PLACEHOLDERS) {
-    if (out.includes(key)) throw new Error('demoHtml: an inline placeholder was not replaced: ' + key)
-  }
-  return out
+  return assemblePage({ template: readAsset('index.html'), i18n: require('../i18n/browserResolver').browserI18nSource(),
+    css: readAsset('app.css'), sidebarCss: readAsset('sidebar.css'), sidebar: readAsset('sidebar.js'), topics: readAsset('topics.js'), app: readAsset('app.js'),
+    dot: inlineSvg('dot.svg'), favicon: iconDataUri(), sourceLabels: JSON.parse(readSourceLabelsJson()), buildStamp: BUILD_STAMP,
+    subscription: process.env.CHAT_BACKEND === 'codex-subscription', modelCenter: true })
 }
 
 const DEMO_HTML = buildDemoHtml()

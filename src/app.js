@@ -53,6 +53,7 @@ const { resolveAgentBridge, authorizeExecution: authorizeExecutionMatrix } = req
 const { createAgentRunner } = require('./agent/agentRunner') // Agent Bridge wiring v1 (built ONLY when AGENT_BRIDGE==='on')
 const { createConfirmService } = require('./agent/confirmService') // THE single confirm domain service (both entry points)
 const { createOwnerApprovalStore } = require('./agent/ownerApprovalStore') // server-authoritative sealed orders + nonces + sessions
+const { createReadOnlyEnquiryService, resolveReadOnlyEnquiry } = require('./agent/readOnlyEnquiryService') // approved order -> ONE read-only enquiry (READONLY_ENQUIRY, default off)
 const { createOwnerApprovalRouter } = require('./routes/ownerApprovalRouter') // local Owner approval card (loopback + CSRF + typed EXECUTE)
 const { proposeWorkOrder } = require('./agent/workOrderProducer')
 const { EXECUTABLE_IDENTITY } = require('./projects/repositoryIdentity')
@@ -142,13 +143,17 @@ function resolveConversationDemo () {
 // conflict → ZERO execution. AGENT_BRIDGE defaults OFF and needs an agent runner
 // configured to authorize, so with the flag off (or no runner wired) the result is
 // byte-for-byte the same as before for the worker/develop lanes.
-function resolveExecutionAuthorization (dispatcherConfigured, agentRunnerConfigured = false) {
+function resolveExecutionAuthorization (dispatcherConfigured, agentRunnerConfigured = false, readOnlyEnquiryConfigured = false) {
   return authorizeExecutionMatrix({
     worker: resolveWorkerInvocation(),
     develop: resolveDevelopDispatch(),
     agent: resolveAgentBridge(),
+    // The fifth lane, in the SAME mutual exclusion as the rest — two on is still a conflict
+    // and still zero execution. Off unless the flag is exactly on AND a service was built.
+    readOnlyEnquiry: resolveReadOnlyEnquiry(),
     dispatcherConfigured,
-    agentRunnerConfigured
+    agentRunnerConfigured,
+    readOnlyEnquiryConfigured
   })
 }
 
@@ -623,7 +628,29 @@ function createApp (options = {}) {
   const agentRunner = injectedAgentRunner || builtAgentRunner
   const agentRunnerConfigured = agentRunner !== null
 
-  const authorize = () => resolveExecutionAuthorization(dispatcherConfigured, agentRunnerConfigured)
+  // ⛔ CONSTRUCTED ONLY WHEN THE FLAG IS ON. Off is not 「built and idle」: with the flag off
+  // this stays null, the lane is never eligible, and no source copy, workspace or worker is
+  // ever made. The wired provider copies only approved regular files at the sealed commit
+  // from this backend. It cannot select another repository or read working-tree edits.
+  // ⛔ ONE STORE, SHARED. The lane writes and the read-back route reads; two instances would
+  // point at the same default directory today and diverge the moment either is configured,
+  // which is the kind of drift that only shows up as 「it ran but I cannot find it」.
+  const enquiryStore = opts.enquiryStore || createEnquiryStore(opts.enquiryStoreDir ? { dir: opts.enquiryStoreDir } : {})
+
+  const readOnlyEnquiryService = resolveReadOnlyEnquiry() === 'on'
+    ? createReadOnlyEnquiryService({
+      enquiryStore,
+      sourceProvider: opts.enquirySourceProvider || require('./agent/enquirySource').createEnquirySource(),
+      // Injected like agentRunner: a composition-root collaborator, not a runtime bypass.
+      // Absent → the selected central subscription model, without tools or a paid API.
+      workerFactory: opts.enquiryWorkerFactory || (options => require('./agent/enquirySubscriptionWorker').createEnquirySubscriptionWorker({ ...options, selection: modelCenter.read().brain })),
+      // resolved lazily: the approval store is built further down
+      recordPhase: (id, phase) => { try { return ownerApprovalStore.recordPhase(id, phase) } catch (_) {} }
+    })
+    : null
+  const readOnlyEnquiryConfigured = readOnlyEnquiryService !== null
+
+  const authorize = () => resolveExecutionAuthorization(dispatcherConfigured, agentRunnerConfigured, readOnlyEnquiryConfigured)
 
   // B2-15 auth injection seam. The service-token middleware is built PER APP. In
   // production nothing is injected → the resolver defaults to readExpectedToken()
@@ -728,6 +755,7 @@ function createApp (options = {}) {
         cancelled: 'cancelled',
         expired: 'expired',
         executed: 'executed',
+        handed_off: 'approved',
         refused: 'refused'
       }
       const written = recordApprovalEvent({
@@ -746,6 +774,11 @@ function createApp (options = {}) {
   }
   app.locals.approvalAuditLog = approvalAuditLog
 
+  // Observability only — the composed lane, so a test (and a reader) can see whether one
+  // exists at all. It is the same object the confirm service holds; nothing calls it here.
+  app.locals.readOnlyEnquiryService = readOnlyEnquiryService
+  app.locals.enquiryStore = enquiryStore
+
   const scheduleWorker = createScheduleWorker({ runStore, proposalStore, workerDeps, authorizeExecution: authorize })
   const confirmService = createConfirmService({
     proposalStore,
@@ -758,6 +791,9 @@ function createApp (options = {}) {
     // outcome; it authorizes nothing. Resolved lazily because the store is built just below.
     recordResult: (id, r) => ownerApprovalStore.recordResult(id, r),
     recordExecutionStart: (id, f) => ownerApprovalStore.recordExecutionStart(id, f),
+    // The read-only enquiry lane, built only when its flag is on (see below). Absent → the
+    // lane is never eligible and every existing lane behaves exactly as before.
+    readOnlyEnquiryService,
     // P1-C1c THE CANONICAL LEDGER. The claim gate must be durable before the runner is
     // called, and the lane's milestones must land on the Run rather than only in memory.
     // Narrow functions, not the store: this service can claim and record, nothing more.
@@ -768,7 +804,8 @@ function createApp (options = {}) {
   app.locals.ownerApprovalStore = ownerApprovalStore
 
   // ── Middleware ────────────────────────────────────────────────────────────────
-  app.use(express.json({ limit: '50kb' }))
+  const ordinaryJson = express.json({ limit: '50kb' }), imageJson = require('./chat/imageBodyParser').createImageBodyParser()
+  app.use((req, res, next) => (req.path === '/api/v1/demo/image-intake' ? imageJson : ordinaryJson)(req, res, next))
   app.use(express.urlencoded({ extended: false }))
 
   // ── OWNER AUTHENTICATION ──────────────────────────────────────────────────────
@@ -823,6 +860,51 @@ function createApp (options = {}) {
       return res.status(401).json({ error: 'owner_auth_required' })
     }
   })
+
+  // Explicit rollout switch: the member surface is only available together with
+  // the catch-all Owner boundary, including legacy read routes and future routes.
+  const companyAccessEnabled = opts.companyAccessEnabled === undefined
+    ? process.env.XIANGXIANG_COMPANY_ACCESS === '1' : opts.companyAccessEnabled === true
+  const companyRegistry = opts.companyOptions?.registry || require('./company/access').createRegistry()
+  const companyMailbox = opts.companyOptions?.mailbox || require('./company/mailbox').createMailbox({ registry: companyRegistry })
+  const governedMemory = opts.governedMemory || (!process.env.NODE_TEST_CONTEXT && process.env.XIANGXIANG_MEMORY === 'on' ? require('./memory/runtime').runtime() : null)
+  let mailForeground = 0; let mailForegroundUntil = 0
+  const companyMailMemory = opts.companyOptions?.mailMemory || (companyAccessEnabled && governedMemory ? require('./company/mailMemory').createMailMemory({
+    analyzer: require('./company/mailAnalysis').createMailAnalyzer(),
+    engine: require('./memory/hindsight').createHindsight(),
+    foreground: () => mailForeground > 0 || Date.now() < mailForegroundUntil,
+    store: require('./memory/structuredStore').createStructuredStore(), mailbox: companyMailbox, allowed: () => governedMemory.status().enabled
+  }) : null)
+  if (companyMailMemory && !process.env.NODE_TEST_CONTEXT) companyMailMemory.start()
+  const mailPubsub = opts.companyOptions?.mailPubsub || (companyAccessEnabled ? require('./company/mailPubsub').createMailPubsub({ registry: companyRegistry }) : null)
+  const mailServices = companyMailMemory && !process.env.NODE_TEST_CONTEXT ? {
+    store: require('./memory/structuredStore').createStructuredStore(), mailbox: companyMailbox, memory: companyMailMemory
+  } : null
+  const mailScheduler = opts.companyOptions?.mailScheduler || (mailServices ? require('./company/mailScheduler').createMailScheduler({ ...mailServices,
+    foreground: () => mailForeground > 0 || Date.now() < mailForegroundUntil }) : null)
+  const mailEvents = opts.companyOptions?.mailEvents || (mailServices && mailPubsub ? require('./company/mailEvents').createMailEvents({ ...mailServices, pubsub: mailPubsub }) : null)
+  const mailHistory = opts.companyOptions?.mailHistory || (mailServices ? require('./company/mailHistory').createMailHistory(mailServices) : null)
+  mailScheduler?.start?.(); mailEvents?.start?.(); mailHistory?.start?.()
+  app.use('/api/v1/demo/intake', requireOwner, (req, res, next) => {
+    if (req.method !== 'POST') return next()
+    mailForeground++; mailForegroundUntil = Date.now() + 60000
+    res.once('close', () => { mailForeground--; mailForegroundUntil = Date.now() + 60000 })
+    Promise.resolve(companyMailMemory?.cancelAnalysis?.()).then(() => next(), () => next())
+  })
+  app.use(require('./company/routes').createRouter({ ...opts.companyOptions, registry: companyRegistry, mailbox: companyMailbox, mailMemory: companyMailMemory,
+    mailPubsub, mailScheduler, mailEvents, mailHistory, requireOwner, enabled: companyAccessEnabled,
+    endOwnerSession: (req, res) => {
+      const auth = require('./governance/ownerAuth')
+      try { ownerSessions.revoke(auth.readCookie(req, auth.SESSION_COOKIE)) } catch (_) { /* Malformed cookies confer no authority. */ }
+      res.append('Set-Cookie', auth.clearedCookie())
+    }
+  }))
+  if (companyAccessEnabled) {
+    app.use((req, res, next) => {
+      if (req.method === 'GET' && ['/health', '/oauth/google/callback'].includes(req.path)) return next()
+      return requireOwner(req, res, next)
+    })
+  }
 
   // ── Routes ────────────────────────────────────────────────────────────────────
 
@@ -948,6 +1030,96 @@ function createApp (options = {}) {
   // gating it would break installing the app for no gain.
   app.use('/demo', requireOwner)
   app.use('/api/v1/demo', requireOwner)
+  // The operating layer uses the existing owner gate; the HTTP body grants no role.
+  app.use('/manager', requireOwner)
+  app.use('/architecture', requireOwner)
+  const connectionManager = opts.connectionsManager || require('./connections/manager').createRuntimeManager()
+  const connectionRouters = require('./connections/routes').createRouters({ manager: connectionManager, flow: opts.connectionFlow })
+  app.use(connectionRouters.callback)
+  app.use('/connections', requireOwner)
+  app.use('/api/v1/connections', requireOwner)
+  app.use(connectionRouters.router)
+  app.use('/memory', requireOwner)
+  app.use('/api/v1/memory', requireOwner)
+  if (governedMemory && !process.env.NODE_TEST_CONTEXT) governedMemory.start()
+  const memoryClient = opts.memoryClient || governedMemory?.ownerClient || require('./memory/hindsight').createHindsight()
+  const memoryCapture = opts.memoryCapture || require('./memory/capture').createCapture({ client: memoryClient,
+    available: () => process.env.XIANGXIANG_MEMORY === 'on' && !process.env.NODE_TEST_CONTEXT })
+  if (!process.env.NODE_TEST_CONTEXT) memoryCapture.start()
+  const memoryRecovery = opts.memoryBackupScheduler || (governedMemory && !process.env.NODE_TEST_CONTEXT ? require('./memory/backupScheduler').createBackupScheduler({backup:()=>governedMemory.backup()}) : null)
+  memoryRecovery?.start?.()
+  const memoryOperations = opts.memoryOperations || (governedMemory ? require('./memory/operations').createMemoryOperations({
+    gateway:governedMemory.gateway,runtime:governedMemory,mailMemory:companyMailMemory,mailHistory,recovery:memoryRecovery,
+    ...(process.env.NODE_TEST_CONTEXT ? {probe:async()=>({state:'not_measured',services:null})} : {})
+  }) : null)
+  if (governedMemory) app.use(require('./memory/governedRoutes').createGovernedRouter({ gateway: governedMemory.gateway, runtime: governedMemory, operations:memoryOperations, recovery:memoryRecovery }))
+  app.use(require('./memory/routes').createMemoryRouter({ client: memoryClient, capture: memoryCapture, governed: Boolean(governedMemory) }))
+  app.use('/workers', requireOwner)
+  app.use('/api/v1/worker-flow', requireOwner)
+  app.use(require('./core/workerFlow/routes').createWorkerRouter(opts.workerFlowOptions))
+  app.use('/project-tasks', requireOwner)
+  app.use('/api/v1/project-tasks', requireOwner)
+  app.use(require('./core/projectTasks/routes').createRouter({ bootCommit: BOOT_COMMIT, ...opts.projectTaskOptions }))
+  app.use('/project-work', requireOwner)
+  app.use('/api/v1/project-work', requireOwner)
+  app.use(require('./core/projectWork/liveVerification').createRouter({bootCommit:BOOT_COMMIT,bootedAt:BOOTED_AT,...opts.liveVerificationOptions}))
+  app.use(require('./core/projectWork/routes').createProjectRouter({ bootCommit: BOOT_COMMIT, ...opts.projectWorkOptions }))
+  app.use('/api/v1/project-adoption', requireOwner)
+  app.use(require('./core/projectWork/adoptionRoutes').createAdoptionRouter({ bootCommit: BOOT_COMMIT, ...opts.projectAdoptionOptions }))
+  app.use('/api/v1/manager', requireOwner)
+  const operatingManager = opts.operatingManager || require('./core/operating/manager').createRuntimeManager({ proposalStore, memoryCapture, mailbox: companyAccessEnabled ? companyMailbox : null, mailMemory: companyMailMemory })
+  app.use(require('./core/operating/routes').createManagerRouter({ manager: operatingManager, mailbox: companyAccessEnabled ? companyMailbox : null }))
+  const liveContext = opts.liveContext || require('./context/liveContextService').createRuntimeLiveContext({ registry: companyRegistry, runtime: () => ({
+    deployedCommit: require('./governance/bootCommit').readHeadSync(require('node:path').resolve(__dirname, '..')),
+    bootCommit: BOOT_COMMIT, bootedAt: BOOTED_AT
+  }) })
+  app.use('/live-context', requireOwner)
+  app.use('/drive-context', requireOwner)
+  app.use('/aroma-context', requireOwner)
+  app.use('/calendar-context', requireOwner)
+  app.use('/gmail-context', requireOwner)
+  app.use('/api/v1/live-context', requireOwner)
+  app.use(require('./context/liveContextRoutes').createLiveContextRouter({ service: liveContext }))
+  const developmentPlan = opts.developmentPlan || (typeof liveContext.verify === 'function' ? require('./core/developmentPlan/service').createDevelopmentPlan({
+    source: liveContext,
+    provider: new (require('./adapters/CodexSubscriptionAdapter').CodexSubscriptionAdapter)({ effort: 'medium', model: 'gpt-6-astra' }),
+    store: require('./core/operating/runStore').createRunStore({ dir: require('node:path').join(require('./store/dataDir').resolveDataDir(), 'development-plan-runs'), workflow: 'development_proposal' }),
+    onFinish: run => governedMemory?.event('worker', 'development-plan:' + run.id,
+      JSON.stringify({ runId: run.id, state: run.state, reason: run.reason, capability: run.workOrder.capability, worker: run.workOrder.worker, evidenceHash: run.evidenceHash || null, sourceVerified: run.verification?.matched === true }), 'measured_result', run.finishedAt)
+  }) : null)
+  app.use('/development-plan', requireOwner)
+  app.use('/api/v1/development-plan', requireOwner)
+  app.use(require('./core/developmentPlan/routes').createDevelopmentPlanRouter({ service: developmentPlan }))
+  const codeDiagnosis = opts.codeDiagnosis || require('./core/codeDiagnosis/service').createCodeDiagnosis({
+    source: require('./core/codeDiagnosis/remoteSource').createRemoteCodeSource({ bootCommit: BOOT_COMMIT }),
+    provider: new (require('./adapters/CodexSubscriptionAdapter').CodexSubscriptionAdapter)({ effort: 'medium', model: 'gpt-6.1-sol' }),
+    store: require('./core/operating/runStore').createRunStore({ dir: require('node:path').join(require('./store/dataDir').resolveDataDir(), 'code-diagnosis-runs'), workflow: 'code_diagnosis' }),
+    onFinish: run => governedMemory?.event('worker', 'code-diagnosis:' + run.id,
+      JSON.stringify({ runId: run.id, state: run.state, reason: run.reason, capability: run.workOrder.capability, worker: run.workOrder.worker || null, model: run.workOrder.model || null, evidenceHash: run.evidenceHash || null, sourceVerified: run.verification?.matched === true, findings: run.result?.findings.length ?? null, testsExecuted: false, filesChanged: false }), 'measured_result', run.finishedAt)
+  })
+  app.use('/code-diagnosis', requireOwner)
+  app.use('/api/v1/code-diagnosis', requireOwner)
+  app.use(require('./core/developmentPlan/routes').createDevelopmentPlanRouter({ service: codeDiagnosis, diagnosis: true }))
+  app.use('/code-repair', requireOwner)
+  app.use('/api/v1/code-repair', requireOwner)
+  app.use(require('./core/codeRepair/routes').createRepairRouter({ bootCommit: BOOT_COMMIT, ...opts.codeRepairOptions }))
+  const taskPlanner = opts.taskPlanner || require('./core/taskPlanner/service').createPlanner({
+    bootCommit: BOOT_COMMIT, source: require('./core/taskPlanner/source').createRemoteSource({ bootCommit: BOOT_COMMIT }),
+    providerFor: settings => new (require('./adapters/CodexSubscriptionAdapter').CodexSubscriptionAdapter)(settings),
+    store: require('./core/operating/runStore').createRunStore({ dir: require('node:path').join(require('./store/dataDir').resolveDataDir(), 'task-plan-runs'), workflow: 'task_plan' }),
+    prepareWork: input => require('./adapters/CodexSubscriptionAdapter').localRequest('/project-work', input, process.env),
+    registerTask: input => require('./adapters/CodexSubscriptionAdapter').localRequest('/project-tasks', input, process.env),
+    executionRpc: {
+      task: input => require('./adapters/CodexSubscriptionAdapter').localRequest('/project-tasks', input, process.env),
+      work: input => require('./adapters/CodexSubscriptionAdapter').localRequest('/project-work', input, process.env)
+    },
+    findTask: async requestId => { const value = await require('./adapters/CodexSubscriptionAdapter').localRequest('/project-tasks', { op: 'find', requestId }, process.env); if (value.error) throw Error(value.error); return value.run ? value : null },
+    onFinish: run => governedMemory?.event('worker', 'task-plan:' + run.id, JSON.stringify({ runId: run.id, state: run.state, reason: run.reason, profile: run.profile, evidenceHash: run.evidenceHash || null, planHash: run.planHash || null, testsExecuted: false, filesChanged: false }), 'measured_result', run.finishedAt)
+  })
+  app.use('/api/v1/task-plan', requireOwner)
+  app.use(require('./core/taskPlanner/routes').createRouter({ service: taskPlanner }))
+  const chatWork = opts.chatWork || require('./core/projectWork/chat').createChatWork({ bootCommit: BOOT_COMMIT, ...opts.projectWorkOptions })
+  const codeRepair = opts.codeRepair || require('./core/codeRepair/remote').createRemoteRepair({bootCommit:BOOT_COMMIT,diagnosis:codeDiagnosis})
   // Conversation History v1 lives on the demo router and is gated the same way — same
   // owner session, same loopback. It holds conversation text, so it is never less
   // protected than the page that draws it.
@@ -976,7 +1148,7 @@ function createApp (options = {}) {
   // The turns of an investigation: stored always, surfaced never. Opening one is a
   // deliberate second step — putting them in front of him by default would recreate exactly
   // the relay the dispatch path removes.
-  app.use(createEnquiryRouter({ enquiryStore: createEnquiryStore() }))
+  app.use(createEnquiryRouter({ enquiryStore }))
 
   // ── 首頁 ────────────────────────────────────────────────────────────────────
   // What she ran, what waits on him, and the Drive line — the surface the design has
@@ -1048,8 +1220,69 @@ function createApp (options = {}) {
     }
   })
 
+  const capturedConversationStore = require('./memory/capture').wrapConversationStore(realConversationStore, memoryCapture)
+  const topicStore = require('./topics/workspaces').createTopicStore({ dataDir: require('./store/dataDir').resolveDataDir() })
+  const brainCatalogue = () => new (require('./adapters/CodexSubscriptionAdapter').CodexSubscriptionAdapter)().models()
+  const modelCenter = require('./modelCenter/service').createModelCenter({ dataDir: require('./store/dataDir').resolveDataDir(), catalogue: brainCatalogue, topicForConversation: topicStore.topicForConversation })
+  app.use('/model-center', requireOwner)
+  app.use('/action-center', requireOwner)
+  app.use('/api/v1/scheduler-actions', requireOwner)
+  app.use('/api/v1/execution-health', requireOwner)
+  app.use(require('./actions/routes').createRouter())
+  const schedulerChat = require('./actions/chat').createChatGateway({
+    request: b => require('./adapters/CodexSubscriptionAdapter').localRequest('/scheduler-action', b, process.env, AbortSignal.timeout(60000)),
+    ...(process.env.CHAT_BACKEND === 'codex-subscription' ? { providerFor: settings => new (require('./adapters/CodexSubscriptionAdapter').CodexSubscriptionAdapter)(settings) } : {}),
+    receipts: require('./investigation/receipts').createReceipts(), conversations: capturedConversationStore
+  })
+  app.use(require('./actions/chatRoutes').createChatRouter({chat:schedulerChat}))
+  app.use('/api/v1/model-center', requireOwner)
+  app.use(require('./modelCenter/routes').createModelCenterRouter({ center: modelCenter, catalogue: brainCatalogue }))
+  const sevenShiftsReport = opts.sevenShiftsReport || require('./context/sevenShiftsReport').createSevenShiftsReport()
+  const hrRechecks = require('./topics/rechecks').createRechecks({ store: topicStore, reader: sevenShiftsReport })
+  app.use('/api/v1/topic-workspaces', requireOwner, require('./topics/routes').createTopicRouter({
+    store: topicStore,
+    conversations: capturedConversationStore,
+    rechecks: hrRechecks
+  }))
+  const taskDialogue = opts.taskDialogue || (process.env.CHAT_BACKEND === 'codex-subscription' ? require('./core/taskPlanner/dialogue').createDialogue({
+    store: capturedConversationStore, planner: taskPlanner, revision: BOOT_COMMIT,
+    providerFor: settings => new (require('./adapters/CodexSubscriptionAdapter').CodexSubscriptionAdapter)(settings),
+    receipts: require('./core/operating/runStore').createRunStore({ dir: path.join(require('./store/dataDir').resolveDataDir(), 'dialogue-requests'), workflow: 'dialogue_request' })
+  }) : null)
+  app.locals.operationsBackgroundReader = require('./investigation/runtimeEvidence').createBackendRuntimeReader({mailMemory:companyMailMemory,mailScheduler,memory:governedMemory}).read
+  const capabilityGaps = opts.capabilityGaps || require('./capabilities/gapService').createGapService({
+    store: require('./core/operating/runStore').createRunStore({dir:path.join(require('./store/dataDir').resolveDataDir(),'capability-gap-runs'), workflow:'capability_gap'}),
+    conversations: capturedConversationStore, revision: BOOT_COMMIT, planner: taskPlanner,
+    verifyLoaded: require('./capabilities/loadedVerifier').createLoadedVerifier({bootCommit:BOOT_COMMIT}),
+    resumeOriginal: async ({message,conversationId,model,effort,requestId,readRequest}) => {
+      const clockOut = require('./context/sevenShiftsReport').clockOutRequest(message)
+      if (clockOut) {
+        const report = await sevenShiftsReport.read({id:'owner',role:'owner'},readRequest || clockOut)
+        return {mode:report.state === 'live' ? 'chat' : 'ask',reply:require('./context/sevenShiftsReport').reportReply(report,/[\u3400-\u9fff]/u.test(message)?'zh':'en'),capabilityGap:report.gap || null}
+      }
+      const adapter = new (require('./adapters/CodexSubscriptionAdapter').CodexSubscriptionAdapter)({model,effort})
+      return require('./intake/intakeService').processIntake(message,adapter,[],{requestId,interactionMode:'chat',demo:true,viaRoute:'demo'})
+    }
+  })
+  app.use('/api/v1/capability-gaps', requireOwner)
+  app.use(require('./capabilities/gapRoutes').createGapRouter({service:capabilityGaps}))
   app.use(createDemoRouter({
-    conversationStore: realConversationStore,
+    hrRechecks,
+    capabilityGaps,
+    sevenShiftsReport,
+    schedulerChat,
+    modelCenter,
+    liveContext,
+    taskPlanner,
+    taskDialogue,
+    developmentPlan,
+    codeDiagnosis,
+    codeRepair,
+    chatWork,
+    mailChat: companyAccessEnabled ? require('./company/mailChat').createMailChat({ mailbox: companyMailbox, memory: companyMailMemory }) : null,
+    operatingManager,
+    memoryJournal: governedMemory,
+    conversationStore: capturedConversationStore,
     readBacklogFn: process.env.READ_ACCESS === 'on' ? readBacklogFn : null,
     // ⛔ Round B: the section attachment is RE-DERIVED server-side from this store. The browser
     // sends a section id and never the lines — see demoRouter's attachSection block.
@@ -1084,6 +1317,7 @@ function createApp (options = {}) {
   // a single-use bound nonce + a SERVER-verified typed confirmation. It deliberately
   // does NOT sit behind requireServiceToken, because HUB_TOKEN must never reach the
   // browser. Execution content is loaded from the sealed store, never from the body.
+  app.use('/api/v1/owner/investigations', requireOwner)
   app.use(createOwnerApprovalRouter({
     store: ownerApprovalStore,
     confirmService,
@@ -1092,6 +1326,9 @@ function createApp (options = {}) {
     buildAgentResultView,
     sealedHashOf: confirmService.sealedHashOf,
     getProposal: (id) => proposalStore.getProposal(id),
+    prepareInvestigationEnquiry: require('./investigation/enquiryOffer').createEnquiryOffer({ receipts: require('./investigation/receipts').createReceipts(), proposals: proposalStore, findSavedEnquiry: id => enquiryStore.findByApprovalId ? enquiryStore.findByApprovalId(id) : null }).prepare,
+    linkInvestigationEnquiry: require('./investigation/receipts').createReceipts().linkEnquiry,
+    findEnquiryByApproval: id => enquiryStore.findByApprovalId ? enquiryStore.findByApprovalId(id) : null,
     cancelProposal: (id) => proposalStore.cancelProposal(id, LOCAL_OWNER),
     auditFn: approvalAudit,
     // P1-C1c. approvalId → the canonical Run and its DERIVED status. The router gets a

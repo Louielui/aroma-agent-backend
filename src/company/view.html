@@ -1,0 +1,225 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Imagine</title>
+<style>
+:root{color-scheme:light;--ink:#27392e;--muted:#657369;--line:#dce4dc;--green:#285f48}*{box-sizing:border-box}body{margin:0;background:#f5f5ef;color:var(--ink);font:16px/1.65 system-ui,sans-serif}main{max-width:1000px;margin:auto;padding:28px 24px 64px}nav{display:flex;gap:20px;flex-wrap:wrap}a{color:var(--green)}h1{font-size:30px;margin:24px 0 10px}h2{font-size:20px}h3{margin:0 0 8px;font-size:18px}.muted{color:var(--muted)}.note{border-left:3px solid #b38a45;padding:10px 16px;background:#fffaf0}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:16px}.card{padding:20px;border:1px solid var(--line);border-radius:14px;background:#fffefa;overflow-wrap:anywhere}.badge{display:inline-block;border-radius:12px;background:#edf0e8;padding:3px 9px;font-size:13px}button{border:1px solid #bdcbbf;border-radius:9px;padding:9px 13px;margin:8px 8px 0 0;background:white;color:var(--green);font:inherit;cursor:pointer}button:disabled{opacity:.5;cursor:wait}button:focus-visible,a:focus-visible,summary:focus-visible{outline:3px solid #b38a45;outline-offset:3px}#status{min-height:28px;color:#8a461b}ul{padding-left:20px}li{margin:12px 0}details{margin-top:24px}pre{font-size:12px;white-space:pre-wrap;overflow-wrap:anywhere}section{margin-top:28px}@media(max-width:500px){main{padding:18px 16px 40px}h1{font-size:26px}.grid{grid-template-columns:1fr}}
+</style></head><body><main>
+<nav id="nav"></nav><h1 id="title"></h1><p id="intro" class="muted"></p><p id="limit" class="note"></p><p id="local" class="muted"></p>
+<div id="status" role="status" aria-live="polite"></div><div id="actions"></div><section id="people"></section><section id="sources"></section><section id="files"></section><details id="audit"><summary></summary><pre></pre></details>
+</main><script>
+'use strict'
+const C = /*CONFIG*/; const L = C.labels
+document.documentElement.lang = C.lang; document.title = C.owner ? L.title : L.memberTitle
+const $ = id => document.getElementById(id)
+let contentGeneration=0; let ownerGeneration=0
+function clearContent() { contentGeneration++; $('files').replaceChildren(); return contentGeneration }
+function node(tag, text, parent, cls) { const n = document.createElement(tag); if(text != null) n.textContent = text; if(cls) n.className = cls; if(parent) parent.appendChild(n); return n }
+function link(text, url, parent) { const n = node('a', text, parent); n.href = url; return n }
+function button(text, parent, action) { const n = node('button', text, parent); n.type = 'button'; n.addEventListener('click', async () => { n.disabled = true; $('status').textContent = L.loading; try { await action(); $('status').textContent = '' } catch (_) { $('status').textContent = L.error } finally { n.disabled = false } }); return n }
+async function api(url, body) { const r = await fetch(url, { cache: 'no-store', ...(body ? {method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)} : {}) }); if(!r.ok) throw Error('request_failed'); return r.json() }
+$('title').textContent = C.owner ? L.title : L.memberTitle; $('intro').textContent=L.intro; $('limit').textContent=L.limit; $('local').textContent=L.local
+if(C.owner) { link(L.back, '/demo', $('nav')); link(L.architecture, '/architecture', $('nav')); link(L.portal, '/member', $('nav')) }
+async function change(body) { ownerGeneration++; clearContent(); await api('/api/v1/company-access', body); await ownerView() }
+async function ownerView() {
+ const request=++ownerGeneration; const content=clearContent()
+ const data = await api('/api/v1/company-access')
+ if(request!==ownerGeneration) return
+ $('actions').replaceChildren(); node('span', data.enabled ? L.enabled : L.disabled, $('actions'), 'badge')
+ $('people').replaceChildren(); node('h2', L.people, $('people')); const people = node('div',null,$('people'),'grid')
+ for(const u of data.users) { const c=node('article',null,people,'card'); node('h3',u.name,c); node('p',u.email,c,'muted'); node('span',u.suspended ? L.suspended : u.verified ? L.verified : L.pending,c,'badge')
+   if(u.role==='owner') node('p',L.ownerScope,c)
+   else { const granted=u.grants.includes('admin-drive'); node('p',granted?L.allowed:L.denied,c)
+     button(granted?L.revoke:L.grant,c,()=>change({op:'grant',userId:u.id,sourceId:'admin-drive',enabled:!granted}))
+     const mailGranted=u.grants.includes('admin-mail')
+     button(mailGranted?L.mailRevoke:L.mailGrant,c,()=>change({op:'grant',userId:u.id,sourceId:'admin-mail',enabled:!mailGranted}))
+     button(u.suspended?L.resume:L.suspend,c,()=>change({op:'suspend',userId:u.id,suspended:!u.suspended}))
+   }
+ }
+ $('sources').replaceChildren(); node('h2',L.sources,$('sources')); const sources=node('div',null,$('sources'),'grid')
+ for(const s of data.sources) { const c=node('article',null,sources,'card'); c.dataset.source=s.id; node('h3',s.kind==='gmail'?L.mail:s.name,c)
+   node('span',s.kind==='gmail'?(data.mailbox.state==='connected'?L.mailConnected:data.mailbox.state==='failed'?L.failed:L.notConnected):L.registered,c,'badge')
+   if(s.kind==='gmail') {
+     node('p',s.mailbox,c); node('p',L.mailNote,c,'muted')
+     if(data.mailbox.state==='not_connected') node('p',L.mailMissing,c,'muted')
+     button(L.mailAuthorize,c,async()=>{ const r=await api('/api/v1/company-access',{op:'mail_authorize'}); window.location.assign(r.url) })
+     if(data.mailbox.state!=='not_connected') {
+       button(L.mailPreview,c,()=>previewMail(true))
+       if(data.memory==='source_bound') button(L.mailMemory,c,()=>memoryView())
+       const label=node('label',L.mailSearchHelp,c); label.style.cssText='display:block;margin-top:16px'; const input=node('input',null,label); input.type='search'; input.maxLength=400; input.style.cssText='display:block;width:100%;font:inherit;padding:8px';
+       button(L.mailSearch,c,()=>previewMail(true,input.value))
+       button(L.mailDisconnect,c,async()=>{ await change({op:'mail_disconnect'}); $('files').replaceChildren() })
+     }
+   }
+   else { link(L.sourceLink,'https://drive.google.com/drive/folders/'+s.rootId,node('p',null,c))
+     if(s.ownerProbe) node('p',(s.ownerProbe.state==='connected'?L.connected:L.failed)+' · '+new Date(s.ownerProbe.at).toLocaleString(),c,'muted')
+     button(L.probe,c,async()=>{ try { await api('/api/v1/company-access',{op:'probe',sourceId:s.id}) } finally { await ownerView() } })
+   }
+ }
+ $('audit').querySelector('summary').textContent=L.audit
+ $('audit').querySelector('pre').textContent=data.audit.slice(-30).reverse().map(a=>a.at+' · '+a.actor+' · '+a.action+' · '+a.target).join('\n')
+ const mailResult=new URLSearchParams(location.search).get('mail')
+ if(mailResult) { $('status').textContent=mailResult==='success'&&data.mailbox.state==='connected'?L.mailSuccess:L.mailFailed; history.replaceState(null,'','/company-access') }
+ if(content===contentGeneration&&location.hash==='#mail-memory'&&data.memory==='source_bound'&&data.mailbox.state==='connected') await memoryView()
+}
+async function previewMail(owner,query) {
+ const request=clearContent()
+ const data=await api(owner?(typeof query==='string'?'/api/v1/company-access/mail/search?q='+encodeURIComponent(query):'/api/v1/company-access/mail'):'/api/v1/member/mail')
+ if(request!==contentGeneration) return
+ node('h2',data.mailbox,$('files')); node('p',typeof query==='string'?L.mailSearchScope:L.mailScope,$('files'),'muted')
+ if(!data.messages.length) node('p',L.mailEmpty,$('files'))
+ if(data.truncated) node('p',L.mailResultsLimited,$('files'),'note')
+ for(const message of data.messages) { const c=node('article',null,$('files'),'card'); node('h3',message.subject||'—',c)
+   node('p',message.from||'—',c,'muted'); node('p',message.date||'—',c,'muted'); node('p',message.snippet||'',c)
+   if(message.link) link(L.mailOriginal,message.link,node('p',null,c))
+   if(owner) { const detail=node('div',null,c); button(L.mailFull,c,async()=>{
+     detail.replaceChildren(); const full=await api('/api/v1/company-access/mail/'+encodeURIComponent(message.id));
+     node('p',L.mailReadScope,detail,'muted'); node('pre',full.bodyState==='unavailable'?L.mailBodyUnavailable:full.body,detail);
+     node('p', ['saved','unchanged'].includes(full.memory?.state)?L.mailMemorySaved:L.mailMemoryFailed,detail,'note')
+     if(full.bodyTruncated||full.bodyState==='partial') node('p',L.mailBodyLimited,detail,'note')
+   }) }
+ }
+}
+async function files(source, folderId) {
+ const request=clearContent()
+ const data=await api('/api/v1/member/files?sourceId='+encodeURIComponent(source.id)+'&folderId='+encodeURIComponent(folderId))
+ if(request!==contentGeneration) return
+ node('h2',source.name,$('files')); button(L.root,$('files'),()=>files(source,source.rootId))
+ const ul=node('ul',null,$('files'))
+ for(const f of data.files) { const li=node('li',null,ul); link(f.name||f.id,f.url,li); if(f.mimeType==='application/vnd.google-apps.folder') button(L.open,li,()=>files(source,f.id)) }
+ if(!data.files.length) node('p',L.empty,$('files'))
+ node('p',L.truncated,$('files'),'muted')
+}
+let memoryFilter='attention'
+async function memoryView(query='',filter=memoryFilter) {
+ memoryFilter=filter
+ history.replaceState(null,'','/company-access#mail-memory')
+ const request=clearContent(); const data=await api('/api/v1/company-access/mail-memory?q='+encodeURIComponent(query)+'&filter='+encodeURIComponent(filter))
+ if(request!==contentGeneration) return
+ // Build privately until both reads finish. An older request can never append
+ // its source data into the current content pane after a refresh or disconnect.
+ const area=node('div'); node('h2',L.mailMemory,area); node('p',L.mailMemoryScope,area,'note')
+ await automationView(node('section',null,area,'card'))
+ if(request!==contentGeneration) return
+ node('p',L.mailMemorySyncAt+' '+(data.sync.checkedAt?new Date(data.sync.checkedAt).toLocaleString():'—'),area,'muted')
+ if(data.sync.error||!data.sync.enabled) node('p',L.mailMemoryFailed,area,'note')
+ if(data.sync.hasMore) node('p',L.mailMemorySyncMore,area,'note')
+ if(data.sync.excluded>0) node('p',L.mailMemoryExcluded+' '+data.sync.excluded,area,'note')
+ node('p',L.mailAnalysisNote,area,'muted')
+ if(data.sync.analysis) node('p',L.mailAnalysisReady+' '+data.sync.analysis.ready+' · '+L.mailAnalysisPending+' '+data.sync.analysis.pending+' · '+L.mailAnalysisFailed+' '+data.sync.analysis.failed,area)
+ if(data.sync.hindsight) {
+   const h=data.sync.hindsight; const panel=node('section',null,area,'card')
+   node('h3',L.mailIndex,panel)
+   node('p',h.connectionState==='unavailable'?L.automation.unavailable:h.configured?L.mailIndexConfigured:L.notConnected,panel)
+   node('p',L.mailIndexTotal+' '+h.total+' · '+L.mailIndexSaved+' '+h.saved+' · '+L.mailIndexRawOnly+' '+h.rawOnly+' · '+L.mailIndexSourceOnly+' '+h.sourceOnly+' · '+L.mailIndexPending+' '+h.pending+' · '+L.mailIndexFailed+' '+h.failed+' · '+L.mailIndexPartial+' '+(h.partialIndex??'—'),panel)
+   for(const [reason,count]of Object.entries(h.sourceOnlyReasons||{})) if(count>0) node('p',(L.mailIndexSourceOnlyReasons[reason]||L.mailIndexSourceOnly)+' '+count,panel,'muted')
+   if(h.rebuild) node('p',(L.mailIndexRebuildStates[h.rebuild.state]||L.automation.unavailable)+' · '+h.rebuild.queued+'／'+h.rebuild.total+' · '+L.mailIndexRebuildRemaining+' '+h.rebuild.remaining,panel)
+   if(h.backoffUntil&&Date.parse(h.backoffUntil)>Date.now()) node('p',L.automation.quota+' · '+L.automation.next+' '+new Date(h.backoffUntil).toLocaleString(),panel,'note')
+   if(h.failed>0) button(L.mailIndexRetry,panel,async()=>{await api('/api/v1/company-access/mail-memory',{op:'retryIndex'});await memoryView(query)})
+   button(L.mailIndexRebuild,panel,async()=>{await api('/api/v1/company-access/mail-memory',{op:'rebuildIndex'});await memoryView(query)})
+ }
+ button(L.mailMemorySync,area,async()=>{ await api('/api/v1/company-access/mail-memory',{op:'sync'}); await memoryView(query) })
+ const label=node('label',L.mailMemorySearch,area); label.style.display='block'; const search=node('input',null,label); search.value=query; search.maxLength=400; search.style.cssText='display:block;width:100%;font:inherit;padding:8px'
+ button(L.mailSearch,area,()=>memoryView(search.value))
+ const filterLabel=node('label',L.mailFilter,area); const select=node('select',null,filterLabel); select.style.cssText='display:block;font:inherit;padding:8px'
+ for(const [value,label] of Object.entries(L.mailCategories)) { const o=node('option',label,select); o.value=value }; select.value=filter
+ select.onchange=()=>{ memoryView(query,select.value).catch(()=>{ $('status').textContent=L.error }) }
+ if(!data.items.length) node('p',L.mailMemoryEmpty,area)
+ if(data.truncated) node('p',L.mailMemoryLimited,area,'note')
+ for(const r of data.items) {
+   const c=node('article',null,area,'card'); node('h3',r.subject,c)
+   node('span',r.status==='active'?L.mailMemoryApproved:r.status==='rejected'?L.mailMemoryRejected:L.mailMemoryCandidate,c,'badge')
+   const a=r.details.analysis; const ready=a?.state==='ready'
+   node('p',L.mailCategories[ready?a.category:'unknown'],c,'badge')
+   if(a?.state==='failed') node('p',L.mailAnalysisFailed,c,'note')
+   if(a?.state==='stale') node('p',L.mailAnalysisStale,c,'note')
+   if(r.details.needsReview) node('p',L.mailMemoryNeedsReview,c,'note')
+   node('p',r.text,c); if(r.source.url) link(L.mailOriginal,r.source.url,c)
+   if(ready) {
+     node('p',a.summary,c)
+     if(a.partial) node('p',L.mailAnalysisPartial,c,'note')
+     if(r.details.needsReview&&a.change.kind!=='none') { node('p',L.mailChanges[a.change.kind],c,'note'); node('blockquote',a.change.quote,c) }
+     if(a.task) { node('h4',L.mailSuggestion,c); node('p',a.task.text,c); node('p',L.mailAssignee+': '+(a.task.assignee||'—')+' · '+L.mailDeadline+': '+(a.task.deadline||'—'),c) }
+     const citation=node('details',null,c); node('summary',L.mailCitation,citation); node('blockquote',a.task?.quote||a.quote,citation)
+     link(L.mailOriginal,'https://mail.google.com/mail/?authuser='+encodeURIComponent(r.details.mailbox)+'#all/'+encodeURIComponent(a.task?.messageId||a.messageId),citation)
+   } else button(L.mailAnalyze,c,async()=>{ await api('/api/v1/company-access/mail-memory',{op:'analyze',id:r.id}); await memoryView(query) })
+   button(L.mailMemoryDetail,c,async()=>{ const data=await api('/api/v1/company-access/mail-memory?id='+encodeURIComponent(r.id)); renderMemoryDetail(data,c,query) })
+ }
+ if(request===contentGeneration) $('files').replaceChildren(area)
+}
+async function automationView(area) {
+ const a=L.automation; const data=await api('/api/v1/company-access/mail-automation'); area.replaceChildren()
+ node('h3',a.title,area); node('p',a.note,area,'muted')
+ const e=data.events; const eventState=data.cloud.state==='unavailable'||e?.state==='unavailable'?'unavailable':!data.cloud.configured?'not_connected':e?.paused?'paused':e?.state==='watching'?'watching':e?.state==='failed'?'failed':e?.state==='recovering'?'recovering':'setup_required'
+ node('p',a.events+' · '+(eventState==='unavailable'?a.unavailable:a.states[eventState]),area,'badge')
+ if(e?.lastNotificationAt) node('p',a.last+' '+new Date(e.lastNotificationAt).toLocaleString(),area)
+ else if(eventState==='watching') node('p',a.awaiting,area,'note')
+ if(e?.discarded>0) { node('p',a.rejected+' '+e.discarded,area,'muted'); for(const [reason,count] of Object.entries(e.discardReasons||{})) node('p',(a.reasons[reason]||'—')+' '+count,area,'muted') }
+ if(e?.excluded>0) node('p',L.mailMemoryExcluded+' '+e.excluded,area,'note')
+ if(eventState!=='unavailable'&&!data.cloud.configured) button(a.authorize,area,async()=>{const r=await api('/api/v1/company-access/mail-automation',{op:'authorize'}); window.location.assign(r.url)})
+ else if(eventState!=='unavailable') {
+   button(e?.paused?a.resume:a.pause,area,async()=>{await api('/api/v1/company-access/mail-automation',{op:'events',paused:!e?.paused}); await automationView(area)})
+   button(a.retry,area,async()=>{await api('/api/v1/company-access/mail-automation',{op:'events',paused:false}); await automationView(area)})
+   button(a.disconnect,area,async()=>{await api('/api/v1/company-access/mail-automation',{op:'disconnect'}); await automationView(area)})
+ }
+ const s=data.scheduler
+ if(s && s.state!=='unavailable') {
+   node('h3',a.scheduler,area); node('p',s.paused?a.states.paused:s.foreground?a.foreground:s.reason==='subscription_limit_reached'?a.quota:['analysis_unavailable','subscription_login_required'].includes(s.reason)?a.unavailable:a.states.active,area,'badge')
+   const label=node('label',a.scheduler,area); label.style.display='block'; const mode=node('select',null,label); mode.style.cssText='display:block;font:inherit;padding:8px;max-width:100%'
+   for(const v of ['catchup','balanced']) {const o=node('option',a[v],mode); o.value=v}; mode.value=s.mode
+   const save=async(paused)=>{await api('/api/v1/company-access/mail-automation',{op:'scheduler',mode:mode.value,paused}); await automationView(area)}
+   mode.onchange=()=>save(s.paused).catch(()=>{$('status').textContent=L.error})
+   button(s.paused?a.resume:a.pause,area,()=>save(!s.paused)); button(a.retry,area,()=>save(false))
+   if(s.nextAt) node('p',a.next+' '+new Date(s.nextAt).toLocaleString(),area,'muted')
+ }
+ if(s?.state==='unavailable') node('p',a.scheduler+' · '+a.unavailable,area,'note')
+ const h=data.history; const hi=L.historyImport
+ const panel=node('section',null,area,'card'); panel.id='mail-history'
+ node('h3',hi.title,panel);node('p',hi.scope,panel,'muted')
+ node('p',hi.states[h?.state]||a.unavailable,panel,'badge')
+ if(h?.enabled===false) node('p',L.disabled,panel,'note')
+ if(h?.startedAt) node('p',hi.snapshot+' '+new Date(h.startedAt).toLocaleString(),panel)
+ if(h?.processed!==null&&h?.processed!==undefined) node('p',hi.processed+' '+h.processed+' · '+hi.retained+' '+h.retained+' · '+hi.excluded+' '+h.excluded+' · '+hi.partial+' '+h.partial,panel)
+ if(h?.oldestAt) node('p',hi.range+' '+new Date(h.oldestAt).toLocaleDateString()+' → '+new Date(h.newestAt).toLocaleDateString(),panel)
+ for(const [reason,count] of Object.entries(h?.exclusionReasons||{})) node('p',(hi.reasons[reason]||hi.unavailable)+' '+count,panel,'muted')
+ const control=async(action)=>{await api('/api/v1/company-access/mail-automation',{op:'history',action});await automationView(area)}
+ if(h?.state==='not_started') button(hi.start,panel,()=>control('start'))
+ if(h?.state==='completed') button(L.mailHistoryNewPass,panel,()=>control('start'))
+ if(h?.state==='running') button(a.pause,panel,()=>control('pause'))
+ if(['paused','cancelled','failed'].includes(h?.state)) button(a.resume,panel,()=>control('resume'))
+ if(['running','paused','failed'].includes(h?.state)) button(hi.cancel,panel,()=>control('cancel'))
+ button(a.refresh,area,()=>automationView(area))
+}
+function renderMemoryDetail(data,card,query) {
+ card.querySelector('[data-memory-detail]')?.remove(); const area=node('div',null,card); area.dataset.memoryDetail='true'; const r=data.record
+ function field(label,value,type='text') { const l=node('label',label,area); l.style.display='block'; const input=node(type==='textarea'?'textarea':'input',null,l); if(type!=='textarea') input.type=type; input.value=value||''; input.style.cssText='display:block;width:100%;padding:8px;font:inherit'; return input }
+ const draft=r.status==='candidate'&&r.details.analysis?.state==='ready'?r.details.analysis.task:null
+ const text=field(L.mailMemoryText,draft?.text||r.text,'textarea'); text.maxLength=2000
+ const assignee=field(L.mailMemoryAssignee,draft?.assignee||r.details.assignee); assignee.maxLength=120
+ const deadline=field(L.mailMemoryDeadline,draft?.deadline||r.details.deadline,'date')
+ const l=node('label',L.mailMemoryState,area); const state=node('select',null,l); state.style.cssText='display:block;font:inherit;padding:8px'
+ for(const [value,label] of [['open',L.mailMemoryOpenState],['done',L.mailMemoryDone],['cancelled',L.mailMemoryCancelled]]) { const o=node('option',label,state); o.value=value }
+ state.value=r.details.taskState||'open'
+ button(L.mailMemoryApprove,area,async()=>{ await api('/api/v1/company-access/mail-memory',{op:'update',id:r.id,version:r.version,input:{action:'approve',text:text.value,assignee:assignee.value||null,deadline:deadline.value||null,taskState:state.value}}); await memoryView(query) })
+ button(L.mailMemoryReject,area,async()=>{ await api('/api/v1/company-access/mail-memory',{op:'update',id:r.id,version:r.version,input:{action:'reject'}}); await memoryView(query) })
+ const evidence=node('details',null,area); node('summary',L.mailMemoryEvidence,evidence)
+ for(const m of data.messages) { const d=node('details',null,evidence); node('summary',m.subject+' · '+(m.details.date||'—'),d); node('p',m.details.from||'—',d); node('pre',m.text,d); if(m.source.url) link(L.mailOriginal,m.source.url,d); if(m.details.bodyTruncated||m.details.bodyState!=='available') node('p',L.mailBodyLimited,d,'note') }
+ const audit=node('details',null,area); node('summary',L.mailMemoryHistory,audit)
+ for(const a of data.audit) { node('p',a.at+' · '+a.op,audit); if(a.snapshot) node('pre',JSON.stringify({text:a.snapshot.text,status:a.snapshot.status,assignee:a.snapshot.details.assignee,deadline:a.snapshot.details.deadline,taskState:a.snapshot.details.taskState},null,2),audit) }
+}
+async function memberView() {
+ $('audit').hidden=true; $('actions').replaceChildren()
+ button(L.login,$('actions'),async()=>{ const data=await api('/member/login',{}); window.location.assign(data.url) })
+ node('p',L.loginNote,$('actions'),'muted')
+ let data
+ try { data=await api('/api/v1/member') } catch (_) { if(new URLSearchParams(location.search).get('authorization')==='failed') $('status').textContent=L.accessFailed; return }
+ node('h2',data.identity.name,$('people')); button(L.logout,$('actions'),async()=>{ await api('/member/logout',{}); window.location.assign('/member') })
+ node('h2',L.sources,$('sources'))
+ if(!data.sources.length) node('p',L.noSources,$('sources'))
+ for(const s of data.sources) button(s.name,$('sources'),()=>files(s,s.rootId))
+ if(data.gmail) {
+   node('h2',L.mail,$('sources')); node('p',data.gmail.mailbox,$('sources'))
+   if(data.gmail.state!=='not_connected') button(L.mailPreview,$('sources'),()=>previewMail(false))
+   else node('p',L.notConnected,$('sources'))
+ }
+}
+(C.owner?ownerView():memberView()).catch(()=>{ $('status').textContent=L.error })
+</script></body></html>

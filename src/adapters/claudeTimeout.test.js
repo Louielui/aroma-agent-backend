@@ -20,6 +20,23 @@ async function withEnv (fn) {
 }
 const thrower = (err) => async () => { throw err }
 
+test('advisory abort signal reaches the direct Claude transport', async () => {
+  await withEnv(async () => {
+    const controller = new AbortController()
+    let receivedSignal
+    const a = new ClaudeAdapter({ transport: async (_url, _body, config) => {
+      receivedSignal = config.signal
+      return new Promise((resolve, reject) => {
+        config.signal.addEventListener('abort', () => reject(new Error('aborted')), { once: true })
+      })
+    } })
+    const result = a.complete('hi', { signal: controller.signal }).then(() => null, error => error)
+    assert.equal(receivedSignal, controller.signal)
+    controller.abort()
+    assert.match((await result).message, /aborted/)
+  })
+})
+
 test('*** ⛔ a timeout is FLAGGED as a timeout, not filed as a network failure ***', async () => {
   await withEnv(async () => {
     const axiosTimeout = Object.assign(new Error('timeout of 120000ms exceeded'), { code: 'ECONNABORTED' })

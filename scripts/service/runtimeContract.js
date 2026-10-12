@@ -36,7 +36,7 @@ const PRODUCTION_REPO = String.raw`C:\Aroma\aroma-agent-backend`
  */
 const STABLE_ENV = Object.freeze({
   A4_KNOWLEDGE_ROUTING: 'on',
-  AGENT_BRIDGE: 'on',
+  AGENT_BRIDGE: 'off',
   AROMA_BIND_HOST: '127.0.0.1',
   CLAUDE_MODEL: 'claude-haiku-4-5-20251001',
   CONTEXT_AROMA_SYSTEM: 'on',
@@ -54,6 +54,7 @@ const STABLE_ENV = Object.freeze({
   MULTI_AI_ROUTER: 'on',
   PORT: '8090',
   READ_ACCESS: 'on',
+  READONLY_ENQUIRY: 'on',
   TURN_ROUTER: 'on',
   XIANGXIANG_ARCHIVE: 'on'
 })

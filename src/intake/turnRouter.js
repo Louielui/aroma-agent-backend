@@ -141,6 +141,8 @@ function routeTurn (message, opts) {
 
   if (!text) return none('CONVERSATION', 'empty', 'high')
 
+  if (require('./generalKnowledge').generalRequestKind(text)) return none('CONVERSATION', 'general_knowledge', 'high')
+
   const intent = businessIntentOf(text)
 
   // 1. UTILITY — the server's own clock or arithmetic. Never a business read.

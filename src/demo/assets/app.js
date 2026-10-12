@@ -33,9 +33,91 @@
   var pickerLabel = document.getElementById('picker-label')
   var pickerMenu = document.getElementById('picker-menu')
 
+  // Attachments belong to their conversation and are read only after Send.
+  var imagePreview = document.getElementById('image-preview')
+  var imageError = document.getElementById('image-error')
+  var imageFiles = document.getElementById('image-files')
+  function imageNotice(text) {
+    imageError.textContent = text || ''
+    imageError.classList.toggle('hidden', !text)
+  }
+  function refreshImages() {
+    clear(imagePreview)
+    var pictures = active && active.pendingImages || []
+    if (active && active.imagePreparing) imagePreview.appendChild(el('span', '', t('imageChat.reading')))
+    pictures.forEach(function (dataUrl, index) {
+      var item = el('div', 'image-preview-item'), image = el('img')
+      image.src = dataUrl; image.alt = t('imageChat.preview')
+      item.appendChild(image)
+      var remove = el('button', 'image-remove', '×')
+      remove.type = 'button'; remove.setAttribute('aria-label', t('imageChat.remove')); remove.disabled = pending
+      remove.addEventListener('click', function () { active.pendingImages.splice(index, 1); refreshImages() })
+      item.appendChild(remove); imagePreview.appendChild(item)
+    })
+    imagePreview.classList.toggle('hidden', !pictures.length && !(active && active.imagePreparing))
+    send.disabled = pending || brainSaving || (SUBSCRIPTION_CHAT && CENTRAL_MODELS && !brainReady) || !!(active && active.imagePreparing) || (!msg.value.trim() && !pictures.length)
+    imageFiles.disabled = pending
+  }
+  function normalizeImage(file) {
+    return new Promise(function (resolve, reject) {
+      if (!file || !['image/png', 'image/jpeg', 'image/webp'].includes(file.type) || !file.size || file.size > 20000000) return reject(Error(t('imageChat.format')))
+      var reader = new FileReader()
+      reader.onerror = function () { reject(Error(t('imageChat.prepareFailed'))) }
+      reader.onload = function () {
+        var picture = new Image()
+        picture.onerror = function () { reject(Error(t('imageChat.prepareFailed'))) }
+        picture.onload = function () {
+          try {
+            if (!picture.naturalWidth || !picture.naturalHeight || picture.naturalWidth * picture.naturalHeight > 80000000) throw Error(t('imageChat.format'))
+            var canvas = document.createElement('canvas'), maximum = 2048, result
+            do {
+              var scale = Math.min(1, maximum / Math.max(picture.naturalWidth, picture.naturalHeight))
+              canvas.width = Math.max(1, Math.round(picture.naturalWidth * scale)); canvas.height = Math.max(1, Math.round(picture.naturalHeight * scale))
+              canvas.getContext('2d').drawImage(picture, 0, 0, canvas.width, canvas.height)
+              result = canvas.toDataURL('image/png'); maximum = Math.floor(maximum * 0.75)
+            } while (result.length > 2000022 && maximum >= 400)
+            if (!/^data:image\/png;base64,/.test(result) || result.length > 2000022) throw Error(t('imageChat.prepareFailed'))
+            resolve(result)
+          } catch (e) { reject(e) }
+        }
+        picture.src = reader.result
+      }
+      reader.readAsDataURL(file)
+    })
+  }
+  function queueImages(files) {
+    if (!SUBSCRIPTION_CHAT || !active || attachedKind) { imageNotice(t('imageChat.context')); return }
+    if (pending || active.imagePreparing) { imageNotice(t('imageChat.reading')); return }
+    var conv = active, existing = conv.pendingImages || []
+    if (files.length + existing.length > 4) { imageNotice(t('imageChat.limit')); return }
+    conv.imagePreparing = true; imageNotice(''); refreshImages()
+    Promise.all(files.map(normalizeImage)).then(function (values) {
+      conv.pendingImages = existing.concat(values); if (active === conv) setForced(null)
+    }).catch(function (e) { if (active === conv) imageNotice(e.message || t('imageChat.prepareFailed')) })
+      .then(function () { conv.imagePreparing = false; if (active === conv) refreshImages() })
+  }
+  msg.addEventListener('paste', function (event) {
+    var files = Array.from(event.clipboardData && event.clipboardData.items || []).filter(function (item) { return item.kind === 'file' }).map(function (item) { return item.getAsFile() }).filter(Boolean)
+    if (!files.length) return
+    event.preventDefault(); queueImages(files)
+  })
+  imageFiles.addEventListener('change', function () { var files = Array.from(imageFiles.files || []); imageFiles.value = ''; if (files.length) queueImages(files) })
+  function drawImages(turn, images) {
+    if (!Array.isArray(images)) return
+    var group = el('div', 'chat-images')
+    images.slice(0, 4).forEach(function (value) {
+      var dataUrl = typeof value === 'string' ? value : value && value.dataUrl
+      if (typeof dataUrl !== 'string' || dataUrl.length > 2000022 || !/^data:image\/png;base64,[A-Za-z0-9+/]+={0,2}$/.test(dataUrl)) return
+      var image = el('img'); image.src = dataUrl; image.alt = t('imageChat.preview'); group.appendChild(image)
+    })
+    if (group.childNodes.length) turn.body.appendChild(group)
+  }
+
+
   // THE PROVIDER PICK IS A HINT, NOT AUTHORITY. It is sent as one field; the server
   // validates it against its own closed allowlist and ignores anything else. The page
-  // cannot select a lane, a model id, a context source or anything executable.
+  // cannot select a lane, a context source or anything executable. Subscription
+  // chatModel is a closed choice, rechecked against the account per turn.
   //
   // WHAT THE OPTION SAYS MUST BE TRUE. Until the Owner's second GO, GPT was denied the
   // read-context and decision-recall blocks and this note said so. That claim is now
@@ -75,11 +157,26 @@
   var READ_SOURCES = /*READ_SOURCE_LABELS*/
   var SOURCE_TEXT = READ_SOURCES.join(t('punct.sourceSep')) + t('provider.pastDecisions')
 
-  var PROVIDERS = [
+  var SUBSCRIPTION_CHAT = /*SUBSCRIPTION_CHAT*/
+  var CENTRAL_MODELS = /*MODEL_CENTER*/
+  var brainSelection = null, brainSaving = false, brainReady = false, modelsPromise = null, modelProviderStates = {}
+  var brainMode = document.getElementById('brain-mode'), brainStatus = document.getElementById('brain-status')
+  var chatLevel = document.getElementById('chat-level')
+  if (chatLevel && SUBSCRIPTION_CHAT) chatLevel.classList.remove('hidden')
+  var PROVIDERS = SUBSCRIPTION_CHAT ? [
+    { id: 'claude', model: 'claude-sonnet', modelName: 'Claude Sonnet', name: t('provider.subscriptionModel', { model: 'Claude Sonnet' }), note: t('provider.claudeSubscriptionNote'), warn: false }
+  ] : [
     { id: 'claude', name: t('provider.claude'), note: t('provider.canSee', { sources: SOURCE_TEXT }), warn: false },
     { id: 'openai', name: t('provider.gpt'), note: t('provider.canSeeButSends', { sources: SOURCE_TEXT }), warn: true }
   ]
   var provider = 'claude'
+  var chatModel = 'claude-sonnet'
+  try { var savedBrain = localStorage.getItem('xiangxiang-brain-v1'); if (['claude-sonnet', 'gpt-6.1-sol', 'gpt-6-astra', 'gpt-6-luna', 'gpt-6-sol'].indexOf(savedBrain) >= 0 || /^claude-(?:sonnet|opus|haiku|fable)-\d+(?:-\d+){0,3}(?:\[1m\])?$/.test(savedBrain || '')) chatModel = savedBrain } catch (_) {}
+  var modelsLoading = false
+  var companyPicker = document.getElementById('brain-company')
+  var lastCompanyModel = { claude: 'claude-sonnet', openai: 'gpt-6.1-sol' }
+  var modelEfforts = {}
+  function brainCompany (model) { return /^claude-/.test(model) ? 'claude' : 'openai' }
   // The lane of the turn just rendered. Sent back so a short reply like 「1」 continues
   // what was happening instead of arriving as a fresh, contentless input. It is a lane
   // NAME only; the server re-validates it and refuses to continue into the proposal lane.
@@ -88,6 +185,7 @@
   var pending = false
   var convs = []      // [{ id, title, history: [{role,text}], thread: HTMLElement }]
   var active = null
+  var topicController = window.XiangxiangTopics && window.XiangxiangTopics.mount(document, t, function (text) { if (pending || msg.value.trim()) return false; msg.value = text; autoGrow(); refreshImages(); msg.focus(); return true })
 
   /* ── tiny DOM helpers ─────────────────────────────────────────────────── */
   function el (tag, cls, text) {
@@ -101,17 +199,26 @@
 
   /* ── markdown → DOM ───────────────────────────────────────────────────────
    * A deliberately small subset (headings, fenced + inline code, bold, italic, lists,
-   * blockquote, rule, paragraphs). It BUILDS NODES; it never produces a markup string,
+   * blockquote, pipe tables, rule, paragraphs). It BUILDS NODES; it never produces a markup string,
    * so there is no injection surface even for hostile model output. Anything it does
    * not recognise stays literal text — the safe failure. */
   function inline (parent, text) {
-    var re = /(`[^`]+`|\*\*[^*]+\*\*|\*[^*]+\*|_[^_]+_)/g
+    var re = /(`[^`]+`|\[[^\]\n]+\]\(https:\/\/[^\s)]+\)|\*\*[^*]+\*\*|\*[^*]+\*|_[^_]+_)/g
     var last = 0
     var m
     while ((m = re.exec(text)) !== null) {
       if (m.index > last) parent.appendChild(document.createTextNode(text.slice(last, m.index)))
       var tok = m[0]
-      if (tok.charAt(0) === '`') parent.appendChild(el('code', null, tok.slice(1, -1)))
+      if (tok.charAt(0) === '[') {
+        var linkParts = tok.match(/^\[([^\]]+)\]\((https:\/\/[^\s)]+)\)$/)
+        var parsedLink = null
+        try { parsedLink = new URL(linkParts[2]) } catch (e) {}
+        if (parsedLink && parsedLink.protocol === 'https:' && !parsedLink.username && !parsedLink.password) {
+          var link = el('a', null, linkParts[1])
+          link.href = parsedLink.href; link.target = '_blank'; link.rel = 'noopener noreferrer'; link.referrerPolicy = 'no-referrer'
+          parent.appendChild(link)
+        } else parent.appendChild(document.createTextNode(tok))
+      } else if (tok.charAt(0) === '`') parent.appendChild(el('code', null, tok.slice(1, -1)))
       else if (tok.slice(0, 2) === '**') parent.appendChild(el('strong', null, tok.slice(2, -2)))
       else parent.appendChild(el('em', null, tok.slice(1, -1)))
       last = m.index + tok.length
@@ -119,7 +226,7 @@
     if (last < text.length) parent.appendChild(document.createTextNode(text.slice(last)))
   }
 
-  function renderMarkdown (text) {
+  function renderMarkdown (text, collapsePublicDetails) {
     var root = el('div', 'md')
     var lines = String(text == null ? '' : text).split('\n')
     var i = 0
@@ -127,13 +234,50 @@
     var para = null
 
     function flushPara () {
-      if (para && para.childNodes.length) root.appendChild(para)
+      if (para && para.childNodes.length) {
+        // Presentation only: retain the entire source note and its limits.
+        if (/^(\u4f86\u6e90\uff1a7shifts \u56fa\u5b9a GET|Source: fixed 7shifts GET)/.test(para.textContent)) {
+          var sourceDetails = el('details', 'report-source'), sourceSummary = el('summary', null, t('report.sourceDetails'))
+          sourceDetails.append(sourceSummary, para); root.appendChild(sourceDetails)
+        } else root.appendChild(para)
+      }
       para = null
     }
     function flushList () { if (list) { root.appendChild(list); list = null } }
+    function tableCells (line) {
+      var value = line.trim()
+      if (value.charAt(0) !== '|' || value.charAt(value.length - 1) !== '|') return null
+      var escapes = 0
+      for (var end = value.length - 2; end >= 0 && value.charAt(end) === '\\'; end--) escapes++
+      if (escapes % 2) return null
+      var cells = [], cell = ''
+      for (var c = 1; c < value.length - 1; c++) {
+        if (value.charAt(c) === '\\' && /[|\\]/.test(value.charAt(c + 1))) { cell += value.charAt(++c); continue }
+        if (value.charAt(c) === '|') { cells.push(cell.trim()); cell = '' } else cell += value.charAt(c)
+      }
+      cells.push(cell.trim())
+      return cells.length >= 2 ? cells : null
+    }
+    function tableRow (cells, header) {
+      var row = el('tr')
+      cells.forEach(function (value) {
+        var cell = el(header ? 'th' : 'td')
+        if (header) cell.scope = 'col'
+        inline(cell, value); row.appendChild(cell)
+      })
+      return row
+    }
 
     while (i < lines.length) {
       var line = lines[i]
+      if (collapsePublicDetails !== false && (line === '### ' + t('publicSearch.detailsChinese') || line === '### ' + t('publicSearch.detailsEnglish'))) {
+        flushPara(); flushList()
+        var publicDetails = el('details', 'report-source')
+        publicDetails.appendChild(el('summary', null, t('publicSearch.details')))
+        publicDetails.appendChild(renderMarkdown(lines.slice(i + 1).join('\n'), false))
+        root.appendChild(publicDetails)
+        break
+      }
 
       if (line.slice(0, 3) === '```') {                       // fenced code
         flushPara(); flushList()
@@ -145,6 +289,32 @@
         pre.appendChild(el('code', null, buf.join('\n')))
         root.appendChild(pre)
         continue
+      }
+
+      var columns = tableCells(line), separator = i + 1 < lines.length ? tableCells(lines[i + 1]) : null
+      if (columns && separator && columns.length === separator.length && separator.every(function (cell) { return /^:?-{3,}:?$/.test(cell) })) {
+        flushPara(); flushList()
+        var wrap = el('div', 'md-table-wrap'), table = el('table'), thead = el('thead'), tbody = el('tbody')
+        wrap.tabIndex = 0; wrap.setAttribute('role', 'region'); wrap.setAttribute('aria-label', columns.join(' / '))
+        thead.appendChild(tableRow(columns, true)); table.appendChild(thead); table.appendChild(tbody)
+        i += 2
+        while (i < lines.length) {
+          var values = tableCells(lines[i])
+          if (!values || values.length !== columns.length) break
+          tbody.appendChild(tableRow(values, false)); i++
+        }
+        wrap.appendChild(table)
+        var expand = el('button', 'table-expand', t('report.expandTable')); expand.type = 'button'
+        expand.addEventListener('click', (function (sourceTable, opener, name) { return function () {
+          var viewer = el('dialog', 'table-viewer'), head = el('div', 'table-viewer-head'), title = el('strong', null, t('report.tableTitle')), close = el('button', null, t('report.closeTable'))
+          var scroll = el('div', 'md md-table-wrap table-viewer-scroll')
+          viewer.setAttribute('aria-label', t('report.tableTitle')); scroll.tabIndex = 0; scroll.setAttribute('role', 'region'); scroll.setAttribute('aria-label', name)
+          close.type = 'button'; head.append(title, close); scroll.append(sourceTable.cloneNode(true)); viewer.append(head, scroll); document.body.append(viewer)
+          close.addEventListener('click', function () { viewer.close() })
+          viewer.addEventListener('close', function () { viewer.remove(); if (opener.isConnected) opener.focus() })
+          viewer.showModal(); close.focus()
+        } })(table, expand, columns.join(' / ')))
+        root.append(expand, wrap); continue
       }
 
       var h = line.match(/^(#{1,3})\s+(.*)$/)
@@ -195,6 +365,7 @@
       }
 
       flushList()
+      if (/^(\u4f86\u6e90\uff1a7shifts \u56fa\u5b9a GET|Source: fixed 7shifts GET)/.test(line)) flushPara()
       if (!para) para = el('p')
       else para.appendChild(document.createTextNode('\n'))
       inline(para, line)
@@ -787,10 +958,13 @@
   }
   function isListed (c) { return c.stored === true || c.history.length > 0 }
   function selectConversation (c) {
+    if (topicController) topicController.selected(c.cid)
     // A conversation is the current destination, so 首頁 is not.
     markHome(false)
     showComposer(true)
     active = c
+    if (SUBSCRIPTION_CHAT && CENTRAL_MODELS) { brainReady = false; brainSelection = null; loadChatModels() }
+    imageNotice(''); refreshImages()
     clear(log)
     log.appendChild(c.thread)
     titleEl.textContent = isListed(c) ? c.title : t('brand.name')
@@ -803,11 +977,19 @@
     renderWaitingBar(!isListed(c) && c.history.length === 0)
     scroll()
   }
+  function matchesConversation (c, query) {
+    return String(c.title || '').toLocaleLowerCase().includes(String(query || '').trim().toLocaleLowerCase())
+  }
   function renderConvList () {
     clear(convsEl)
     var lastGroup = null
+    var search = document.getElementById('conversation-search')
+    var query = search ? search.value : ''
+    var visible = 0
     for (var i = 0; i < convs.length; i++) {
       if (!isListed(convs[i])) continue
+      if (!matchesConversation(convs[i], query)) continue
+      visible++
       (function (c) {
         // 今日 / 尋日 / 更早 — a quiet label, only when the group changes.
         var g = groupLabel(convWhen(c))
@@ -817,6 +999,7 @@
         }
 
         var row = el('div', 'conv-row')
+        if (c === active) row.classList.add('selected')
 
         // ALWAYS RENDERED, only the `on` class is conditional. A dot that appears and
         // disappears would shift every title sideways as replies come and go.
@@ -827,6 +1010,7 @@
         var b = el('button', 'conv' + (c === active ? ' active' : ''), c.title)
         b.setAttribute('type', 'button')
         b.setAttribute('title', c.title)
+        if (c === active) b.setAttribute('aria-current', 'page')
         b.addEventListener('click', function () { selectConversation(c) })
         row.appendChild(b)
 
@@ -855,6 +1039,9 @@
         convsEl.appendChild(row)
       })(convs[i])
     }
+    var count = document.getElementById('history-count')
+    if (count) count.textContent = String(visible)
+    if (!visible && query.trim()) convsEl.appendChild(el('p', 'side-empty', t('shell.noSearchResults')))
   }
   function titleFrom (text) {
     var tEl = String(text).replace(/\s+/g, ' ').trim()
@@ -915,8 +1102,7 @@
   function convCount (c) { return c.history.length > 0 ? c.history.length : (c.messageCount || 0) }
 
   function bootHistory () {
-    fetch('/api/v1/conversations', { credentials: 'same-origin' })
-      .then(function (r) { return r.json() })
+    (topicController ? topicController.load() : fetch('/api/v1/conversations', { credentials: 'same-origin' }).then(function (r) { return r.json() }))
       .then(function (j) {
         if (!j || !j.ok || !j.conversations) return
         for (var i = 0; i < j.conversations.length; i++) {
@@ -927,6 +1113,10 @@
           convs.push(stubFor(row))
         }
         renderConvList()
+        if (topicController && j.workspace && j.workspace.lastConversationId) {
+          var last = findConv(j.workspace.lastConversationId)
+          if (last) selectConversation(last)
+        }
       })
       .catch(function () { /* history is an addition; losing it must not break the page */ })
   }
@@ -958,10 +1148,20 @@
         for (var i = 0; i < m.length; i++) {
           var text = String(m[i] && m[i].content != null ? m[i].content : '')
           if (m[i] && m[i].role === 'user') {
-            addUser(text, c)
+            drawImages(addUser(text, c), m[i].images)
             c.history.push({ role: 'user', text: text })
           } else {
             var tEl = addBot(text, c)
+            if (m[i] && m[i].hrRecheckId && topicController) topicController.recheckOffer(tEl.body, { id: m[i].hrRecheckId })
+            if (m[i] && m[i].evidenceReport && topicController) topicController.offer(tEl.body, { conversationId: c.cid, reportId: m[i].evidenceReport.id })
+            if (m[i] && m[i].taskPlanRunId) renderTaskPlan(tEl, m[i].taskPlanRunId)
+            if (m[i] && m[i].capabilityGapRunId) renderCapabilityGap(tEl, m[i].capabilityGapRunId, null, c)
+            if (m[i] && m[i].investigationRunId) loadInvestigation(tEl, m[i].investigationRunId)
+            if (m[i] && m[i].projectWorkRunId) renderProjectWork(tEl, m[i].projectWorkRunId, null)
+            if (m[i] && m[i].operatingRunId) renderOperatingRun(tEl, m[i].operatingRunId)
+            if (m[i] && m[i].developmentPlanRunId) renderDevelopmentPlanLink(tEl, m[i].developmentPlanRunId)
+            if (m[i] && m[i].codeRepairRunId) renderCodeRepairLink(tEl, m[i].codeRepairRunId)
+            if (m[i] && m[i].codeDiagnosisRunId) renderCodeDiagnosisLink(tEl, m[i].codeDiagnosisRunId)
             // The same disclosure a live turn carries: who actually answered.
             if (m[i] && m[i].servedBy) labelServedBy(tEl, { servedBy: m[i].servedBy })
             c.history.push({ role: 'assistant', text: text })
@@ -1019,7 +1219,7 @@
     tEl.appendChild(body)
     c.thread.appendChild(tEl)
     if (c === active) scroll()   // never yank the view to a conversation he is not reading
-    return { root: tEl, body: body }
+    return { root: tEl, body: body, conversation: c }
   }
   function addUser (text, conv) {
     var tEl = turn('user', conv)
@@ -1084,11 +1284,226 @@
   function addMeta (host, text) { host.appendChild(el('div', 'meta', text)) }
 
   // A typing indicator the moment a message is sent — never a silent wait.
+  function investigationSource (name) {
+    var names = { gmail: 'Gmail', drive: 'Google Drive', calendar: 'Calendar', github: 'GitHub', external_gmail: 'Gmail', external_drive: 'Google Drive', external_calendar: 'Calendar', external_github: 'GitHub', configuration: t('investigation.configuration'), schedules: t('investigation.schedules'), work: t('investigation.work'), history: t('investigation.history'), execution: t('investigation.execution'), usage: t('investigation.usage'), billing: t('investigation.billing') }
+    return names[name] || t('investigation.operations')
+  }
+  function renderInvestigation (turnEl, report, investigationId, approvalId) {
+    if (report.focus === 'background' && investigationId && report.persistenceState !== 'unavailable') renderSchedulerChat(turnEl, investigationId)
+    if (report.persistenceState === 'unavailable') addMeta(turnEl.body, t('investigation.notSaved'))
+    var details = el('details', 'investigation-evidence')
+    details.appendChild(el('summary', '', t('investigation.title')))
+    if (typeof report.answerDetails === 'string' && report.answerDetails) {
+      var fullAnswer = el('details')
+      fullAnswer.appendChild(el('summary', '', t('investigation.answerDetails')))
+      fullAnswer.appendChild(el('p', 'prose', report.answerDetails))
+      details.appendChild(fullAnswer)
+    }
+    if (report.performance) {
+      var phaseTimes = el('details')
+      phaseTimes.appendChild(el('summary', '', t('investigation.performanceDetails')))
+      phaseTimes.appendChild(el('pre', '', JSON.stringify(report.performance, null, 2)))
+      details.appendChild(phaseTimes)
+    }
+    if (report.unverifiedJudgmentOmitted) details.appendChild(el('p', 'wait-note', t('investigation.judgmentOmitted')))
+    var readStates = { ok: t('investigation.ok'), partial: t('investigation.partial'), missing: t('investigation.missing'), unavailable: t('investigation.unavailable'), unconnected: t('investigation.unconnected') }
+    var levels = { confirmed: t('investigation.confirmed'), supported: t('investigation.supported'), possible: t('investigation.possible'), not_established: t('investigation.notEstablished') }
+    var findingRefs = report.answerPresentation && (report.answerPresentation.findings || report.answerPresentation.costFindings)
+    if (findingRefs && findingRefs.references && findingRefs.references.length) {
+      var refsPanel = el('details')
+      refsPanel.appendChild(el('summary', '', t('investigation.findingEvidence')))
+      refsPanel.appendChild(el('pre', '', JSON.stringify(findingRefs.references, null, 2)))
+      details.appendChild(refsPanel)
+    }
+    if (report.semanticReview) {
+      var semantic = el('section', 'investigation-semantic')
+      semantic.appendChild(el('strong', '', t('investigation.semanticTitle')))
+      ;(report.semanticReview.accepted || []).forEach(function (claim) {
+        semantic.appendChild(el('p', '', (levels[claim.evidenceState] || levels.not_established) + ' · ' + claim.text))
+        var refs = el('details'); refs.appendChild(el('summary', '', t('investigation.details')))
+        refs.appendChild(el('pre', '', JSON.stringify({ temporalScope: claim.temporalScope, references: claim.references }, null, 2))); semantic.appendChild(refs)
+      })
+      if ((report.semanticReview.withheld || []).length) semantic.appendChild(el('p', 'wait-note', t('investigation.semanticWithheld', { count: report.semanticReview.withheld.length })))
+      semantic.appendChild(el('p', 'wait-note', t('investigation.semanticBoundary')))
+      var reviewLog = el('details'); reviewLog.appendChild(el('summary', '', t('investigation.evaluation')))
+      reviewLog.appendChild(el('pre', '', JSON.stringify(report.semanticReview, null, 2))); semantic.appendChild(reviewLog); details.appendChild(semantic)
+    }
+    if (report.version === 1) {
+      var summary = el('section', 'investigation-summary')
+      if (!report.focus || report.focus === 'cost') {
+        summary.appendChild(el('strong', '', t('investigation.chargeUnverified')))
+        var execution = (report.sections || []).find(function (s) { return s.section === 'execution' })
+        summary.appendChild(el('p', '', execution && execution.records && execution.records.length ? t('investigation.executionObserved') : t('investigation.executionGap')))
+        summary.appendChild(el('p', '', t('investigation.recommendBilling')))
+      } else if (report.focus === 'work_failure') {
+        summary.appendChild(el('strong', '', t('investigation.failureSummary')))
+        summary.appendChild(el('p', '', t('investigation.failureBoundary')))
+      } else if (report.focus === 'background') {
+        summary.appendChild(el('strong', '', t('investigation.backgroundSummary')))
+        summary.appendChild(el('p', '', t('investigation.activityBoundary')))
+      } else summary.appendChild(el('strong', '', t('investigation.generalSummary')))
+      if ((report.contradictions || []).length) summary.appendChild(el('p', '', t('investigation.conflictFound')))
+      turnEl.body.appendChild(summary)
+      var evaluation = el('details'); evaluation.appendChild(el('summary', '', t('investigation.evaluation')))
+      evaluation.appendChild(el('pre', '', JSON.stringify({ plan: report.plan, findings: report.findings, findingsOmitted: report.findingsOmitted, gaps: report.gaps, contradictions: report.contradictions, transitions: report.transitions, recommendations: report.recommendations, evaluationScope: report.evaluationScope }, null, 2)))
+      details.appendChild(evaluation)
+    }
+    ;(report.sections || []).forEach(function (section) {
+      var row = el('section', 'investigation-source')
+      row.appendChild(el('strong', '', investigationSource(section.section)))
+      row.appendChild(el('p', '', (readStates[section.state] || readStates.unavailable) + ' · ' + (levels[section.evidenceState] || levels.not_established)))
+      var records = el('details'); records.appendChild(el('summary', '', t('investigation.details')))
+      records.appendChild(el('pre', '', JSON.stringify({ sourceId: section.sourceId, retrievedAt: section.retrievedAt, sha256: section.sha256, records: section.records, coverage: section.coverage, selection: section.selection, omitted: section.omitted, note: section.note }, null, 2)))
+      row.appendChild(records); details.appendChild(row)
+    })
+    if (!report.focus || report.focus === 'cost') turnEl.body.appendChild(el('p', 'wait-note', t('investigation.boundary')))
+    turnEl.body.appendChild(details)
+    turnEl.body.appendChild(el('p', 'wait-note', t('investigation.readOnly')))
+    var link = el('a', '', t('investigation.settings')); link.href = '/model-center' + (investigationId ? '?investigation=' + encodeURIComponent(investigationId) : ''); turnEl.body.appendChild(link)
+    if (investigationId) {
+      var check = el('button', 'ghost', t('investigation.enquiryOffer')); check.type = 'button'
+      turnEl.body.appendChild(check)
+      check.addEventListener('click', function () {
+        var investigationConversation = active
+        check.disabled = true
+        function prepare () { return fetch('/api/v1/owner/investigations/' + encodeURIComponent(investigationId) + '/work-order', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: '{}' })
+          .then(function (r) { if (!r.ok) throw Error(); return r.json() })
+          .then(function (sealed) { approvalId = sealed.approvalId; if (active === investigationConversation) renderCard(sealed, investigationConversation); else check.disabled = false })
+          .catch(function () { check.disabled = false; addMeta(turnEl.body, t('investigation.enquiryUnavailable')) }) }
+        if (approvalId) fetch('/api/v1/owner/results/' + encodeURIComponent(approvalId), { credentials: 'same-origin' }).then(function (r) {
+          if (r.status === 404) return prepare()
+          if (!r.ok) throw Error()
+          return r.json().then(function (result) {
+            watchProgress(approvalId, turnEl.body, {}, investigationConversation)
+            if (result.finished && result.enquiry && result.enquiry.saved && result.enquiry.outcome === 'FAILED') {
+              var retry = el('button', 'ghost', t('investigation.enquiryRetry')); retry.type = 'button'; turnEl.body.appendChild(retry)
+              retry.addEventListener('click', function () { retry.disabled = true; prepare() })
+            }
+          })
+        }).catch(function () { check.disabled = false })
+        else prepare()
+      })
+    }
+  }
+  function renderSchedulerChat (turnEl, investigationId) {
+    var conv = turnEl.conversation, context = { conversationId: conv.cid, investigationId: investigationId }
+    var panel = el('section', 'scheduler-chat'), status = el('p', 'work-activity-state'), content = el('div'), busy = false
+    status.setAttribute('role', 'status'); status.setAttribute('aria-live', 'polite')
+    panel.appendChild(el('h3', '', t('actions.chatTitle'))); panel.appendChild(status); panel.appendChild(content); turnEl.body.appendChild(panel)
+    function call (body) {
+      return fetch('/api/v1/demo/scheduler-actions', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(Object.assign({}, body, context)) })
+        .then(function (r) { return r.json().then(function (v) { if (!r.ok || v.error) throw Error(v.error || 'action_unavailable'); return v }) })
+    }
+    function button (host, label, task) {
+      var b = el('button', 'ghost', label); b.type = 'button'; b.addEventListener('click', function () { if (conv !== active || busy) return; work(task) }); host.appendChild(b)
+    }
+    function work (task) {
+      if (busy) return; busy = true; status.textContent = t('actions.busy'); panel.classList.add('work-activity', 'is-working'); panel.setAttribute('aria-busy', 'true')
+      panel.querySelectorAll('button').forEach(function (b) { b.disabled = true })
+      return Promise.resolve().then(task).catch(function () { status.textContent = t('actions.failure') }).finally(function () {
+        busy = false; panel.classList.remove('is-working'); panel.setAttribute('aria-busy', 'false'); panel.querySelectorAll('button').forEach(function (b) { b.disabled = false })
+      })
+    }
+    function show (r) {
+      clear(content); status.textContent = ''
+      content.appendChild(el('strong', '', r.target.taskPath + r.target.taskName))
+      content.appendChild(el('p', '', r.capability === 'scheduler.pause' ? t('actions.pauseAction') : t('actions.resumeAction')))
+      content.appendChild(el('p', '', t('actions.impact'))); content.appendChild(el('p', '', t('actions.rollback')))
+      if(r.recommendation){content.appendChild(el('p','',t('actions.recommendBasis',{survivor:r.recommendation.survivorTaskName})));content.appendChild(el('p','',t('actions.executionUnknown')))}
+      var pending = r.state === 'awaiting_approval', verified = r.state === 'verified'
+      content.appendChild(el('p', '', verified ? t('actions.verified') : pending ? (r.nonce ? t('actions.pending') : t('actions.expired')) : t('actions.failure')))
+      if (verified && r.after && r.after.at) content.appendChild(el('p','meta',t('actions.checkedAt',{at:new Date(r.after.at).toLocaleString()})))
+      if(r.currentReadback)content.appendChild(el('p','',({MATCHES_DESIRED:t('actions.readbackMatchesDesired'),DIFFERS_FROM_DESIRED:t('actions.readbackDiffersFromDesired'),DEFINITION_CHANGED:t('actions.readbackDefinitionChanged'),NOT_IDLE:t('actions.readbackNotIdle'),UNAVAILABLE:t('actions.readbackUnavailable')})[r.currentReadback.state]||t('actions.unavailable')))
+      if(['executing','outcome_unknown'].includes(r.state))button(content,t('actions.reconcile'),function(){return call({op:'reconcile',id:r.id}).then(function(v){return show(v.run)})})
+      if (r.before) content.appendChild(el('p', '', (r.before.enabled ? t('actions.enabled') : t('actions.disabled')) + ' → ' + (r.after ? (r.after.enabled ? t('actions.enabled') : t('actions.disabled')) : t('actions.unavailable'))))
+      if (pending && r.nonce) button(content, t('actions.approve'), function () {
+        if (!window.confirm(t('actions.confirm') + '\n' + r.target.taskPath + r.target.taskName + '\n' + (r.capability === 'scheduler.pause' ? t('actions.pauseAction') : t('actions.resumeAction')))) return
+        status.textContent = t('actions.executing')
+        var pollActive=true, poll = setInterval(function () { call({op:'get',id:r.id}).then(function(v){if(pollActive && v.run && v.run.state==='executing')status.textContent=v.run.timeline.some(function(e){return e.phase==='readback_started'})?t('actions.readback'):t('actions.executing')}).catch(function(){}) },1500)
+        return call({op:'approve',id:r.id,hash:r.hash,nonce:r.nonce}).then(function(v){pollActive=false;return show(v.run)}).finally(function(){pollActive=false;clearInterval(poll)})
+      })
+      if (verified) button(content, t('actions.restore'), function () { return call({op:'restore',id:r.id}).then(function(v){return show(v.run)}) })
+      if (pending && !r.nonce) button(content, t('actions.inspect'), inspect)
+      button(content, t('actions.refresh'), function () { return call({op:'get',id:r.id}).then(function(v){return show(v.run)}) })
+      var details=el('details'), facts=el('pre');facts.textContent=JSON.stringify({investigationId:investigationId,expected:r.expected,recommendation:r.recommendation||null,hash:r.hash,timeline:r.timeline},null,2)
+      details.appendChild(el('summary','',t('actions.evidence')));details.appendChild(facts);content.appendChild(details)
+      // Acknowledge the exact rendered proposal. Only explicit typed approval of
+      // the sole current proposal can use this acknowledgement; rendering never executes.
+      if(pending&&r.nonce&&conv===active&&panel.isConnected&&document.visibilityState==='visible')return call({op:'present',id:r.id,hash:r.hash}).then(function(){
+        if(conv===active&&panel.isConnected)content.appendChild(el('p','meta',r.capability==='scheduler.pause'?t('actions.typedPauseHint'):t('actions.typedResumeHint')))
+      })
+    }
+    function inspect () {
+      return call({op:'inspect'}).then(function(v){
+        clear(content);status.textContent='';content.appendChild(el('p','',t('actions.unknown')))
+        v.inspection.observations.forEach(function(o){
+          var row=el('div','scheduler-target');row.appendChild(el('strong','',o.target.taskPath+o.target.taskName));content.appendChild(row)
+          row.appendChild(el('p','',o.state==='CONFIRMED'?(o.snapshot.enabled?t('actions.enabled'):t('actions.disabled')):t('actions.unavailable')))
+          if(o.state==='CONFIRMED'&&((o.snapshot.runtime==='Ready'&&o.snapshot.enabled)||(o.snapshot.runtime==='Disabled'&&!o.snapshot.enabled)))button(row,o.snapshot.enabled?t('actions.pause'):t('actions.resume'),function(){return call({op:'prepare',targetId:o.target.id,action:o.snapshot.enabled?'scheduler.pause':'scheduler.resume'}).then(function(v){return show(v.run)})})
+        })
+      })
+    }
+    function recommend () {
+      status.textContent=t('actions.assessing')
+      return call({op:'recommend'}).then(function(v){
+        var a=v.assessment;clear(content);status.textContent=''
+        content.appendChild(el('p','',t('actions.recommendScope')))
+        content.appendChild(el('p','',t('actions.checkedAt',{at:new Date(a.at).toLocaleString()})))
+        if(a.recommendations.length){a.recommendations.forEach(function(r){
+          var row=el('div','scheduler-target');content.appendChild(row);row.appendChild(el('strong','',r.taskName));row.appendChild(el('p','',t('actions.recommendBasis',{survivor:r.survivorTaskName})));row.appendChild(el('p','',t('actions.executionUnknown')))
+          button(row,t('actions.prepareRecommended'),function(){return call({op:'prepare_recommended',inspectionId:a.inspectionId,targetId:r.targetId}).then(function(v){return show(v.run)})})
+        })}else content.appendChild(el('p','',a.sourceState==='UNAVAILABLE'?t('actions.evidenceMissing'):a.candidates.length?t('actions.overlapOnly'):t('actions.noRecommendation')))
+        button(content,t('actions.reassess'),recommend)
+        var manual=el('details');manual.appendChild(el('summary','',t('actions.manualChoice')));button(manual,t('actions.inspect'),inspect);content.appendChild(manual)
+        var facts=el('details'),body=el('pre');body.textContent=JSON.stringify(a,null,2);facts.appendChild(el('summary','',t('actions.evidence')));facts.appendChild(body);content.appendChild(facts)
+      })
+    }
+    work(function(){return call({op:'list'}).then(function(v){
+      status.textContent=''
+      if(v.runs.length){var runs=v.runs.slice().sort(function(a,b){return Date.parse(a.timeline[0].at)-Date.parse(b.timeline[0].at)});var shown=show(runs[runs.length-1]);var history=el('details');history.appendChild(el('summary','',t('actions.history')));runs.forEach(function(r){button(history,r.target.taskName+' · '+(r.state==='verified'?t('actions.verified'):r.state==='awaiting_approval'?t('actions.pending'):t('actions.failure')),function(){return call({op:'get',id:r.id}).then(function(v){return show(v.run)})})});content.appendChild(history);return shown}
+      else return recommend()
+    })})
+  }
+  function loadInvestigation (turnEl, id) {
+    fetch('/api/v1/demo/investigations/' + encodeURIComponent(id), { credentials: 'same-origin' })
+      .then(function (r) { if (!r.ok) throw Error(); return r.json() })
+      .then(function (data) { if (data.run && data.run.investigation) renderInvestigation(turnEl, data.run.investigation, id, data.run.enquiryApprovalId); else addMeta(turnEl.body, t('investigation.failed')) })
+      .catch(function () { addMeta(turnEl.body, t('investigation.failed')) })
+  }
   function addTyping (conv) {
     var tEl = turn('bot', conv)
     var dots = el('div', 'typing')
     dots.appendChild(el('i')); dots.appendChild(el('i')); dots.appendChild(el('i'))
     tEl.body.appendChild(dots)
+    var waited = el('div', 'wait-note work-waiting')
+    var stage = el('div', 'wait-note')
+    stage.setAttribute('role', 'status')
+    tEl.body.appendChild(stage)
+    tEl.setWebsiteStage = function (state) {
+      if (state === 'classifying') stage.textContent = t('website.classifying')
+      else if (state === 'searching') stage.textContent = t('website.searching')
+      else if (state === 'completed') stage.textContent = t('website.completed')
+      else if (state === 'failed' || state === 'needs_input') stage.textContent = t('website.stopped')
+      else stage.textContent = ''
+    }
+    tEl.setInvestigationStage = function (run) {
+      if (!run) return
+      var last = run.events && run.events[run.events.length - 1]
+      if (run.state === 'planning') stage.textContent = t('investigation.planning')
+      else if (run.state === 'reading') stage.textContent = last && last.phase === 'followup' ? t('investigation.supplementing', { source: investigationSource(last.section) }) : t('investigation.reading', { source: investigationSource(last && last.section) })
+      else if (run.state === 'source_complete' && last && last.sourceState === 'empty') stage.textContent = t('investigation.sourceEmpty', { source: investigationSource(last.section) })
+      else if (run.state === 'source_complete') stage.textContent = last && ['missing', 'unavailable', 'unconnected'].includes(last.sourceState) ? t('investigation.sourceGap', { source: investigationSource(last.section) }) : t('investigation.sourceChecked', { source: investigationSource(last && last.section) })
+      else if (run.state === 'evaluating') stage.textContent = t('investigation.evaluating')
+      else if (run.state === 'semantic_review') stage.textContent = t('investigation.semanticReview')
+      else if (run.state === 'interrupted') stage.textContent = t('investigation.interrupted')
+      else if (run.state === 'failed') stage.textContent = t('investigation.failed')
+    }
+    var started = Date.now()
+    function updateWait () { waited.textContent = t('chat.waiting', { seconds: Math.floor((Date.now() - started) / 1000) }) }
+    updateWait()
+    tEl.body.appendChild(waited)
+    var timer = setInterval(updateWait, 1000)
+    tEl.stopWaiting = function () { clearInterval(timer) }
     return tEl
   }
   // Stale red errors used to sit above fresh content, so the Owner could not tell which
@@ -1126,6 +1541,14 @@
 
   function renderPlusMenu () {
     clear(plusMenu)
+    if (SUBSCRIPTION_CHAT) {
+      var upload = el('button', 'opt')
+      upload.type = 'button'; upload.setAttribute('role', 'menuitem')
+      upload.appendChild(el('div', 'opt-name', t('imageChat.upload')))
+      upload.appendChild(el('div', 'opt-note', t('imageChat.uploadNote')))
+      upload.addEventListener('click', function () { closePlus(); imageFiles.click() })
+      plusMenu.appendChild(upload)
+    }
     for (var i = 0; i < SHORTCUTS.length; i++) {
       (function (s) {
         var b = el('button', 'opt' + (s.mode === forcedMode ? ' active' : ''))
@@ -1151,6 +1574,557 @@
   })
   renderPlusMenu()
 
+  createComposerActivity(document.getElementById('composer').querySelector('.composer-col'), function () { return active && active.thread })
+  function createComposerActivity (composer, currentThread) {
+    if (!composer) return
+    var bar = el('div', 'composer-activity'), label = el('span', 'composer-activity-label'), phase = el('span', 'composer-activity-phase'), reveal = el('button', 'composer-activity-open')
+    label.setAttribute('role', 'status'); label.setAttribute('aria-live', 'polite')
+    reveal.setAttribute('type', 'button')
+    bar.appendChild(label); bar.appendChild(phase); bar.appendChild(reveal)
+    composer.insertBefore(bar, composer.firstChild)
+    var target = null
+    reveal.addEventListener('click', function () {
+      if (!target) return
+      var drawer = target.querySelector('.work-activity-drawer')
+      if (drawer) drawer.open = true
+      target.scrollIntoView({ block: 'center', behavior: 'instant' })
+    })
+    function refresh () {
+      var thread = currentThread(), cards = thread ? Array.from(thread.querySelectorAll('.work-activity')) : []
+      var typing = thread && thread.querySelector('.typing')
+      target = typing ? null : cards.filter(function (card) { return card.classList.contains('is-working') }).pop() || cards.pop() || null
+      bar.hidden = !typing && !target
+      var isBusySnapshot = !!typing || !!(target && target.classList.contains('is-working'))
+      bar.className = 'composer-activity' + (isBusySnapshot ? ' is-working' : '')
+      var heading = target && target.querySelector('.work-activity-state')
+      var text = typing ? t('workActivity.thinking') : isBusySnapshot ? t('workActivity.working') : heading ? heading.textContent : ''
+      if (label.textContent !== text) label.textContent = text
+      phase.textContent = isBusySnapshot && heading ? heading.textContent : ''
+      reveal.textContent = t('workActivity.open'); reveal.hidden = !target
+    }
+    refresh(); setInterval(refresh, 500)
+  }
+  function createWorkActivity (host) {
+    var box = el('section', 'work-activity'), heading = el('p', 'work-activity-state'), clock = el('p', 'work-activity-clock')
+    var trail = el('ol', 'work-activity-trail')
+    var drawer = el('details', 'work-activity-drawer'), log = el('div', 'work-activity-log')
+    heading.setAttribute('role', 'status'); heading.setAttribute('aria-live', 'polite')
+    drawer.appendChild(el('summary', '', t('workActivity.open'))); drawer.appendChild(log)
+    box.appendChild(trail); box.appendChild(heading); box.appendChild(clock); box.appendChild(drawer); host.appendChild(box)
+    var current = null, kind = '', confirmedAt = 0, readable = false, ticker = null, logSignature = ''
+    var active = ['queued', 'running', 'reading', 'drafting', 'checking', 'coding', 'reviewing', 'testing', 'applying']
+    var labels = { queued: t('workActivity.queued'), running: t('workActivity.planning'), reading: t('workActivity.reading'), drafting: t('workActivity.drafting'), checking: t('workActivity.checking'), coding: t('workActivity.coding'), reviewing: t('workActivity.reviewing'), testing: t('workActivity.testing'), applying: t('workActivity.applying'), awaiting_approval: t('workActivity.approval'), awaiting_restart: t('workActivity.restart'), registered: t('workActivity.registered'), failed: t('workActivity.failed'), cancelled: t('workActivity.cancelled'), timed_out: t('workActivity.timedOut'), interrupted: t('workActivity.interrupted'), needs_attention: t('workActivity.attention'), needs_clarification: t('workActivity.clarification'), out_of_scope: t('taskPlan.outOfScope') }
+    var stages = { owner_requested: t('workActivity.requested'), policy_checked: t('workActivity.policy'), source_read: labels.reading, source_received: t('workActivity.sourceReceived'), planning: labels.running, source_verified: t('workActivity.sourceVerified'), coding: labels.coding, checking: labels.checking, reviewing: labels.reviewing, drafting: labels.drafting, reading: labels.reading, completed: t('workActivity.stageComplete'), failed: labels.failed, cancelled: labels.cancelled, testing: labels.testing, applying: labels.applying, task_draft_requested: labels.drafting, task_draft_linked: t('workActivity.draftLinked'), work_prepare_requested: t('workActivity.workRequested'), work_prepared: t('workActivity.workPrepared') }
+    Object.assign(stages, { visual_review: t('uiDesign.reviewing'), repairing_visual: t('uiDesign.repairing'), design_guidance_loaded: t('uiDesign.guidance'), repairing_code: t('workActivity.repairingCode'), repairing_tests: t('workActivity.repairingTests'), checking_isolation: t('workActivity.isolation'), baseline_started: t('workActivity.baseline'), baseline_failed: t('workActivity.baselineResult'), tests_started: labels.testing, accepted_isolated: t('workActivity.testsPassed'), draft_ready: t('workActivity.draftReady'), owner_confirmed: t('workActivity.confirmed'), coding_authorized: t('workActivity.dispatch'), needs_attention: labels.needs_attention, timed_out: labels.timed_out, interrupted: labels.interrupted })
+    function orderedSteps () { return (current && Array.isArray(current.steps) ? current.steps : []).slice().sort(function (a, b) { var x = Date.parse(a.at), y = Date.parse(b.at); return Number.isFinite(x) && Number.isFinite(y) ? x - y : 0 }) }
+    function stop () { if (ticker !== null) clearInterval(ticker); ticker = null }
+    function tick () {
+      if (host.isConnected === false) { stop(); return }
+      var working = current && active.includes(current.state), fresh = readable && (!working || Date.now() - confirmedAt < 15000)
+      box.className = 'work-activity' + (working && fresh ? ' is-working' : '')
+      var text = !fresh ? t('workActivity.unconfirmed') : current.state === 'completed' ? (kind === 'plan' ? t('workActivity.planComplete') : kind === 'adoption' ? t('workActivity.adopted') : t('workActivity.workComplete')) : labels[current.state] || t('workActivity.unknown')
+      if (working && fresh) {
+        var action = orderedSteps().filter(function (s) { return ['source_read', 'source_received', 'planning', 'reading', 'drafting', 'checking', 'checking_isolation', 'baseline_started', 'baseline_failed', 'coding', 'repairing_code', 'repairing_visual', 'tests_started', 'accepted_isolated', 'reviewing', 'visual_review'].includes(s.stage) }).pop()
+        if (action) text = stages[action.stage]
+        if (current.state === 'reviewing' && (kind === 'task' || current.activityKind === 'task')) text = t('workActivity.reviewTests')
+      }
+      if (heading.textContent !== text) heading.textContent = text
+      var start = current && Date.parse(current.startedAt), end = current && Date.parse(current.finishedAt)
+      var seconds = Number.isFinite(start) ? Math.max(0, Math.floor(((working && fresh ? Date.now() : Number.isFinite(end) ? end : confirmedAt) - start) / 1000)) : null
+      clock.textContent = (seconds !== null ? t('workActivity.elapsed', { seconds: seconds }) + ' · ' : '') + (confirmedAt ? t('workActivity.checked', { time: new Date(confirmedAt).toLocaleTimeString() }) : t('workActivity.loading'))
+      if (!working || !fresh) stop()
+    }
+    function update (record, lane) {
+      current = record; kind = lane; confirmedAt = Date.now(); readable = true
+      tick(); if (active.includes(record.state) && ticker === null && host.isConnected !== false) ticker = setInterval(tick, 1000)
+      var signature = JSON.stringify([lane, record.state, record.reason, record.steps, record.generated, record.result && record.result.changes])
+      if (signature === logSignature) return
+      logSignature = signature; clear(log); clear(trail)
+      var steps = orderedSteps(), list = el('ol', 'work-activity-events'), previousLabel = ''
+      steps.forEach(function (step) {
+        var name = step.stage || step.step, label = stages[name] || t('workActivity.event')
+        var stamp = Number.isFinite(Date.parse(step.at)) ? new Date(step.at).toLocaleTimeString() : ''
+        list.appendChild(el('li', '', (stamp ? stamp + ' · ' : '') + label))
+        if (stages[name] && label !== previousLabel) { trail.appendChild(el('li', '', label)); previousLabel = label }
+      })
+      log.appendChild(steps.length ? list : el('p', '', t('workActivity.noEvents')))
+      var changes = record.result && record.result.changes
+      if (Array.isArray(changes) && changes.length) changes.forEach(function (change) {
+        var code = el('details'); code.appendChild(el('summary', '', t('workActivity.code') + ' · ' + change.file))
+        code.appendChild(el('strong', '', t('projectWork.before'))); code.appendChild(el('pre', '', change.before))
+        code.appendChild(el('strong', '', t('projectWork.after'))); code.appendChild(el('pre', '', change.after)); log.appendChild(code)
+      })
+      else if (record.generated && record.generated.testCode) { log.appendChild(el('p', '', t('workActivity.testDraft'))); log.appendChild(el('pre', '', record.generated.testCode)) }
+      else log.appendChild(el('p', '', lane === 'plan' ? t('workActivity.planOnly') : t('workActivity.codePending')))
+      // Keep raw evidence available without making internal identifiers the main UI.
+      var technical = el('details'); technical.appendChild(el('summary', '', t('workActivity.technical')))
+      technical.appendChild(el('pre', '', JSON.stringify({ state: record.state, reason: record.reason || null, steps: steps }, null, 2))); log.appendChild(technical)
+    }
+    function unavailable () { readable = false; tick(); stop() }
+    tick()
+    return { update: update, unavailable: unavailable }
+  }
+  function renderCapabilityGap (turn, runId, initial, conv) {
+    if (!/^[a-f0-9-]{36}$/i.test(runId || '')) return
+    var card = el('div', 'project-work-card'), content = el('div'), nested = el('div'), busy = false, loading = false, childId = null, resumeId = null
+    card.dataset.capabilityGap = runId; turn.body.appendChild(card); card.appendChild(content); card.appendChild(nested)
+    async function request (body) {
+      var controller = new AbortController(), timer = setTimeout(function () { controller.abort() }, body && body.op === 'resume' ? 180000 : 15000)
+      try {
+        var response = await fetch('/api/v1/capability-gaps' + (body ? '' : '/' + encodeURIComponent(runId)), {method:body?'POST':'GET',credentials:'same-origin',redirect:'error',signal:controller.signal,headers:body?{'content-type':'application/json'}:{},body:body?JSON.stringify(body):undefined})
+        var value = await response.json(); if (!response.ok || value.error) throw Error(value.error || 'unavailable'); return value
+      } finally { clearTimeout(timer) }
+    }
+    function draw (r) {
+      if (/^[a-f0-9-]{36}$/i.test(r.id || '')) { runId = r.id; card.dataset.capabilityGap = runId }
+      var stateText = {awaiting_approval:t('gap.awaitingApproval'),awaiting_scope_registration:t('gap.awaitingScopeRegistration'),development_planning:t('gap.developmentPlanning'),handoff_pending:t('gap.handoffPending'),needs_attention:t('gap.needsAttention'),resuming:t('gap.resuming'),completed:t('gap.completed')}
+      content.replaceChildren(); content.appendChild(el('h3','',t('gap.title'))); content.appendChild(el('p','meta',stateText[r.state] || t('gap.needsAttention')))
+      content.appendChild(el('strong','',t('gap.original'))); content.appendChild(el('p','',r.originalGoal)); content.appendChild(el('p','',r.proposal.diagnosis))
+      var readDate = r.readRequest && Array.isArray(r.readRequest.dates) ? r.readRequest.dates.join(' — ') + ' (America/Winnipeg)' : ''
+      if (readDate) content.appendChild(el('p','meta',readDate))
+      var details = el('details'), summary = el('summary','',t('gap.solution')), steps = el('ol'); details.appendChild(summary)
+      r.proposal.steps.forEach(function (s) { steps.appendChild(el('li','',s)) }); details.appendChild(steps); content.appendChild(details)
+      content.appendChild(el('p','meta',r.proposal.impact)); content.appendChild(el('p','meta',r.proposal.risk))
+      if (!r.proposal.scope) content.appendChild(el('p','meta',t('gap.scopePending')))
+      else { content.appendChild(el('p','meta',t('gap.scopeRegistered'))); content.appendChild(el('code','',r.proposal.scope.files.join(', '))) }
+      function button (label, op) {
+        var b = el('button','',label); b.type = 'button'; b.disabled = busy
+        b.addEventListener('click', async function () {
+          if (busy || conv !== active) return
+          if (op === 'approve' && !window.confirm(t('gap.approvalConfirm') + '\n\n' + r.originalGoal + '\n' + readDate + '\n' + r.proposal.steps.join('\n') + '\n\n' + r.proposal.impact + '\n' + r.proposal.risk + '\n' + (r.proposal.scope ? r.proposal.scope.files.join(', ') : t('gap.scopePending')))) return
+          busy = true; b.disabled = true
+          try {
+            var body = {op:op,id:runId,conversationId:conv.cid,hash:r.proposalHash}
+            if (op === 'resume') { resumeId = resumeId || crypto.randomUUID(); body.requestId = resumeId }
+            var value = await request(body); busy = false; draw(value.run)
+            if (value.run.taskPlanRunId && !value.run.resumeResult) setTimeout(load,1000)
+          } catch (e) { content.appendChild(el('p','meta',e.message === 'capability_unverified' ? t('gap.unverified') : t('gap.failed'))) }
+          finally { busy = false; b.disabled = false }
+        }); content.appendChild(b)
+      }
+      if (r.state === 'awaiting_approval') button(t('gap.approve'),'approve')
+      if (r.scopeRefreshAvailable === true) button(t('gap.refreshScope'),'refreshScope')
+      if (r.resumeAvailable === true && !r.resumeResult) button(t('gap.resume'),'resume')
+      else if (r.development && r.development.state === 'completed' && !r.resumeResult) content.appendChild(el('p','meta',t('gap.unverified')))
+      var currentPlanId = r.development && r.development.taskPlanRunId || r.taskPlanRunId
+      if (currentPlanId && childId !== currentPlanId) { nested.replaceChildren(); childId = currentPlanId; renderTaskPlan({body:nested},childId) }
+      var log = el('details'); log.appendChild(el('summary','',t('gap.details'))); log.appendChild(el('pre','',JSON.stringify({needs:r.proposal.needs,criteria:r.proposal.criteria,task:r.developmentTask,steps:r.steps},null,2))); content.appendChild(log)
+      if (r.resumeResult) content.appendChild(renderMarkdown(r.resumeResult.reply))
+    }
+    async function load () {
+      if (!card.isConnected || conv !== active || document.visibilityState === 'hidden' || busy || loading) return
+      loading = true
+      try { var v = await request(); if (busy || conv !== active || !card.isConnected) return; if (/^[a-f0-9-]{36}$/i.test(v.run.replacementRunId || '')) { runId = v.run.replacementRunId; v = await request(); if (busy || conv !== active || !card.isConnected) return }; draw(v.run); if (v.run.taskPlanRunId && !v.run.resumeResult) setTimeout(load,10000) }
+      catch (_) { content.appendChild(el('p','meta',t('gap.failed'))) }
+      finally { loading = false }
+    }
+    if (initial) draw(initial)
+    load()
+  }
+  function renderTaskPlan (turn, runId) {
+    if (!/^[a-f0-9-]{36}$/i.test(runId || '')) return
+    var card = el('div', 'project-work-card'), content = el('div'), nested = el('div')
+    turn.body.appendChild(card); var activity = createWorkActivity(card); card.appendChild(content); card.appendChild(nested)
+    var busy = false, preparing = false, workShown = false, taskShown = false
+    async function request (body) {
+      var controller = new AbortController(), timeout = setTimeout(function () { controller.abort() }, 135000)
+      try {
+        var r = await fetch('/api/v1/task-plan' + (body ? '' : '/' + encodeURIComponent(runId)), { method: body ? 'POST' : 'GET', credentials: 'same-origin', redirect: 'error', signal: controller.signal, headers: body ? { 'content-type': 'application/json' } : {}, body: body ? JSON.stringify(body) : undefined })
+        var v = await r.json(); if (!r.ok || v.error) throw Error(v.error || 'unavailable'); return v
+      } finally { clearTimeout(timeout) }
+    }
+    function draw (r) {
+      if (r.updatedPlanRunId && r.updatedPlanRunId !== runId) { runId = r.updatedPlanRunId; setTimeout(read, 0); return }
+      var execution = r.execution, executing = execution && ['queued', 'reading', 'drafting', 'checking', 'coding', 'reviewing'].includes(execution.state)
+      var visible = execution ? Object.assign({}, execution, { activityKind: execution.child && execution.child.kind, steps: (r.steps || []).concat(execution.steps, execution.previousChildSteps || [], execution.child ? execution.child.steps : []), generated: execution.child && execution.child.generated, result: execution.child && execution.child.result }) : r
+      var adopted = r.adoption && r.adoption.action === 'adopt' && r.adoption.state === 'completed' && r.adoption.appliedToLive === true && r.adoption.commit && r.adoption.loaded && r.adoption.loaded.bootCommit === r.adoption.commit
+      activity.update(adopted ? Object.assign({}, r.adoption, { steps: (visible.steps || []).concat(r.adoption.steps || []) }) : visible, adopted ? 'adoption' : execution ? 'work' : 'plan')
+      clear(content)
+      var report = el('details', 'work-plan-report'); report.appendChild(el('summary', '', t('workActivity.planDetails')))
+      report.appendChild(el('p', '', t('taskPlan.boundary')))
+      if (r.effort) report.appendChild(el('p', '', t('taskPlan.effort', { effort: r.effort })))
+      if (r.evidence) report.appendChild(el('p', '', r.evidence.profile + ' · ' + r.evidence.revision))
+      if (r.result) {
+        content.appendChild(el('h4', '', r.result.goal))
+        if (r.result.capability && r.result.capability.status === 'unsupported') {
+          content.appendChild(el('p', '', t('taskPlan.outOfScope')))
+          content.appendChild(el('p', '', r.result.capability.explanation))
+          content.appendChild(el('strong', '', t('taskPlan.missingCapabilities')))
+          var missingCapabilities = el('ul')
+          r.result.capability.missingCapabilities.forEach(function (text) { missingCapabilities.appendChild(el('li', '', text)) })
+          content.appendChild(missingCapabilities)
+        }
+        ;[["steps", t('taskPlan.steps')], ["acceptanceChecks", t('taskPlan.acceptanceChecks')], ["questions", t('taskPlan.questions')], ["risks", t('taskPlan.risks')]].forEach(function (entry) {
+          var key = entry[0]
+          if (!r.result[key].length) return
+          var target = key === 'questions' ? content : report
+          target.appendChild(el('strong', '', entry[1]))
+          var list = el('ul'); r.result[key].forEach(function (text) { list.appendChild(el('li', '', text)) }); target.appendChild(list)
+        })
+        report.appendChild(el('strong', '', t('taskPlan.citations')))
+        r.result.citations.forEach(function (c) { var f = r.evidence.files.find(function (f) { return f.evidenceId === c.evidenceId }); report.appendChild(el('pre', '', f.path + ':' + c.startLine + '-' + c.endLine + '\n' + c.quote)) })
+        if (!r.executionAvailable && !execution && r.state === 'completed' && r.evidence && ['context', 'interface', 'chat'].includes(r.evidence.profile) && !r.taskRunId && !r.workRunId && !r.registrationPreparation && !r.preparation) content.appendChild(el('p', '', t('workActivity.nextDraft')))
+      }
+      content.appendChild(report)
+      if (execution) {
+        content.appendChild(el('p', '', adopted ? t('confirmedWork.applied') : executing ? t('confirmedWork.running') : execution.state === 'completed' ? t('confirmedWork.completed') : execution.state === 'cancelled' ? t('workActivity.cancelled') : t('confirmedWork.stopped')))
+        if (r.adoptionUnavailable) content.appendChild(el('p', '', t('confirmedWork.adoptionUnknown')))
+        if (execution.reason) {
+          var reasons = { worker_no_changes: t('confirmedWork.noChanges'), invalid_worker_result: t('confirmedWork.invalidResult'), review_changes_requested: t('confirmedWork.reviewBlocked'), claude_unavailable: t('confirmedWork.reviewerUnavailable'), claude_max_turns: t('confirmedWork.reviewerUnavailable'), worker_timeout: t('confirmedWork.timeout'), timed_out: t('confirmedWork.timeout'), subscription_limit_reached: t('confirmedWork.limit'), evidence_changed: t('confirmedWork.changed'), source_changed: t('confirmedWork.changed'), source_dirty: t('confirmedWork.changed'), cancellation_unconfirmed: t('confirmedWork.cancelUnconfirmed') }
+          content.appendChild(el('p', '', reasons[execution.reason] || t('confirmedWork.unconfirmed')))
+        }
+        if (executing) {
+          var stopWork = el('button', '', t('confirmedWork.stop')); stopWork.type = 'button'
+          stopWork.addEventListener('click', async function () { if (busy) return; busy = true; stopWork.disabled = true; try { draw((await request({ op: 'stop', id: runId })).run) } catch (_) { activity.unavailable() } finally { busy = false } }); content.appendChild(stopWork)
+          setTimeout(read, 2500)
+        } else {
+          var readWork = el('button', '', t('taskPlan.refresh')); readWork.addEventListener('click', read); content.appendChild(readWork)
+          if (execution.workRunId) { var resultLink = el('a', 'briefing-link', t('confirmedWork.result')); resultLink.href = '/project-work?run=' + encodeURIComponent(execution.workRunId); content.appendChild(resultLink) }
+        }
+      }
+      if (!execution && r.workRunId && !workShown) { workShown = true; renderProjectWork({ body: nested }, r.workRunId, null) }
+      if (!execution && r.taskRunId && !taskShown) { taskShown = true; renderProjectTask({ body: nested }, r.taskRunId) }
+      if (!execution && r.registrationPreparation && !r.taskRunId) { content.appendChild(el('p', '', t('taskPlan.uncertain'))); var readback = el('button', '', t('taskPlan.refresh')); readback.addEventListener('click', read); content.appendChild(readback) }
+      if (r.executionAvailable && r.executionStale && !execution && !preparing) {
+        content.appendChild(el('p', '', t('confirmedWork.changed')))
+        var updatePlan = el('button', '', t('confirmedWork.refreshPlan')); updatePlan.type = 'button'
+        updatePlan.addEventListener('click', async function () { if (busy || preparing) return; busy = true; preparing = true; updatePlan.disabled = true; try { var updated = await request({ op: 'replan', id: runId, requestId: crypto.randomUUID() }); runId = updated.run.id; preparing = false; draw(updated.run) } catch (_) { activity.unavailable(); preparing = false } finally { busy = false } }); content.appendChild(updatePlan)
+      }
+      if (r.executionAvailable && !r.executionStale && !execution && r.state === 'completed' && !r.result.questions.length && !r.registrationPreparation && !r.preparation && !preparing) {
+        var confirmationCard = el('div', 'confirmed-work')
+        confirmationCard.appendChild(el('p', '', t('confirmedWork.scope')))
+        confirmationCard.appendChild(el('p', 'meta', t('confirmedWork.delivery')))
+        var executeButton = el('button', 'briefing-action', t('confirmedWork.start')); executeButton.type = 'button'
+        executeButton.addEventListener('click', async function () {
+          if (busy || preparing) return
+          busy = true; preparing = true; executeButton.disabled = true
+          try { draw((await request({ op: 'execute', id: runId, requestId: crypto.randomUUID(), planHash: r.planHash })).run) }
+          catch (e) { activity.unavailable(); clear(content); content.appendChild(el('p', '', e.message === 'evidence_changed' ? t('confirmedWork.changed') : t('confirmedWork.unconfirmed'))); var refreshExecution = el('button', '', t('taskPlan.refresh')); refreshExecution.addEventListener('click', read); content.appendChild(refreshExecution) }
+          finally { busy = false }
+        }); confirmationCard.appendChild(executeButton); content.appendChild(confirmationCard)
+      }
+      if (!r.executionAvailable && !execution && r.state === 'completed' && r.evidence && ['context', 'interface', 'chat'].includes(r.evidence.profile) && !r.registrationPreparation && !r.preparation && !preparing) {
+        var form = el('details', 'chat-task-form'); form.appendChild(el('summary', '', t('taskPlan.newTask')))
+        var goalLabel = el('label', '', t('projectTask.goal')), goal = el('textarea'); goal.maxLength = 3000; goal.value = r.result.goal; goalLabel.appendChild(goal); form.appendChild(goalLabel)
+        var criteriaLabel = el('label', '', t('projectTask.criteria')), criteria = el('textarea'); criteria.maxLength = 12000; criteria.value = r.result.acceptanceChecks.join('\n'); criteriaLabel.appendChild(criteria); form.appendChild(criteriaLabel)
+        var scope = el('fieldset'), selectedFiles = []; scope.appendChild(el('legend', '', t('projectTask.scope')))
+        var profileFiles = { context: ['src/context/contextResult.js', 'src/context/toolGateway.js'], interface: ['src/demo/assets/sidebar.js', 'src/demo/assets/sidebar.css'], chat: ['src/demo/assets/index.html', 'src/demo/assets/app.js', 'src/demo/assets/app.css'] }[r.evidence.profile]
+        ;profileFiles.forEach(function (file) { var label = el('label', '', file), check = el('input'); check.type = 'checkbox'; check.checked = false; label.appendChild(check); scope.appendChild(label); selectedFiles.push({ file: file, check: check }) }); form.appendChild(scope)
+        var confirmation = el('label', '', t('taskPlan.confirmDraft')), checked = el('input'); checked.type = 'checkbox'; confirmation.appendChild(checked); form.appendChild(confirmation)
+        var draftButton = el('button', '', t('projectTask.start')); draftButton.type = 'button'; draftButton.disabled = true
+        var inputError = el('p'); inputError.setAttribute('role', 'status'); form.appendChild(inputError)
+        function enableDraft () { draftButton.disabled = busy || preparing || !checked.checked || !selectedFiles.some(function (v) { return v.check.checked }) }
+        checked.addEventListener('change', enableDraft); selectedFiles.forEach(function (v) { v.check.addEventListener('change', enableDraft) })
+        draftButton.addEventListener('click', async function () {
+          if (busy || preparing || !checked.checked || !selectedFiles.some(function (v) { return v.check.checked })) return
+          var acceptedCriteria = criteria.value.split('\n').map(function (s) { return s.trim() }).filter(Boolean)
+          if (!goal.value.trim() || goal.value.includes('\0') || goal.value.length > 3000 || !acceptedCriteria.length || acceptedCriteria.length > 12 || acceptedCriteria.some(function (s) { return s.length > 1000 || s.includes('\0') })) { inputError.textContent = t('taskPlan.invalidDraft'); return }
+          preparing = true; busy = true; draftButton.disabled = true
+          try { var value = await request({ op: 'register', id: runId, requestId: crypto.randomUUID(), goal: goal.value, criteria: acceptedCriteria, editable: selectedFiles.filter(function (v) { return v.check.checked }).map(function (v) { return v.file }) }); draw(value.run) }
+          catch (_) { clear(content); content.appendChild(el('p', '', t('taskPlan.uncertain'))); var refreshDraft = el('button', '', t('taskPlan.refresh')); refreshDraft.addEventListener('click', read); content.appendChild(refreshDraft) }
+          finally { busy = false }
+        }); form.appendChild(draftButton); content.appendChild(form)
+      }
+      if (!r.executionAvailable && !execution && r.state === 'completed' && r.executableRecipe && !r.preparation && !r.registrationPreparation && !preparing) {
+        var button = el('button', '', t('taskPlan.prepare'))
+        button.addEventListener('click', async function () {
+          if (busy || preparing) return
+          preparing = true; busy = true; button.disabled = true
+          try {
+            var v = await request({ op: 'prepare', id: runId, requestId: crypto.randomUUID() })
+            if (!workShown && v.work && v.work.run) { workShown = true; renderProjectWork({ body: nested }, v.work.run.id, v.work) }
+            draw(v.run)
+          } catch (_) { clear(content); content.appendChild(el('p', '', t('taskPlan.uncertain'))); var refresh = el('button', '', t('taskPlan.refresh')); refresh.addEventListener('click', read); content.appendChild(refresh) }
+          finally { busy = false }
+        }); content.appendChild(button)
+      }
+      if (['queued', 'running'].includes(r.state)) {
+        var cancel = el('button', '', t('taskPlan.cancel'))
+        cancel.addEventListener('click', async function () { if (busy) return; busy = true; cancel.disabled = true; try { await request({ op: 'cancel', id: runId }) } catch (_) { content.appendChild(el('p', '', t('taskPlan.uncertain'))) } finally { busy = false; read() } }); content.appendChild(cancel)
+        setTimeout(read, 2500)
+      }
+    }
+    async function read () {
+      if (busy) return
+      busy = true
+      try {
+        var v = await request()
+        if (v.run.execution && v.run.execution.state === 'completed' && v.run.execution.workRunId) {
+          var adoptionController = new AbortController(), adoptionTimeout = setTimeout(function () { adoptionController.abort() }, 12000)
+          try {
+            var adoptionResponse = await fetch('/api/v1/project-adoption', { credentials: 'same-origin', redirect: 'error', signal: adoptionController.signal })
+            if (!adoptionResponse.ok) throw Error('unavailable')
+            var adoptionValue = await adoptionResponse.json()
+            if (!Array.isArray(adoptionValue.runs)) throw Error('unavailable')
+            v.run.adoption = adoptionValue.runs.find(function (a) { return a.workRunId === v.run.execution.workRunId }) || null
+          } catch (_) { v.run.adoptionUnavailable = true } finally { clearTimeout(adoptionTimeout) }
+        }
+        draw(v.run)
+      }
+      catch (_) { activity.unavailable(); clear(content); content.appendChild(el('p', '', t('taskPlan.error'))); var refresh = el('button', '', t('taskPlan.refresh')); refresh.addEventListener('click', read); content.appendChild(refresh) }
+      finally { busy = false }
+    }
+    read()
+  }
+  function renderProjectTask (turn, runId) {
+    if (!/^[a-f0-9-]{36}$/i.test(runId || '')) return
+    var card = el('section', 'project-work-card'), content = el('div'), nested = el('div'); turn.body.appendChild(card); var activity = createWorkActivity(card); card.appendChild(content); card.appendChild(nested)
+    var busy = false, ticket = null, workShown = false, uncertain = false
+    var labels = { queued: t('projectTask.state.queued'), reading: t('projectTask.state.reading'), drafting: t('projectTask.state.drafting'), reviewing: t('projectTask.state.reviewing'), awaiting_approval: t('projectTask.state.awaitingApproval'), registered: t('projectTask.state.registered'), failed: t('projectTask.state.failed'), cancelled: t('projectTask.state.cancelled'), timed_out: t('projectTask.state.timedOut'), interrupted: t('projectTask.state.interrupted'), needs_attention: t('projectTask.state.needsAttention') }
+    async function api (body) {
+      var controller = new AbortController(), timeout = setTimeout(function () { controller.abort() }, 135000)
+      try { var response = await fetch('/api/v1/project-tasks' + (body ? '' : '/' + encodeURIComponent(runId)), { method: body ? 'POST' : 'GET', credentials: 'same-origin', redirect: 'error', signal: controller.signal, headers: body ? { 'content-type': 'application/json' } : {}, body: body ? JSON.stringify(body) : undefined }); var value = await response.json(); if (!response.ok || response.redirected || value.error) throw Error('unavailable'); return value } finally { clearTimeout(timeout) }
+    }
+    function detail (name, value) { var box = el('details'); box.appendChild(el('summary', '', name)); box.appendChild(el('pre', '', typeof value === 'string' ? value : JSON.stringify(value, null, 2))); content.appendChild(box) }
+    function button (name, action) { var b = el('button', '', name); b.type = 'button'; b.addEventListener('click', function () { if (!busy) action(b) }); content.appendChild(b); return b }
+    async function act (body, b) {
+      if (busy) return; busy = true; ticket = null; b.disabled = true
+      try { var v = await api(body); uncertain = false; if (v.work && v.work.run && !workShown) { workShown = true; renderProjectWork({ body: nested }, v.work.run.id, v.work) }; draw(v) }
+      catch (_) { activity.unavailable(); uncertain = true; clear(content); content.appendChild(el('p', '', t('projectTask.uncertain'))); button(t('projectTask.refresh'), read) }
+      finally { busy = false }
+    }
+    function draw (v) {
+      var r = v.run; if (!r) throw Error('unavailable'); ticket = v.approval; clear(content)
+      activity.update(r, 'task')
+      content.appendChild(el('strong', '', t('projectTask.title'))); content.appendChild(el('p', '', r.input.goal)); detail(t('projectTask.criteria'), r.input.criteria.join('\n'))
+      detail(t('projectTask.source'), { revision: r.input.bootCommit, editable: r.input.editable, readonly: r.registration && r.registration.workOrder.readonlyFiles, approvalHash: r.approvalHash, expiresAt: r.expiresAt, reason: r.reason || null, steps: r.steps })
+      if (r.generated) detail(t('projectTask.tests'), { expectedTests: r.generated.expectedTests, testCode: r.generated.testCode, executed: false })
+      if (r.acceptanceReview) detail(t('projectTask.review'), r.acceptanceReview)
+      if (r.workRunId && !workShown) { workShown = true; renderProjectWork({ body: nested }, r.workRunId, null) }
+      if (r.state === 'awaiting_approval' && ticket && Date.parse(ticket.expiresAt || r.expiresAt) > Date.now()) {
+        var label = el('label', '', t('projectTask.confirm')), check = el('input'); check.type = 'checkbox'; label.appendChild(check); content.appendChild(label)
+        var approve = button(t('projectTask.approve'), function (b) { if (!check.checked || !ticket) return; var current = ticket; act({ op: 'approve', id: current.id, hash: current.hash, nonce: current.nonce }, b) }); approve.disabled = true; check.addEventListener('change', function () { approve.disabled = busy || !check.checked })
+      }
+      if (r.state === 'registered' && !r.preparation && !uncertain) button(t('projectTask.prepare'), function (b) { act({ op: 'prepare', id: runId, requestId: crypto.randomUUID() }, b) })
+      if (['queued', 'reading', 'drafting', 'reviewing', 'awaiting_approval'].includes(r.state)) button(t('projectTask.cancel'), function (b) { act({ op: 'cancel', id: runId }, b) })
+      button(t('projectTask.refresh'), read)
+      if (['queued', 'reading', 'drafting', 'reviewing'].includes(r.state)) setTimeout(read, 2500)
+    }
+    async function read () { if (busy) return; busy = true; try { draw(await api()) } catch (_) { activity.unavailable(); ticket = null; clear(content); content.appendChild(el('p', '', t('projectTask.uncertain'))); button(t('projectTask.refresh'), read) } finally { busy = false } }
+    read()
+  }
+  function renderProjectWork (turnEl, runId, prepared) {
+    if (!/^[a-f0-9-]{36}$/i.test(runId)) return
+    var card = el('section', 'briefing-run'); turnEl.body.appendChild(card)
+    var activity = createWorkActivity(card)
+    var status = el('p', 'sec-t'); status.setAttribute('role', 'status'); card.appendChild(status)
+    var details = el('div', 'sec-b'); card.appendChild(details)
+    var actions = el('div', 'briefing-actions'); card.appendChild(actions)
+    var approval = prepared && prepared.approval; var adoptionApproval = null
+    var run = prepared && prepared.run; var adoption = null; var timer; var busy = false; var polling = false
+    var labels = { awaiting_approval: t('projectWork.awaitingApproval'), queued: t('workerFlow.queued'), checking: t('workerFlow.checking'), coding: t('workerFlow.coding'), reviewing: t('workerFlow.reviewing'), completed: t('workerFlow.completed'), failed: t('workerFlow.failed'), cancelled: t('projectWork.cancelled'), interrupted: t('workerFlow.interrupted'), needs_attention: t('workerFlow.needsAttention'), testing: t('projectAdoption.testing'), applying: t('projectAdoption.applying'), awaiting_restart: t('projectAdoption.awaitingRestart') }
+    function section (name, value) {
+      var box = el('details'); box.appendChild(el('summary', null, name))
+      box.appendChild(el('pre', null, typeof value === 'string' ? value : JSON.stringify(value, null, 2))); details.appendChild(box)
+    }
+    function api (lane, body) {
+      var controller = new AbortController(); var timeout = setTimeout(function () { controller.abort() }, 135000)
+      return fetch('/api/v1/' + lane, Object.assign({ credentials: 'same-origin', signal: controller.signal }, body ? { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) } : {}))
+        .then(function (r) { if (!r.ok || r.redirected) throw Error(); return r.json() })
+        .then(function (v) { if (v.error) throw Error(); return v }).finally(function () { clearTimeout(timeout) })
+    }
+    function button (name, action) {
+      var b = el('button', 'briefing-action', name); b.type = 'button'; b.disabled = busy
+      b.addEventListener('click', function () { if (!busy) action() }); actions.appendChild(b); return b
+    }
+    function failed () {
+      activity.unavailable()
+      approval = null; adoptionApproval = null; clearTimeout(timer); clear(actions)
+      status.textContent = t('chatWork.statusFailed'); button(t('workflow.reload'), poll)
+      var a = el('a', 'briefing-link', t('projectWork.open')); a.href = '/project-work?run=' + encodeURIComponent(runId); actions.appendChild(a)
+    }
+    // One POST per explicit click; uncertain outcomes are read back, never retried.
+    function act (lane, body, apply) {
+      if (busy) return
+      busy = true; clearTimeout(timer); clear(actions); status.textContent = t('workflow.loading')
+      api(lane, body).then(function (v) { apply(v); busy = false; draw(); if (!approval && !adoptionApproval) poll() })
+        .catch(function () { busy = false; failed() })
+    }
+    function confirmation (ticket, text, lane, onApproved) {
+      if (!ticket || Date.parse(ticket.expiresAt) <= Date.now()) { approval = null; adoptionApproval = null; details.appendChild(el('p', 'meta', t('chatWork.expired'))); return }
+      section(t('projectWork.details'), { id: ticket.id, hash: ticket.hash, expiresAt: ticket.expiresAt })
+      var label = el('label'), check = el('input'); check.type = 'checkbox'; label.appendChild(check); label.appendChild(el('span', null, text)); actions.appendChild(label)
+      var b = button(t('projectWork.approve'), function () {
+        if (!check.checked) return
+        var once = ticket; approval = null; adoptionApproval = null
+        act(lane, { op: 'approve', id: once.id, hash: once.hash, nonce: once.nonce }, onApproved)
+      }); b.disabled = true; check.addEventListener('change', function () { b.disabled = !check.checked || busy })
+      timer = setTimeout(function () { approval = null; adoptionApproval = null; draw() }, Math.max(1, Date.parse(ticket.expiresAt) - Date.now()))
+    }
+    function draw () {
+      if (!run) return
+      activity.update(adoption || run, adoption ? 'adoption' : 'work')
+      clear(details); clear(actions); clearTimeout(timer)
+      status.textContent = t('chatWork.task') + ' · ' + (labels[run.state] || run.state)
+      details.appendChild(el('p', 'meta', t('projectWork.source') + ': ' + run.source.evidence.revision))
+      details.appendChild(el('p', 'meta', t('chatWork.risk')))
+      section(t('chatWork.order'), run.workOrder)
+      section(t('projectWork.details'), { source: run.source, steps: run.steps, reason: run.reason || null })
+      if (run.result) {
+        section(t('projectWork.tests'), { baseline: run.result.baseline, candidate: run.result.tests })
+        var screenshots = (run.result.tests.browser || []).filter(function (proof) { return /^browser-(zh|en)-(1280|390)\.png$/.test(proof.name) })
+        if (screenshots.length) {
+          var preview = el('details', 'ui-preview'), grid = el('div', 'ui-preview-grid')
+          preview.appendChild(el('summary', '', t('uiDesign.preview')))
+          var visual = run.review && run.review.visual
+          preview.appendChild(el('p', 'meta', visual ? (visual.verdict === 'pass' ? t('uiDesign.passed') : t('uiDesign.changes')) : t('uiDesign.unreviewed')))
+          if (visual && visual.summary) preview.appendChild(el('p', '', visual.summary))
+          screenshots.forEach(function (proof) {
+            var label = proof.locale.toUpperCase() + ' · ' + proof.width + 'px', link = el('a'), image = el('img')
+            link.href = '/api/v1/project-work/' + encodeURIComponent(runId) + '/browser/' + encodeURIComponent(proof.name); link.target = '_blank'; link.rel = 'noopener'
+            image.src = link.href; image.alt = t('uiDesign.preview') + ' · ' + label; image.loading = 'lazy'; link.appendChild(image); link.appendChild(el('span', '', label)); grid.appendChild(link)
+          })
+          preview.appendChild(grid); details.appendChild(preview)
+        }
+        ;(run.result.changes || []).forEach(function (c) { section(t('projectWork.before') + ' · ' + c.file, c.before); section(t('projectWork.after') + ' · ' + c.file, c.after) })
+      }
+      if (run.review) section(t('projectWork.review'), run.review)
+      if (run.state === 'awaiting_approval') {
+        if (approval) confirmation(approval, t('projectWork.approval'), 'project-work', function (v) { run = v.run })
+        else details.appendChild(el('p', 'meta', t('chatWork.expired')))
+        button(t('projectWork.cancel'), function () { approval = null; act('project-work', { op: 'cancel', id: runId }, function (v) { run = v.run }) })
+      } else if (['queued', 'checking', 'coding', 'reviewing'].includes(run.state)) {
+        button(t('projectWork.cancel'), function () { act('project-work', { op: 'cancel', id: runId }, function (v) { run = v.run }) })
+      }
+      if (adoption) {
+        details.appendChild(el('p', 'meta', t('projectAdoption.title') + ' · ' + (labels[adoption.state] || adoption.state)))
+        section(t('projectAdoption.title'), { id: adoption.id, state: adoption.state, action: adoption.action, reason: adoption.reason, commit: adoption.commit, loaded: adoption.loaded, steps: adoption.steps, tests: adoption.tests })
+        if (adoption.state === 'completed') details.appendChild(el('p', 'meta', t('projectAdoption.loaded') + ' · ' + adoption.loaded.bootCommit))
+        if (adoption.state === 'awaiting_approval') {
+          section(t('projectWork.source'), adoption.source.evidence); section(t('projectWork.before'), adoption.before); section(t('projectWork.after'), adoption.after)
+          if (adoptionApproval) confirmation(adoptionApproval, t('projectAdoption.approval'), 'project-adoption', function (v) { adoption = v.run })
+          else details.appendChild(el('p', 'meta', t('chatWork.expired')))
+          button(t('projectAdoption.cancel'), function () { adoptionApproval = null; act('project-adoption', { op: 'cancel', id: adoption.id }, function (v) { adoption = v.run }) })
+        }
+        if (adoption.state === 'awaiting_restart') button(t('projectAdoption.reload'), function () { act('project-adoption', { op: 'reload', id: adoption.id }, function (v) { adoption = v.run }) })
+      }
+      if (run.state === 'completed' && run.review && run.review.verdict === 'pass' && (!adoption || ['failed', 'cancelled', 'interrupted'].includes(adoption.state))) {
+        details.appendChild(el('p', 'meta', t('projectWork.result')))
+        button(t('projectAdoption.prepare'), function () { act('project-adoption', { op: 'prepare', action: 'adopt', runId: runId, requestId: crypto.randomUUID() }, function (v) { adoption = v.run; adoptionApproval = v.approval }) })
+      }
+      var link = el('a', 'briefing-link', t('projectWork.open')); link.href = '/project-work?run=' + encodeURIComponent(runId); actions.appendChild(link)
+    }
+    function poll () {
+      if (busy || polling) return
+      clearTimeout(timer); polling = true; if (!run) status.textContent = t('workflow.loading')
+      // Both reads share the single bridge control lane. Read sequentially so
+      // polling cannot reject its own second request as subscription_unavailable.
+      api('project-work/' + encodeURIComponent(runId)).then(function (workValue) {
+        return api('project-adoption').then(function (adoptionValue) { return [workValue, adoptionValue] })
+      }).then(function (values) {
+        run = values[0].run; if (!run) throw Error()
+        adoption = values[1].runs.find(function (a) { return a.workRunId === runId }) || null
+        if (run.state !== 'awaiting_approval') approval = null
+        if (!adoption || adoption.state !== 'awaiting_approval') adoptionApproval = null
+        draw()
+        if (['queued', 'checking', 'coding', 'reviewing'].includes(run.state) || (adoption && ['queued', 'testing', 'applying', 'awaiting_restart'].includes(adoption.state))) timer = setTimeout(poll, 2500)
+      }).catch(failed).finally(function () { polling = false })
+    }
+    if (run) draw(); else poll()
+  }
+
+  function renderOperatingRun (turnEl, initialId) {
+    var runId = initialId
+    if (!/^[a-f0-9-]{36}$/i.test(runId)) return
+    var card = el('section', 'briefing-run')
+    turnEl.body.appendChild(card)
+    var status = el('p', 'sec-t', t('workflow.loading')); status.setAttribute('role', 'status'); card.appendChild(status)
+    var details = el('div', 'sec-b'); card.appendChild(details)
+    var actions = el('div', 'briefing-actions'); card.appendChild(actions)
+    var timer = null; var actionPending = false; var polling = false; var generation = 0
+    var states = { queued: t('workflow.queued'), running: t('workflow.running'), completed: t('workflow.completed'),
+      partial: t('workflow.partial'), unavailable: t('workflow.unavailable'), failed: t('workflow.failed'),
+      cancelled: t('workflow.cancelled'), timed_out: t('workflow.timedOut'), interrupted: t('workflow.interrupted'),
+      pending: t('workflow.pending'), not_run: t('workflow.notRun'), ok: t('workflow.readOk') }
+    var names = { 'aroma.replenishment': t('manager.replenishment'), 'aroma.invoices': t('manager.invoices'),
+      'calendar.agenda': t('manager.calendar'), 'drive.documents': t('manager.documents'),
+      'local.tasks': t('manager.tasks'), 'local.approvals': t('manager.approvals'), 'memory.decisions': t('manager.decisions') }
+    function button (text, action) {
+      var b = el('button', 'briefing-action', text); b.type = 'button'; b.addEventListener('click', action); actions.appendChild(b)
+    }
+    function requestRun (url, options) {
+      var controller = new AbortController()
+      var timeout = setTimeout(function () { controller.abort() }, 12000)
+      return fetch(url, Object.assign({ credentials: 'same-origin', signal: controller.signal }, options || {}))
+        .then(function (r) { if (!r.ok || r.redirected) throw Error(); return r.json() })
+        .finally(function () { clearTimeout(timeout) })
+    }
+    function failed () {
+      status.textContent = t('workflow.statusFailed'); clear(actions)
+      button(t('workflow.reload'), poll)
+    }
+    function action (op) {
+      if (actionPending) return
+      actionPending = true; generation++; clearTimeout(timer); clear(actions); status.textContent = t('workflow.loading')
+      requestRun('/api/v1/manager/runs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ op: op, id: runId }) })
+        .then(function (data) { runId = data.run.id; draw(data.run) })
+        .catch(failed).finally(function () { actionPending = false })
+    }
+    function draw (run) {
+      clear(details); clear(actions)
+      status.textContent = (states[run.state] || t('workflow.failed')) + ' · ' + (run.finishedAt || run.startedAt)
+      if (run.retryOf) details.appendChild(el('p', 'meta', t('workflow.retryOf', { id: run.retryOf })))
+      var list = el('ul', 'briefing-steps')
+      ;(run.steps || []).forEach(function (step) {
+        list.appendChild(el('li', null, (names[step.tool] || step.tool) + ' · ' + (states[step.state] || t('workflow.failed'))))
+      })
+      details.appendChild(list)
+      ;(run.sections || []).forEach(function (section) {
+        if (section.state !== 'ok') return
+        var box = el('div', 'briefing-section')
+        box.appendChild(el('strong', null, (names[section.tool] || section.tool) + ' · ' + t('manager.received') + ': ' + section.count))
+        box.appendChild(el('div', 'meta', t('manager.source') + ': ' + section.source + ' · ' + (section.checkedAt || '—')))
+        if (!section.complete || section.truncated) box.appendChild(el('div', 'meta', t('manager.limited')))
+        if (section.layer === 'memory') box.appendChild(el('div', 'meta', t('manager.memoryNote')))
+        ;(section.rows || []).slice(0, 3).forEach(function (row) {
+          var line = el('p', 'meta', row.title || row.id || t('manager.untitled'))
+          if (row.text) line.appendChild(el('span', null, ' · ' + row.text.slice(0, 240)))
+          box.appendChild(line)
+        })
+        details.appendChild(box)
+      })
+      var link = el('a', 'briefing-link', t('workflow.open')); link.href = '/manager?run=' + encodeURIComponent(runId); actions.appendChild(link)
+      if (run.state === 'queued' || run.state === 'running') {
+        button(t('workflow.cancel'), function () { action('cancel') })
+        details.appendChild(el('p', 'meta', t('workflow.cancelNote')))
+        timer = setTimeout(poll, 1000)
+      } else if (run.retryId || ['partial', 'unavailable', 'failed', 'cancelled', 'timed_out', 'interrupted'].indexOf(run.state) !== -1) {
+        button(run.retryId ? t('workflow.openRetry') : t('workflow.retry'), function () { action('retry') })
+      }
+    }
+    function poll () {
+      clearTimeout(timer)
+      if (actionPending || polling) { timer = setTimeout(poll, 1000); return }
+      polling = true; var version = generation
+      requestRun('/api/v1/manager/runs/' + encodeURIComponent(runId)).then(function (data) {
+        if (version !== generation) return
+        if (!data.run) throw Error()
+        draw(data.run)
+      }).catch(function () { if (version === generation) failed() }).finally(function () { polling = false })
+    }
+    poll()
+  }
+
+  /** What the server says the turn actually became — shown after the fact, never before. */
+  function renderDevelopmentPlanLink (turn, runId) {
+    if (!/^[a-f0-9-]{36}$/i.test(runId || '')) return
+    var link = el('a', 'briefing-link', t('plan.open'))
+    link.href = '/development-plan?run=' + encodeURIComponent(runId)
+    turn.body.appendChild(link)
+  }
+  function renderCodeRepairLink (turn, runId) {
+    if (!/^[a-f0-9-]{36}$/i.test(runId || '')) return
+    var link = el('a', 'briefing-link', t('repair.title'))
+    link.href = '/code-repair?run=' + encodeURIComponent(runId)
+    turn.body.appendChild(link)
+  }
+  function renderCodeDiagnosisLink (turn, runId) {
+    if (!/^[a-f0-9-]{36}$/i.test(runId || '')) return
+    var link = el('a', 'briefing-link', t('work.open'))
+    link.href = '/code-diagnosis?run=' + encodeURIComponent(runId)
+    turn.body.appendChild(link)
+  }
+
   /** What the server says the turn actually became — shown after the fact, never before. */
   // ⛔ Thunks, not key strings — a dynamic key is the one structural line (HR-48).
   var LANE_NAMES = {
@@ -1165,12 +2139,19 @@
     msg.disabled = p
     // Send stays disabled while busy AND while the box is empty, so the button never
     // invites a click that would do nothing.
-    send.disabled = p || msg.value.trim() === ''
+    refreshImages()
     if (picker) picker.disabled = p
+    if (companyPicker) companyPicker.disabled = p
+    if (brainMode) brainMode.disabled = p || brainSaving
+    renderEfforts()
   }
 
-  function submit () {
-    if (pending) return
+  function assistantHistory (response) {
+    return { role: 'assistant', text: response.sourceBound === true ? t('company.mailHistoryReceipt') : response.reply, sourceBound: response.sourceBound === true }
+  }
+
+  async function submit () {
+    if (pending || brainSaving) return
     /**
      * ⛔ TWO THINGS BEFORE ANYTHING IS SENT, AND BOTH ARE HR-42.
      *
@@ -1191,8 +2172,23 @@
     var carry = attachedKind
     if (!active && carry) newConversation(false)
     if (!active) return
-    var text = msg.value.trim()
+    var pictures = (active.pendingImages || []).slice()
+    if (active.imagePreparing) return
+    if (pictures.length && (carry || forcedMode)) { imageNotice(t('imageChat.context')); return }
+    var text = msg.value.trim() || (pictures.length ? t('imageChat.defaultRequest') : '')
     if (!text) return
+    if (topicController) {
+      var topicConversation = active
+      setPending(true)
+      var linked = await topicController.link(topicConversation.cid)
+      setPending(false)
+      if (!linked || active !== topicConversation) return
+    }
+    if (SUBSCRIPTION_CHAT && CENTRAL_MODELS) {
+      var modelConversation = active
+      await loadChatModels()
+      if (!brainReady || active !== modelConversation) return
+    }
     clearErrors()
     if (active.history.length === 0) {
       active.title = titleFrom(text)
@@ -1201,7 +2197,9 @@
     }
     var conv = active
     clearEmptyScreen(conv)   // captured BEFORE anything renders: a click must not steal this turn
-    addUser(text, conv)
+    drawImages(addUser(text, conv), pictures)
+    conv.pendingImages = []
+    imageNotice('')
     conv.history.push({ role: 'user', text: text })
     msg.value = ''
     autoGrow()
@@ -1213,13 +2211,28 @@
     conv.working = true
     renderConvList()
     var typing = addTyping(conv)
+    var websiteRequestId = window.crypto && window.crypto.randomUUID ? window.crypto.randomUUID() : null
+    var statusBusy = false
+    var websitePoll = websiteRequestId && setInterval(function () {
+      if (statusBusy) return
+      statusBusy = true
+      Promise.all(['/api/v1/demo/website-status/', '/api/v1/demo/investigations/'].map(function (url) {
+        return fetch(url + websiteRequestId, { credentials: 'same-origin' }).then(function (r) { return r.ok ? r.json() : null })
+      }))
+        .then(function (v) {
+          if (v[0] && v[0].run) typing.setWebsiteStage(v[0].run.state)
+          if (v[1] && v[1].run) typing.setInvestigationStage(v[1].run)
+        })
+        .catch(function () {}).then(function () { statusBusy = false })
+    }, 2000)
+    var stopWebsitePoll = function () { if (websitePoll) clearInterval(websitePoll) }
     // ONE-SHOT: a shortcut applies to THIS message and is cleared immediately. A forced
     // lane that quietly persisted would be the old upfront mode choice returning by
     // stealth — worse than the buttons, because nothing on screen would say so.
     var forced = forcedMode
     setForced(null)
 
-    fetch('/api/v1/demo/intake', {
+    var requestOptions = {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       credentials: 'same-origin',
@@ -1228,14 +2241,21 @@
       // ⛔ THE SECTION ID TRAVELS, NEVER THE LINES. The server re-derives them from its own
       // store, so text the browser composed can never enter the prompt wearing the section's
       // name — the same discipline as workRequestRoute re-deriving the file from his words.
-      body: JSON.stringify(Object.assign(
+      body: JSON.stringify(pictures.length ? { message: text, images: pictures, conversationId: conv.cid, chatLevel: chatLevel.value, chatModel: chatModel } : Object.assign(
         forced
           ? { message: text, interactionMode: forced, history: conv.history, providerHint: provider, previousLane: previousLane, conversationId: conv.cid }
           : { message: text, history: conv.history, providerHint: provider, previousLane: previousLane, conversationId: conv.cid },
-        carry ? { attachSection: carry } : {}))
-    }).then(function (r) {
+        carry ? { attachSection: carry } : {},
+        websiteRequestId ? { websiteRequestId: websiteRequestId, workflowRequestId: websiteRequestId } : {},
+        SUBSCRIPTION_CHAT && chatLevel ? { chatLevel: chatLevel.value, chatModel: chatModel } : {}))
+    }
+    var response = pictures.length ? fetch('/api/v1/demo/image-intake', requestOptions) : fetch('/api/v1/demo/intake', requestOptions)
+    if (topicController) topicController.submitted()
+    response.then(function (r) {
       return r.json().catch(function () { return {} }).then(function (j) { return { status: r.status, body: j } })
     }).then(function (o) {
+      stopWebsitePoll()
+      typing.stopWaiting()
       if (typing.root.parentNode) typing.root.parentNode.removeChild(typing.root)
       // Remember what this turn became, so a short reply next time continues it rather
       // than arriving as a fresh, contentless input. Chat responses carry the lane
@@ -1244,18 +2264,24 @@
         : (o.body && o.body.stage === 'SHADOW_ONLY') ? 'email_draft'
           : (o.body && (o.body.demoOutcome === 'execution_proposal' || o.body.demoOutcome === 'clarification')) ? 'proposal'
             : previousLane
+      if (pictures.length && o.status !== 200) conv.pendingImages = pictures
       labelServedBy(render(o.status, o.body, conv), o.body)
-      if (o.body && o.body.reply) conv.history.push({ role: 'assistant', text: o.body.reply })
+      // Mail stays in the displayed answer. Model history receives a neutral
+      // receipt even if an earlier source question falls out of its context.
+      if (o.body && o.body.reply) conv.history.push(assistantHistory(o.body))
       // The server has just written this turn, so the conversation is now history: it
       // survives a refresh and it can be deleted. `loaded` is set with it — the thread on
       // screen IS the transcript, so re-selecting this conversation must not re-fetch and
       // repaint what the Owner is already looking at.
       // updatedAt is set here too, so a live conversation sorts and groups beside the
       // stored ones instead of falling into 更早 with no time at all.
-      if (o.status === 200) { conv.stored = true; conv.loaded = true; conv.updatedAt = new Date().toISOString() }
+      if (o.status === 200 && o.body.historySaved !== false) { conv.stored = true; conv.loaded = true; conv.updatedAt = new Date().toISOString() }
       renderConvList() // the conversation has content now, so it enters the list
     }).catch(function () {
+      stopWebsitePoll()
+      typing.stopWaiting()
       if (typing.root.parentNode) typing.root.parentNode.removeChild(typing.root)
+      if (pictures.length) conv.pendingImages = pictures
       addError(t('err.connection'), conv)
     }).then(function () {
       // THE ONE PLACE THAT RUNS ON EVERY OUTCOME. Clearing this in the success handler and
@@ -1291,9 +2317,59 @@
   function render (status, res, conv) {
     res = res || {}
     if (status === 403) return addError(t('err.demoDisabled'), conv)
-    if (status === 400) return addError(t('err.badInput'), conv)
+    if (status === 400) return addError(res.error && res.error.message ? res.error.message : t('err.badInput'), conv)
     if (status >= 500 || (res.error && !res.blocked)) {
       return addError(errorLine(res), conv)
+    }
+    if (res.capabilityGapRunId) {
+      var gapTurn = addBot(res.reply, conv); renderCapabilityGap(gapTurn,res.capabilityGapRunId,res.capabilityGapResolution,conv); return gapTurn
+    }
+    if (res.capabilityGapPersistence === 'unavailable') addError(t('gap.failed'),conv)
+    if (res.investigation) {
+      var investigationTurn = addBot(res.reply, conv)
+      renderInvestigation(investigationTurn, res.investigation, res.investigationRunId)
+      return investigationTurn
+    }
+    if (res.actionContinuation && res.investigationRunId) {
+      var actionTurn=addBot(res.reply,conv)
+      renderSchedulerChat(actionTurn,res.investigationRunId)
+      return actionTurn
+    }
+    if (res.taskPlanRunId) {
+      var taskTurn = addBot(res.reply, conv)
+      if (res.historySaved === false) addMeta(taskTurn.body, t('workflow.historyFailed'))
+      renderTaskPlan(taskTurn, res.taskPlanRunId)
+      return taskTurn
+    }
+    if (res.projectWorkRunId) {
+      var workTurn = addBot(res.reply, conv)
+      if (res.historySaved === false) addMeta(workTurn.body, t('workflow.historyFailed'))
+      renderProjectWork(workTurn, res.projectWorkRunId, res.projectWork)
+      return workTurn
+    }
+    if (res.operatingRunId) {
+      var briefingTurn = addBot(res.reply, conv)
+      if (res.historySaved === false) addMeta(briefingTurn.body, t('workflow.historyFailed'))
+      renderOperatingRun(briefingTurn, res.operatingRunId)
+      return briefingTurn
+    }
+    if (res.developmentPlanRunId) {
+      var planTurn = addBot(res.reply, conv)
+      if (res.historySaved === false) addMeta(planTurn.body, t('workflow.historyFailed'))
+      renderDevelopmentPlanLink(planTurn, res.developmentPlanRunId)
+      return planTurn
+    }
+    if (res.codeRepairRunId) {
+      var repairTurn = addBot(res.reply, conv)
+      if (res.historySaved === false) addMeta(repairTurn.body, t('workflow.historyFailed'))
+      renderCodeRepairLink(repairTurn, res.codeRepairRunId)
+      return repairTurn
+    }
+    if (res.codeDiagnosisRunId) {
+      var diagnosisTurn = addBot(res.reply, conv)
+      if (res.historySaved === false) addMeta(diagnosisTurn.body, t('workflow.historyFailed'))
+      renderCodeDiagnosisLink(diagnosisTurn, res.codeDiagnosisRunId)
+      return diagnosisTurn
     }
     if (res.blocked === true) {
       var b = addBot(res.reply || '', conv)
@@ -1333,7 +2409,13 @@
     if (res.workRequestClarification) return renderWorkRequestClarification(res.workRequestClarification, conv)
 
     if (res.demoOutcome === 'clarification') return renderProposal(res, conv)
-    if (res.talkOnly === true || res.mode === 'chat' || res.mode === 'ask' || res.mode === 'recommend') return addBot(res.reply || '', conv)
+    if (res.talkOnly === true || res.mode === 'chat' || res.mode === 'ask' || res.mode === 'recommend') {
+      var chatTurn = addBot(res.reply || '', conv)
+      if (res.hrRecheckOffer && topicController) topicController.recheckOffer(chatTurn.body, res.hrRecheckOffer)
+      if (res.followUpOffer && topicController) topicController.offer(chatTurn.body, res.followUpOffer)
+      if (res.historySaved === false) addMeta(chatTurn.body, t('workflow.historyFailed'))
+      return chatTurn
+    }
     return addError(t('err.unknownShape', { id: res.requestId || t('err.none') }), conv)
   }
 
@@ -1894,8 +2976,8 @@
       }).then(function (o) {
         typed.disabled = true; no.disabled = true
         if (o.status === 201) {
-          if (o.body.dispatchStatus === 'agent_execute_accepted') {
-            out.textContent = t('approve.startedInCopy')
+          if (o.body.dispatchStatus === 'agent_execute_accepted' || o.body.dispatchStatus === 'read_only_enquiry_accepted') {
+            out.textContent = o.body.dispatchStatus === 'read_only_enquiry_accepted' ? t('investigation.enquiryRunning') : t('approve.startedInCopy')
             watchProgress(sealed.approvalId, card, sealed, conv)
           } else {
             out.textContent = t('approve.confirmedNotRun')
@@ -1992,7 +3074,8 @@
       var mark = el('span', state === 'done' ? 'done-mark' : 'fail-mark', state === 'done' ? '✓' : '✕')
       row.insertBefore(mark, label)
       label.textContent = (body && body.headline) || (state === 'done' ? t('run.done') : t('run.failed'))
-      if (body && Array.isArray(body.sections)) renderResult(card, body)
+      if (body && body.enquiry && body.enquiry.enquiryId) loadEnquiry(card, body.enquiry.enquiryId)
+      else if (body && Array.isArray(body.sections)) renderResult(card, body)
       /* ⛔ ADDITIVE, AND AFTER THE CARD. The card above is untouched — same mark, same
          headline, same sections. This adds the conversation message and nothing else, from
          the same body that is already in hand: no second fetch, no second endpoint.
@@ -2045,6 +3128,20 @@
     setTimeout(tick, 400)
   }
 
+  function loadEnquiry (card, id) {
+    fetch('/api/v1/demo/enquiries/' + encodeURIComponent(id), { credentials: 'same-origin' })
+      .then(function (r) { if (!r.ok) throw Error(); return r.json() })
+      .then(function (data) {
+        var r = data.enquiry, section = el('section', 'investigation-result')
+        section.appendChild(el('h3', '', t('investigation.enquirySaved')))
+        section.appendChild(el('p', 'prose', r.payload && r.payload.answer || t('investigation.enquiryFailed')))
+        ;(r.notEstablished || []).forEach(function (line) { section.appendChild(el('p', 'wait-note', line)) })
+        var details = el('details'); details.appendChild(el('summary', '', t('investigation.details')))
+        ;(r.payload && r.payload.citations || []).forEach(function (c) { details.appendChild(el('p', '', c.path + ':' + c.startLine + '-' + c.endLine)); details.appendChild(el('blockquote', '', c.quote)) })
+        details.appendChild(el('p', 'wait-note', t('investigation.citationBoundary')))
+        section.appendChild(details); card.appendChild(section)
+      }).catch(function () { addMeta(card, t('investigation.enquiryUnavailable')) })
+  }
   function renderResult (card, body) {
     var box = el('div', 'result')
     box.appendChild(el('div', 'sec-t', t('run.result')))
@@ -2069,38 +3166,158 @@
 
   /* ── provider picker ──────────────────────────────────────────────────── */
   function currentProvider () {
+    if (SUBSCRIPTION_CHAT) {
+      for (var j = 0; j < PROVIDERS.length; j++) if (PROVIDERS[j].model === chatModel) return PROVIDERS[j]
+      return { id: brainCompany(chatModel), name: t('provider.subscriptionModel', { model: chatModel }), modelName: chatModel }
+    }
     for (var i = 0; i < PROVIDERS.length; i++) if (PROVIDERS[i].id === provider) return PROVIDERS[i]
     return PROVIDERS[0]
   }
+  function renderEfforts () {
+    if (!SUBSCRIPTION_CHAT || !chatLevel) return
+    var pv = currentProvider()
+    var levels = pv.supportsEffort === false ? ['auto'] : (pv.efforts || [])
+    var selected = modelEfforts[chatModel] || 'medium'
+    if (levels.indexOf(selected) < 0) selected = levels.indexOf(pv.defaultEffort) >= 0 ? pv.defaultEffort : levels[0] || 'auto'
+    var labels = { auto: t('chat.auto'), none: t('chat.none'), minimal: t('chat.minimal'), low: t('chat.low'), medium: t('chat.medium'), high: t('chat.high'), xhigh: t('chat.xhigh'), max: t('chat.max'), ultra: t('chat.ultra') }
+    clear(chatLevel)
+    levels.forEach(function (level) { var o = el('option', null, labels[level] || level); o.value = level; chatLevel.appendChild(o) })
+    if (!levels.length) { var unknown = el('option', null, t('provider.modelsUnavailable')); unknown.value = 'auto'; chatLevel.appendChild(unknown) }
+    chatLevel.value = selected
+    chatLevel.disabled = pending || brainSaving || (CENTRAL_MODELS && !brainSelection) || pv.supportsEffort === false || !levels.length
+  }
   function renderPicker () {
-    pickerLabel.textContent = currentProvider().name
+    if (SUBSCRIPTION_CHAT && companyPicker) { companyPicker.classList.remove('hidden'); companyPicker.value = brainCompany(chatModel); companyPicker.disabled = pending || brainSaving || (CENTRAL_MODELS && !brainSelection) }
+    if (brainMode && CENTRAL_MODELS && brainSelection) {
+      brainMode.classList.remove('hidden'); clear(brainMode)
+      var follow = el('option', null, t('brain.follow')); follow.value = 'central'; brainMode.appendChild(follow)
+      var custom = el('option', null, t('brain.custom')); custom.value = 'custom'; brainMode.appendChild(custom)
+      brainMode.value = brainSelection.mode; brainMode.disabled = pending || brainSaving
+      brainMode.setAttribute('aria-label', t('brain.model'))
+    }
+    else if (brainMode) brainMode.classList.add('hidden')
+    renderEfforts()
+    pickerLabel.textContent = SUBSCRIPTION_CHAT ? currentProvider().modelName : currentProvider().name
+    pickerLabel.setAttribute('data-compact-label', currentProvider().modelName || currentProvider().name)
+    picker.setAttribute('aria-label', currentProvider().name)
+    picker.setAttribute('title', currentProvider().name)
     clear(pickerMenu)
     for (var i = 0; i < PROVIDERS.length; i++) {
+      if (SUBSCRIPTION_CHAT && PROVIDERS[i].id !== brainCompany(chatModel)) continue
       (function (pv) {
-        var b = el('button', 'opt' + (pv.id === provider ? ' active' : ''))
+        var selected = SUBSCRIPTION_CHAT ? pv.model === chatModel : pv.id === provider
+        var b = el('button', 'opt' + (selected ? ' active' : ''))
         b.setAttribute('type', 'button')
         b.setAttribute('role', 'option')
-        b.setAttribute('aria-selected', pv.id === provider ? 'true' : 'false')
-        b.appendChild(el('div', 'opt-name', pv.name + (pv.id === provider ? ' ✓' : '')))
+        b.disabled = pending || brainSaving || (CENTRAL_MODELS && !brainSelection) || pv.available === false
+        b.setAttribute('aria-selected', selected ? 'true' : 'false')
+        b.appendChild(el('div', 'opt-name', (SUBSCRIPTION_CHAT ? pv.modelName : pv.name) + (selected ? ' ✓' : '')))
         b.appendChild(el('div', 'opt-note' + (pv.warn ? ' warn' : ''), pv.note))
         b.addEventListener('click', function () {
+          if (pending) return
+          if (CENTRAL_MODELS && brainSelection) { closePicker(); saveBrainSelection('custom', pv.model, pv.defaultEffort || 'medium'); return }
           provider = pv.id
+          if (SUBSCRIPTION_CHAT && pv.model) { chatModel = pv.model; lastCompanyModel[pv.id] = chatModel; try { localStorage.setItem('xiangxiang-brain-v1', chatModel) } catch (_) {} }
           closePicker()
           renderPicker()
         })
         pickerMenu.appendChild(b)
       })(PROVIDERS[i])
     }
+    if (SUBSCRIPTION_CHAT) pickerMenu.appendChild(el('div', 'opt-note subscription-note', brainCompany(chatModel) === 'claude' ? t('provider.claudeSubscriptionNote') : t('provider.subscriptionNote')))
+  }
+  function brainAvailabilityMessage (selected) {
+    if (brainCompany(chatModel) === 'claude') {
+      var state = modelProviderStates.claude
+      if (state && state.code === 'subscription_login_required') return t('brain.claudeLoginRequired')
+      if (state && state.state === 'unavailable') return t('brain.claudeUnavailable')
+    }
+    if (!selected || !selected.available) return t('brain.modelUnavailable')
+    return t('brain.effortUnavailable')
+  }
+  function loadChatModels () {
+    if (!SUBSCRIPTION_CHAT || pending) return modelsPromise
+    if (modelsLoading) return modelsPromise
+    modelsLoading = true
+    var loadingConversation = active && active.cid
+    var selectionHeaders = CENTRAL_MODELS && loadingConversation ? { 'X-Xiangxiang-Conversation': loadingConversation } : {}
+    if (CENTRAL_MODELS && topicController) selectionHeaders['X-Xiangxiang-Topic'] = topicController.topic
+    modelsPromise = fetch('/api/v1/demo/models', { credentials: 'same-origin', headers: selectionHeaders })
+      .then(function (r) { if (!r.ok) throw Error('models_unavailable'); return r.json() })
+      .then(function (catalog) {
+        if (!['subscriptions', 'chatgpt-subscription'].includes(catalog.billing) || !Array.isArray(catalog.models) || !catalog.models.length) throw Error('models_unavailable')
+        if (CENTRAL_MODELS && loadingConversation && (!catalog.selection || !catalog.selection.effective)) throw Error('models_unavailable')
+        if (CENTRAL_MODELS && loadingConversation !== (active && active.cid)) return
+        modelProviderStates = catalog.providers || {}
+        var notes = { 'claude-sonnet': t('provider.claudeSubscriptionNote'), 'gpt-6.1-sol': t('provider.solLatestNote'), 'gpt-6-astra': t('provider.astraNote'),
+          'gpt-6-luna': t('provider.lunaNote'), 'gpt-6-sol': t('provider.solPreviousNote') }
+        PROVIDERS = catalog.models.map(function (row) {
+          return { id: brainCompany(row.model), efforts: row.efforts || [], supportsEffort: row.supportsEffort, defaultEffort: row.defaultEffort, model: row.model, modelName: row.name, available: row.available === true, warn: false,
+            name: t('provider.subscriptionModel', { model: row.name }),
+            note: row.available ? (notes[row.model] || (brainCompany(row.model) === 'claude' ? t('provider.claudeSubscriptionNote') : t('provider.subscriptionNote'))) : t('provider.modelUnavailable') }
+        })
+        if (CENTRAL_MODELS && catalog.selection) {
+          brainSelection = catalog.selection; chatModel = brainSelection.effective.model; modelEfforts[chatModel] = brainSelection.effective.effort
+          var chosen = PROVIDERS.find(function (p) { return p.model === chatModel })
+          brainReady = !!chosen && chosen.available && (chosen.supportsEffort === false ? brainSelection.effective.effort === 'auto' : chosen.efforts.includes(brainSelection.effective.effort))
+          if (brainStatus) brainStatus.textContent = brainReady ? '' : brainAvailabilityMessage(chosen)
+        }
+        renderPicker()
+      }).catch(function () {
+        if (CENTRAL_MODELS) { brainReady = false; if (brainStatus) brainStatus.textContent = t('brain.failed') }
+        renderPicker()
+        pickerMenu.appendChild(el('div', 'opt-note', t('provider.modelsUnavailable')))
+      }).then(function () { modelsLoading = false; refreshImages(); if (CENTRAL_MODELS && loadingConversation !== (active && active.cid)) return loadChatModels() })
+    return modelsPromise
+  }
+  async function saveBrainSelection (mode, model, effort) {
+    if (pending || brainSaving || !brainSelection) return
+    var captured = brainSelection, conversation = active
+    brainSaving = true; refreshImages(); renderPicker(); renderEfforts()
+    try {
+      var body = mode === 'central' ? { mode: mode, revision: captured.revision } : { mode: mode, revision: captured.revision, model: model, effort: effort }
+      var r = await fetch('/api/v1/model-center/selection/' + captured.scope.kind + '/' + encodeURIComponent(captured.scope.id), { method: 'PUT', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), signal: AbortSignal.timeout(25000) })
+      if (!r.ok) throw Error('settings_failed')
+      var value = await r.json()
+      if (active === conversation) {
+        brainSelection = value.selection; chatModel = brainSelection.effective.model; modelEfforts[chatModel] = brainSelection.effective.effort
+        var selectedProvider = PROVIDERS.find(function (p) { return p.model === chatModel })
+        brainReady = !!selectedProvider && selectedProvider.available && (selectedProvider.supportsEffort === false ? brainSelection.effective.effort === 'auto' : selectedProvider.efforts.includes(brainSelection.effective.effort))
+        if (brainStatus) brainStatus.textContent = brainReady ? t('brain.selectionSaved') : brainAvailabilityMessage(selectedProvider)
+      }
+    } catch (_) { if (brainStatus) brainStatus.textContent = t('brain.failed') }
+    finally { brainSaving = false; renderPicker(); refreshImages(); if (active !== conversation) loadChatModels() }
   }
   function openPicker () { pickerMenu.className = ''; picker.setAttribute('aria-expanded', 'true') }
   function closePicker () { pickerMenu.className = 'hidden'; picker.setAttribute('aria-expanded', 'false') }
+  if (chatLevel) chatLevel.addEventListener('change', function () { if (!pending) { if (CENTRAL_MODELS && brainSelection) saveBrainSelection('custom', chatModel, chatLevel.value); else modelEfforts[chatModel] = chatLevel.value } })
+  if (brainMode) brainMode.addEventListener('change', function () { saveBrainSelection(brainMode.value, chatModel, chatLevel.value) })
+  if (companyPicker) companyPicker.addEventListener('change', function () {
+    if (pending || !SUBSCRIPTION_CHAT) return
+    var company = companyPicker.value
+    if (company !== 'claude' && company !== 'openai') return
+    if (CENTRAL_MODELS && !brainSelection) return
+    if (CENTRAL_MODELS && brainSelection) {
+      var choice = PROVIDERS.find(function (p) { return p.id === company && p.available })
+      if (choice) saveBrainSelection('custom', choice.model, choice.defaultEffort || 'medium')
+      return
+    }
+    lastCompanyModel[brainCompany(chatModel)] = chatModel
+    chatModel = lastCompanyModel[company]
+    provider = company
+    try { localStorage.setItem('xiangxiang-brain-v1', chatModel) } catch (_) {}
+    closePicker(); renderPicker(); loadChatModels()
+  })
   picker.addEventListener('click', function (e) {
     e.stopPropagation()
-    if (pickerMenu.className === 'hidden') openPicker(); else closePicker()
+    if (pickerMenu.className === 'hidden') { openPicker(); loadChatModels() } else closePicker()
   })
   document.addEventListener('click', function () { closePicker(); closePlus() })
   document.addEventListener('keydown', function (e) { if (e.key === 'Escape') { closePicker(); closePlus() } })
   renderPicker()
+  var modelCenterLink = document.getElementById('model-center-link')
+  if (modelCenterLink) modelCenterLink.textContent = t('brain.title')
+  loadChatModels()
 
   /* ── composer + sidebar chrome ────────────────────────────────────────── */
   function autoGrow () {
@@ -2109,21 +3326,23 @@
   }
   msg.addEventListener('input', function () {
     autoGrow()
-    send.disabled = pending || msg.value.trim() === ''   // disabled until real input
+    refreshImages()
   })
   send.addEventListener('click', submit)
   msg.addEventListener('keydown', function (e) {
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submit() }
   })
-  document.getElementById('new-chat').addEventListener('click', function () { newConversation(true) })
-  document.getElementById('collapse').addEventListener('click', function () {
-    sidebar.className = 'collapsed'
-    document.getElementById('expand').className = 'icon-btn'
+  document.getElementById('new-chat').addEventListener('click', function () { document.getElementById('conversation-search').value = ''; newConversation(true) })
+  document.getElementById('conversation-search').addEventListener('input', renderConvList)
+  document.getElementById('conversation-search').addEventListener('keydown', function (e) {
+    if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); e.target.value = ''; renderConvList() }
   })
-  document.getElementById('expand').addEventListener('click', function () {
-    sidebar.className = ''
-    document.getElementById('expand').className = 'icon-btn hidden'
-  })
+  document.getElementById('open-workers').addEventListener('click', function () { window.location.href = '/workers' })
+  document.getElementById('open-connections').addEventListener('click', function () { window.location.href = '/connections' })
+  document.getElementById('open-company-access').addEventListener('click', function () { window.location.href = '/company-access' })
+  var sidebarLabels = { daily: t('sidebarGroup.daily'), development: t('sidebarGroup.development'), management: t('sidebarGroup.management') }
+  var sidebarController = XiangxiangSidebar.mount(document, sidebarLabels)
+  if (CENTRAL_MODELS) document.body.classList.add('central-models')
 
   /* ── SETTINGS SHEET ────────────────────────────────────────────────────────
    * The same three settings as /settings, opened in this window over the conversation.
@@ -2153,6 +3372,28 @@
   // ── 首頁 as a destination ──
   var homeBtn = document.getElementById('open-home')
   if (homeBtn) homeBtn.addEventListener('click', function () { showHome() })
+  var managerBtn = document.getElementById('open-manager')
+  var liveContextBtn = document.getElementById('open-live-context')
+  if (liveContextBtn) liveContextBtn.addEventListener('click', function () { window.location.href = '/live-context' })
+  var driveContextBtn = document.getElementById('open-drive-context')
+  if (driveContextBtn) driveContextBtn.addEventListener('click', function () { window.location.href = '/drive-context' })
+  var aromaContextBtn = document.getElementById('open-aroma-context')
+  if (aromaContextBtn) aromaContextBtn.addEventListener('click', function () { window.location.href = '/aroma-context' })
+  var calendarContextBtn = document.getElementById('open-calendar-context')
+  if (calendarContextBtn) calendarContextBtn.addEventListener('click', function () { window.location.href = '/calendar-context' })
+  var gmailContextBtn = document.getElementById('open-gmail-context')
+  if (gmailContextBtn) gmailContextBtn.addEventListener('click', function () { window.location.href = '/gmail-context' })
+  var developmentPlanBtn = document.getElementById('open-development-plan')
+  if (developmentPlanBtn) developmentPlanBtn.addEventListener('click', function () { window.location.href = '/development-plan' })
+  var projectTasksBtn = document.getElementById('open-project-tasks')
+  if (projectTasksBtn) projectTasksBtn.addEventListener('click', function () { window.location.href = '/project-tasks' })
+  var architectureBtn = document.getElementById('open-architecture')
+  var memoryBtn = document.getElementById('open-memory')
+  if (memoryBtn) memoryBtn.addEventListener('click', function () { window.location.href = '/memory' })
+  if (architectureBtn) architectureBtn.addEventListener('click', function () { window.location.href = '/architecture' })
+  if (managerBtn) {
+    managerBtn.addEventListener('click', function () { window.location.href = '/manager' })
+  }
 
   var setOverlay = document.getElementById('settings-overlay')
   var setOpenBtn = document.getElementById('open-settings')
@@ -2326,9 +3567,39 @@
    * file, and a bilingual shell is not a reason to start.
    */
   var SHELL_TEXT = [
+    ['hr-label', 'text', function () { return t('department.hr') }],
+    ['purchasing-label', 'text', function () { return t('department.purchasing') }],
+    ['accounting-label', 'text', function () { return t('department.accounting') }],
+    ['marketing-label', 'text', function () { return t('department.marketing') }],
+    ['shared-tools-label', 'text', function () { return t('department.sharedTools') }],
     ['brand-name', 'text', function () { return t('shell.title') }],
     ['home-label', 'text', function () { return t('nav.home') }],
-    ['new-chat', 'text', function () { return t('shell.newChat') }],
+    ['new-chat-label', 'text', function () { return t('shell.newConversation') }],
+    ['conversation-search', 'placeholder', function () { return t('shell.searchTitles') }],
+    ['conversation-search', 'aria', function () { return t('shell.searchTitles') }],
+    ['workspace-label', 'text', function () { return t('shell.workspace') }],
+    ['workspace-nav', 'aria', function () { return t('shell.workspace') }],
+    ['workers-label', 'text', function () { return t('shell.workers') }],
+    ['connections-label', 'text', function () { return t('connections.title') }],
+    ['company-access-label', 'text', function () { return t('company.title') }],
+    ['history-label', 'text', function () { return t('shell.historyLabel') }],
+    ['brain-company', 'aria', function () { return t('provider.company') }],
+    ['chat-level', 'aria', function () { return t('chat.levelLabel') }],
+    ['chat-level-low', 'text', function () { return t('chat.low') }],
+    ['chat-level-medium', 'text', function () { return t('chat.medium') }],
+    ['chat-level-high', 'text', function () { return t('chat.high') }],
+    ['chat-level-xhigh', 'text', function () { return t('chat.xhigh') }],
+    ['chat-level-max', 'text', function () { return t('chat.max') }],
+    ['manager-label', 'text', function () { return t('manager.title') }],
+    ['live-context-label', 'text', function () { return t('live.title') }],
+    ['drive-context-label', 'text', function () { return t('driveContext.title') }],
+    ['aroma-context-label', 'text', function () { return t('department.operations') }],
+    ['calendar-context-label', 'text', function () { return t('calendarContext.title') }],
+    ['gmail-context-label', 'text', function () { return t('gmailContext.title') }],
+    ['development-plan-label', 'text', function () { return t('plan.title') }],
+    ['project-tasks-label', 'text', function () { return t('projectTask.title') }],
+    ['architecture-label', 'text', function () { return t('architecture.title') }],
+    ['memory-label', 'text', function () { return t('memory.title') }],
     ['settings-label', 'text', function () { return t('shell.settings') }],
     ['conn-text', 'text', function () { return t('shell.local') }],
     ['composer-note', 'text', function () { return t('shell.composerNote') }],
@@ -2352,6 +3623,7 @@
     ['convs', 'aria', function () { return t('shell.historyLabel') }],
     ['plus', 'both', function () { return t('shell.more') }],
     ['plus-menu', 'aria', function () { return t('shell.shortcuts') }],
+    ['image-files', 'aria', function () { return t('imageChat.upload') }],
     ['picker-menu', 'aria', function () { return t('shell.pickWho') }],
     ['send', 'aria', function () { return t('shell.send') }],
     ['close-settings', 'both', function () { return t('shell.close') }]
@@ -2359,6 +3631,11 @@
 
   function applyShellText () {
     document.title = t('shell.title')
+    if (sidebarController) {
+      sidebarController.groups.daily.children[0].textContent = t('sidebarGroup.daily')
+      sidebarController.groups.development.children[0].textContent = t('sidebarGroup.development')
+      sidebarController.groups.management.children[0].textContent = t('sidebarGroup.management')
+    }
     for (var i = 0; i < SHELL_TEXT.length; i++) {
       var id = SHELL_TEXT[i][0]
       var how = SHELL_TEXT[i][1]
@@ -2383,9 +3660,19 @@
       else { n.setAttribute('aria-label', text); n.setAttribute('title', text) }
     }
     // The picker shows the provider it is on, and provider names are catalogue entries too.
-    if (pickerLabel) pickerLabel.textContent = currentProvider().name
+    if (pickerLabel) pickerLabel.textContent = SUBSCRIPTION_CHAT ? currentProvider().modelName : currentProvider().name
+    if (topicController) topicController.labels()
+    if (modelCenterLink) modelCenterLink.textContent = t('brain.title')
   }
   applyShellText()
+
+  var executionStatus=document.getElementById('execution-status'),executionChecking=false
+  function checkExecutionBridge(){
+    if(!executionStatus||executionChecking||document.hidden)return
+    executionChecking=true
+    fetch('/api/v1/execution-health',{credentials:'same-origin',cache:'no-store',signal:AbortSignal.timeout(7000)}).then(function(r){if(!r.ok)throw Error('unavailable');return r.json()}).then(function(h){executionStatus.textContent=h.state==='ready'?(h.supervisor&&h.supervisor.state==='starting'?t('actions.bridgeRecovering'):t('actions.bridgeReady')):t('actions.bridgeOffline')}).catch(function(){executionStatus.textContent=t('actions.bridgeOffline')}).finally(function(){executionChecking=false})
+  }
+  if(executionStatus){executionStatus.textContent=t('actions.bridgeChecking');checkExecutionBridge();setInterval(checkExecutionBridge,10000);document.addEventListener('visibilitychange',checkExecutionBridge)}
 
   bootHistory()
 

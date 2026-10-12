@@ -150,6 +150,12 @@ describe('the caller cannot escalate', () => {
 /* ══════════════ 4. buildArgs has no authorising side effect ══════════════ */
 
 describe('building an argv grants nothing', () => {
+  test('round 1 opens a session with --session-id', () => {
+    const args = worker().buildArgs({ goal: 'g', sessionId: 'uuid-1' })
+    assert.strictEqual(argOf(args, '--session-id'), 'uuid-1')
+    assert.ok(!args.includes('--resume'), 'opening and resuming are distinct operations')
+  })
+
   test('⛔ buildArgs does NOT register a session; a later resume is refused and spawns nothing', async () => {
     let spawns = 0
     const w = worker({ allowResume: true, spawnFn: () => { spawns += 1; return fakeChild({}) } })
@@ -165,7 +171,9 @@ describe('building an argv grants nothing', () => {
     const w = worker({ allowResume: true, spawnFn: emitting({ stdout: JSON.stringify(envelope({ session_id: 'real-1' })) }) }, s)
     assert.throws(() => w.buildArgs({ goal: 'g', resume: 'real-1' }), /never established/)
     await w.dispatch({ goal: 'g', sessionId: 'real-1' })
-    assert.strictEqual(argOf(w.buildArgs({ goal: 'g2', resume: 'real-1' }), '--resume'), 'real-1')
+    const args = w.buildArgs({ goal: 'g2', resume: 'real-1' })
+    assert.strictEqual(argOf(args, '--resume'), 'real-1')
+    assert.ok(!args.includes('--session-id'), 'a resumed session must not be reopened')
   })
 
   test('⛔ a FAILED dispatch grants no resume rights', async () => {
@@ -327,6 +335,16 @@ describe('the workspace must have been MINTED by this provider', () => {
 /* ══════════════ 2. the documented result contract ══════════════ */
 
 describe('results are read by the documented contract, not by guesswork', () => {
+  test('an unresolvable CLI rejects with the resolver\'s own reason', async () => {
+    let spawns = 0
+    const w = worker({
+      resolveFn: () => ({ ok: false, reason: 'no CLI here' }),
+      spawnFn: () => { spawns += 1; return fakeChild({}) }
+    })
+    await assert.rejects(() => w.dispatch({ goal: 'g', sessionId: 's' }), /not resolvable — no CLI here/)
+    assert.strictEqual(spawns, 0, 'an unresolved CLI must fail before starting a child')
+  })
+
   const cases = [
     ['a non-zero exit', { stdout: JSON.stringify(envelope()), close: 2 }, FAILURE.NONZERO_EXIT],
     ['no JSON at all', { stdout: 'not json' }, FAILURE.NO_PARSABLE_JSON],

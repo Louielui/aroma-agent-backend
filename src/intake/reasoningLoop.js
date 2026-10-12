@@ -147,9 +147,20 @@ async function runLoopInner (input, counter) {
   for (let step = 1; step <= maxSteps; step++) {
     // Accounting is reported for EVERY invocation, before the call is made, so a call that
     // throws is still counted — a turn that billed and then failed must not look free.
-    if (onModelCall) { try { onModelCall({ step }) } catch (_) {} }
-
-    const decision = await callModel({ step, observations: observations.slice() })
+    // A caller may already hold a validated, source-bound final after a read.
+    // It still passes the same terminal hook; only an actual call is counted.
+    let prepared = null
+    if (observations.length && typeof input.getPreparedDecision === 'function') {
+      try { prepared = await input.getPreparedDecision({ step, observations: observations.slice() }) } catch (_) { /* retain the ordinary model path */ }
+    }
+    let decision
+    if (prepared?.type === 'final') {
+      decision = prepared
+      emit(step, 'prepared_final')
+    } else {
+      if (onModelCall) { try { onModelCall({ step }) } catch (_) {} }
+      decision = await callModel({ step, observations: observations.slice() })
+    }
     const type = decision && typeof decision === 'object' ? decision.type : null
 
     if (type === 'final') {

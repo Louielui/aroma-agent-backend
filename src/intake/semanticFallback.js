@@ -66,9 +66,9 @@ function clarifyQuestionFor (a, b) {
 }
 
 /** One call, parsed on its own. Never throws: a dead provider is a result, not a crash. */
-async function oneCall (callModel, message, system) {
+async function oneCall (callModel, message, system, signal) {
   try {
-    const raw = await callModel({ system, prompt: message })
+    const raw = await callModel({ system, prompt: message, signal })
     return { ok: true, ...admit(raw) }
   } catch (e) {
     return { ok: false, candidate: NONE, confidence: 'LOW', rejected: 'provider_error' }
@@ -124,6 +124,7 @@ async function resolveSemanticFallback (opts) {
   const route = opts && opts.deterministicRoute
   const callModel = opts && opts.callModel
   const system = opts && opts.system
+  const signal = opts && opts.signal
 
   // ⛔ THE ONLY DOOR. A deterministic win — UTILITY, ACTION, or a BUSINESS_QUERY that already
   // named its sources — is final and never reaches this module.
@@ -133,9 +134,8 @@ async function resolveSemanticFallback (opts) {
   }
 
   const ambiguous = isAmbiguousWording(message)
-  const started = 0
   // Independent and parallel: latency is max(A,B), not A+B.
-  const [a, b] = await Promise.all([oneCall(callModel, message, system), oneCall(callModel, message, system)])
+  const [a, b] = await Promise.all([oneCall(callModel, message, system, signal), oneCall(callModel, message, system, signal)])
 
   const tel = {
     deterministicRoute: 'CONVERSATION',

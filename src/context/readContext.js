@@ -366,6 +366,7 @@ const capQuery = (q) => (q.length <= CAPS.maxQueryChars ? q : q.slice(0, CAPS.ma
  * routingGovernsReads.test.js fails if one ever does.
  */
 const INTENTS = Object.freeze([
+  { key: 'time_punch', method: null, cjk: ['7shifts', '7shift'], latin: ['7shifts', '7shift'], sources: ['seven_shifts'], heading: '7shifts 打卡紀錄', unit: '筆', noun: '打卡', defaultQuestion: '要查哪個員工及日期範圍？' },
   { key: 'invoice', method: 'listInvoices', cjk: ['發票', 'invoice'], latin: ['invoice', 'invoices', 'bill', 'bills'], sources: ['aroma_system'], heading: '最近發票', unit: '張', noun: '發票', defaultQuestion: '要我整理餐廳系統內全部待審批發票嗎？' },
   { key: 'purchase_order', method: 'listPurchaseOrders', cjk: ['採購單', '訂單', '入貨單', '採購'], latin: ['purchase order', 'purchase orders', 'po', 'pos'], sources: ['aroma_system'], heading: '採購單', unit: '張', noun: '採購單', defaultQuestion: '要我列出未收貨嘅採購單嗎？' },
   { key: 'daily_count', method: 'listDailyCounts', cjk: ['盤點', '點存', '點貨', '數貨'], latin: ['daily count', 'daily counts', 'stocktake', 'stock take', 'count', 'counts'], sources: ['aroma_system'], heading: '盤點紀錄', unit: '次', noun: '盤點', defaultQuestion: '要我睇邊個位置嘅盤點？' },
@@ -531,12 +532,24 @@ function aromaMethodFor (text) {
  * route ordinary repo questions into the index and quietly remove the commit view.
  */
 const RECORD_RE = /HR-[0-9]+|DEFECT-[0-9]+|house ?rules?|開發記錄|決定記錄|規則|裁決|缺陷/i
-function planFor (source, { keywords = [], message = '', now, env = {}, caps = CAPS, operation = null, args = null } = {}) {
+function planFor (source, { keywords = [], message = '', now, env = {}, caps = CAPS, operation = null, args = null, readProfile = null, investigationSections = null } = {}) {
+  if (source === 'xiangxiang_operations') return { method: 'readInvestigation', params: { query: String(message || '').slice(0, 2000), ...(investigationSections ? { sections: investigationSections } : {}) } }
   const terms = keywords.slice(0, caps.maxTermsPerQuery)
   const n = caps.maxItemsPerSource
   // Intent is read from what the Owner actually typed; the keywords are the fallback for
   // callers that only have them (the extractor drops the very terms routing needs).
   const matchText = String(message || '') || keywords.join(' ')
+
+  if (source === 'seven_shifts') {
+    // An explicitly bounded date range or a disclosed seven-day recent window.
+    // The host chooses the query; model text cannot supply a URL, token or method.
+    const dates = matchText.match(/\b\d{4}-\d{2}-\d{2}\b/g) || []
+    if (dates.some(date => { const value = new Date(date + 'T00:00:00Z'); return !Number.isFinite(value.getTime()) || value.toISOString().slice(0,10) !== date })) return null
+    const end = dates.length ? new Date(dates[dates.length - 1] + 'T23:59:59.999Z') : new Date(now)
+    const start = dates.length ? new Date(dates[0] + 'T00:00:00Z') : new Date(end.getTime() - 7 * 86400000)
+    if (!Number.isFinite(start.getTime()) || !Number.isFinite(end.getTime())) return null
+    return {method:'listTimePunches',params:{timeMin:start.toISOString(),timeMax:end.toISOString()}}
+  }
 
   if (source === 'drive') {
     const recent = { method: 'listFiles', params: { pageSize: n, orderBy: 'modifiedTime desc' } }
@@ -549,6 +562,13 @@ function planFor (source, { keywords = [], message = '', now, env = {}, caps = C
   if (source === 'gmail') {
     const recent = { method: 'searchMessages', params: { q: 'newer_than:7d', maxResults: n }, hydrate: { method: 'getMessage', key: 'id' } }
     const hydrate = { method: 'getMessage', key: 'id' }
+    // Closed Owner cost-investigation profile. This retrieves candidate provider mail,
+    // never billing proof. A miss must stay a miss rather than silently become recent mail.
+    if (readProfile === 'cost_provider_mail') return {
+      method: 'searchMessages',
+      params: { q: capQuery('{"OpenAI" "Anthropic" "Claude" "ChatGPT" "Codex"} {billing usage credit invoice receipt subscription payment} newer_than:2y'), maxResults: Math.min(n, 4) },
+      hydrate
+    }
     if (terms.length === 0) return recent
     // OR the terms — never AND the whole question into one query
     return { method: 'searchMessages', params: { q: capQuery(`(${terms.map((t) => `"${t}"`).join(' OR ')}) newer_than:90d`), maxResults: n }, hydrate, fallback: recent }
@@ -651,12 +671,22 @@ function planFor (source, { keywords = [], message = '', now, env = {}, caps = C
         query: typeof a.query === 'string' ? capQuery(a.query) : null,
         freshness: typeof a.freshness === 'string' ? a.freshness : null,
         location: typeof a.location === 'string' ? a.location : null,
+        // Presentation metadata from Owner input, never from internal evidence
+        // or a model-authored query. The closed meaning schema is unchanged.
+        replyLanguage: /[\u3400-\u9fff]/.test(message || '') ? 'zh' : 'en',
         limit: n
       }
     }
   }
 
   if (source === 'github') {
+    if (readProfile === 'investigation_revision') {
+      const repo=env.GITHUB_READ_REPO, revision=args?.revision
+      if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repo||'')) return { unavailable:'investigation repository not configured' }
+      if (!/^[a-f0-9]{40}$/i.test(revision||'')) return { unavailable:'same-task source revision not observed' }
+      const [owner,name]=repo.split('/')
+      return {method:'listCommits',params:{owner,repo:name,sha:revision,per_page:1}}
+    }
     // ── THE DEVELOPMENT RECORD COMES FIRST ────────────────────────────────
     // A question about a ruling, a defect or a house rule is answered from the INDEX, not
     // from commit titles. Before this, `getFileAtRef` existed on the adapter and was
@@ -873,7 +903,8 @@ async function runStep (connector, source, step, caps) {
  * Build the block. PURE apart from the injected connector's read calls.
  * @returns {Promise<{block: string|null, status: string, perSource: object[]}>}
  */
-async function buildReadContext ({ connector, message, sources = [], env = process.env, now, caps = CAPS, logSink, operation = null, args = null } = {}) {
+async function buildReadContext ({ connector, message, sources = [], env = process.env, now, caps = CAPS, logSink, operation = null, args = null, readProfile = null, allowRecentFallback = true, investigationSections = null } = {}) {
+  if (sources.includes('xiangxiang_operations')) caps = { ...caps, maxItemsPerSource: 7, maxItemChars: 16000, maxLineChars: 16500, maxTotalChars: 52000 }
   const asOf = now || new Date().toISOString()
   if (!connector || typeof connector.read !== 'function' || sources.length === 0) {
     return { block: null, status: 'NO_SOURCES', perSource: [], itemsBySource: [], retrievedItemsBySource: [], evidenceSets: [] }
@@ -936,7 +967,7 @@ async function buildReadContext ({ connector, message, sources = [], env = proce
     try {
       // `operation` is ABSENT on every automatic read — the one-shot path passes no such
       // argument — so this call is byte-identical to before for every existing caller.
-      const plan = planFor(source, { keywords, message, now: asOf, env, caps, operation, args })
+      const plan = planFor(source, { keywords, message, now: asOf, env, caps, operation, args, readProfile, investigationSections })
 
       /**
        * ⛔ THE IDENTITY EXISTED ALL ALONG AND WAS DISCARDED ONE LINE LATER. On an automatic
@@ -973,7 +1004,7 @@ async function buildReadContext ({ connector, message, sources = [], env = proce
 
       // Keyword miss → recent-items fallback (still a READ OK, clearly labelled).
       let usedFallback = false
-      if (step.results.length === 0 && plan.fallback) {
+      if (step.results.length === 0 && plan.fallback && allowRecentFallback) {
         const fb = await runStep(connector, source, plan.fallback, caps)
         if (!fb.unavailable && fb.results.length > 0) { step = fb; usedFallback = true }
       }

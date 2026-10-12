@@ -148,37 +148,7 @@ function createConversationStore (options = {}) {
     return out
   }
 
-  /**
-   * ONE COMPLETED TURN — the question and the answer, appended together.
-   *
-   * Called once per completed turn from the UI path and nowhere else. A turn is only
-   * written after the reply exists, so a failed turn leaves no half-conversation behind.
-   */
-  function appendTurn ({ id, userText, replyText, servedBy = null, now = null } = {}) {
-    if (!isValidId(id)) throw new Error('invalid_conversation_id')
-    const ts = now || new Date().toISOString()
-
-    // STRICT, and this is the important one. Lenient here would mean: cannot read the
-    // existing conversation → treat it as new → overwrite it with a single turn. That is
-    // precisely the erasure ac77ae1 removed from the truth store, and it would apply to
-    // the Owner's transcripts rather than to metering.
-    const existing = readOne(id, true)
-    const conversation = existing || {
-      id,
-      title: titleFrom(userText),
-      createdAt: ts,
-      updatedAt: ts,
-      messages: []
-    }
-
-    // The title is set once, from the first question. A later turn does not rename a
-    // conversation the Owner has already learned to recognise in the list.
-    if (!conversation.title) conversation.title = titleFrom(userText)
-
-    conversation.messages.push({ role: 'user', content: String(userText == null ? '' : userText), servedBy: null, ts })
-    conversation.messages.push({ role: 'assistant', content: String(replyText == null ? '' : replyText), servedBy: servedBy || null, ts })
-    conversation.updatedAt = ts
-
+  function writeConversation (conversation) {
     // ATOMIC REPLACE — temp file, fsync, rename.
     //
     // writeFileSync truncates and THEN writes, so a reader can see a partial document. That
@@ -192,7 +162,7 @@ function createConversationStore (options = {}) {
     // truth store next door needed a lock because many processes write it; symmetry with it
     // is not a reason to add one here.
     fs.mkdirSync(dir, { recursive: true })
-    const target = fileFor(id)
+    const target = fileFor(conversation.id)
     const tmp = target + '.tmp-' + process.pid + '-' + Math.random().toString(16).slice(2, 10)
     const fd = fs.openSync(tmp, 'w')
     try {
@@ -207,6 +177,81 @@ function createConversationStore (options = {}) {
       try { fs.unlinkSync(tmp) } catch (_) {}
       throw err
     }
+  }
+
+  function reservePublicCompletion (id, receipt, requestId) {
+    if (!isValidId(id) || !require('../core/operating/runStore').ID.test(requestId || '') || !require('../topics/publicAnswerFollowups').validReceipt(receipt) || receipt.completionAttempted) throw Error('invalid_public_completion')
+    const conversation = readOne(id, true), last = conversation?.messages?.at(-1)
+    if (last?.role !== 'assistant' || JSON.stringify(last.publicAnswerReceipt) !== JSON.stringify(receipt)) throw Error('public_completion_context_changed')
+    last.publicAnswerReceipt = { ...structuredClone(receipt), completionAttempted: true }
+    last.publicCompletionPendingRequestId = requestId
+    writeConversation(conversation)
+    return structuredClone(last.publicAnswerReceipt)
+  }
+
+  /**
+   * ONE COMPLETED TURN — the question and the answer, appended together.
+   *
+   * Called once per completed turn from the UI path and nowhere else. A turn is only
+   * written after the reply exists, so a failed turn leaves no half-conversation behind.
+   */
+  function appendTurn ({ id, userText, replyText, servedBy = null, now = null, images, operatingRunId = null, developmentPlanRunId = null, codeDiagnosisRunId = null, codeRepairRunId = null, projectWorkRunId = null, taskPlanRunId = null, planningOffer = null, planningContext = null, investigationRunId = null, capabilityGapRunId = null, evidenceReport = null, evidenceReportAttempt = false, hrRecheckId = null, publicAnswerReceipt = null, publicCompletionRequestId = null } = {}) {
+    if (!isValidId(id)) throw new Error('invalid_conversation_id')
+    const attachments = images === undefined ? null : require('../chat/imageAttachments').validateImages(images)
+    const ts = now || new Date().toISOString()
+
+    // STRICT, and this is the important one. Lenient here would mean: cannot read the
+    // existing conversation → treat it as new → overwrite it with a single turn. That is
+    // precisely the erasure ac77ae1 removed from the truth store, and it would apply to
+    // the Owner's transcripts rather than to metering.
+    const existing = readOne(id, true)
+    if (isValidId(hrRecheckId) && existing?.messages.some(m => m.role === 'assistant' && m.hrRecheckId === hrRecheckId)) return { id, count: existing.messages.length }
+    if (evidenceReport !== null) {
+      const prior = existing?.messages.find(m => m.role === 'assistant' && m.evidenceReport?.id === evidenceReport.id)
+      if (prior) {
+        if (JSON.stringify(prior.evidenceReport) !== JSON.stringify(evidenceReport)) throw Error('evidence_report_conflict')
+        return { id, messageCount: existing.messages.length }
+      }
+    }
+    const conversation = existing || {
+      id,
+      title: titleFrom(userText),
+      createdAt: ts,
+      updatedAt: ts,
+      messages: []
+    }
+
+    // The title is set once, from the first question. A later turn does not rename a
+    // conversation the Owner has already learned to recognise in the list.
+    if (!conversation.title) conversation.title = titleFrom(userText)
+
+    conversation.messages.push({ role: 'user', content: String(userText == null ? '' : userText), servedBy: null, ts, ...(attachments ? { images: attachments } : {}) })
+    const assistantMessage = { role: 'assistant', content: String(replyText == null ? '' : replyText), servedBy: servedBy || null, ts }
+    if (publicAnswerReceipt !== null) {
+      if (!require('../topics/publicAnswerFollowups').validReceipt(publicAnswerReceipt)) throw Error('invalid_public_answer_receipt')
+      assistantMessage.publicAnswerReceipt = structuredClone(publicAnswerReceipt)
+    }
+    if (isValidId(publicCompletionRequestId)) assistantMessage.publicCompletionRequestId = publicCompletionRequestId
+    if (isValidId(hrRecheckId)) assistantMessage.hrRecheckId = hrRecheckId
+    if (evidenceReportAttempt === true) assistantMessage.evidenceReportAttempt = true
+    if (evidenceReport !== null) {
+      if (!require('../topics/evidenceFollowups').validSnapshot(evidenceReport)) throw Error('invalid_evidence_report')
+      assistantMessage.evidenceReport = structuredClone(evidenceReport)
+    }
+    if (require('../core/operating/runStore').ID.test(investigationRunId || '')) assistantMessage.investigationRunId = investigationRunId
+    if (require('../core/operating/runStore').ID.test(capabilityGapRunId || '')) assistantMessage.capabilityGapRunId = capabilityGapRunId
+    if (require('../core/taskPlanner/continuation').validOffer(planningOffer, planningOffer?.revision)) assistantMessage.planningOffer = structuredClone(planningOffer)
+    if (require('../core/taskPlanner/dialogueContext').validContext(planningContext, planningContext?.revision, id)) assistantMessage.planningContext = structuredClone(planningContext)
+    if (typeof operatingRunId === 'string' && /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(operatingRunId)) assistantMessage.operatingRunId = operatingRunId
+    if (typeof developmentPlanRunId === 'string' && /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(developmentPlanRunId)) assistantMessage.developmentPlanRunId = developmentPlanRunId
+    if (typeof codeRepairRunId === 'string' && /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(codeRepairRunId)) assistantMessage.codeRepairRunId = codeRepairRunId
+    if (typeof codeDiagnosisRunId === 'string' && /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(codeDiagnosisRunId)) assistantMessage.codeDiagnosisRunId = codeDiagnosisRunId
+    if (typeof taskPlanRunId === 'string' && /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(taskPlanRunId)) assistantMessage.taskPlanRunId = taskPlanRunId
+    if (typeof projectWorkRunId === 'string' && /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(projectWorkRunId)) assistantMessage.projectWorkRunId = projectWorkRunId
+    conversation.messages.push(assistantMessage)
+    conversation.updatedAt = ts
+
+    writeConversation(conversation)
     return { id, messageCount: conversation.messages.length }
   }
 
@@ -221,7 +266,7 @@ function createConversationStore (options = {}) {
     }
   }
 
-  return { list, get, appendTurn, remove, dir }
+  return { list, get, appendTurn, remove, dir, reservePublicCompletion }
 }
 
 /**

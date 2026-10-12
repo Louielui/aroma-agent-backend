@@ -1,0 +1,56 @@
+'use strict'
+const test = require('node:test'), assert = require('node:assert/strict')
+const { evaluateInvestigation } = require('./intelligence')
+const section = (name, records, extra = {}) => ({ section: name, sourceId: name + ':receipt', retrievedAt: '2026-10-07T06:00:00Z', state: 'ok', records, ...extra })
+test('bounded investigation findings retain the requested failure or background evidence before unrelated execution history', () => {
+  const sections = [section('execution', Array.from({ length: 45 }, (_, i) => ({ sourceId: 'execution-' + i, lastStartedAt: '2026-10-02T01:00:00Z', usage: { total_tokens: i + 1 } }))), section('work', [{ sourceId: 'failure', state: 'failed', reason: 'source_dirty' }, { sourceId: 'candidate', state: 'completed', tests: { total: 9, passed: 9, failed: 0 }, sourceFiles: [{ path: 'src/demo/assets/sidebar.css', comparison: 'matches_candidate' }] }], { workflows: ['test_draft', 'development', 'review', 'adoption'].map(role => ({ role, state: 'idle', model: role === 'review' ? 'sonnet' : null, modelBasis: 'host_workflow_default_not_per_job_selection' })) }), section('configuration', [{ model: 'claude-opus-5-5', effort: 'medium' }]), section('schedules', [{ sourceId: 'paused', state: 'PAUSED', model: null }])]
+  for (const [focus, requiredKinds] of [['background', ['workflow_occupancy_observed', 'activity_unverified', 'configuration_current', 'schedule_current', 'work_recorded']], ['work_failure', ['work_failure_observed', 'fix_unverified', 'candidate_tests_recorded', 'source_snapshot_compared', 'configuration_current']]]) {
+    const report = evaluateInvestigation({ focus, sections })
+    assert.equal(report.findings.length, 30)
+    assert.ok(report.findingsOmitted > 0)
+    assert.deepEqual(report.sections, sections)
+    for (const kind of requiredKinds) assert.ok(report.findings.some(f => f.kind === kind), focus + ': ' + kind)
+    if (focus === 'background') assert.equal(report.findings.filter(f => f.kind === 'workflow_occupancy_observed').length, 4)
+    assert.equal(report.findings.find(f => f.kind === (focus === 'background' ? 'activity_unverified' : 'fix_unverified')).evidenceState, 'not_established')
+    assert.ok(report.recommendations.every(r => r.readOnly))
+  }
+})
+test('non-cost investigation reports failure and source gaps without billing recommendations or an invented fix', () => {
+  const r = evaluateInvestigation({ goal: 'Why did the last task fail; is it fixed?', focus: 'work_failure', sections: [section('work', [{ sourceId: 'failed-task', state: 'failed', reason: 'worker_timeout', tests: null, fixedInCurrentVersion: null }, { sourceId: 'unrelated-success', state: 'completed', tests: { passed: 9, failed: 0, exitCode: 0 } }]), section('billing', [], { state: 'unconnected' })] })
+  assert.equal(r.focus, 'work_failure')
+  assert.ok(r.findings.some(f => f.kind === 'work_failure_observed' && f.value.reason === 'worker_timeout'))
+  assert.ok(r.findings.some(f => f.kind === 'fix_unverified' && f.evidenceState === 'not_established'))
+  assert.ok(r.recommendations.some(f => f.kind === 'verify_same_task_current_source'))
+  assert.ok(r.recommendations.every(f => f.kind !== 'obtain_billing_evidence'))
+})
+test('background investigation separates current definitions, historical models and unknown live activity', () => {
+  const r = evaluateInvestigation({ goal: 'What background jobs and models are running?', focus: 'background', sections: [section('configuration', [{ model: 'claude-opus-5-5', effort: 'medium' }]), section('schedules', [{ sourceId: 'job', name: 'Job', state: 'ACTIVE', model: null, currentRunningState: 'unknown' }]), section('work', [{ sourceId: 'old-run', state: 'running', model: 'gpt-6.1-sol', currentRunningState: 'unknown' }])] })
+  assert.ok(r.findings.some(f => f.kind === 'activity_unverified' && f.evidenceState === 'not_established'))
+  assert.equal(r.findings.find(f => f.kind === 'work_recorded').temporalScope, 'historical')
+  assert.ok(r.recommendations.every(f => f.kind !== 'obtain_billing_evidence'))
+  assert.ok(r.findings.every(f => f.kind !== 'job_running_confirmed'))
+})
+test('investigation separates current candidates, historical execution, recorded tokens and unproven charges', () => {
+  const r = evaluateInvestigation({ goal: 'Investigate credit', sections: [section('schedules', [{ sourceId: 'codex-automation:fixture', name: 'Fixture scheduler', state: 'PAUSED' }]), section('execution', [{ sourceId: 'codex-session:fixture', lastStartedAt: '2026-10-02T01:00:00Z', lastCompletedAt: '2026-10-02T01:01:00Z', declaredAutomationId: 'fixture', triggerVerified: false, usage: { total_tokens: 1200 }, usageAt: '2026-10-02T01:01:00Z' }]), section('billing', [], { state: 'unconnected' })] })
+  assert.equal(r.billingConfirmed, false)
+  assert.ok(r.findings.some(f => f.kind === 'execution_observed' && f.evidenceState === 'confirmed' && f.temporalScope === 'historical'))
+  assert.ok(r.findings.some(f => f.kind === 'candidate_link' && f.evidenceState === 'possible'))
+  assert.ok(r.findings.every(f => f.kind !== 'charge_confirmed'))
+  assert.ok(r.gaps.some(g => g.section === 'billing'))
+  assert.ok(r.recommendations.every(x => x.readOnly === true))
+})
+test('opposing lifecycle records remain a conflict while a later dated state is a transition', () => {
+  const r = evaluateInvestigation({ sections: [section('work', [{ sourceId: 'same', state: 'failed', at: '2026-10-02T01:00:00Z' }, { sourceId: 'same', state: 'completed', at: '2026-10-02T01:00:00Z' }, { sourceId: 'later', state: 'running', at: '2026-10-02T01:00:00Z' }, { sourceId: 'later', state: 'completed', at: '2026-10-02T02:00:00Z' }])] })
+  assert.equal(r.contradictions.length, 1)
+  assert.equal(r.contradictions[0].recordId, 'same')
+  assert.equal(r.transitions.length, 1)
+  assert.equal(r.transitions[0].recordId, 'later')
+})
+test('empty or unavailable evidence never proves absence and investigation planning remains bounded', () => {
+  const r = evaluateInvestigation({ sections: [section('execution', [], { state: 'unavailable' }), section('history', [], { state: 'partial', omitted: 5 })] })
+  assert.equal(r.state, 'partial')
+  assert.equal(r.plan.readOnly, true)
+  assert.equal(r.plan.automaticModelRetries, 0)
+  assert.ok(r.gaps.length >= 2)
+  assert.ok(r.findings.every(f => f.evidenceState === 'not_established'))
+})

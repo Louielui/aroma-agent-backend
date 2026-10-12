@@ -167,8 +167,15 @@ test('ISOLATION: the agent runner has EXACTLY ONE call site, in the ONE shared c
   const svcSrc = fs.readFileSync(path.join(SRC, 'agent', 'confirmService.js'), 'utf8')
   // the gate variable must still be computed from all three explicit fields + the auth gate
   assert.ok(/agentExecuteRequested\s*=\s*\(input\.agentExecute === true\) && !!input\.workOrder && typeof input\.approvedHash === 'string'/.test(svcSrc), 'EXECUTE requires all three fields')
-  assert.ok(/agentEligible\s*=\s*agentExecuteRequested && auth\.agentBridgeAuthorized && agentRunner !== null/.test(svcSrc), 'hand-off also requires the authorization gate')
+  // ⛔ THE GATE GAINED A LANE CHECK, and this assertion follows it rather than being relaxed.
+  //    taskKind is inside the approved hash, so a read-only order can never reach the agent
+  //    runner and a code-change order can never reach the enquiry lane.
+  assert.ok(/agentEligible\s*=\s*agentExecuteRequested && taskKind === 'code_change' && auth\.agentBridgeAuthorized && agentRunner !== null/.test(svcSrc), 'hand-off requires the authorization gate AND the code_change lane')
   assert.ok(/if \(agentEligible\) \{/.test(svcSrc), 'the call site is guarded by agentEligible')
+  // The read-only lane is held to the SAME shape: its own flag in the same matrix, its own
+  // configured service, and its own guarded call site.
+  assert.ok(/enquiryEligible\s*=\s*enquiryRequested && auth\.readOnlyEnquiryAuthorized && readOnlyEnquiryService !== null/.test(svcSrc), 'the read-only lane has its own gate')
+  assert.ok(/if \(enquiryEligible\) \{/.test(svcSrc), 'and its own guarded call site')
   // and BOTH entries must go through that one service — no second confirm implementation
   assert.ok(/confirmService\.confirmProposalAction\(/.test(appSrc), 'the Bearer confirm route calls the shared service')
   const ownerSrc = fs.readFileSync(path.join(SRC, 'routes', 'ownerApprovalRouter.js'), 'utf8')

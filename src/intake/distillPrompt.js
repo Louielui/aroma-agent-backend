@@ -5,6 +5,17 @@
 // still constructs a closed envelope from known fields and still grants no permission.
 const { a4ContractEnabled, admitReadArgs, a4SemanticRoutingEnabled, A4_SEMANTIC_GUIDANCE } = require('./a4Contract')
 const { JUDGMENT_KEY, judgeExecutiveJudgment } = require('./executiveJudgment') // X3: the position, judged not copied
+const { resolveConversationContract } = require('../persona/conversationContract')
+
+// Meaning guidance only. It neither selects a connector nor creates an execution grant.
+// Keep advice in the ordinary conversation path; explicit work still uses approval gates.
+const TURN_PURPOSE_GUIDANCE = `【先理解本回合的目的】
+先理解 Louie 現在想解決甚麼，再決定是否需要資料或行動。不要把每個問題都改寫成餐廳業務查詢。
+討論、設計、取捨或建議：以他已描述的問題先給具體建議、理由與可選方案。若關鍵條件不足，可以說明假設並給初步方案；只有不同理解會使答案方向不同時才釐清。
+提到一個對象、畫面、功能或資料名稱，不等於要求讀取那份資料；描述某個區域放不下，不等於要求查詢該區域的內容。
+回想以前說過甚麼，與改善現在描述的問題，是不同目的。歷史與記憶只能輔助理解，不能把當前問題換成另一個目標。
+需要目前的實際紀錄、最新外部事實或過往對話時，仍要走對應的資料與證據流程，不可用設計建議冒充實際狀態。
+徵詢意見只用 chat 或 recommend；不要因為他問建議就建立任務、派工或宣稱已修改。明確要求動手時，仍按既有範圍、確認與批准流程處理。`
 
 /**
  * distillPrompt.js — COO behaviour (not a chatbot).
@@ -149,7 +160,10 @@ function buildDistillPrompt (message, history = [], opts = {}) {
   // 「classifier preserved verbatim at the END」. Prepending keeps that invariant intact and
   // still puts the guidance after the contract, because this whole string is the last segment.
   const a4Chat = opts && opts.chatLane === true && a4SemanticRoutingEnabled(process.env)
-  const system = a4Chat ? A4_SEMANTIC_GUIDANCE + '\n\n' + SYSTEM_PROMPT : SYSTEM_PROMPT
+  const classifier = opts && opts.chatLane === true && resolveConversationContract() === 'on'
+    ? TURN_PURPOSE_GUIDANCE + '\n\n' + SYSTEM_PROMPT
+    : SYSTEM_PROMPT
+  const system = a4Chat ? A4_SEMANTIC_GUIDANCE + '\n\n' + classifier : classifier
   return { system, prompt: `${convo}Louie 現在說:「${message}」\n\n請先判斷 intent,再依規則輸出 JSON。` }
 }
 
@@ -381,4 +395,4 @@ function parseDistillResponse (text, diag) {
     next_step: typeof p.next_step === 'string' ? p.next_step.trim() : '' }
 }
 
-module.exports = { buildDistillPrompt, parseDistillResponse, SYSTEM_PROMPT, DistillParseError, REJECT_REASONS }
+module.exports = { buildDistillPrompt, parseDistillResponse, SYSTEM_PROMPT, TURN_PURPOSE_GUIDANCE, DistillParseError, REJECT_REASONS }

@@ -71,7 +71,6 @@ const ENQUIRY_JSON_SCHEMA = deepFreeze({
     answer: { type: 'string', maxLength: MAX_ANSWER_CHARS },
     citations: {
       type: 'array',
-      maxItems: MAX_CITATIONS,
       items: {
         type: 'object',
         additionalProperties: false,
@@ -86,7 +85,6 @@ const ENQUIRY_JSON_SCHEMA = deepFreeze({
     },
     notEstablished: {
       type: 'array',
-      maxItems: MAX_NOT_ESTABLISHED,
       items: { type: 'string', maxLength: MAX_ITEM_CHARS }
     }
   }

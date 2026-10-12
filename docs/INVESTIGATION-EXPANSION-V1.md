@@ -1,0 +1,62 @@
+# Operational investigation acceptance expansion
+
+This round extends the bounded read-only investigation to development failure
+diagnosis and background job/model enquiries in Chinese and English. The judged
+Goal Decomposer supplies a closed report focus; it grants no operation or access.
+The existing Owner gate and source catalogue still govern every read.
+
+The fixed Owner bridge projects project task, project work, adoption and fixture
+records. It pins the host-owned canonical root so Windows packaged-app storage
+does not become an arbitrary path grant. Redirected roots and child records are
+rejected. A bounded sample retains the latest recorded development failure,
+explicit task/work run links and recent project work. Directory scan failures,
+oversized records and omitted rows are visible coverage gaps. This is not proof
+that the selected failure is the latest across every account or external system.
+
+Reasons are safe codes. Tests contain only measured integer summaries. Original
+source, prompts, worker output, reviewer prose, credentials and approval material
+never enter this projection. File comparison reads only host-registered source
+paths, rejects canonical redirects and exposes hashes, never file bodies.
+
+Candidate tests and review belong to their recorded source revision. Adoption is
+an explicit workRunId link, not a similar goal or a later successful task. A disk
+hash matching a candidate does not establish that a model timeout or the same
+functional defect is fixed in the loaded process. `fixedInCurrentVersion: null`
+is deliberately retained until a corresponding runtime regression is measured.
+
+Current central brain defaults, automation definitions, explicit schedule models,
+host workflow defaults and historical worker models are distinct observations.
+The bridge observes workflow occupancy without acquiring the model execution
+lane. Occupied can include waiting for a restart; it does not identify a named
+automation currently executing. Review's `sonnet` alias is not a measured current
+model resolution. ACTIVE definitions and saved running states do not prove
+current execution. Named job activity and account-wide inventory remain gaps.
+
+Non-cost reports no longer display billing recommendations. Cost attribution
+continues to require provider billing and an authenticated execution identity.
+The bounded findings list prioritizes the question's evidence and uncertainty:
+workflow occupancy and definitions for background enquiries; failure, candidate
+tests and source comparisons for failure enquiries. Unrelated execution history
+cannot consume their display budget. Full source receipts and omitted counts
+remain preserved.
+Workflow evidence titles resolve exact role identities rather than repeating the
+section name. Facts for a selected role must match that workflow's own fields;
+another role's model cannot satisfy them. Adoption here refers to the local
+Xiangxiang backend, never the production restaurant system.
+The legacy free-prose name checker assumes Cantonese prose with Latin entity
+names. Its protection is unchanged. English failure and background answers use
+a bounded source-field presentation after the same Owner read, with fixed
+uncertainty and read-only recommendations. Model prose is not promoted through a
+larger vocabulary allowlist. Record IDs, reasons, workflow/default-model pairs
+and observation times bind to the same receipt; empty reads establish no absence.
+This does not claim general English free-prose grounding is solved.
+The legacy business-intent ambiguity hint cannot replace an evidence answer after
+an Owner-only judged plan whose required readable facts are operations-only has
+actually read observed records. A null unavailable fact remains a verification
+gap; it cannot erase the observed answer or become a new read permission.
+Unavailable reads, mixed plans and non-Owner turns retain the existing gate. This
+egress correction adds no model retry or source access; its event is recorded.
+Actual acceptance receipts are saved in the development workspace outputs under
+the `investigation-expansion` prefix; source hashes, English/Chinese answers,
+progress events, replay and reload checks are retained. Management actions and
+external writes remain outside this round.

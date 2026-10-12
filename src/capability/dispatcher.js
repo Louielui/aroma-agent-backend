@@ -51,7 +51,13 @@ const { getCapability, isRoutable } = require('./registry')
  * @returns {{ dispatch: function, getEvents: function }}
  */
 function createDispatcher (options = {}) {
+  options = options || {}
   const adapters = (options && options.adapters) || {}
+  // Host-scoped recipes may restrict candidates and refuse automatic fallback.
+  // These are constructor settings, never authority supplied in a request.
+  const allowedAgentIds = options.allowedAgentIds == null ? null : options.allowedAgentIds
+  if (allowedAgentIds !== null && (!Array.isArray(allowedAgentIds) || allowedAgentIds.length === 0 || allowedAgentIds.some(id => typeof id !== 'string' || !id) || new Set(allowedAgentIds).size !== allowedAgentIds.length)) throw TypeError('invalid_agent_scope')
+  if (options.fallback !== undefined && typeof options.fallback !== 'boolean') throw TypeError('invalid_fallback_setting')
   const eventSink = options && typeof options.eventSink === 'function' ? options.eventSink : null
   const runContext = options && options.runContext &&
     typeof options.runContext.appendStage === 'function' ? options.runContext : null
@@ -79,7 +85,7 @@ function createDispatcher (options = {}) {
       rule_id: verdict.rule_id,
       success: success === true,
       latencyMs: Number.isFinite(latencyMs) ? latencyMs : 0,
-      cost: Number.isFinite(cost) ? cost : 0,
+      cost: Number.isFinite(cost) ? cost : null,
       timestamp: Date.now()
     }
   }
@@ -150,14 +156,14 @@ function createDispatcher (options = {}) {
     const canonicalVersion = getCapability(capabilityId, version).version
 
     // (6) Select candidate agents. None available → no_agent (still an Event).
-    const candidates = agentsProviding(capabilityId, canonicalVersion)
+    const candidates = agentsProviding(capabilityId, canonicalVersion).filter(agent => !allowedAgentIds || allowedAgentIds.includes(agent.id))
     if (candidates.length === 0) {
       record(buildEvent({ agentId: null, capabilityId, version: canonicalVersion, verdict, success: false }))
       return { status: 'no_agent' }
     }
 
     // (7) Rank best-first.
-    const ranked = rankByHealth(candidates, capabilityId, canonicalVersion)
+    const ranked = rankByHealth(candidates, capabilityId, canonicalVersion).slice(0, options.fallback === false ? 1 : undefined)
 
     // (timeline) An agent has been chosen. healthBasis records whether the live
     // rolling health decided the ranking, or the manifest seed values did (no
@@ -205,12 +211,12 @@ function createDispatcher (options = {}) {
           // Adapter reported failure: record a failing Event, fold health, fall back.
           lastError = result.error || 'adapter reported failure'
           lastAgentId = agentId
-          lastCost = result.cost
+          lastCost = provenCost
           lastLatencyMs = latencyMs
           attempts.push({ agentId, error: lastError })
           record(buildEvent({
             agentId, capabilityId, version: canonicalVersion, verdict,
-            success: false, latencyMs, cost: result.cost
+            success: false, latencyMs, cost: provenCost
           }))
           // (timeline) This attempt finished, unsuccessfully.
           stage('AGENT_FINISHED', { agentId, success: false, cost: provenCost, latencyMs })
@@ -220,7 +226,7 @@ function createDispatcher (options = {}) {
         // (9)/(11) Success: record, fold health, return.
         record(buildEvent({
           agentId, capabilityId, version: canonicalVersion, verdict,
-          success: true, latencyMs, cost: result.cost
+          success: true, latencyMs, cost: provenCost
         }))
         // (timeline) This attempt finished, successfully.
         stage('AGENT_FINISHED', { agentId, success: true, cost: provenCost, latencyMs })
@@ -230,17 +236,17 @@ function createDispatcher (options = {}) {
             typeof result.output.patchPath === 'string' && result.output.patchPath.length > 0) {
           stage('PATCH_READY', { patchPath: result.output.patchPath })
         }
-        return { status: 'ok', agentId, output: result.output, cost: result.cost, latencyMs }
+        return { status: 'ok', agentId, output: result.output, cost: provenCost, latencyMs }
       } catch (err) {
         // Thrown error (bad/missing adapter or invoke threw): record, fold, fall back.
         lastError = (err && err.message) || String(err)
         lastAgentId = agentId
-        lastCost = 0
+        lastCost = null
         lastLatencyMs = 0
         attempts.push({ agentId, error: lastError })
         record(buildEvent({
           agentId, capabilityId, version: canonicalVersion, verdict,
-          success: false, latencyMs: 0, cost: 0
+          success: false, latencyMs: 0, cost: null
         }))
         // (timeline) Only claim an AGENT_FINISHED if we truly reached invoke; a
         // thrown invoke proved no cost, so cost is null.

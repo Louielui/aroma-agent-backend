@@ -1,5 +1,16 @@
 # Product Information Architecture
 
+## 2026-10-10 Owner-authorized navigation update
+
+The Owner requested department workspaces. Department Workspaces v1 now groups
+HR, Purchasing, Operations, Accounting and Marketing in the top Departments menu,
+with mail, documents, calendar and briefing under Shared tools. Their real initial
+scope is isolated saved conversations, manual follow-ups and model selection.
+HR additionally prepares explicit-date 7shifts clock-out reads. Dedicated data
+tools not yet connected are labelled as such; no department grants permissions.
+This supersedes the older sidebar map below only for this bounded release.
+See `DEPARTMENT-WORKSPACES-V1.md` for implementation and acceptance boundaries.
+
 <!-- record-status: ACTIVE 2026-08-06 -->
 
 **DOCUMENT ONLY. Nothing here is authorised to be built.** 2026-08-06.
