@@ -34,6 +34,13 @@ async function runTests ({root,dependencies,directory,files=null,tree=null,commi
   fs.writeFileSync(path.join(directory,'tests.json'),JSON.stringify(receipt,null,2)+'\n')
   return receipt
 }
+function diffPath (part) {return part.split('\n')[0].match(/ b\/([^"\r\n]+)$/)?.[1]||null}
+function shouldReviewPath (name) {
+  if(!name)return true
+  if(/\.(?:test|e2e)\.[cm]?js$/.test(name))return false
+  if(/^docs\//.test(name)&&/\.md$/.test(name)&&!['docs/HOUSE-RULES.md','docs/AUTONOMOUS-REPOSITORY-PROMOTION.md'].includes(name))return false
+  return true
+}
 function reviewPacket ({root,commit,base,tests,maxBytes=700000}) {
   const raw=command(root,['diff','--binary','--no-ext-diff',base,commit],{buffer:true}).toString('utf8')
   const changed=command(root,['diff','--name-only','-z',base,commit],{buffer:true}).toString('utf8').split('\0').filter(Boolean)
@@ -41,12 +48,12 @@ function reviewPacket ({root,commit,base,tests,maxBytes=700000}) {
   // are explicitly listed but not sent as production code; their measured tests
   // and survey guards are separate evidence, never an implied line-by-line review.
   const pieces=raw.split(/(?=^diff --git )/m).filter(Boolean)
-  const code=pieces.filter(part=>!/(?:\.test\.|\.e2e\.|^diff --git a\/docs\/)/.test(part.split('\n')[0]))
+  const code=pieces.filter(part=>shouldReviewPath(diffPath(part)))
   // Protected host adapters implement the pre-authorized GitHub PR writes and
   // unauthorized-intake smoke POST. They are never low risk: any edit requires
   // the Owner's security exception and independent executable-code review.
   const repositoryProtocolPaths=['src/repositoryPromotion/github.js','src/repositoryPromotion/runtime.js']
-  const contentPieces=code.filter(part=>!repositoryProtocolPaths.some(p=>part.startsWith('diff --git a/'+p+' b/'+p+'\n')))
+  const contentPieces=code.filter(part=>!repositoryProtocolPaths.includes(diffPath(part))&&!/^docs\//.test(diffPath(part)||''))
   const addedText=contentPieces.flatMap(part=>part.split('\n').filter(line=>line.startsWith('+')&&!line.startsWith('+++')).map(line=>line.slice(1))).join('\n')
   const baseTree=command(root,['rev-parse',base+'^{tree}']),tree=command(root,['rev-parse',commit+'^{tree}'])
   const batches=[];let current=[]
@@ -95,4 +102,4 @@ async function runReview ({packet,directory,cwd,provider=require('../core/worker
   fs.writeFileSync(path.join(directory,'review.json'),JSON.stringify(result,null,2)+'\n')
   return result
 }
-module.exports={AUTHORIZED_SKIP_NAMES,parseTests,cleanTestEnv,runTests,reviewPacket,readReview,runReview}
+module.exports={AUTHORIZED_SKIP_NAMES,parseTests,cleanTestEnv,runTests,diffPath,shouldReviewPath,reviewPacket,readReview,runReview}
