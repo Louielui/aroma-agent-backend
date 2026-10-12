@@ -59,3 +59,16 @@ test('an insufficient result cannot expose unverified figures as its leading ans
  const lead=out.reply.split('### Source checks and excerpts')[0]
  assert.match(lead,/do not establish the requested information/);assert.doesNotMatch(lead,/10:00|17:00/)
 })
+
+test('recurring intervals use verified quoted fields in a weekday-ordered table, with critical gaps visible',()=>{
+ for(const language of ['zh','en']){
+  const quote='Tuesday: opens 10:00; closes 20:00\nMonday: opens 10:00; closes 17:00';
+  const observed={...row,content:language==='zh'?'星期二及星期一的常規開放時間。':'Regular hours on Tuesday and Monday.',fields:{...row.fields,contentKind:'publisher_cited_summary',sourceEvidence:{kind:'publisher_structured',language,hash:'a'.repeat(64),quote,times:[],coverage:{kind:'recurring_hours',missingDays:['Sunday'],exceptions:'unknown'},answerState:'supported',hostScopeHandled:1,pageChecks:[{url:row.fields.url,state:'read',fallback:true}]}}};
+  const reply=buildReadResultReply({message:language==='zh'?'開放時間？':'Regular hours?',itemsBySource:[{source:'public_knowledge',items:[observed]}]}).reply;
+  const [lead,detail]=reply.split('### ');
+  assert.match(lead,/\| (星期一|Monday) \| 10:00 \| 17:00 \|/);assert.match(lead,/\| (星期二|Tuesday) \| 10:00 \| 20:00 \|/);
+  assert.ok(lead.indexOf(language==='zh'?'星期一':'Monday')<lead.indexOf(language==='zh'?'星期二':'Tuesday'));
+  assert.match(lead,/星期日|Sunday/);assert.match(lead,/假日|holiday/);assert.doesNotMatch(lead,/JSON|projection|翻譯由模型|model-assisted|已補查|Additional sources checked/);
+  assert.match(detail,/結構化|structured/);assert.match(detail,/已補查|Additional sources checked/);
+ }
+});

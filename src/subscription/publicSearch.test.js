@@ -5,6 +5,46 @@ const { createLiveReadConnector } = require('../context/liveClients')
 const { projectConnections } = require('../context/connectionState')
 const URL = 'https://weather.gc.ca/en/location/index.html?coords=49.895%2C-97.135'
 const now = '2026-10-11T20:00:00.000Z'
+
+test('source timing counts actual paid stages with no query, source text or exception content in telemetry',async()=>{
+ let tick=0;const logs=[];
+ const out=await search({timingClock:()=>tick,latencySink:(prefix,body)=>logs.push(JSON.parse(body)),check:async()=>{tick+=2},run:async(args,opts)=>{tick+=11;events().forEach(opts.onEvent);return events().at(-1)},readPages:async()=>{tick+=3;return {pages:[],checks:[]}},readFallback:async()=>({pages:[],checks:[],attempted:0}),compose:async(opts,{sources})=>{tick+=5;return {answerState:'supported',claims:[{source:sources[0],quote:sources[0].text,answer:sources[0].text}],modelUsage:{'claude-opus-5-5':{inputTokens:3,outputTokens:4}}}},clock:()=>now},{query:'PRIVATE QUERY MARKER',replyLanguage:'en'});
+ assert.equal(out.retrievalTiming.modelCallCount,2);assert.equal(out.retrievalTiming.totalMs,21);assert.equal(out.retrievalTiming.phases.find(r=>r.role==='public_discovery').durationMs,11);assert.equal(out.retrievalTiming.phases.find(r=>r.role==='public_composition').durationMs,5);
+ assert.equal(logs.filter(r=>r.phase==='model_call').length,2);assert.doesNotMatch(JSON.stringify(logs),/PRIVATE QUERY MARKER|10°C|https:/);
+ assert.equal(out.results[0].sourceEvidence.retrievalTiming.totalMs,21);
+});
+
+test('failed composition and cached results preserve original measured timing without new dispatch claims',async()=>{
+ let tick=0,calls=0;const logs=[];
+ const failed=await search({timingClock:()=>tick,latencySink:(prefix,body)=>logs.push(body),check:async()=>{},run:async(args,opts)=>{tick+=4;events().forEach(opts.onEvent);return events().at(-1)},readPages:async()=>({pages:[],checks:[]}),readFallback:async()=>({pages:[],checks:[],attempted:0}),compose:async()=>{tick+=6;throw Error('SECRET EXCEPTION CONTENT')}},{query:'weather',replyLanguage:'en'});
+ assert.equal(failed.status,'unavailable');assert.equal(failed.retrievalTiming.modelCallCount,2);assert.equal(failed.retrievalTiming.totalMs,10);assert.equal(failed.retrievalTiming.phases.at(-1).outcome,'error');assert.doesNotMatch(logs.join(''),/SECRET EXCEPTION CONTENT/);
+ const cache=createSearchCache(async()=>{calls++;return {...extractEvidence(events(),'weather',now),retrievalTiming:failed.retrievalTiming}});
+ const first=await cache({query:'weather'}),hit=await cache({query:'weather'});
+ assert.equal(calls,1);assert.equal(hit.cache,'hit');assert.equal(hit.webSearchCalls,0);assert.deepEqual(hit.retrievalTiming,first.retrievalTiming);
+});
+
+test('one numeric repair uses only the withheld exact quote, preserves valid facts and counts its usage',async()=>{
+ let calls=0;
+ const page={id:'p1',kind:'publisher_page',url:URL,title:'Weather',text:'Observed temperature 7°C. Forecast high 8°C.',hash:'a'.repeat(64),retrievedAt:now,times:[],freshness:'unknown'};
+ const out=await search({check:async()=>{},latencySink:()=>{},clock:()=>now,run:async(args,opts)=>{events().forEach(opts.onEvent);return events().at(-1)},readPages:async()=>({pages:[page],checks:[]}),readFallback:async()=>({pages:[],checks:[],attempted:0}),compose:async(opts,input)=>{
+  calls++;
+  const modelUsage={'claude-opus-5-5':{inputTokens:3,outputTokens:4}};
+  if(calls===1)return {answerState:'supported',claims:[{source:page,quote:'Observed temperature 7°C.',answer:'該次觀測氣溫7°C。'}],omitted:1,withheldReasons:{unverified_number:1},withheldClaims:[{sourceId:'p1',quote:'Forecast high 8°C.',reason:'unverified_number'}],modelUsage};
+  assert.deepEqual(input.repairClaims,[{sourceId:'p1',quote:'Forecast high 8°C.'}]);
+  return {answerState:'supported',claims:[{source:page,quote:'Forecast high 8°C.',answer:'預報最高氣溫8°C。'}],omitted:0,withheldReasons:{},modelUsage};
+ }},{query:'weather',replyLanguage:'zh'});
+ assert.equal(calls,2);assert.equal(out.results.length,2);assert.ok(out.results.some(r=>r.content==='預報最高氣溫8°C。'));assert.equal(out.results[0].sourceEvidence.omitted,0);assert.equal(out.results[0].sourceEvidence.repairAttempted,true);assert.equal(out.usage.outputTokens,10);
+});
+
+test('failed numeric repair keeps the verified partial answer and both observed usage receipts',async()=>{
+ let calls=0;const page={id:'p1',kind:'publisher_page',url:URL,title:'Weather',text:'Forecast high 8°C.',retrievedAt:now,times:[],freshness:'unknown'};
+ const out=await search({check:async()=>{},latencySink:()=>{},run:async(args,opts)=>{events().forEach(opts.onEvent);return events().at(-1)},readPages:async()=>({pages:[page],checks:[]}),readFallback:async()=>({pages:[],checks:[],attempted:0}),compose:async opts=>{
+  calls++;const modelUsage={'claude-opus-5-5':{inputTokens:3,outputTokens:4}};opts.onCompositionUsage(modelUsage);
+  if(calls===2)throw Error('repair_unavailable');
+  return {answerState:'supported',claims:[{source:page,quote:page.text,answer:page.text}],omitted:1,withheldReasons:{unverified_number:1},withheldClaims:[{sourceId:'p1',quote:page.text,reason:'unverified_number'}],modelUsage};
+ }},{query:'weather',replyLanguage:'en'});
+ assert.equal(calls,2);assert.equal(out.status,'live');assert.equal(out.results[0].sourceEvidence.omitted,1);assert.equal(out.usage.outputTokens,10);assert.equal(out.usageComplete,true);
+});
 function events (reply = 'The current temperature is 10°C. [Environment Canada](' + URL + ')') {
   return [{ type:'system', subtype:'init', tools:['WebSearch'] },
     { type:'assistant', message:{ content:[{ type:'tool_use', name:'WebSearch', id:'s1', input:{ query:'Winnipeg weather' } }] } },

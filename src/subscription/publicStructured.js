@@ -10,6 +10,7 @@ function admitStructuredUrl(value){try{const u=new URL(value);return !u.username
 function key(value){return String(value||'').toLowerCase().replace(/[^a-z0-9\u3400-\u9fff]/g,'')}
 function scalar(value,max=1000){return typeof value==='string'&&value.trim()&&value.length<=max?value.trim():null}
 function sourceDate(value){if(typeof value!=='string')return null;if(/^\d{4}-\d{2}-\d{2}$/.test(value))return Number.isFinite(Date.parse(value))&&new Date(value).toISOString().startsWith(value)?value:null;return /^\d{4}-\d{2}-\d{2}T.*(?:Z|[+-]\d{2}:\d{2})$/i.test(value)&&Number.isFinite(Date.parse(value))?new Date(value).toISOString():null}
+function coverageText(coverage){return coverage?.kind==='recurring_hours'?'Coverage: recurring hours only; date-specific opening status and holiday exceptions are unknown. Missing weekdays are unknown, not closed. Missing weekdays: '+(coverage.missingDays||[]).join(', ')+'.':null}
 function projectStructured(node,binding={}){
  if(!node||Array.isArray(node)||typeof node!=='object'||(node['@context']!=null&&!['https://schema.org','http://schema.org'].includes(node['@context'])))return null
  const types=Array.isArray(node['@type'])?node['@type']:[node['@type']],name=scalar(node.name,200)||scalar(node.headline,200)
@@ -30,14 +31,25 @@ function projectStructured(node,binding={}){
   }
   if(!days.size)return null
   coverage={kind:'recurring_hours',daysListed:DAYS.filter(d=>days.has(d)),missingDays:DAYS.filter(d=>!days.has(d)),exceptions:'unknown',invalidFields}
-  lines.push('Coverage: recurring hours only; date-specific opening status and holiday exceptions are unknown. Missing weekdays are unknown, not closed. Missing weekdays: '+coverage.missingDays.join(', ')+'.')
+  lines.push(coverageText(coverage))
  }else{const description=scalar(node.description,1500);if(description)lines.push('description: '+description);if(!datePublished&&!description)return null}
  return {title:name,text:lines.join('\n'),coverage,times,publishedAt:datePublished,freshness:'unknown',kind:'publisher_structured',extraction:'schema_fields'}
 }
 function nodes(value){if(Array.isArray(value))return value.slice(0,30);if(value&&Array.isArray(value['@graph']))return value['@graph'].slice(0,30).map(n=>({...n,'@context':n?.['@context']||value['@context']}));return [value]}
 function inspectDocument(html,pageUrl,title){
- const records=[],references=[],binding={pageUrl,title};let url
- try{url=new URL(pageUrl)}catch{return {records,references}}
+ const records=[],references=[],navigation=[],binding={pageUrl,title};let url
+ try{url=new URL(pageUrl)}catch{return {records,references,navigation}}
+ // Only the registered directory's observed links are eligible. The caller
+ // selects one exact subject from the already approved public query.
+ if(url.href==='https://www.winnipeg.ca/recreation-leisure/libraries/locations-and-hours'){
+  for(const match of html.matchAll(/<a\b[^>]*href=["']([^"']+)["'][^>]*>([^]*?)<\/a>/gi)){
+   try{
+    const target=new URL(match[1],pageUrl),slug=target.pathname.match(/^\/recreation-leisure\/libraries\/locations-and-hours\/([a-z-]+)$/)?.[1];
+    const subject=match[2].replace(/<[^>]+>/g,' ').replace(/\s+/g,' ').trim();
+    if(target.origin===url.origin&&!target.search&&!target.hash&&BRANCHES[slug]&&key(subject)===key(slug)&&!navigation.some(r=>r.url===target.href))navigation.push({url:target.href,subject,format:null,relation:'publisher_navigation'});
+   }catch{/* Invalid links stay unselected. */}
+  }
+ }
  for(const match of html.matchAll(/<script\b[^>]*type=["']application\/ld\+json["'][^>]*>([^]*?)<\/script>/gi)){
   if(records.length>=2||match[1].length>65536)break
   try{for(const node of nodes(JSON.parse(match[1]))){const projected=projectStructured(node,binding);if(projected&&records.length<2)records.push(projected)}}catch{/* Invalid data stays absent; scripts are never run. */}
@@ -51,6 +63,6 @@ function inspectDocument(html,pageUrl,title){
  const slug=url.pathname.match(/^\/recreation-leisure\/libraries\/locations-and-hours\/([a-z-]+)\/?$/)?.[1],id=BRANCHES[slug]
  const scripts=Array.from(html.matchAll(/<script\b[^>]*\bsrc=["']([^"']+)["']/gi),m=>m[1])
  if(url.origin==='https://www.winnipeg.ca'&&id&&scripts.includes(SCRIPT_BASE+'hours-schema-inject.js')&&scripts.includes(SCRIPT_BASE+'winnipeg_ca_library_hours_translation.js'))references.unshift({url:SCHEMA_BASE+id+'.json',binding:{pageUrl,title,name:title.replace(/ Library$/,'')},format:'structured',relation:'registered_publisher_profile'})
- return {records,references:references.slice(0,2)}
+ return {records,references:references.slice(0,2),navigation}
 }
-module.exports={inspectDocument,projectStructured,admitStructuredUrl,DAYS}
+module.exports={inspectDocument,projectStructured,admitStructuredUrl,coverageText,DAYS}

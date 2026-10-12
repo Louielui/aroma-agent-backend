@@ -77,6 +77,7 @@ const CLASS = Object.freeze({
 const FILE_CLASS = Object.freeze({
   'capabilities/gapContract.js': CLASS.INTERFACE,
   'capabilities/gapService.js': CLASS.MATCHING,
+  'subscription/publicAnswer.js': CLASS.MATCHING, // Bilingual output guards; translating patterns would change evidence admission.
   'context/sevenShiftsReport.js': CLASS.MATCHING, // Bounded input guards and separately bilingual output; translating the guards would alter routing.
   'context/sevenShiftsAttendance.js': CLASS.MATCHING, // Bounded attendance intent guards and separately bilingual evidence output; guards must not be translated.
   'context/sevenShiftsComparison.js': CLASS.MATCHING, // Bounded bilingual intent guards and deterministic comparison output; no model instructions.

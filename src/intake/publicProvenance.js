@@ -43,12 +43,20 @@ function publicSummary (input) {
 }
 function cleanText(text){return String(text||'').replace(/\[([^\]]*)\]\([^)]*\)/g,'$1').replace(/[\\\[\]*_`<>#]/g,'').replace(/\r/g,'')}
 function localTime(value,locale){return /^\d{4}-\d{2}-\d{2}$/.test(value)?value:Number.isFinite(Date.parse(value))?new Intl.DateTimeFormat(locale==='zh'?'zh-TW':'en-CA',{timeZone:'America/Winnipeg',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hour12:false}).format(new Date(value))+' (Winnipeg)':null}
+function preparedPublicSummary(input,{requiredWorlds,completedWorlds,investigation}={}){
+ if(investigation||requiredWorlds?.public!==true||requiredWorlds.internal!==false||completedWorlds?.public!==true||completedWorlds.internal===true)return null
+ const groups=input.itemsBySource||[]
+ if(!groups.length||groups.some(g=>g.source!=='public_knowledge'||!g.items?.length))return null
+ const locale=/[\u3400-\u9fff]/.test(input.message||'')?'zh':'en'
+ if(groups.flatMap(g=>g.items).some(r=>r.trust!=='live'||r.fields?.provider!=='claude_subscription_search'||r.fields.consulted!==true||r.fields.contentKind!=='publisher_cited_summary'||!['publisher_page','publisher_structured'].includes(r.fields.sourceEvidence?.kind)||r.fields.sourceEvidence?.answerState!=='supported'||r.fields.sourceEvidence.language!==locale||!/^[a-f0-9]{64}$/.test(r.fields.sourceEvidence.hash||'')))return null
+ return publicSummary(input)
+}
 function timeLabel(kind,locale){if(kind==='observation')return t('publicSearch.observationTime',{},locale);if(kind==='forecast')return t('publicSearch.forecastTime',{},locale);if(kind==='publication')return t('publicSearch.publicationTime',{},locale);return t('publicSearch.updateTime',{},locale)}
 function composedSummary(rows,input,locale){
  if(rows.some(r=>r.fields.sourceEvidence.language!==locale))return t('publicSearch.languageUnavailable',{},locale)
  const primary=rows.filter(r=>r.fields.contentKind==='publisher_cited_summary'&&['publisher_page','publisher_structured'].includes(r.fields.sourceEvidence.kind)&&/^[a-f0-9]{64}$/.test(r.fields.sourceEvidence.hash||''))
  const insufficient=rows.some(r=>r.fields.sourceEvidence.answerState==='insufficient')
- const lead=insufficient?t('publicSearch.insufficient',{},locale):rows.slice(0,3).map(r=>'- '+cleanText(r.content)).join('\n')
+ const lead=insufficient?t('publicSearch.insufficient',{},locale):recurringTable(rows,locale)||rows.map(r=>'- '+cleanText(r.content)).join('\n')
  const note=primary.some(r=>r.fields.sourceEvidence.kind==='publisher_structured')?t('publicSearch.structuredIntro',{},locale):primary.length===rows.length?t('publicSearch.primaryIntro',{},locale):t('publicSearch.summaryShort',{},locale)
  const times=Array.from(new Map(primary.flatMap(r=>(r.fields.sourceEvidence.times||[]).filter(v=>['observation','forecast','publication'].includes(v.kind)).map(v=>[v.kind+v.value,v]))).values())
  const timing=times.map(v=>timeLabel(v.kind,locale)+': '+localTime(v.value,locale)).join('\n')
@@ -73,6 +81,26 @@ function composedSummary(rows,input,locale){
  const gaps=missing.length?t('publicSearch.missingDays',{days:missing.map(d=>weekdays[d]||d).join(', ')},locale):null
  const invalid=Math.max(0,...coverages.map(c=>c.invalidFields||0))
  const checked=Array.from(new Set(rows.flatMap(r=>(r.fields.sourceEvidence.pageChecks||[]).filter(c=>c.fallback).map(c=>c.url)))).length
- return [lead,note,scope,gaps,invalid?t('publicSearch.structuredInvalid',{count:invalid},locale):null,omitted,timing,limits,links,checked?t('publicSearch.fallbackChecked',{count:checked},locale):null,'### '+t('publicSearch.details',{},locale),details].filter(Boolean).join('\n\n')
+ const reasons=Object.assign({},...rows.map(r=>r.fields.sourceEvidence.withheldReasons||{}))
+ const reasonsText=Object.entries(reasons).map(([reason,count])=>{
+  const labels={source_missing:t('publicSearch.checkSource',{},locale),shape_invalid:t('publicSearch.checkShape',{},locale),quote_mismatch:t('publicSearch.checkQuote',{},locale),language_mismatch:t('publicSearch.checkLanguage',{},locale),temporal_scope:t('publicSearch.checkTime',{},locale),unverified_number:t('publicSearch.checkNumber',{},locale)}
+  return labels[reason]&&Number.isSafeInteger(count)&&count>0?labels[reason]+': '+count:null
+ }).filter(Boolean).join('\n')
+ const hostScope=rows.some(r=>r.fields.sourceEvidence.hostScopeHandled>0)?t('publicSearch.hostScope',{},locale):null
+ const retrieval=rows[0].fields.sourceEvidence.retrievalTiming
+ const latency=retrieval&&Number.isSafeInteger(retrieval.totalMs)&&retrieval.totalMs>=0&&Number.isSafeInteger(retrieval.modelCallCount)&&retrieval.modelCallCount>=0?t('publicSearch.retrievalTiming',{ms:retrieval.totalMs,calls:retrieval.modelCallCount},locale):null
+ return [lead,scope,gaps,invalid?t('publicSearch.structuredInvalid',{count:invalid},locale):null,omitted,timing,limits,links,'### '+t('publicSearch.details',{},locale),note,checked?t('publicSearch.fallbackChecked',{count:checked},locale):null,hostScope,reasonsText,latency,details].filter(Boolean).join('\n\n')
 }
-module.exports = { publicProvenance, publicSummary,cleanText,localTime }
+function recurringTable(rows,locale){
+ if(!rows.length||new Set(rows.map(r=>r.fields.url)).size!==1||rows.some(r=>r.fields.sourceEvidence?.kind!=='publisher_structured'||r.fields.sourceEvidence.coverage?.kind!=='recurring_hours'))return null
+ const days=['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'],values=[]
+ for(const row of rows)for(const line of row.fields.sourceEvidence.quote.split('\n')){
+  const match=line.match(/^(Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday): opens ((?:[01]\d|2[0-3]):[0-5]\d); closes ((?:[01]\d|2[0-3]):[0-5]\d)$/)
+  if(!match)return null
+  const value=match.slice(1);if(!values.some(v=>v.join('|')===value.join('|')))values.push(value)
+ }
+ const labels={Monday:t('publicSearch.monday',{},locale),Tuesday:t('publicSearch.tuesday',{},locale),Wednesday:t('publicSearch.wednesday',{},locale),Thursday:t('publicSearch.thursday',{},locale),Friday:t('publicSearch.friday',{},locale),Saturday:t('publicSearch.saturday',{},locale),Sunday:t('publicSearch.sunday',{},locale)}
+ values.sort((a,b)=>days.indexOf(a[0])-days.indexOf(b[0])||a[1].localeCompare(b[1]))
+ return '| '+t('publicSearch.dayColumn',{},locale)+' | '+t('publicSearch.opensColumn',{},locale)+' | '+t('publicSearch.closesColumn',{},locale)+' |\n| --- | --- | --- |\n'+values.map(([day,opens,closes])=>'| '+labels[day]+' | '+opens+' | '+closes+' |').join('\n')
+}
+module.exports = { publicProvenance, publicSummary,preparedPublicSummary,cleanText,localTime }

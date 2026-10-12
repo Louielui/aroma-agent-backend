@@ -45,7 +45,11 @@ const PHASE = Object.freeze({
   DECISION_RECALL: 'decision_recall',
   CONVERSATION_RECALL: 'conversation_recall',
   LIVE_READ_CONTEXT: 'live_read_context',
-  MODEL_CALL: 'model_call'
+  MODEL_CALL: 'model_call',
+  PUBLIC_AUTH: 'public_auth',
+  PUBLIC_PUBLISHER_READ: 'public_publisher_read',
+  PUBLIC_REFERENCE_READ: 'public_reference_read',
+  PUBLIC_ALTERNATE_READ: 'public_alternate_read'
 })
 const PHASES = Object.freeze(Object.values(PHASE))
 
@@ -59,7 +63,9 @@ const ROLE = Object.freeze({
   FINAL_VERIFIER: 'final_verifier',
   REASONING_STEP: 'reasoning_step',
   EVIDENCE_REVIEW: 'evidence_review',
-  RESERVED_COMPOSE: 'reserved_compose'
+  RESERVED_COMPOSE: 'reserved_compose',
+  PUBLIC_DISCOVERY: 'public_discovery',
+  PUBLIC_COMPOSITION: 'public_composition'
 })
 const ROLES = Object.freeze(Object.values(ROLE))
 

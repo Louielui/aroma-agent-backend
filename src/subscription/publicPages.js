@@ -43,7 +43,7 @@ function extractPage(html,url,retrievedAt){
  }
  const observed=times.filter(t=>t.kind==='observation'&&t.value.includes('T')).map(t=>Date.parse(t.value)),age=observed.length?Date.parse(retrievedAt)-Math.max(...observed):null
  const subject=plain(main.match(/<h1\b[^>]*>([^]*?)<\/h1>/i)?.[1]||'').slice(0,200),inspected=structured.inspectDocument(html,url,subject),hash=crypto.createHash('sha256').update(html).digest('hex')
- return {state:'read',url,title:plain(clean.match(/<title\b[^>]*>([^]*?)<\/title>/i)?.[1]||subject||new URL(url).hostname).slice(0,200),text,retrievedAt,hash,times,publishedAt:times.find(t=>t.kind==='publication')?.value||null,freshness:age===null?'unknown':age<0?'unknown':age<=2*60*60*1000?'recent_observation':'stale_observation',structuredRecords:inspected.records.map(r=>({...r,url,retrievedAt,hash,parentUrl:url})),references:inspected.references.filter(r=>admitUrl(r.url)||structured.admitStructuredUrl(r.url))}
+ return {state:'read',url,title:plain(clean.match(/<title\b[^>]*>([^]*?)<\/title>/i)?.[1]||subject||new URL(url).hostname).slice(0,200),text,retrievedAt,hash,times,publishedAt:times.find(t=>t.kind==='publication')?.value||null,freshness:age===null?'unknown':age<0?'unknown':age<=2*60*60*1000?'recent_observation':'stale_observation',structuredRecords:inspected.records.map(r=>({...r,url,retrievedAt,hash,parentUrl:url})),references:inspected.references.filter(r=>admitUrl(r.url)||structured.admitStructuredUrl(r.url)),navigation:inspected.navigation}
 }
 async function readPage(value,{get=getPublic,signal,now=Date.now,format=null,binding=null}={}){
  const original=admitUrl(value)||(format==='structured'&&binding&&admitUrl(binding.pageUrl)?structured.admitStructuredUrl(value):null);if(!original)return {url:value,state:'unavailable',reason:'host_not_registered'}
@@ -74,8 +74,9 @@ async function readOfficialPages(sources,{read=readPage,signal,freshness=null}={
  }
  return {pages,checks}
 }
-async function readFallbackPages(sources,official,{read=readPage,signal,limit=2,referencesOnly=false}={}){
- const seen=new Set((official.checks||[]).map(c=>c.url)),references=(official.pages||[]).flatMap(p=>p.references||[]),alternates=referencesOnly?[]:sources.map(s=>({url:admitUrl(s.url),format:null,relation:'observed_search_alternate'})),selected=[]
+async function readFallbackPages(sources,official,{read=readPage,signal,limit=2,referencesOnly=false,query=''}={}){
+ const named=Array.from(new Map((official.pages||[]).flatMap(p=>p.navigation||[]).filter(r=>typeof r.subject==='string'&&query.toLowerCase().includes(r.subject.toLowerCase())).map(r=>[r.url,r])).values());
+ const seen=new Set((official.checks||[]).map(c=>c.url)),references=[...(official.pages||[]).flatMap(p=>p.references||[]),...(named.length===1?named:[])],alternates=referencesOnly?[]:sources.map(s=>({url:admitUrl(s.url),format:null,relation:'observed_search_alternate'})),selected=[]
  for(const hint of [...references,...alternates]){if(!hint.url||seen.has(hint.url)||selected.length>=Math.min(2,Math.max(0,limit)))continue;seen.add(hint.url);selected.push(hint)}
  const pages=[],checks=[]
  for(const hint of selected){if(signal?.aborted)break;const page=await read(hint.url,{signal,format:hint.format,binding:hint.binding});checks.push({url:hint.url,state:page.state,reason:page.reason||null,fallback:true,relation:hint.relation,parentUrl:hint.binding?.pageUrl||null});if(page.state==='read')pages.push({...page,id:'f'+(checks.length)})}

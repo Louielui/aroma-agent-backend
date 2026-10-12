@@ -3239,6 +3239,12 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
         : ((mixedOn && (await resolveIntent()).intent === 'mixed') ? 4 : undefined),
       onEvent: (e) => { try { console.log('[AROMA-REASONING]', JSON.stringify(Object.assign({ requestId, provider: activeProvider }, e))) } catch (_) {} },
       executeRead: performRead,
+      getPreparedDecision: async () => {
+        const reply = require('./publicProvenance').preparedPublicSummary({message,itemsBySource:Array.from(turnItems.values())}, {requiredWorlds,completedWorlds,investigation:operationalInvestigation})
+        if (!reply || terminalReadGap) return null
+        distilled = Object.assign({}, distilled, {mode:'chat',intent:'question',reply,nextRead:null,answerPlan:null,tasks:[],risks:[]})
+        return {type:'final',result:distilled}
+      },
       callModel: async ({ step, composeOnly }) => {
         // ⛔ A4-0A: THE ARGUMENTS TRAVEL WITH THE DECISION. reasoningLoop already forwarded
         // decision.args to executeRead — the seam existed and was closed at BOTH ends, so the

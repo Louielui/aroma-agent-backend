@@ -7,6 +7,13 @@ const binding={pageUrl,name:'Millennium',title:'Millennium Library'}
 const hours={'@context':'https://schema.org','@type':'Library',name:'Millennium',address:'251 Donald St., Winnipeg, MB',openingHoursSpecification:[{'@type':'OpeningHoursSpecification',dayOfWeek:'https://schema.org/Monday',opens:'10:00',closes:'17:00'},{'@type':'OpeningHoursSpecification',dayOfWeek:'https://schema.org/Tuesday',opens:'10:00',closes:'20:00'}]}
 const markup='<main><h1>Millennium Library</h1><h2>Hours</h2></main><script src="https://cdn.jsdelivr.net/gh/winnipegpublibrary/winnipeg-ca-openinghours@main/winnipeg_ca_library_hours_translation.js"></script><script src="https://cdn.jsdelivr.net/gh/winnipegpublibrary/winnipeg-ca-openinghours@main/hours-schema-inject.js"></script>'
 
+test('the observed official directory exposes registered branch links as navigation, never invented URLs',()=>{
+ const directory='https://www.winnipeg.ca/recreation-leisure/libraries/locations-and-hours';
+ const inspected=inspectDocument('<a href="/recreation-leisure/libraries/locations-and-hours/millennium-library">Millennium Library</a><a href="https://evil.invalid/millennium-library">Millennium Library</a>',directory,'Library locations and hours');
+ assert.equal(inspected.navigation.length,1);assert.equal(inspected.navigation[0].url,pageUrl);assert.equal(inspected.navigation[0].subject,'Millennium Library');
+ assert.deepEqual(inspectDocument('<a href="'+pageUrl+'">Millennium Library</a>','https://www.winnipeg.ca/unrelated','Other').navigation,[]);
+});
+
 test('a registered publisher reference binds the exact branch without executing or fetching scripts',()=>{
  const inspected=inspectDocument(markup,pageUrl,'Millennium Library')
  assert.equal(inspected.references.length,1);assert.equal(inspected.references[0].url,jsonUrl)
