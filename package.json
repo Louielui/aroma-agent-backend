@@ -5,6 +5,11 @@
   "main": "src/index.js",
   "scripts": {
     "start": "node src/index.js",
+    "repo:begin": "node scripts/repository/tranche.cjs begin",
+    "repo:finish": "node scripts/repository/tranche.cjs finish",
+    "repo:resume": "node scripts/repository/tranche.cjs resume",
+    "repo:status": "node scripts/repository/tranche.cjs status",
+    "repo:install-hooks": "node scripts/repository/tranche.cjs install-hooks",
     "verify:identity-shadow": "node scripts/memory/verifyIdentityShadow.js",
     "verify:behavioral-mapping": "node scripts/memory/verifyBehavioralMapping.js",
     "verify:operating-principles-shadow": "node scripts/memory/verifyOperatingPrinciplesShadow.js",
