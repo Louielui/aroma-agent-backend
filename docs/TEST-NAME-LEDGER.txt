@@ -4665,6 +4665,7 @@ an empty message is still chat
 an empty or non-string reply does not throw
 an empty or whitespace first message still yields a usable title
 an empty password never matches, even against an empty expected value
+an encoded branch slash is legal query data while encoded path traversal remains refused
 an enquiry can be saved and reopened whole
 an enumerator that throws leaves the pid check UNKNOWN
 an errand that throws is still recorded, and ok is false

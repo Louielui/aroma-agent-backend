@@ -15,3 +15,11 @@ test('merge rechecks exact PR head, base, checks and unresolved review threads',
   await assert.rejects(api.merge({number:65,head:'d'.repeat(40),base}),/head_or_base_changed/);assert.equal(puts,0)
   assert.equal((await api.merge({number:65,head,base})).commit,'c'.repeat(40));assert.equal(puts,1)
 })
+test('an encoded branch slash is legal query data while encoded path traversal remains refused',async()=>{
+  let calls=0
+  const g=createGitHub({root:'fixture',tokenProvider:()=> 'fixture-only',fetchImpl:async()=>{calls++;return{ok:true,json:async()=>[]}}})
+  await g.api('/repos/Louielui/aroma-agent-backend/pulls?state=open&head=Louielui%3Apolicy%2Fsafe')
+  assert.equal(calls,1)
+  await assert.rejects(g.api('/repos/Louielui/aroma-agent-backend/%2e%2e/other'),/outside_policy/)
+  assert.equal(calls,1)
+})

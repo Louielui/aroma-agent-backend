@@ -14,7 +14,7 @@ function createGitHub ({root,fetchImpl=fetch,tokenProvider=tokenFromGit}) {
   let auth
   async function api (route,{method='GET',body}={}) {
     if(!route.startsWith(PREFIX+'/')&&route!=='/graphql')throw Error('github_route_outside_policy')
-    if(/\.\.|%2e|%2f|%5c|\\/i.test(route))throw Error('github_route_outside_policy')
+    if(/\.\.|%2e|%2f|%5c|\\/i.test(route.split('?')[0]))throw Error('github_route_outside_policy')
     auth ||= tokenProvider(root)
     const r=await fetchImpl('https://api.github.com'+route,{method,headers:{Authorization:'Bearer '+auth,Accept:'application/vnd.github+json','X-GitHub-Api-Version':'2022-11-28','User-Agent':'Imagine-repository-promotion',...(body?{'Content-Type':'application/json'}:{})},body:body?JSON.stringify(body):undefined,signal:AbortSignal.timeout(30000)})
     if(!r.ok){const error=Error('github_request_failed');error.status=r.status;throw error}
