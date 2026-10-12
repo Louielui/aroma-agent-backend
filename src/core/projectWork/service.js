@@ -7,7 +7,7 @@ const browserEvidence = require('../../workers/execution/browserEvidence')
 const ACTIVE = new Set(['awaiting_approval', 'queued', 'checking', 'coding', 'reviewing'])
 const ERRORS = new Set(['source_changed', 'source_dirty', 'source_sensitive', 'source_unavailable', 'approval_unavailable', 'not_enabled', 'worker_busy', 'worker_cancelled', 'baseline_not_red', 'acceptance_failed', 'subscription_limit_reached', 'subscription_model_unavailable', 'subscription_unavailable', 'sandbox_stop_unconfirmed', 'sandbox_recovery_or_work_pending', 'provider_not_ready', 'invalid_worker_result', 'worker_no_changes', 'claude_unavailable', 'claude_max_turns', 'claude_invalid_structured_output', 'worker_timeout', 'visual_evidence_unavailable', 'invalid_visual_review', 'accepted_evidence_changed'])
 const owner = actor => { if (actor?.id !== 'owner' || actor.role !== 'owner') throw Error('permission_denied') }
-function createProjectWork ({ source, providers, store, enabled, invocationLedger, observeLive = null, onEvent = () => {}, approvals = createOwnerApprovalStore(), resolveRecipe = recipe, catalogueRecipes = () => Object.values(RECIPES) }) {
+function createProjectWork ({ source, providers, store, enabled, invocationLedger, observeLive = null, onEvent = () => {}, repositoryPreflight = null, onAccepted = null, approvals = createOwnerApprovalStore(), resolveRecipe = recipe, catalogueRecipes = () => Object.values(RECIPES) }) {
   const sessions = new Map(), controllers = new Map()
   let busy = false, pending = Promise.resolve()
   const all = () => store.all()
@@ -34,6 +34,7 @@ function createProjectWork ({ source, providers, store, enabled, invocationLedge
     if (old) { if (old.source?.evidence.bootCommit !== input.bootCommit || old.workOrder.recipe !== input.recipe || old.repairOf !== lineage.repairOf) throw Error('request_conflict'); return { run: old, approval: null } }
     busy = true
     try {
+      if (repositoryPreflight) await repositoryPreflight()
       const snapshot = await source.read(input.bootCommit, undefined, input.recipe)
       const id = randomUUID(), session = approvals.createSession()
       const observation = observeLive ? {liveBaseline:await observeLive({recipe:input.recipe,bootCommit:input.bootCommit,sourceHash:snapshot.evidence.sourceFiles?.find(f=>f.path===require('./contract').FILE)?.sha256,workRunId:id})} : {}
@@ -51,7 +52,22 @@ function createProjectWork ({ source, providers, store, enabled, invocationLedge
     } finally { busy = false }
   }
   async function execute (r, snapshot, signal) {
-    try { return await require('../../investigation/workerInvocation').withWorkerRun({ ledger: invocationLedger, record: r, kind: 'project-runs', save: row => store.save(row) }, () => executeObserved(r, snapshot, signal)) } finally { busy = false; controllers.delete(r.id) }
+    try { return await require('../../investigation/workerInvocation').withWorkerRun({ ledger: invocationLedger, record: r, kind: 'project-runs', save: row => store.save(row) }, () => executeObserved(r, snapshot, signal)) } finally {
+      busy = false; controllers.delete(r.id)
+      if (r.state === 'completed' && onAccepted) {
+        r.repositoryPromotion = { state: 'queued', appliedToLive: false }
+        record(r, 'repository_promotion_queued', { appliedToLive: false })
+        setImmediate(() => Promise.resolve().then(() => onAccepted(structuredClone(r))).then(result => {
+          if (result?.detached === true) return
+          r.repositoryPromotion = result
+          r.appliedToLive = result?.state === 'complete' && result.runtimeVerified === true
+          record(r, 'repository_promotion_recorded', { state: result?.state || 'unknown', appliedToLive: r.appliedToLive, commit: result?.commit || null })
+        }).catch(() => {
+          r.repositoryPromotion = { state: 'needs_attention', reason: 'repository_promotion_unavailable', appliedToLive: false }
+          record(r, 'repository_promotion_recorded', { state: 'needs_attention', appliedToLive: false })
+        }))
+      }
+    }
   }
   async function executeObserved (r, snapshot, signal) {
     const WORK_ORDER = resolveRecipe(r.workOrder.recipe).workOrder

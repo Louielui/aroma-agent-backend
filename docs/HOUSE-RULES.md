@@ -1,5 +1,29 @@
 # House rules
 
+## Autonomous repository promotion — Owner policy, 2026-10-12
+
+Normal low-risk Imagine repository development follows the executable
+`autonomous-repository-promotion-v1` policy in `src/repositoryPromotion/`.
+Preflight and preserve before every tranche; divergence enters isolated reconciliation.
+Accepted source is tested, committed, preserved remotely, independently reviewed and
+promoted through a PR automatically when every gate passes. Completion requires the
+exact commit, accounted working tree, remote preservation, tests/review, PR/merge,
+rollback and measured runtime state. A worker or test pass alone is never delivery.
+
+Do not force-push main, reset/overwrite history, or delete the last unique ref.
+Verification failures use forward-history rollback and independent read-back.
+Owner exceptions: material conflict, unresolved tests, security/permission changes,
+credentials, destructive migration, business writes outside policy, failed rollback,
+or contradictory runtime state. Never synthesize an Owner approval from model prose.
+Windows privilege blocks are visible; service-control delegation needs the separate
+Owner-approved bounded permission plan. No broad elevation or arbitrary command is added.
+
+Enforced by policy/workflow failure tests, real Git preservation/recovery fixtures,
+GitHub race/refusal tests, runtime overlay tests, entry-point survey tests, and the
+installed repository hooks. See `docs/AUTONOMOUS-REPOSITORY-PROMOTION.md` for scope,
+receipts and known limits. This supersedes the old per-tranche ordinary merge/restart
+confirmation rhythm without removing business/action authorization boundaries.
+
 <!-- record-status: ACTIVE 2026-08-06 -->
 
 Rules the Owner has set that apply across the whole codebase, not to one feature. Each one
