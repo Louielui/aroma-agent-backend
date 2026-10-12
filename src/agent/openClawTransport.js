@@ -200,7 +200,9 @@ function createOpenClawTransport (deps = {}) {
     // Last synchronous act before anything external. Everything below this line may crash,
     // hang, or be killed; the ledger already knows the run exists and how to find it. There is
     // no await between this write and the spawn on the next line.
-    quarantine.markRunning(approvalId, { agentId, sessionKey, phase: 'agent_add_attempting' })
+    // The canonical opening phase. Duplicated as a literal because this module deliberately
+    // has no imports; openClawLifecycle.test.js pins it to the ledger's PHASES[0].
+    quarantine.markRunning(approvalId, { agentId, sessionKey, phase: 'executor_launch_attempting' })
 
     // ⛔ From this point a spawn may have happened. Every failure path below must leave the
     // ledger execution-bearing, never quietly reset.

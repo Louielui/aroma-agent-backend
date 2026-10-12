@@ -27,6 +27,7 @@ const test = require('node:test')
 const assert = require('node:assert')
 
 const { createOpenClawWslWorkspace, DISTRO, SANDBOX_ROOT, SOURCE_URL, WSL_EXE, CHILD_ENV } = require('../agent/openClawWslWorkspace')
+const { windowsArgvFor } = require('../agent/exactWslExecRunner')
 
 const SHA = '4511f7deeb279b189642b3b812b56250ce518d98'
 const OTHER_SHA = 'e034ccc5cc89409375f538ce2a6b7a30f2d14700'
@@ -57,7 +58,12 @@ function grantFor (approvalId) {
 }
 
 
-const inner = (argv) => argv.slice(argv.indexOf('--') + 1)
+/**
+ * The injected runner now receives the LINUX argv only (X4-B1): the distro flags and
+ * `--exec` are built inside exactWslExecRunner and never reach a mechanic. So there is no
+ * prefix to strip — and a `--` inside git/rm/stat argv is an ordinary argument, not a seam.
+ */
+const inner = (argv) => argv
 /** Strip git's leading `-c key=value` globals, exactly as git does. */
 function gitArgs (a) { let i = 0; while (a[i] === '-c') i += 2; return a.slice(i) }
 
@@ -453,7 +459,8 @@ test('E2. ⛔ sentinel secrets in the PARENT environment never reach the child',
     const realSpawn = cp.spawnSync
     cp.spawnSync = (exe, argv, opts) => { seen.push(opts && opts.env); return { status: 0, stdout: '', stderr: '' } }
     try {
-      defaultWslRunner(['-d', DISTRO, '--', 'git', '--version'])
+      // the runner takes the LINUX argv; it builds the Windows-side prefix itself
+      defaultWslRunner(['git', '--version'])
     } finally { cp.spawnSync = realSpawn }
 
     assert.strictEqual(seen.length, 1)
@@ -501,9 +508,15 @@ test('H2. the launcher is always wsl.exe with a fixed argv and no shell', () => 
   try { ws.prepare('appr_x') } catch (_) {}
   assert.ok(seen.length > 0)
   for (const argv of seen) {
-    assert.strictEqual(argv[0], '-d')
-    assert.strictEqual(argv[1], DISTRO)
-    assert.strictEqual(argv[2], '--')
+    // ⛔ the mechanic receives the LINUX argv only — never the distro flags, never a separator
+    assert.notStrictEqual(argv[0], '-d', 'no distro flag reaches an injected mechanic')
+    assert.ok(!argv.includes('--exec'), 'the exec flag is the runner\'s, not the workspace\'s')
+    // ...and the runner turns it into exactly the fixed prefix plus that argv, with --exec
+    const win = windowsArgvFor(argv)
+    assert.strictEqual(win[0], '-d')
+    assert.strictEqual(win[1], DISTRO)
+    assert.strictEqual(win[2], '--exec')
+    assert.deepStrictEqual(win.slice(3), argv)
     for (const a of argv) {
       // The first version of this line read `|| a === 'sh'`, which made the assertion PASS
       // for the one interpreter most likely to be reached for. It asserted nothing.
@@ -536,9 +549,16 @@ test('H3. ⛔ PRODUCTION identity cannot be overridden by a caller', () => {
   assert.ok(joined.includes(SOURCE_URL), 'it clones the approved URL')
   assert.ok(!joined.includes('example.invalid'), 'the supplied source URL never reaches git')
 
-  // and the distro named in every launch is the fixed one
+  // and the distro named in every launch is the fixed one. The mechanic sees the LINUX argv
+  // only, so the supplied distro can appear nowhere in it, and the runner's own prefix
+  // (built by windowsArgvFor, which no option reaches) names the fixed distro every time.
   const launches = runner.launches || []
-  for (const argv of launches) assert.strictEqual(argv[1], DISTRO, 'every launch targets the fixed distro')
+  assert.ok(launches.length > 0)
+  for (const argv of launches) {
+    assert.ok(!argv.includes('OtherDistro'), 'the supplied distro never reaches a launch')
+    assert.notStrictEqual(argv[0], '-d', 'no distro flag in the Linux argv')
+    assert.strictEqual(windowsArgvFor(argv)[1], DISTRO, 'every launch targets the fixed distro')
+  }
 })
 
 /* ══════════════ round 2 — object identity, not path identity ══════════════ */
