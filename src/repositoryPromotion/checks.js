@@ -55,7 +55,8 @@ function reviewPacket ({root,commit,base,tests,maxBytes=700000}) {
 }
 function readReview (envelope,packet) {
   if(envelope?.type!=='result'||envelope.subtype!=='success'||envelope.is_error===true||typeof envelope.result!=='string')throw Error('review_unavailable')
-  let r;try{r=JSON.parse(envelope.result)}catch{throw Error('review_invalid_output')}
+  const text=envelope.result.trim(),fence=text.match(/^```(?:json)?\s*\n([\s\S]*?)\n```$/)
+  let r;try{r=JSON.parse(fence?fence[1]:text)}catch{throw Error('review_invalid_output')}
   const keys=['verdict','summary','findings','securityRegression','permissionRegression','exceptionCategories']
   if(!r||Object.keys(r).sort().join(',')!==keys.sort().join(',')||!['pass','changes_requested'].includes(r.verdict)||typeof r.summary!=='string'||r.summary.length>6000||!Array.isArray(r.findings)||r.findings.length>50||typeof r.securityRegression!=='boolean'||typeof r.permissionRegression!=='boolean'||!Array.isArray(r.exceptionCategories)||r.exceptionCategories.some(x=>!require('./policy').EXCEPTIONS.includes(x))||r.findings.some(f=>!f||typeof f.file!=='string'||!packet.changedPaths.includes(f.file)||!Number.isInteger(f.line)||f.line<1||typeof f.message!=='string'||f.message.length>3000)||(r.verdict==='pass'&&(r.findings.length||r.securityRegression||r.permissionRegression)))throw Error('review_invalid_output')
   const actualModel=Object.keys(envelope.modelUsage||{}).join(', ')
@@ -71,7 +72,15 @@ async function runReview ({packet,directory,cwd,provider=require('../core/worker
   const batches=[]
   for(let i=0;i<packet.batches.length;i++){
     const input=JSON.stringify({...packet,batches:undefined,batch:i+1,batchCount:packet.batches.length,diff:packet.batches[i]})
-    const envelope=await provider.runClaude(args,{cwd,timeoutMs:240000,input,maxInputBytes:900000})
+    let envelope
+    try{
+      envelope=await provider.runClaude(args,{cwd,timeoutMs:240000,input,maxInputBytes:900000})
+      fs.writeFileSync(path.join(directory,`review-output-${i+1}.json`),JSON.stringify({type:envelope.type,subtype:envelope.subtype,is_error:envelope.is_error,result:envelope.result,modelUsage:envelope.modelUsage},null,2)+'\n')
+    }catch(error){
+      const reason=['claude_login_required','subscription_limit_reached','worker_timeout','claude_unavailable'].includes(error.message)?error.message:'review_unavailable'
+      fs.writeFileSync(path.join(directory,'review-failure.json'),JSON.stringify({reason,batch:i+1,commit:packet.commit,at:new Date().toISOString(),diagnostics:error.safeDiagnostics||null},null,2)+'\n')
+      throw error
+    }
     const receipt=readReview(envelope,packet);batches.push(receipt)
     fs.writeFileSync(path.join(directory,`review-${i+1}.json`),JSON.stringify(receipt,null,2)+'\n')
     if(receipt.verdict!=='pass')break

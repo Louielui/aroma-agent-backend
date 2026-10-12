@@ -5,8 +5,17 @@ const REMOTE='https://github.com/Louielui/aroma-agent-backend.git'
 const digest=value=>crypto.createHash('sha256').update(value).digest('hex')
 function safeGitArgs (args) {
   if(!Array.isArray(args)||args.some(x=>typeof x!=='string'||x.includes('\0')))throw Error('invalid_git_command')
-  if(args.includes('--force')||args.includes('-f')||args.some(x=>x.startsWith('--force-with-lease'))||args.includes('reset')||args.includes('clean')||args.includes('-D')||args.includes('--delete')||(args[0]==='update-ref'&&args.includes('-d'))||(args[0]==='stash'&&args.some(x=>['drop','pop','clear'].includes(x))))throw Error('destructive_history_forbidden')
-  if(args[0]==='push'&&args.some(x=>x.startsWith('+')||x.startsWith(':')||/:(?:refs\/heads\/)?main$/.test(x)))throw Error('direct_main_push_forbidden')
+  const verb=args[0],rest=args.slice(1)
+  if(!['remote','ls-remote','cat-file','fetch','for-each-ref','rev-parse','rev-list','status','diff','read-tree','add','update-index','write-tree','commit-tree','update-ref','bundle','push','merge-base','worktree','merge','config','commit','stash','symbolic-ref','branch','log','show'].includes(verb))throw Error('destructive_history_forbidden')
+  if(verb==='remote'&&(rest[0]!=='get-url'||rest[1]!=='origin'||rest.length!==2))throw Error('destructive_history_forbidden')
+  if(['push','fetch','branch','update-ref','worktree'].includes(verb)&&rest.some(x=>/^--(?:force|delete|mirror|prune)(?:[=-]|$)/.test(x)||/^-[fdD]+$/.test(x)))throw Error('destructive_history_forbidden')
+  if(verb==='stash'&&rest.some(x=>['drop','pop','clear'].includes(x)))throw Error('destructive_history_forbidden')
+  if(verb==='worktree'&&!['add','list'].includes(rest[0]))throw Error('destructive_history_forbidden')
+  if(verb==='update-ref'&&!/^refs\/(?:preservation\/stash\/|heads\/(?:backup\/private-checkpoint-|rollback\/))/.test(rest[0]||''))throw Error('destructive_history_forbidden')
+  if(verb==='push'){
+    const refs=rest.filter(x=>x!=='origin'&&x!=='--atomic')
+    if(!refs.length||refs.some(x=>!new RegExp('^[a-f0-9]{40}:refs/heads/(?!main$)[A-Za-z0-9_./-]+$').test(x)))throw Error('direct_main_push_forbidden')
+  }
 }
 function command (root,args,{input,env,buffer=false,timeout=120000}={}) {
   safeGitArgs(args)

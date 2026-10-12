@@ -4470,6 +4470,7 @@ a short page is not truncated
 a short reply of shared characters passes
 a short reply that the classifier did NOT read as a commit is untouched
 a short reply with NO history is not a continuation
+a single JSON fence preserves a negative review verdict; prose and malformed output still fail closed
 a single genuine question survives untouched
 a single round needs no resume and is allowed
 a single 更新於 line is rendered at the top
@@ -5376,6 +5377,7 @@ failed numeric repair keeps the verified partial answer and both observed usage 
 failed or interrupted calls leave request coverage partial and usage unknown rather than zero
 failed persistence before dispatch prevents both models; review refusal grants no approval
 failed read-back is bounded, rotates past unresolved history and preserves human retry
+failed review keeps the exact closed failure boundary without leaking arbitrary error text
 failed tests and failed boundary stop before commit
 failed tests and review findings cannot merge or declare complete
 failed tests are retained for review but never become a completed run
@@ -5507,6 +5509,7 @@ historical unclosed records are candidates; overnight and auto clock-outs never 
 history and refresh restore links through reads; expired tickets and uncertain writes never autoapprove or retry
 history cannot dispatch; vague scope asks for clarification; failed writes are not automatically retried
 history controls are strict Owner operations and health keeps unavailable coverage explicit
+history guard refuses alternate deletion, implicit main push and non-fast-forward refspec forms
 history is newest first
 history polling reads work and adoption sequentially through the shared bridge lane
 history restores work without nonce and uncertain preparation offers only readback

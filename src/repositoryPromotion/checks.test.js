@@ -16,3 +16,10 @@ test('review envelope requires actual model, exact closed result and no finding 
   assert.throws(()=>readReview({...envelope,modelUsage:{}},packet),/review_model_unavailable/)
   for(const bad of [{...r,findings:[{file:'src/code.js',line:1,message:'fix'}]},{...r,securityRegression:true},{...r,extra:true},{...r,exceptionCategories:['invented']}])assert.throws(()=>readReview({...envelope,result:JSON.stringify(bad)},packet))
 })
+
+test('a single JSON fence preserves a negative review verdict; prose and malformed output still fail closed',()=>{
+ const packet={changedPaths:['src/code.js']},result={verdict:'changes_requested',summary:'fix',findings:[{file:'src/code.js',line:1,message:'fix'}],securityRegression:true,permissionRegression:false,exceptionCategories:['security_permission_change']};
+ const envelope={type:'result',subtype:'success',result:'```json\n'+JSON.stringify(result)+'\n```',modelUsage:{'claude-sonnet':{}}};
+ assert.equal(readReview(envelope,packet).verdict,'changes_requested');
+ assert.throws(()=>readReview({...envelope,result:'explanation\n'+envelope.result},packet),/review_invalid_output/);
+});

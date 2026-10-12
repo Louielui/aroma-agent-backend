@@ -75,6 +75,9 @@ function createCoordinator ({root,runtimeRoot,artifacts,privateRefs=[],ownerAuth
       pullRequest:row=>github.pullRequest({branch:row.committed.branch,head:row.committed.commit,title:message,body:body(row)}),
       review:async row=>{
         const packet=checks.reviewPacket({root,commit:row.committed.commit,base:row.runtimeSnapshot.checkpoint,tests:row.tests})
+        packet.ownerAuthorization=ownerAuthorization(row.committed.commit,packet.changedPaths)
+        packet.runtimeOverlays=require('./runtime').overlayPlan(repository,row.runtimeSnapshot,row.committed.commit).map(f=>({path:f.path,sha256:f.sha256,absorbed:f.absorbed,retained:true}))
+        packet.authorityModel='The authenticated Owner pre-authorized ordinary low-risk accepted work through tests, independent subscription review, local host evidence gates, PR merge and local deployment. Windows ACL changes are NOT pre-authorized. GitHub statuses mirror locally measured evidence; GitHub Actions independently checks policy contracts, not the full Windows suite. Host credentials and evidence are trusted host authority, not sandbox/model-supplied receipts.'
         row.reviewPacket={...packet,batches:undefined}
         const cwd=path.join(runs,row.id,'review-empty');fs.mkdirSync(cwd,{recursive:true})
         return checks.runReview({packet,cwd,directory:path.join(runs,row.id,'review')})

@@ -33,6 +33,14 @@ test('failed tests and review findings cannot merge or declare complete',async()
     const {w,events}=fixture(changes);assert.equal((await w.finish()).state,'needs_attention');assert.ok(!events.includes('merge'))
   }
 })
+test('failed review keeps the exact closed failure boundary without leaking arbitrary error text',async()=>{
+  for(const reason of ['review_invalid_output','claude_login_required','arbitrary secret text']){
+    const {w,events}=fixture({review:async()=>{throw Error(reason)}})
+    const row=await w.finish();assert.equal(row.failure.stage,'pr_prepared')
+    assert.equal(row.reason,reason==='arbitrary secret text'?'promotion_unavailable':reason)
+    assert.ok(!events.includes('merge'));assert.ok(!JSON.stringify(row).includes('arbitrary secret text'))
+  }
+})
 test('a head race after approval blocks merge rather than rerunning with old evidence',async()=>{
   const {w,events}=fixture({recheck:async()=>false});assert.equal((await w.finish()).reason,'head_or_base_changed');assert.ok(!events.includes('merge'))
 })

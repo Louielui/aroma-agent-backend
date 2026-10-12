@@ -55,7 +55,12 @@ function createWorkflow ({adapter,save,id=randomUUID(),initial=null}) {
       if(await adapter.recheck(row)!==true)throw Error('head_or_base_changed')
       row.merge=await adapter.merge(row);record('merged',row.merge)
       return await deployAndVerify()
-    }catch(error){row.reason=['tests_unresolved','review_changes_requested','head_or_base_changed','policy_exception','preservation_unconfirmed'].includes(error.message)?error.message:'promotion_unavailable';record('needs_attention',{reason:row.reason});return row}
+    }catch(error){
+      const known=['tests_unresolved','review_changes_requested','head_or_base_changed','policy_exception','preservation_unconfirmed','review_invalid_output','review_model_unavailable','review_scope_too_large','review_unavailable','claude_login_required','subscription_limit_reached','worker_timeout','claude_unavailable','material_runtime_overlay_conflict','credential_secret_change','merged_tree_mismatch']
+      row.reason=known.includes(error.message)?error.message:'promotion_unavailable'
+      row.failure={stage:row.state,reason:row.reason,at:new Date().toISOString()}
+      record('needs_attention',{reason:row.reason,failure:row.failure});return row
+    }
     finally{busy=false}
   }
   async function resume () {

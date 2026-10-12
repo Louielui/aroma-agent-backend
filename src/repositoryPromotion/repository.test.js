@@ -44,3 +44,8 @@ test('a wrong repository or preservation directory inside the checkout fails clo
   const wrong=createRepository({root:f.root,artifacts:f.artifacts,remote:'https://github.com/other/repo.git',runtimeReader:async()=>({})})
   await assert.rejects(wrong.inspect(),/repository_identity_mismatch/)
 })
+
+test('history guard refuses alternate deletion, implicit main push and non-fast-forward refspec forms',()=>{
+ for(const args of [['branch','-d','last'],['push','--delete=last','origin'],['push','origin','main'],['push','--mirror','origin'],['push','origin','+'+'a'.repeat(40)+':refs/heads/feature/safe'],['update-ref','refs/heads/main','a'.repeat(40)]])assert.throws(()=>safeGitArgs(args));
+ assert.doesNotThrow(()=>safeGitArgs(['commit','-m','reset']));
+});
