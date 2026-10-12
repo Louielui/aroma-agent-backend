@@ -14,7 +14,7 @@ The host coordinator owns repository credentials. It is not registered as a gene
 
 Before development/promotion, all original refs and dirty tracked/untracked source files are preserved in an external hashed manifest, binary patch, exact file copies, private checkpoint and verified Git bundle. Newly unpublished branch histories are screened and pushed to new non-main backup refs with read-back. Credential-shaped content blocks publication; protected config, credentials and business stores are not copied into public branches. Private dirty checkpoints remain deliberately local and are distinguished from unpublished public history.
 
-Divergence first preserves history and then creates a separate reconciliation worktree. Material conflicts remain visible; no ours/theirs blanket resolution, reset, force push or branch deletion is permitted. The integration candidate retains both histories and must pass the same tests/review gates.
+When repository/remote identity is proven but runtime SHA disagrees, preflight still preserves unpublished history and dirty files before blocking promotion. The post-commit hook therefore cannot strand a new local commit merely because the old process has not reloaded. Divergence first preserves history and then creates a separate reconciliation worktree. Material conflicts remain visible; no ours/theirs blanket resolution, reset, force push or branch deletion is permitted. The integration candidate retains both histories and must pass the same tests/review gates.
 
 ## Normal tranche sequence
 

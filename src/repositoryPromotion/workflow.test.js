@@ -28,6 +28,13 @@ test('divergence saves unique history before reconciliation and never takes ordi
   const {w,events}=fixture({inspect:async()=>({next:'preserve_then_reconcile'}),reconcile:async()=>{events.push('reconcile');return{state:'needs_reconciliation'}}})
   assert.equal((await w.finish()).state,'needs_reconciliation');assert.deepEqual(events,['preserve','reconcile'])
 })
+test('a runtime mismatch preserves unpublished history when repository identity is proven, then stops promotion',async()=>{
+  const {w,events}=fixture({inspect:async()=>({next:'blocked',reason:'runtime_mismatch',preservationAllowed:true})})
+  const row=await w.finish();assert.equal(row.reason,'runtime_mismatch');assert.equal(row.preservation.verified,true)
+  assert.deepEqual(events,['preserve'])
+  const foreign=fixture({inspect:async()=>({next:'blocked',reason:'repository_identity_unavailable'})})
+  await foreign.w.finish();assert.deepEqual(foreign.events,[])
+})
 test('failed tests and review findings cannot merge or declare complete',async()=>{
   for(const changes of [{test:async()=>({exitCode:1})},{review:async()=>({verdict:'changes_requested'})}]){
     const {w,events}=fixture(changes);assert.equal((await w.finish()).state,'needs_attention');assert.ok(!events.includes('merge'))

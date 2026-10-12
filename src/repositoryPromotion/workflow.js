@@ -36,7 +36,13 @@ function createWorkflow ({adapter,save,id=randomUUID(),initial=null}) {
     try{
       const before=await adapter.inspect(row);row.preflight=before
       record('preflight',before)
-      if(before.next==='blocked'){row.reason=before.reason;record('needs_attention',{reason:row.reason});return row}
+      if(before.next==='blocked'){
+        if(before.preservationAllowed===true){
+          row.preservation=await adapter.preserve(row);record('preserved',row.preservation)
+          if(row.preservation?.verified!==true)throw Error('preservation_unconfirmed')
+        }
+        row.reason=before.reason;record('needs_attention',{reason:row.reason});return row
+      }
       row.preservation=await adapter.preserve(row);record('preserved',row.preservation)
       if(row.preservation?.verified!==true)throw Error('preservation_unconfirmed')
       if(before.next==='preserve_then_reconcile'){row.reconciliation=await adapter.reconcile(row);record('needs_reconciliation',row.reconciliation);return row}

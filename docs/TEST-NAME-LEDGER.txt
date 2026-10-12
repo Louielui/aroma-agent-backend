@@ -4448,6 +4448,7 @@ a row with no usable time cannot be judged, and says so instead of reading as an
 a run still in flight is reported as running, not as "nothing happened"
 a runner that rejects yields ok false with an error, not an unhandled rejection
 a runner that resolves after a delay does not block: an independent task completes first
+a runtime mismatch preserves unpublished history when repository identity is proven, then stops promotion
 a runtime overlay is reapplied only when unchanged upstream or already absorbed exactly
 a sandbox minted OUTSIDE os.tmpdir() still returns normally, but is not registered
 a sandbox outside tmpdir refuses BEFORE spawn — so cwd never reaches spawn with a bad value

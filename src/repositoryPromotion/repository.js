@@ -87,7 +87,7 @@ function createRepository ({root,runtimeRoot=root,artifacts,remote=REMOTE,runtim
     const runtimeExpected=runtimeGit(['rev-parse','HEAD'])
     const observed=await runtimeReader()
     const f={branch,head,originMain:remoteState.main,remoteMain:remoteState.main,ahead,behind,unpublished,dirty,branches,remoteRefs:remoteState.refs,remoteTips:remoteState.tips,remoteInventoryComplete:true,runtimeExpected,runtimeObserved:observed.bootCommit,runtime:observed,privateCheckpointRefs:branches.filter(r=>privateRefs.includes(r.ref)||r.ref.startsWith('refs/heads/backup/private-checkpoint-')).map(r=>r.ref)}
-    return{...f,...preflightDecision(f)}
+    return{...f,...preflightDecision(f),preservationAllowed:true}
   }
   function preserve (inspection,scopeRoot=root) {
     identity();const stamp=new Date().toISOString().replace(/[^0-9]/g,'')+'-'+crypto.randomBytes(3).toString('hex')

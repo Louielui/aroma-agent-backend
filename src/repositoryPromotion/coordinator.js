@@ -24,7 +24,7 @@ function createCoordinator ({root,runtimeRoot,artifacts,privateRefs=[],ownerAuth
   function release () {active=false;fs.unlinkSync(lockFile)}
   async function begin () {
     const f=await repository.inspect()
-    const preservation=f.next==='blocked'?null:repository.preserve(f)
+    const preservation=f.next==='blocked'&&f.preservationAllowed!==true?null:repository.preserve(f)
     const receipt={at:new Date().toISOString(),...f,preservation}
     if(f.next==='preserve_then_reconcile')receipt.reconciliation=repository.reconcile(f)
     atomic(path.join(artifacts,'preflight-latest.json'),receipt)
