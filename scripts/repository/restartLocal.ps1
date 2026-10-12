@@ -19,7 +19,7 @@ if ($promotionHandle -eq [IntPtr]::Zero) {
   throw 'ServiceAccessUnavailable'
 }
 [ImagineServiceAccess]::CloseServiceHandle($promotionHandle) | Out-Null
-$promotionRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../..'))
+$promotionRoot = 'C:\Aroma\aroma-agent-backend'
 if ($promotionRoot.TrimEnd('\') -ine 'C:\Aroma\aroma-agent-backend') { throw 'RepositoryIdentityMismatch' }
 if ((& git -c "safe.directory=$promotionRoot" -C $promotionRoot remote get-url origin).Trim() -cne 'https://github.com/Louielui/aroma-agent-backend.git') { throw 'RemoteIdentityMismatch' }
 if ((& git -c "safe.directory=$promotionRoot" -C $promotionRoot rev-parse HEAD).Trim() -cne $ExpectedCommit) { throw 'ExpectedCommitMismatch' }

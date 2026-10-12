@@ -35,9 +35,10 @@ async function main () {
     if(action==='begin')console.log(JSON.stringify({branch:row.branch,head:row.head,originMain:row.originMain,ahead:row.ahead,behind:row.behind,unpublished:row.unpublished.length,dirty:row.dirty.length,preservation:row.preservation.directory,runtimeCommit:row.runtimeObserved,next:row.next}))
     return
   }
-  const row=action==='resume'?await coordinator.resume(options['--id']):await coordinator.finish({files:options['--files']?.split(','),message:options['--message']||'Promote accepted Imagine development tranche'})
+  const first=action==='resume'?await coordinator.resume(options['--id']):await coordinator.finish({files:options['--files']?.split(','),message:options['--message']||'Promote accepted Imagine development tranche'})
+  const row=await require('../../src/repositoryPromotion/workflow').waitForIdle(first,{coordinator})
   console.log(JSON.stringify({id:row.id,state:row.state,reason:row.reason||null,commit:row.merge?.commit||row.committed?.commit||null,pr:row.pr,runtime:row.runtime}))
-  if(!['complete','awaiting_idle','awaiting_administrator'].includes(row.state))process.exitCode=1
+  if(!['complete','awaiting_idle','awaiting_reload_idle','awaiting_administrator'].includes(row.state))process.exitCode=1
 }
 if(require.main===module)main().catch(e=>{console.error(e instanceof Error&&/^[a-z_]+$/.test(e.message)?e.message:'repository_promotion_failed');process.exitCode=1})
 module.exports={argumentsOf}

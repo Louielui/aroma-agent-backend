@@ -26,7 +26,8 @@ function createAcceptedWork ({root,artifacts,privateRefs=[],resolveRecipe,isolat
         fs.writeFileSync(full,c.after)
       }
       const candidate=createCoordinator({root:worktree,runtimeRoot:root,artifacts,privateRefs,invocationLedger})
-      const row=await candidate.finish({files:names,message:'Promote Owner-approved Imagine task '+run.id})
+      const first=await candidate.finish({files:names,message:'Promote Owner-approved Imagine task '+run.id})
+      const row=await require('./workflow').waitForIdle(first,{coordinator:candidate})
       result={id:row.id,state:row.state,sourceWorkRunId:run.id,commit:row.merge?.commit||row.committed?.commit||null,pr:row.pr||null,runtimeVerified:row.runtime?.verified===true,appliedToLive:row.state==='complete'&&row.runtime?.verified===true,reason:row.reason||null}
     }catch(error){result={id:run.id,sourceWorkRunId:run.id,state:'needs_attention',reason:['accepted_source_changed','repository_reconciliation_required','promotion_busy'].includes(error.message)?error.message:'repository_promotion_unavailable',runtimeVerified:false,appliedToLive:false}}
     atomic(request,result);return result

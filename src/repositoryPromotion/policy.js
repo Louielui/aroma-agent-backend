@@ -2,6 +2,15 @@
 const VERSION = 'autonomous-repository-promotion-v1'
 const SHA = /^[a-f0-9]{40}$/, HASH = /^[a-f0-9]{64}$/
 const EXCEPTIONS = Object.freeze(['material_merge_conflict','tests_unresolved','security_permission_change','credential_secret_change','destructive_database_migration','business_data_write','rollback_failed','runtime_mismatch'])
+const LOW_RISK_PATHS=Object.freeze([
+  /^src\/demo\/assets\/(?:sidebar|app)\.(?:css|js)$/,
+  /^src\/demo\/assets\/index\.html$/,
+  /^src\/i18n\/catalogue\.js$/,
+  /^src\/topics\/departments\.js$/,
+  /^src\/context\/contextResult\.js$/,
+  /^docs\/(?!HOUSE-RULES\.md$|AUTONOMOUS-REPOSITORY-PROMOTION\.md$).+\.md$/,
+  /\.(?:test|e2e)\.[cm]?js$/
+])
 function preflightDecision (f = {}) {
   if (f.remoteInventoryComplete !== true) return { next:'blocked',reason:'remote_inventory_unavailable' }
   if (!SHA.test(f.head || '') || !SHA.test(f.remoteMain || '') || !f.branch) return { next:'blocked',reason:'repository_identity_unavailable' }
@@ -19,9 +28,11 @@ function classifyChanges (paths = [], addedText = '') {
     if (/(^|\/)(?:\.env(?:\.|$)|browser-profile|password\.txt|credentials?(?:\.|\/)|[^/]+\.creds$)/i.test(p)) risks.add('credential_secret_change')
     if (/(^|\/)(migrations?|database-schema)(\/|\.)|\.sql$/i.test(p)) risks.add('destructive_database_migration')
     if (/^(?:src\/(?:governance|policy|repositoryPromotion|workers\/execution|actions|auth)|scripts\/(?:service|repository))\//.test(p) || /^src\/agent\/(?:owner|agentAuthorization)/.test(p) || /^(?:AGENTS|CLAUDE)\.md$/.test(p)) risks.add('security_permission_change')
+    if(!LOW_RISK_PATHS.some(pattern=>pattern.test(p))||/^(?:src\/(?:adapters|store)|scripts|\.github)\//.test(p))risks.add('security_permission_change')
     if (/^src\/company\/.*(?:send|write|delete|payroll|payment)/i.test(p)) risks.add('business_data_write')
   }
-  if (/(?:method\s*:\s*['"](?:POST|PUT|PATCH|DELETE)['"]|\b(?:DROP\s+TABLE|TRUNCATE\s+TABLE)\b)/i.test(addedText)) risks.add('business_data_write')
+  if (/method\s*:\s*['"](?:POST|PUT|PATCH|DELETE)['"]/i.test(addedText)) risks.add('business_data_write')
+  if (/\b(?:DROP\s+TABLE|TRUNCATE\s+TABLE)\b/i.test(addedText)) risks.add('destructive_database_migration')
   return [...risks].sort()
 }
 function promotionDecision (e = {}) {
@@ -53,4 +64,4 @@ function complete (e = {}) {
   const verified=prior.allowed && e.pr?.state==='merged' && SHA.test(e.pr?.mergeCommit || '') && runtime?.state==='verified' && runtime?.expectedCommit===e.pr.mergeCommit && runtime.bootCommit===runtime.expectedCommit && runtime.smokePassed===true && runtime.regressionPassed===true && runtime.sourceVerified===true
   return {complete:Boolean(verified),reasons:verified?[]:[...prior.reasons,'completion_evidence_incomplete']}
 }
-module.exports={VERSION,SHA,HASH,EXCEPTIONS,preflightDecision,promotionDecision,complete,classifyChanges}
+module.exports={VERSION,SHA,HASH,EXCEPTIONS,LOW_RISK_PATHS,preflightDecision,promotionDecision,complete,classifyChanges}

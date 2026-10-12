@@ -28,3 +28,13 @@ test('health verification rejects a foreign listener, missing boot SHA and faile
   await assert.rejects(health('fixture',fake({status:'ok',service:'aroma-hub',bootCommit:null})))
   assert.equal((await health('fixture',fake({status:'ok',service:'aroma-hub',bootCommit:'a'.repeat(40)}))).bootCommit,'a'.repeat(40))
 })
+
+test('a forward rollback to a pre-policy tree retains a pinned reload helper outside the restored release',t=>{
+ const {stageReloadControl}=require('./runtime'),{digest}=require('./repository');const dir=fs.mkdtempSync(path.join(os.tmpdir(),'reload-control-'));t.after(()=>{assert.ok(path.resolve(dir).startsWith(path.resolve(os.tmpdir())+path.sep));fs.rmSync(dir,{recursive:true,force:true})});
+ const root=path.join(dir,'repo'),artifacts=path.join(dir,'artifacts');fs.mkdirSync(root);const g=(...args)=>cp.execFileSync('git',['-c','user.name=Fixture','-c','user.email=fixture@example.test','-C',root,...args],{encoding:'utf8',stdio:['pipe','pipe','pipe']}).trim();
+ g('init','-b','main');fs.writeFileSync(path.join(root,'app.js'),'old');g('add','.');g('commit','-m','old');const before=g('rev-parse','HEAD'),tree=g('rev-parse',before+'^{tree}');
+ const helper='scripts/repository/restartLocal.ps1',bytes=fs.readFileSync(path.resolve(__dirname,'../../',helper));fs.mkdirSync(path.dirname(path.join(root,helper)),{recursive:true});fs.writeFileSync(path.join(root,helper),bytes);g('add','.');g('commit','-m','policy');const control=g('rev-parse','HEAD');
+ const rollback=g('commit-tree',tree,'-p',control,'-m','forward rollback');g('merge','--ff-only',rollback);assert.equal(fs.existsSync(path.join(root,helper)),false);
+ const repository={artifacts,git:(args,options)=>require('./repository').command(root,args,options)};const staged=stageReloadControl(repository,control);assert.equal(digest(fs.readFileSync(staged.file)),digest(bytes));assert.ok(!staged.file.startsWith(root+path.sep));
+ fs.writeFileSync(staged.file,'tampered');assert.throws(()=>stageReloadControl(repository,control),/reload_control_changed/);
+});

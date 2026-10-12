@@ -16,6 +16,8 @@ Before development/promotion, all original refs and dirty tracked/untracked sour
 
 When repository/remote identity is proven but runtime SHA disagrees, preflight still preserves unpublished history and dirty files before blocking promotion. The post-commit hook therefore cannot strand a new local commit merely because the old process has not reloaded. Divergence first preserves history and then creates a separate reconciliation worktree. Material conflicts remain visible; no ours/theirs blanket resolution, reset, force push or branch deletion is permitted. The integration candidate retains both histories and must pass the same tests/review gates.
 
+Low-risk automatic paths are explicit: the five existing chat/sidebar assets, catalogue/departments presentation, contextResult, ordinary documentation and non-protected tests. Unknown backend paths, adapters/store, launcher/subscription scripts, dependency metadata, workflows and governance files require an Owner scope/security exception. Added executable lines feed the content gate for new write verbs and destructive SQL. The two protected repository protocol adapters cover pre-authorized GitHub PR mutations and an unauthorized-intake smoke probe; edits to either still require the security exception and independent review.
+
 ## Normal tranche sequence
 
 1. Preflight and preserve.
@@ -35,6 +37,8 @@ Five existing skips are explicitly named in policy: four paid E2E tests and the 
 
 Review uses the exact saved running-source checkpoint as the executable baseline. This accounts for old dirty worker/sandbox changes already in the live source and prevents an old GitHub main from being mistaken for the current runtime. The full diff hash, changed-file inventory, candidate commit/tree, reviewed baseline, actual model and usage receipt are recorded. Executable diffs are sent in full bounded batches; tests/documentation are inventoried separately and not silently described as line-reviewed. Oversized/unreadable scope, missing model, invalid structured result, findings or negative regression verdict stops promotion. The model cannot create an Owner exception from review prose. The review packet includes the authenticated host authorization and exact retained runtime overlays. GitHub status contexts are publication of host-measured receipts, not independent CI attestations; the separate Actions check validates policy contracts. Full Windows tests and independent Claude review are verified again from their exact local evidence before merge. This policy trusts the Owner host; it does not claim to defend against a malicious Windows Owner who can replace code or GitHub credentials.
 
+The pre-existing CLAUDE_CHAT_MODEL launcher override is machine-local: its canonical launcher blob is unchanged, and its exact saved overlay is restored before restart. Its absence from a diff against a dirty checkpoint is not a new model-default change.
+
 The October reconciliation was reviewed with Claude Sonnet 5.5, 8,137 passed / zero failed / five recorded skips, and merged as PR #65 at `04d12287c3e8e18edbee1df8325682bc59f674b3`. Both histories and all nine backup branches were retained; runtime cutover is a separately measured stage of this delivery.
 
 ## Exceptions and Windows control
@@ -47,7 +51,9 @@ The elevated permission command requires an explicit Owner-approved SHA256 of th
 
 ## Verification, rollback and completion
 
-Worker success is not verification. Backend and independent bridge must report the expected deployed SHA; the unauthorized intake fence must still reject; the deployed source and regression evidence must agree. Busy workflows wait; denied Windows access is `awaiting_administrator`, never complete.
+Worker success is not verification. Backend and independent bridge must report the expected deployed SHA; the unauthorized intake fence must still reject; the deployed source and regression evidence must agree. Busy workflows wait automatically through read-only idle observations and resume the same merged run for up to 15 minutes, without replaying tests/review/merge or starting model calls. A persistent busy state remains durably pending for a later policy resume; it is not an approval exception or completion. denied Windows access is `awaiting_administrator`, never complete.
+
+The exact reviewed reload helper is also pinned by its approved commit and content hash in an external control directory. A first rollback to a pre-policy tree therefore keeps the bounded restart tool even though that older release has no repository-promotion scripts. It still verifies the one fixed runtime repository, service, owned bridge and target SHA.
 
 After verification failure, record the failure and restore the exact saved canonical source tree using a new forward commit/rollback PR. Restore only the accounted prior overlays and independently verify the rollback. Never reset main or rewrite remote ancestry. Concurrent remote/source drift or a failed rollback remains an Owner exception. Unknown cause is reported as unknown; failure evidence is retained rather than replaced with a guessed root cause.
 

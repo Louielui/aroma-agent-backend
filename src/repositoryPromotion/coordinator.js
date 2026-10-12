@@ -76,7 +76,8 @@ function createCoordinator ({root,runtimeRoot,artifacts,privateRefs=[],ownerAuth
       review:async row=>{
         const packet=checks.reviewPacket({root,commit:row.committed.commit,base:row.runtimeSnapshot.checkpoint,tests:row.tests})
         packet.ownerAuthorization=ownerAuthorization(row.committed.commit,packet.changedPaths)
-        packet.runtimeOverlays=require('./runtime').overlayPlan(repository,row.runtimeSnapshot,row.committed.commit).map(f=>({path:f.path,sha256:f.sha256,absorbed:f.absorbed,retained:true}))
+        packet.runtimeOverlays=require('./runtime').overlayPlan(repository,row.runtimeSnapshot,row.committed.commit).map(f=>({path:f.path,sha256:f.sha256,absorbed:f.absorbed,retained:true,beforeBlob:f.beforeBlob,targetBlob:f.targetBlob,snapshotBlob:f.snapshotBlob}))
+        packet.overlayExplanation='The pre-existing uncommitted CLAUDE_CHAT_MODEL launcher line remains a private machine-local override. The canonical launcher targetBlob equals beforeBlob, so this promotion does not change the shared launcher. Diff relative to the dirty checkpoint shows the local line absent in canonical Git only; applyCheckout restores its exact saved bytes before restart. Owner asked to preserve existing modifications, not publish this local model override as a shared default.'
         packet.authorityModel='The authenticated Owner pre-authorized ordinary low-risk accepted work through tests, independent subscription review, local host evidence gates, PR merge and local deployment. Windows ACL changes are NOT pre-authorized. GitHub statuses mirror locally measured evidence; GitHub Actions independently checks policy contracts, not the full Windows suite. Host credentials and evidence are trusted host authority, not sandbox/model-supplied receipts.'
         row.reviewPacket={...packet,batches:undefined}
         const cwd=path.join(runs,row.id,'review-empty');fs.mkdirSync(cwd,{recursive:true})
@@ -88,7 +89,7 @@ function createCoordinator ({root,runtimeRoot,artifacts,privateRefs=[],ownerAuth
         const e={policyVersion:VERSION,commit:row.committed.commit,tree:row.committed.tree,base:row.preflight.remoteMain,
           workingTree:{accounted:repository.git(['status','--porcelain=v1'])==='',snapshotHash:row.preservation.snapshotHash},preservation:row.publication,
           rollback:{commit:row.runtimeSnapshot.head,checkpoint:row.runtimeSnapshot.checkpoint,remoteVerified:repository.remoteRefs().refs.some(r=>r.sha===row.runtimeSnapshot.head)},
-          tests:row.tests,review:row.review,conflicts:[],changes:row.reviewPacket.changedPaths,authorizedExceptions:exceptions,pr:{...pr,checksState:'success'},runtimeImpact:'local_assistant_only',expectedRuntime:row.preflight.runtimeExpected,observedRuntime:pre.runtimeObserved}
+          tests:row.tests,review:row.review,conflicts:[],changes:row.reviewPacket.changedPaths,addedText:row.reviewPacket.addedText,authorizedExceptions:exceptions,pr:{...pr,checksState:'success'},runtimeImpact:'local_assistant_only',expectedRuntime:row.preflight.runtimeExpected,observedRuntime:pre.runtimeObserved}
         const localGate=promotionDecision(e)
         if(localGate.allowed)await github.recordChecks(pr.number,e.commit,e)
         for(let i=0;i<12;i++){
@@ -137,7 +138,7 @@ function createCoordinator ({root,runtimeRoot,artifacts,privateRefs=[],ownerAuth
         // A rollback must restore only the original accounted overlays. The old
         // snapshot parent is retained so blob comparisons never infer a new grant.
         require('./runtime').applyCheckout(repository,snapshot,result.commit)
-        await runtime.restart(result.commit)
+        await runtime.restart(result.commit,{controlCommit:row.merge.commit})
         return{...result,restoredSource:before,tree,pr:pr.number}
       },
       verifyRollback:row=>runtime.verify(row,{rollback:true})

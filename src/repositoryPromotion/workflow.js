@@ -4,7 +4,7 @@ const {promotionDecision}=require('./policy')
 function createWorkflow ({adapter,save,id=randomUUID(),initial=null}) {
   let busy=false,spent=false
   const row=initial ? structuredClone(initial) : {id,workflow:'repository_promotion',state:'new',startedAt:new Date().toISOString(),steps:[]}
-  if(initial && !['new','awaiting_administrator','awaiting_idle'].includes(row.state)) throw Error('promotion_recovery_requires_inspection')
+  if(initial && !['new','awaiting_administrator','awaiting_idle','awaiting_reload_idle'].includes(row.state)) throw Error('promotion_recovery_requires_inspection')
   function record(stage,facts={}){row.state=stage;row.steps.push({stage,at:new Date().toISOString(),facts});save(structuredClone(row))}
   async function rollback (failure) {
     row.failure=failure;record('verification_failed',failure)
@@ -62,7 +62,7 @@ function createWorkflow ({adapter,save,id=randomUUID(),initial=null}) {
       row.merge=await adapter.merge(row);record('merged',row.merge)
       return await deployAndVerify()
     }catch(error){
-      const known=['tests_unresolved','review_changes_requested','head_or_base_changed','policy_exception','preservation_unconfirmed','review_invalid_output','review_model_unavailable','review_scope_too_large','review_unavailable','claude_login_required','subscription_limit_reached','worker_timeout','claude_unavailable','material_runtime_overlay_conflict','credential_secret_change','merged_tree_mismatch']
+      const known=['tests_unresolved','review_changes_requested','head_or_base_changed','policy_exception','preservation_unconfirmed','review_invalid_output','review_model_unavailable','review_scope_too_large','review_unavailable','claude_login_required','subscription_limit_reached','worker_timeout','claude_unavailable','material_runtime_overlay_conflict','credential_secret_change','merged_tree_mismatch','working_tree_changed','unaccounted_working_changes','accepted_commit_unconfirmed']
       row.reason=known.includes(error.message)?error.message:'promotion_unavailable'
       row.failure={stage:row.state,reason:row.reason,at:new Date().toISOString()}
       record('needs_attention',{reason:row.reason,failure:row.failure});return row
@@ -71,7 +71,7 @@ function createWorkflow ({adapter,save,id=randomUUID(),initial=null}) {
   }
   async function resume () {
     if(busy)throw Error('promotion_busy')
-    if(!['awaiting_administrator','awaiting_idle'].includes(row.state))throw Error('promotion_recovery_requires_inspection')
+    if(!['awaiting_administrator','awaiting_idle','awaiting_reload_idle'].includes(row.state))throw Error('promotion_recovery_requires_inspection')
     busy=true
     try{
       if(row.state==='awaiting_idle'){
@@ -82,7 +82,7 @@ function createWorkflow ({adapter,save,id=randomUUID(),initial=null}) {
       if(adapter.restartPending){
         const restarted=await adapter.restartPending(row)
         if(restarted.state==='administrator_required'){record('awaiting_administrator');return row}
-        if(restarted.state==='idle_required'){record('awaiting_administrator');return row}
+        if(restarted.state==='idle_required'){record('awaiting_reload_idle');return row}
       }
       row.runtime=await adapter.verify(row)
       if(row.runtime?.verified!==true)return await rollback({reason:row.runtime?.reason || 'runtime_verification_failed'})
@@ -91,4 +91,12 @@ function createWorkflow ({adapter,save,id=randomUUID(),initial=null}) {
   }
   return {finish,resume,get:()=>structuredClone(row)}
 }
-module.exports={createWorkflow}
+async function waitForIdle (row,{coordinator,attempts=180,sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms))}) {
+  if(!Number.isSafeInteger(attempts)||attempts<0||attempts>180)throw Error('invalid_idle_wait')
+  for(let attempt=0;['awaiting_idle','awaiting_reload_idle'].includes(row.state)&&attempt<attempts;attempt++){
+    if((await coordinator.runtime.idle()).state==='idle_verified')row=await coordinator.resume(row.id)
+    if(['awaiting_idle','awaiting_reload_idle'].includes(row.state))await sleep(5000)
+  }
+  return row
+}
+module.exports={createWorkflow,waitForIdle}

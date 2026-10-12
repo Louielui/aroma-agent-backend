@@ -63,6 +63,12 @@ test('security, secret, migration and external write changes are exceptions; fix
   assert.equal(promotionDecision(e).allowed,true)
   e.authorizedExceptions[0].commit=BASE;assert.equal(promotionDecision(e).allowed,false)
 })
+test('unlisted backend, CI, launcher, dependency and storage changes require the Owner instead of defaulting low risk',()=>{
+  for(const p of ['.github/workflows/build.yml','package.json','.gitattributes','scripts/launcher/xiangxiang-body.ps1','scripts/subscription/startBridge.js','src/adapters/new.js','src/store/new.js','src/unknown/new.js'])assert.ok(classifyChanges([p]).includes('security_permission_change'),p)
+  assert.deepEqual(classifyChanges(['src/demo/assets/sidebar.js']),[])
+  assert.ok(classifyChanges(['src/demo/assets/app.js'],"fetch(url,{method:'POST'})").includes('business_data_write'))
+  assert.ok(classifyChanges(['src/demo/assets/app.js'],'DROP TABLE facts').includes('destructive_database_migration'))
+})
 test('complete requires a known merge and verified live commit, never only tests or worker success', () => {
   const e=evidence();assert.equal(complete(e).complete,false)
   e.pr={...e.pr,state:'merged',mergeCommit:HEAD};e.runtime={state:'verified',expectedCommit:HEAD,bootCommit:HEAD,smokePassed:true,regressionPassed:true,sourceVerified:true}

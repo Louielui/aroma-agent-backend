@@ -40,6 +40,18 @@ function applyCheckout (repository,snapshot,target) {
   if(repository.runtimeGit(['rev-parse','HEAD'])!==target)throw Error('runtime_checkout_unconfirmed')
   return{commit:target,stash,absorbed:plan.filter(f=>f.absorbed).map(f=>f.path),retainedOverlays:plan.filter(f=>!f.absorbed).map(f=>f.path),sourceVerified:true}
 }
+function stageReloadControl (repository,controlCommit) {
+  if(!SHA.test(controlCommit||''))throw Error('reload_control_unbound')
+  const relative='scripts/repository/restartLocal.ps1'
+  const bytes=repository.git(['show',controlCommit+':'+relative],{buffer:true}),hash=digest(bytes)
+  const directory=path.join(repository.artifacts,'reload-control',hash),file=path.join(directory,'restartLocal.ps1')
+  fs.mkdirSync(directory,{recursive:true})
+  if(fs.existsSync(file)){
+    const stat=fs.lstatSync(file)
+    if(!stat.isFile()||stat.isSymbolicLink()||stat.nlink!==1||digest(fs.readFileSync(file))!==hash)throw Error('reload_control_changed')
+  }else fs.writeFileSync(file,bytes,{flag:'wx'})
+  return{file,hash,controlCommit}
+}
 async function health (url,fetchImpl=fetch) {
   const response=await fetchImpl(url,{signal:AbortSignal.timeout(7000),redirect:'manual'})
   if(!response.ok)throw Error('runtime_health_unavailable')
@@ -56,15 +68,14 @@ function createRuntime ({repository,dependencies,restartImpl=null,readinessImpl=
     const values=await Promise.all(['/runtime-metadata','/work-metadata','/execution-health'].map(route=>localRequest(route,{},env,AbortSignal.timeout(7000))))
     return require('../../scripts/connections/setupReadiness.cjs').project(...values)
   }
-  async function restart (expected) {
+  async function restart (expected,{controlCommit=expected}={}) {
     if(restartImpl)return restartImpl(expected)
-    const relative='scripts/repository/restartLocal.ps1',full=path.join(root,relative)
-    if(fs.readFileSync(full,'utf8').replace(/\r\n/g,'\n').trimEnd()!==repository.runtimeGit(['show',expected+':'+relative]).replace(/\r\n/g,'\n').trimEnd())throw Error('reload_script_changed')
+    const control=stageReloadControl(repository,controlCommit),full=control.file
     const executable=path.join(process.env.SystemRoot||'C:/Windows','System32/WindowsPowerShell/v1.0/powershell.exe')
     const result=cp.spawnSync(executable,['-NoProfile','-NonInteractive','-ExecutionPolicy','RemoteSigned','-File',full,'-ExpectedCommit',expected],{windowsHide:true,shell:false,encoding:'utf8',timeout:90000})
     if(result.status===5)return{state:'administrator_required',applied:false}
     if(result.status!==0)throw Error('local_reload_failed')
-    return{state:'restarted',applied:true}
+    return{state:'restarted',applied:true,control}
   }
   async function deploy (row) {
     const expected=row.merge.commit
@@ -107,4 +118,4 @@ function createRuntime ({repository,dependencies,restartImpl=null,readinessImpl=
   }
   return{idle,restart,deploy,verify,health:()=>health('http://127.0.0.1:8090/health',fetchImpl)}
 }
-module.exports={overlayPlan,applyCheckout,health,createRuntime}
+module.exports={overlayPlan,applyCheckout,stageReloadControl,health,createRuntime}

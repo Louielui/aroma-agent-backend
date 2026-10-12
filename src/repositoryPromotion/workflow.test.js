@@ -76,3 +76,16 @@ test('an idle wait resumes only deployment, never tests/review/merge, and a perm
   const f=fixture({deploy:async()=>({state:'administrator_required',applied:false}),recheckDeployed:async()=>true,restartPending:async()=>{f.events.push('restart_pending');return{state:'restarted'}}})
   await f.w.finish();assert.equal((await f.w.resume()).state,'complete');assert.equal(f.events.filter(x=>x==='restart_pending').length,1)
 })
+
+test('normal busy deployment waits and resumes the recorded run without repeating promotion or asking the Owner',async()=>{
+ const {waitForIdle}=require('./workflow');let polls=0,resumes=0,sleeps=0;
+ const coordinator={runtime:{idle:async()=>({state:++polls<3?'busy':'idle_verified'})},resume:async id=>{assert.equal(id,'exact');resumes++;return{id,state:'complete'}}};
+ assert.equal((await waitForIdle({id:'exact',state:'awaiting_idle'},{coordinator,attempts:4,sleep:async()=>sleeps++})).state,'complete');assert.equal(resumes,1);assert.equal(sleeps,2);
+ polls=0;assert.equal((await waitForIdle({id:'exact',state:'awaiting_administrator'},{coordinator,sleep:async()=>{throw Error('unexpected')}})).state,'awaiting_administrator');assert.equal(polls,0);
+ assert.equal((await waitForIdle({id:'exact',state:'awaiting_idle'},{coordinator,attempts:1,sleep:async()=>{}})).state,'awaiting_idle');
+});
+
+test('a busy permission retry waits for reload without replaying checkout or retaining a false administrator label',async()=>{
+ let calls=0;const {w,events}=fixture({deploy:async()=>({state:'administrator_required',applied:false}),recheckDeployed:async()=>true,restartPending:async()=>++calls===1?{state:'idle_required'}:{state:'restarted'}});
+ await w.finish();assert.equal((await w.resume()).state,'awaiting_reload_idle');assert.equal((await w.resume()).state,'complete');assert.equal(events.filter(x=>x==='merge').length,1);assert.equal(calls,2);
+});

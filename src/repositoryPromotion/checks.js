@@ -42,6 +42,12 @@ function reviewPacket ({root,commit,base,tests,maxBytes=700000}) {
   // and survey guards are separate evidence, never an implied line-by-line review.
   const pieces=raw.split(/(?=^diff --git )/m).filter(Boolean)
   const code=pieces.filter(part=>!/(?:\.test\.|\.e2e\.|^diff --git a\/docs\/)/.test(part.split('\n')[0]))
+  // Protected host adapters implement the pre-authorized GitHub PR writes and
+  // unauthorized-intake smoke POST. They are never low risk: any edit requires
+  // the Owner's security exception and independent executable-code review.
+  const repositoryProtocolPaths=['src/repositoryPromotion/github.js','src/repositoryPromotion/runtime.js']
+  const contentPieces=code.filter(part=>!repositoryProtocolPaths.some(p=>part.startsWith('diff --git a/'+p+' b/'+p+'\n')))
+  const addedText=contentPieces.flatMap(part=>part.split('\n').filter(line=>line.startsWith('+')&&!line.startsWith('+++')).map(line=>line.slice(1))).join('\n')
   const baseTree=command(root,['rev-parse',base+'^{tree}']),tree=command(root,['rev-parse',commit+'^{tree}'])
   const batches=[];let current=[]
   for(const piece of code){
@@ -51,7 +57,7 @@ function reviewPacket ({root,commit,base,tests,maxBytes=700000}) {
   }
   if(current.length||!batches.length)batches.push(current.join('\n'))
   if(batches.length>8)throw Error('review_scope_too_large')
-  return {commit,tree,base,baseTree,reviewedDiffHash:digest(raw),changedPaths:changed,scope:'all executable changes relative to the preserved running-source checkpoint; tests and documentation inventoried, not silently called reviewed',tests:{exitCode:tests.exitCode,total:tests.total,passed:tests.passed,failed:tests.failed,skipped:tests.skipped,logHash:tests.logHash},batches}
+  return {commit,tree,base,baseTree,reviewedDiffHash:digest(raw),changedPaths:changed,addedText,contentGateHash:digest(addedText),repositoryProtocolPaths,scope:'all executable changes relative to the preserved running-source checkpoint; tests and documentation inventoried, not silently called reviewed',tests:{exitCode:tests.exitCode,total:tests.total,passed:tests.passed,failed:tests.failed,skipped:tests.skipped,logHash:tests.logHash},batches}
 }
 function readReview (envelope,packet) {
   if(envelope?.type!=='result'||envelope.subtype!=='success'||envelope.is_error===true||typeof envelope.result!=='string')throw Error('review_unavailable')
@@ -71,7 +77,7 @@ async function runReview ({packet,directory,cwd,provider=require('../core/worker
   args[args.indexOf('--system-prompt')+1]=purpose
   const batches=[]
   for(let i=0;i<packet.batches.length;i++){
-    const input=JSON.stringify({...packet,batches:undefined,batch:i+1,batchCount:packet.batches.length,diff:packet.batches[i]})
+    const input=JSON.stringify({...packet,addedText:undefined,batches:undefined,batch:i+1,batchCount:packet.batches.length,diff:packet.batches[i]})
     let envelope
     try{
       envelope=await provider.runClaude(args,{cwd,timeoutMs:240000,input,maxInputBytes:900000})

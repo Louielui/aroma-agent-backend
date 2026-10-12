@@ -4203,6 +4203,7 @@ a blank quote is refused by the validator, so it can never be CONFIRMED
 a bounded credit investigation leads with observed calls and current schedule state while preserving the billing gap
 a browser-supplied workOrder / allowedFiles / caps is REJECTED, not silently ignored
 a busy extractor blocks edit/delete races and pause prevents pending extraction
+a busy permission retry waits for reload without replaying checkout or retaining a false administrator label
 a caller cannot ask for an unbounded wait
 a caller cannot supply windowChanged itself — it is derived, never accepted
 a caller-supplied buildReportFn cannot turn an unbacked fix claim into CONCLUDED
@@ -4282,6 +4283,7 @@ a field NAMED like a credential is refused too
 a file edited by hand is picked up too — the cache is one second, not the process life
 a foreign bank or wrong database can never pass as a connected memory service
 a form label beside its field collapses to the field
+a forward rollback to a pre-policy tree retains a pinned reload helper outside the restored release
 a fresh process validates originals again instead of trusting the previous process cache
 a fresh store reports EMPTY with a reason
 a frontend Run dispatches a snapshot carrying targetProject frontend (the adapter input the dispatcher builds)
@@ -5873,6 +5875,7 @@ nonce cannot authorize a different target or approval; consumed even on mismatch
 nonce is single-use: replay, double-click and reload all fail after the first use
 nonces are unguessable and distinct per step
 nonzero auth status identifies logout only for the exact auth command, without retaining account data
+normal busy deployment waits and resumes the recorded run without repeating promotion or asking the Owner
 normal intake prepares without model calls; persists only a reference; dedupes without reissuing approval
 normalization unchanged: chat/commit shapes still produced
 not_single_object: valid JSON that is not an object
@@ -6485,6 +6488,7 @@ the accent survives everywhere it was NOT asked to change
 the accepted-work driver is detached from the bridge it may restart and cannot accept arbitrary commands
 the actual Owner composition wires tranche preflight and accepted-work promotion, not a dormant helper
 the actual acceptance reviewer accepts the closed 7shifts source packet
+the actual committed diff feeds content risk gates; authorized repository protocols remain protected by path
 the actual frontend rejects an untyped reply envelope
 the actual intake keeps general definitions off semantic business upgrades and connector reads
 the actual provider composition carries feedback to text-only coding without replacing original files or tests
@@ -6968,6 +6972,7 @@ unknown proposalId → 404
 unknown reason is not interpreted; successful adoption prerequisite never becomes a product fix
 unknown subscription errors fail closed without leaking details or consuming source attempts
 unknown version is rejected
+unlisted backend, CI, launcher, dependency and storage changes require the Owner instead of defaulting low risk
 unmapped development evidence triggers the same bounded exact revision read in Chinese and English
 unmapped or unknown required operations keep explicit gaps without inventing reads
 unmatched low-risk capability (Report) returns allow
