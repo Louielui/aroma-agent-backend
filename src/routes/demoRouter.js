@@ -214,7 +214,7 @@ function buildWorkRequestResolution ({ req, message, offerDecision, conversation
   return null
 }
 
-function createDemoRouter ({ getAdapterFn = getAdapterForLane, processIntakeFn = processIntake, conversationStore = INERT_CONVERSATION_STORE, readBacklogFn = null, backlogTimeoutMs = 2500, errandStoreFn = null, operatingManager = null, memoryJournal = null, mailChat = null, liveContext = null, sevenShiftsReport = null, hrRechecks = null, developmentPlan = null, codeDiagnosis = null, codeRepair = null, chatWork = null, taskPlanner = null, taskDialogue = null, schedulerChat = null, capabilityGaps = null, imageAdapterFn = selection => {
+function createDemoRouter ({ getAdapterFn = getAdapterForLane, processIntakeFn = processIntake, conversationStore = INERT_CONVERSATION_STORE, readBacklogFn = null, backlogTimeoutMs = 2500, errandStoreFn = null, operatingManager = null, memoryJournal = null, mailChat = null, liveContext = null, sevenShiftsReport = null, hrRechecks = null, developmentPlan = null, codeDiagnosis = null, codeRepair = null, chatWork = null, taskPlanner = null, taskDialogue = null, schedulerChat = null, capabilityGaps = null, publicCompletion = require('../topics/publicAnswerFollowups').createService(), imageAdapterFn = selection => {
   if (process.env.CHAT_BACKEND !== 'codex-subscription') throw Error('image_chat_unavailable')
   return new (require('../adapters/CodexSubscriptionAdapter').CodexSubscriptionAdapter)(selection)
 }, modelCenter = null, planningRevision = require('../governance/bootCommit').BOOT_COMMIT, modelsFn = async () => new (require('../adapters/CodexSubscriptionAdapter').CodexSubscriptionAdapter)().models() } = {}) {
@@ -511,7 +511,7 @@ function createDemoRouter ({ getAdapterFn = getAdapterForLane, processIntakeFn =
   // race a topic-changing intake. The lock lasts until the handler settles.
   const intakeTurns=new Set()
   const serializedIntake=handler=>async(req,res)=>{
-    const id=req.body?.conversationId,locked=!!(schedulerChat || capabilityGaps)&&isValidConversationId(id)
+    const id=req.body?.conversationId,locked=!!(schedulerChat || capabilityGaps || publicCompletion)&&isValidConversationId(id)
     if(locked&&intakeTurns.has(id))return res.status(409).json({error:{code:'conversation_busy',message:t('actions.continuationBusy'),retryable:true}})
     if(locked)intakeTurns.add(id)
     try{return await handler(req,res)}finally{if(locked)intakeTurns.delete(id)}
@@ -582,6 +582,46 @@ function createDemoRouter ({ getAdapterFn = getAdapterForLane, processIntakeFn =
       const clockOutRequest = planningLane && sevenShiftsReport ? require('../context/sevenShiftsReport').clockOutRequest(message) : null
       const attendanceRequest = planningLane && sevenShiftsReport ? require('../context/sevenShiftsAttendance').attendanceRequest(message) : null
       const comparisonRequest = planningLane && sevenShiftsReport ? require('../context/sevenShiftsComparison').comparisonRequest(message) : null
+      const publicFollowups = require('../topics/publicAnswerFollowups')
+      const publicFollowupKind = planningLane && publicCompletion ? publicFollowups.requestKind(message) : null
+      if (publicFollowupKind) {
+        if (!require('../core/operating/chatRequest').sameOrigin(req)) return res.status(403).json({error:'same_origin_required'})
+        const {conversationId}=req.body, requestId=req.body.websiteRequestId || req.body.workflowRequestId
+        if (!isValidConversationId(conversationId) || !require('../core/operating/runStore').ID.test(requestId || '')) return res.status(400).json({error:'invalid_request_id'})
+        const language=/[\u3400-\u9fff]/u.test(message)?'zh':'en'
+        let conversation
+        try { conversation=conversationStore.get(conversationId) } catch (_) { return res.status(503).json({error:'public_completion_store_unavailable'}) }
+        const priorIndex=conversation?.messages.findIndex(m=>m.role==='assistant'&&m.publicCompletionRequestId===requestId) ?? -1
+        if(priorIndex>=0){
+          if(conversation.messages[priorIndex-1]?.content!==message)return res.status(409).json({error:'request_conflict'})
+          const prior=conversation.messages[priorIndex]
+          return res.set('Cache-Control','no-store').json({lane:'chat',mode:'chat',reply:prior.content,servedBy:prior.servedBy,historySaved:true,reused:true})
+        }
+        const receipt=publicFollowups.latestReceipt(conversation)
+        let reply=receipt?publicFollowups.explain(receipt,language):t('publicCompletion.noContext',{},language)
+        let next=receipt, expected=receipt, servedBy=null
+        if(publicFollowupKind==='complete'&&receipt?.gaps.length){
+          if(receipt.completionAttempted)reply+='\n\n'+t('publicCompletion.budgetUsed',{},language)
+          else {
+            next={...receipt,completionAttempted:true}
+            try {
+              expected=conversationStore.reservePublicCompletion(conversationId,receipt,requestId)
+              const completed=await publicCompletion.complete(receipt,{language,requestId:correlationId})
+              if(!publicFollowups.validReceipt(completed?.receipt)||!completed.receipt.completionAttempted||JSON.stringify(completed.receipt.query)!==JSON.stringify(receipt.query)||typeof completed.reply!=='string')throw Error('public_completion_invalid')
+              reply+='\n\n'+t('publicCompletion.result',{},language)+'\n\n'+completed.reply
+              next=completed.receipt;servedBy='claude-opus-5-5'
+            } catch (_) { reply+='\n\n'+t('publicCompletion.failed',{},language) }
+          }
+        }
+        // Image intake and other source-bound routes can append while a read is
+        // pending. Never publish an old-topic result over the new latest turn.
+        try { if(JSON.stringify(publicFollowups.latestReceipt(conversationStore.get(conversationId)))!==JSON.stringify(expected))return res.status(409).json({error:'public_completion_context_changed'}) }
+        catch (_) { return res.status(503).json({error:'public_completion_store_unavailable'}) }
+        let historySaved=true
+        try { conversationStore.appendTurn({id:conversationId,userText:message,replyText:reply,servedBy,publicAnswerReceipt:next,publicCompletionRequestId:requestId}) } catch (_) { historySaved=false }
+        emit(historySaved?'success':'persistence_failed',200,null)
+        return res.set('Cache-Control','no-store').json({lane:'chat',mode:'chat',reply,servedBy,historySaved,publicCompletion:{kind:publicFollowupKind,attempted:next?.completionAttempted===true,gapsRemaining:next?.gaps.length??null}})
+      }
       if (planningLane && hrRechecks && require('../topics/followupIntent').recheckRequest(message)) {
         if (!require('../core/operating/chatRequest').sameOrigin(req)) return res.status(403).json({ error: 'same_origin_required' })
         const { conversationId, workflowRequestId } = req.body
@@ -1277,6 +1317,7 @@ function createDemoRouter ({ getAdapterFn = getAdapterForLane, processIntakeFn =
         // holds the rendered reply — retrieved rows and all. That is a deliberate
         // widening of what sits on disk and is reported to the Owner as such.
         const conversationId = typeof req.body.conversationId === 'string' ? req.body.conversationId : null
+        let publicHistorySaved=false
         if (conversationId && isValidConversationId(conversationId)) {
           try {
             const shown = (withOffer && typeof withOffer === 'object' && typeof withOffer.reply === 'string')
@@ -1287,11 +1328,13 @@ function createDemoRouter ({ getAdapterFn = getAdapterForLane, processIntakeFn =
                 id: conversationId,
                 userText: message,
                 replyText: shown,
+                publicAnswerReceipt: withOffer.publicAnswerReceipt || null,
                 investigationRunId: withOffer.investigationRunId || null,
                 capabilityGapRunId: withOffer.capabilityGapRunId || null,
                 planningOffer: planningLane ? planContinuation.makeOffer(message, withOffer.mode, conversationStore.get?.(conversationId)?.messages?.at(-1)?.planningOffer, planningRevision) : null,
                 servedBy: (telemetry && typeof telemetry.model === 'string' && telemetry.model) ? telemetry.model : null
               })
+              publicHistorySaved=true
             }
           } catch (err) {
             // FAIL-OPEN FOR THE REPLY, BUT NEVER SILENT.
@@ -1321,7 +1364,7 @@ function createDemoRouter ({ getAdapterFn = getAdapterForLane, processIntakeFn =
           }
         }
 
-        return res.status(200).json(withClarification)
+        return res.status(200).json(withClarification.publicAnswerReceipt ? {...withClarification,historySaved:publicHistorySaved} : withClarification)
       } catch (err) {
         // Reuse the existing safe-disclosure boundary. Never leak provider body/stack/key/prompt.
         let mapped

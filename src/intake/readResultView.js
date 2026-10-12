@@ -727,7 +727,7 @@ function buildReadResultReply (input = {}) {
   const publicView = require('./publicProvenance')
   const summary = publicView.publicSummary(input)
   const provenance = summary ? null : publicView.publicProvenance(input)
-  if (summary) afterRoute = { ...afterRoute, reply: summary, publicSummaryRendered: true }
+  if (summary) afterRoute = { ...afterRoute, reply: summary, publicSummaryRendered: true, publicAnswerReceipt: require('../topics/publicAnswerFollowups').createReceipt(input) }
   else if (provenance) afterRoute = { ...afterRoute, reply: afterRoute.reply + '\n\n' + provenance }
   return withFinalReadStateBoundary(afterRoute, input)
 }

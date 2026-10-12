@@ -13,7 +13,8 @@ const BASE = ['--restricted','--setting-sources','','--settings','{"disableAllHo
   '--model',MODEL,'--effort','low','--max-turns','4']
 function validInput (input) {
   return !!input && typeof input === 'object' && !Array.isArray(input) &&
-    Object.keys(input).every(k=>['query','freshness','location','replyLanguage'].includes(k)) &&
+    Object.keys(input).every(k=>['query','freshness','location','replyLanguage','refresh'].includes(k)) &&
+    (input.refresh == null || typeof input.refresh==='boolean') &&
     (input.replyLanguage == null || ['zh','en'].includes(input.replyLanguage)) &&
     typeof input.query === 'string' && input.query.trim().length > 0 && input.query.length <= 200 &&
     (input.freshness == null || ['current','recent','any'].includes(input.freshness)) &&
@@ -145,13 +146,15 @@ async function search (options={}, input) {
         const repaired=await composeOnce(numericRepairs),seen=new Set()
         const recovered=repaired.answerState==='supported'?repaired.claims.filter(c=>numericRepairs.some(r=>r.sourceId===c.source.id&&r.quote===c.quote)&&!seen.has(c.source.id+'\n'+c.quote)&&(seen.add(c.source.id+'\n'+c.quote),true)):[]
         composed.claims.push(...recovered)
+        composed.gaps=(composed.gaps||[]).filter(g=>!recovered.some(c=>g.sourceId===c.source.id&&g.quote===c.quote&&g.reason==='unverified_number'))
         composed.omitted=Math.max(0,(composed.omitted||0)-recovered.length)
         composed.withheldReasons={...composed.withheldReasons,unverified_number:Math.max(0,(composed.withheldReasons?.unverified_number||0)-recovered.length)}
         if(!composed.withheldReasons.unverified_number)delete composed.withheldReasons.unverified_number
       }catch(_){/* Retain verified facts and their visible omissions; observed retry usage is already recorded. */}
     }
+    const publicQuery={query,freshness:input.freshness||null,location:input.location||null}
     const retrievalTiming=timing()
-    const results=composed.claims.map(({source,quote,answer})=>({title:source.title,url:source.url,content:answer,contentKind:source.kind==='search_summary'?'web_search_cited_summary':'publisher_cited_summary',publishedAt:source.publishedAt||null,consulted:true,sourceEvidence:{kind:source.kind,quote,language,readAt:source.retrievedAt,hash:source.hash||null,accessBasis:source.accessBasis||null,finalUrl:source.finalUrl||null,times:source.times,freshness:source.freshness,parentUrl:source.parentUrl||null,extraction:source.extraction||null,coverage:source.coverage||null,pageChecks:official.checks,omitted:composed.omitted||0,withheldReasons:composed.withheldReasons||{},hostScopeHandled:composed.hostScopeHandled||0,answerState:composed.answerState,repairAttempted:composed.repairAttempted===true,retrievalTiming}}))
+    const results=composed.claims.map(({source,quote,answer})=>({title:source.title,url:source.url,content:answer,contentKind:source.kind==='search_summary'?'web_search_cited_summary':'publisher_cited_summary',publishedAt:source.publishedAt||null,consulted:true,sourceEvidence:{publicQuery,gaps:composed.gaps||[],kind:source.kind,quote,language,readAt:source.retrievedAt,hash:source.hash||null,accessBasis:source.accessBasis||null,finalUrl:source.finalUrl||null,times:source.times,freshness:source.freshness,parentUrl:source.parentUrl||null,extraction:source.extraction||null,coverage:source.coverage||null,pageChecks:official.checks,omitted:composed.omitted||0,withheldReasons:composed.withheldReasons||{},hostScopeHandled:composed.hostScopeHandled||0,answerState:composed.answerState,repairAttempted:composed.repairAttempted===true,retrievalTiming}}))
     // Both subscription calls contribute observed token usage; neither CLI USD
     // estimates nor search tool counts establish account billing.
     const usageByModel=combineUsage(found,compositionReceipts)
@@ -183,7 +186,7 @@ function createSearchCache (execute,{clock=Date.now,maxEntries=32}={}) {
     if(!validInput(input)) return unavailable('',new Date().toISOString())
     const key=JSON.stringify([input.query.trim(),input.freshness || null,input.location || null,input.replyLanguage||null]),now=clock()
     const cached=cache.get(key)
-    if(cached && now<cached.expires) return {...structuredClone(cached.value),cache:'hit',webSearchCalls:0}
+    if(cached && now<cached.expires && input.refresh!==true) return {...structuredClone(cached.value),cache:'hit',webSearchCalls:0}
     cache.delete(key)
     if(pending.has(key)) return {...structuredClone(await pending.get(key)),cache:'shared',webSearchCalls:0}
     if(pending.size) return unavailable(input.query,new Date().toISOString(),UNAVAILABLE_REASON.RATE_LIMIT)

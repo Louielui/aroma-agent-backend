@@ -111,6 +111,7 @@ const FILE_CLASS = Object.freeze({
   'modelCenter/client.js': CLASS.INTERFACE,
   'modelCenter/routes.js': CLASS.INTERFACE,
   'demo/assets/topics.js': CLASS.INTERFACE,
+  'topics/publicAnswerFollowups.js': CLASS.INTERFACE, // Host receipt presentation; no input matching or model prompts.
   'topics/evidenceFollowups.js': CLASS.INTERFACE, // Receipt-bound note presentation, never input matching.
   'topics/followupIntent.js': CLASS.MATCHING, // Bounded bilingual request matching must not be translated.
   'core/codeRepair/view.js': CLASS.INTERFACE, // Owner repair scope, approval and evidence labels

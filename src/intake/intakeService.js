@@ -3539,6 +3539,7 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
       blocked: false, mode: 'chat', talkOnly: true, interactionMode: 'chat',
       ...(gapForTurn() && { capabilityGap: gapForTurn() }),
       ...(operationalInvestigation && { investigation: operationalInvestigation }),
+      ...(view.publicAnswerReceipt ? { publicAnswerReceipt: view.publicAnswerReceipt } : {}),
       reply: view.reply, replyForArchive: view.publicSummaryRendered ? view.reply : guarded.reply, readClaimCorrected: claim.corrected,
       decision: null, tasks: [], risks: [], next_step: '', requestId
     }
@@ -3800,6 +3801,7 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
       ...(gapForTurn() && { capabilityGap: gapForTurn() }),
       ...(operationalInvestigation && { investigation: operationalInvestigation }),
       ...(demo && { demoOutcome: classifyDemoOutcome({ mode: distilled.mode, intent: distilled.intent }).outcome, contextCardWarnings: ctx.warnings }),
+      ...(view.publicAnswerReceipt ? { publicAnswerReceipt: view.publicAnswerReceipt } : {}),
       reply: view.reply, replyForArchive: view.publicSummaryRendered || operationalInvestigation?.readOnly === true ? view.reply : guarded.reply, readClaimCorrected: chatClaim.corrected,
       judgment: '', reasons: distilled.reasons || [], offer: distilled.offer || '', decision: null, tasks: [], risks: [], next_step: '', requestId }
   }

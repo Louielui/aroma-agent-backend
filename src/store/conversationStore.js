@@ -148,13 +148,54 @@ function createConversationStore (options = {}) {
     return out
   }
 
+  function writeConversation (conversation) {
+    // ATOMIC REPLACE — temp file, fsync, rename.
+    //
+    // writeFileSync truncates and THEN writes, so a reader can see a partial document. That
+    // is not theoretical here: with a writer appending, a reader saw an existing
+    // conversation as absent 13 times in 9,315 reads, which the route answers as 404 and
+    // the sidebar draws as a permanently blank pane. rename is atomic on NTFS and POSIX, so
+    // a reader now sees the complete old file or the complete new one and never a half.
+    //
+    // NO LOCK, deliberately: conversations have exactly one writer (the live server),
+    // appends are synchronous within that process, and tests inject the inert store. The
+    // truth store next door needed a lock because many processes write it; symmetry with it
+    // is not a reason to add one here.
+    fs.mkdirSync(dir, { recursive: true })
+    const target = fileFor(conversation.id)
+    const tmp = target + '.tmp-' + process.pid + '-' + Math.random().toString(16).slice(2, 10)
+    const fd = fs.openSync(tmp, 'w')
+    try {
+      fs.writeFileSync(fd, JSON.stringify(conversation, null, 2))
+      fs.fsyncSync(fd)
+    } finally {
+      fs.closeSync(fd)
+    }
+    try {
+      fs.renameSync(tmp, target)
+    } catch (err) {
+      try { fs.unlinkSync(tmp) } catch (_) {}
+      throw err
+    }
+  }
+
+  function reservePublicCompletion (id, receipt, requestId) {
+    if (!isValidId(id) || !require('../core/operating/runStore').ID.test(requestId || '') || !require('../topics/publicAnswerFollowups').validReceipt(receipt) || receipt.completionAttempted) throw Error('invalid_public_completion')
+    const conversation = readOne(id, true), last = conversation?.messages?.at(-1)
+    if (last?.role !== 'assistant' || JSON.stringify(last.publicAnswerReceipt) !== JSON.stringify(receipt)) throw Error('public_completion_context_changed')
+    last.publicAnswerReceipt = { ...structuredClone(receipt), completionAttempted: true }
+    last.publicCompletionPendingRequestId = requestId
+    writeConversation(conversation)
+    return structuredClone(last.publicAnswerReceipt)
+  }
+
   /**
    * ONE COMPLETED TURN — the question and the answer, appended together.
    *
    * Called once per completed turn from the UI path and nowhere else. A turn is only
    * written after the reply exists, so a failed turn leaves no half-conversation behind.
    */
-  function appendTurn ({ id, userText, replyText, servedBy = null, now = null, images, operatingRunId = null, developmentPlanRunId = null, codeDiagnosisRunId = null, codeRepairRunId = null, projectWorkRunId = null, taskPlanRunId = null, planningOffer = null, planningContext = null, investigationRunId = null, capabilityGapRunId = null, evidenceReport = null, evidenceReportAttempt = false, hrRecheckId = null } = {}) {
+  function appendTurn ({ id, userText, replyText, servedBy = null, now = null, images, operatingRunId = null, developmentPlanRunId = null, codeDiagnosisRunId = null, codeRepairRunId = null, projectWorkRunId = null, taskPlanRunId = null, planningOffer = null, planningContext = null, investigationRunId = null, capabilityGapRunId = null, evidenceReport = null, evidenceReportAttempt = false, hrRecheckId = null, publicAnswerReceipt = null, publicCompletionRequestId = null } = {}) {
     if (!isValidId(id)) throw new Error('invalid_conversation_id')
     const attachments = images === undefined ? null : require('../chat/imageAttachments').validateImages(images)
     const ts = now || new Date().toISOString()
@@ -186,6 +227,11 @@ function createConversationStore (options = {}) {
 
     conversation.messages.push({ role: 'user', content: String(userText == null ? '' : userText), servedBy: null, ts, ...(attachments ? { images: attachments } : {}) })
     const assistantMessage = { role: 'assistant', content: String(replyText == null ? '' : replyText), servedBy: servedBy || null, ts }
+    if (publicAnswerReceipt !== null) {
+      if (!require('../topics/publicAnswerFollowups').validReceipt(publicAnswerReceipt)) throw Error('invalid_public_answer_receipt')
+      assistantMessage.publicAnswerReceipt = structuredClone(publicAnswerReceipt)
+    }
+    if (isValidId(publicCompletionRequestId)) assistantMessage.publicCompletionRequestId = publicCompletionRequestId
     if (isValidId(hrRecheckId)) assistantMessage.hrRecheckId = hrRecheckId
     if (evidenceReportAttempt === true) assistantMessage.evidenceReportAttempt = true
     if (evidenceReport !== null) {
@@ -205,34 +251,7 @@ function createConversationStore (options = {}) {
     conversation.messages.push(assistantMessage)
     conversation.updatedAt = ts
 
-    // ATOMIC REPLACE — temp file, fsync, rename.
-    //
-    // writeFileSync truncates and THEN writes, so a reader can see a partial document. That
-    // is not theoretical here: with a writer appending, a reader saw an existing
-    // conversation as absent 13 times in 9,315 reads, which the route answers as 404 and
-    // the sidebar draws as a permanently blank pane. rename is atomic on NTFS and POSIX, so
-    // a reader now sees the complete old file or the complete new one and never a half.
-    //
-    // NO LOCK, deliberately: conversations have exactly one writer (the live server),
-    // appends are synchronous within that process, and tests inject the inert store. The
-    // truth store next door needed a lock because many processes write it; symmetry with it
-    // is not a reason to add one here.
-    fs.mkdirSync(dir, { recursive: true })
-    const target = fileFor(id)
-    const tmp = target + '.tmp-' + process.pid + '-' + Math.random().toString(16).slice(2, 10)
-    const fd = fs.openSync(tmp, 'w')
-    try {
-      fs.writeFileSync(fd, JSON.stringify(conversation, null, 2))
-      fs.fsyncSync(fd)
-    } finally {
-      fs.closeSync(fd)
-    }
-    try {
-      fs.renameSync(tmp, target)
-    } catch (err) {
-      try { fs.unlinkSync(tmp) } catch (_) {}
-      throw err
-    }
+    writeConversation(conversation)
     return { id, messageCount: conversation.messages.length }
   }
 
@@ -247,7 +266,7 @@ function createConversationStore (options = {}) {
     }
   }
 
-  return { list, get, appendTurn, remove, dir }
+  return { list, get, appendTurn, remove, dir, reservePublicCompletion }
 }
 
 /**

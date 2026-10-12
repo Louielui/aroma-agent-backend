@@ -27,6 +27,10 @@ async function fixture({intent='public',observed=row}={}){
 test('real intake uses verified public-only composition without an unused answer call',async()=>{
  const result=await fixture();assert.equal(result.calls,1);assert.match(result.out.reply,/7°C/);assert.doesNotMatch(result.out.reply,/99°C/);
 });
+test('real intake carries only the host public receipt to the transcript persistence boundary',async()=>{
+ const observed={...row,fields:{...row.fields,sourceEvidence:{...row.fields.sourceEvidence,publicQuery:{query:'weather',freshness:'current',location:null},gaps:[]}}};
+ const result=await fixture({observed});assert.equal(result.calls,1);assert.equal(result.out.publicAnswerReceipt.query.query,'weather');assert.equal(result.out.publicAnswerReceipt.completionAttempted,false);
+});
 test('insufficient public evidence retains the reasoning path',async()=>{
  const result=await fixture({observed:{...row,fields:{...row.fields,sourceEvidence:{...row.fields.sourceEvidence,answerState:'insufficient'}}}});assert.ok(result.calls>1);assert.match(result.out.reply,/do not establish/);
 });
