@@ -6089,6 +6089,7 @@ read endpoints unaffected: /health and /proposals need no token even with HUB_TO
 read gate is off by default and the normal read layer retains all section receipts including the billing gap
 read returns null for a missing id or an empty store
 read switches and sensitive previous context stop before classification or web egress
+read verification rechecks the prepared window instead of the last-focused Chrome window
 read-back does not starve a newly pending receipt or treat legacy get as proof
 read-only inspection route receives the running backend reader rather than building an unwired connector
 read-only probes prove authenticated canonical database and Hindsight identity without model calls
@@ -6353,6 +6354,7 @@ session totals and partial last-turn usage cannot establish full job or quota co
 set() then get() in the same process returns the new value
 setup: real directories in a disposable place
 shell:false is preserved everywhere — no shell:true anywhere in the agent
+side-panel capture stays bound to its own window when another Chrome window has focus
 sidebar plan displays only its closed profile and requests no automatic coding
 sidebar planning reads existing markup, event handlers and layout without expanding editable files
 sidebar plans register only their own closed files and replay returns the original task without approval
@@ -6948,6 +6950,7 @@ titles and dates come from the row, and a missing date stays missing
 today, incomplete pagination, no punch rows and revoked reads cannot establish absence or current working status
 token absent AND page not full ⇒ complete for this window
 tokens: r.tokens.slice(0, 8),
+toolbar read uses the explicit action gesture and opens only its returned window without reading
 topic changes and multiple same-conversation proposals do not transfer approval
 topic changes invalidate the pending discussion rather than confirm an older goal
 topic membership and Owner follow-ups survive reopening without mixing topics

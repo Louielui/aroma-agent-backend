@@ -25,6 +25,15 @@ DOM text, not a complete page, screenshot, OCR or assurance that every sensitive
 value was detectable. The local preview shows the collected text, site, model,
 effort and omitted scope before explicit external-model consent.
 
+The worker registers an explicit `chrome.action.onClicked` handler and disables
+automatic action-to-panel toggling. A side-panel button is not itself an activeTab
+grant. The handler opens only the window returned by Chrome's toolbar action;
+it does not read a page or call the model. Preparation gets the panel's own
+window ID, and read verification rechecks that same prepared window instead of
+whichever unrelated Chrome/PWA window most recently acquired focus. Opening a
+panel from another browser entry point can still require the toolbar gesture.
+No persistent host permissions or new Chrome permissions are added.
+
 The server binds the lease to tab/window/document/main-frame identity, URL digest,
 content digest and captured central choice. The worker re-collects on confirmation,
 refusing changed text, URL or document. The Backend additionally validates digest
