@@ -2,9 +2,13 @@
 importScripts('collector.js')
 const HOST='com.imagine.browser_read',pending=new Map()
 let port=null,closeTimer=null
-chrome.sidePanel.setPanelBehavior({openPanelOnActionClick:true}).catch(()=>{})
-async function capture(){
- const [tab]=await chrome.tabs.query({active:true,currentWindow:true})
+// The explicit toolbar action grants activeTab; opening a persistent panel alone
+// is not evidence of a page grant. Open synchronously within that user gesture.
+chrome.sidePanel.setPanelBehavior({openPanelOnActionClick:false}).catch(()=>{})
+chrome.action.onClicked.addListener(tab=>{if(Number.isInteger(tab?.windowId)&&tab.windowId>=0)chrome.sidePanel.open({windowId:tab.windowId}).catch(()=>{})})
+async function capture(windowId){
+ if(!Number.isInteger(windowId)||windowId<0)throw Error('invalid_request')
+ const [tab]=await chrome.tabs.query({active:true,windowId})
  if(!tab||!Number.isInteger(tab.id))throw Error('current_tab_unavailable')
  const rows=await chrome.scripting.executeScript({target:{tabId:tab.id,frameIds:[0]},world:'ISOLATED',func:collectVisiblePage})
  const row=rows.find(r=>r.frameId===0)
@@ -25,11 +29,11 @@ function rpc(body){
 chrome.runtime.onMessage.addListener((message,sender,sendResponse)=>{
  if(sender.id!==chrome.runtime.id||sender.url!==chrome.runtime.getURL('sidepanel.html')||sender.tab){sendResponse({error:'side_panel_required'});return false}
  ;(async()=>{
-  if(message?.type==='capture'&&Object.keys(message).length===1)return capture()
+  if(message?.type==='capture'&&Object.keys(message).sort().join(',')==='type,windowId')return capture(message.windowId)
   if(message?.type!=='rpc'||Object.keys(message).sort().join(',')!=='body,type')throw Error('invalid_request')
   const b=message.body
   if(b?.op==='read'){
-   const fresh=await capture()
+   const fresh=await capture(b.source?.windowId)
    for(const k of ['url','tabId','windowId','documentId','frameId','contentHash','truncated'])if(fresh.source[k]!==b.source?.[k])throw Error('source_changed')
    if(fresh.text!==b.text)throw Error('source_changed')
    return rpc({...b,source:fresh.source})

@@ -4,6 +4,7 @@ let capture=null,job=null,busy=false
 const ERRORS={native_host_unavailable:'尚未接通本機讀取器，請完成安裝後再試。',page_access_unavailable_click_extension_icon:'無法讀取這個分頁。請先按工具列的香香圖示授權，再試一次。',source_changed:'頁面或分頁已改變，請重新準備及確認。',capture_stale:'頁面快照已過期，請重新準備。',site_not_allowed:'這個網址不在第一期可讀取範圍。',subscription_login_required:'所選模型的 CLI 訂閱需要重新登入。',read_unavailable:'本次讀取未完成；沒有自動重試。',native_reply_unknown_check_saved_result:'尚未收到結果；請重新開啟側欄查看已保存狀態，不要重複送出。'}
 async function send(message){const response=await chrome.runtime.sendMessage(message);if(response?.error)throw Error(response.error);if(!response?.result)throw Error('native_host_unavailable');return response.result}
 const rpc=body=>send({type:'rpc',body})
+async function capturePanelPage(){const window=await chrome.windows.getCurrent();return send({type:'capture',windowId:window.id})}
 function error(e){el('status').textContent=ERRORS[e.message]||('讀取未完成：'+e.message)}
 function present(r){
  job=r;el('cancel').hidden=!['awaiting_consent','processing'].includes(r.state)
@@ -15,7 +16,7 @@ function present(r){
 }
 el('prepare').addEventListener('click',async()=>{
  if(busy)return;busy=true;el('prepare').disabled=true;el('read').disabled=true;el('consent').checked=false;el('preview').hidden=true;el('answer').hidden=true
- try{if(job&&['awaiting_consent','processing'].includes(job.state))await rpc({op:'cancel',id:job.id});el('status').textContent='正在核對目前分頁…';capture=await send({type:'capture'});const r=await rpc({op:'prepare',requestId:crypto.randomUUID(),question:el('question').value,source:capture.source});await chrome.storage.local.set({lastReadId:r.id});present(r);el('question').readOnly=true;el('source').textContent=capture.title+' · '+capture.source.url;el('model').textContent='跟隨中央模型：'+r.selection.model+' · '+r.selection.effort;el('coverage').textContent=`主框架可見文字 ${capture.text.length} 字${capture.source.truncated?'（已截斷，不代表完整頁面）':''}；iframe、圖片及輸入欄不在範圍。`;el('excerpt').textContent=capture.text;el('preview').hidden=false;el('status').textContent='尚未呼叫模型。請先確認範圍。'}catch(e){capture=null;error(e)}finally{busy=false;el('prepare').disabled=false}
+ try{if(job&&['awaiting_consent','processing'].includes(job.state))await rpc({op:'cancel',id:job.id});el('status').textContent='正在核對目前分頁…';capture=await capturePanelPage();const r=await rpc({op:'prepare',requestId:crypto.randomUUID(),question:el('question').value,source:capture.source});await chrome.storage.local.set({lastReadId:r.id});present(r);el('question').readOnly=true;el('source').textContent=capture.title+' · '+capture.source.url;el('model').textContent='跟隨中央模型：'+r.selection.model+' · '+r.selection.effort;el('coverage').textContent=`主框架可見文字 ${capture.text.length} 字${capture.source.truncated?'（已截斷，不代表完整頁面）':''}；iframe、圖片及輸入欄不在範圍。`;el('excerpt').textContent=capture.text;el('preview').hidden=false;el('status').textContent='尚未呼叫模型。請先確認範圍。'}catch(e){capture=null;error(e)}finally{busy=false;el('prepare').disabled=false}
 })
 el('consent').addEventListener('change',()=>{el('read').disabled=!el('consent').checked||busy||!capture||job?.state!=='awaiting_consent'})
 el('read').addEventListener('click',async()=>{
