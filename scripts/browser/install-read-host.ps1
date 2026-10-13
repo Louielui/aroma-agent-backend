@@ -47,6 +47,13 @@ $browserPinLiteral=($browserPins.GetEnumerator() | Where-Object {$_.Key -in @('n
 $browserCsharp=@"
 using System; using System.IO; using System.Diagnostics; using System.Collections.Generic; using System.Security.Cryptography; using System.Threading.Tasks;
 public static class ImagineBrowserReadHost {
+ static byte[] ReadFramePart(Stream input,int length){
+  byte[] bytes=new byte[length];int offset=0;
+  while(offset<length){int read=input.Read(bytes,offset,length-offset);if(read==0){if(offset==0)return null;throw new EndOfStreamException();}offset+=read;}return bytes;
+ }
+ static void PumpFrames(Stream input,Stream output,uint maximum){
+  while(true){byte[] header=ReadFramePart(input,4);if(header==null)return;uint length=BitConverter.ToUInt32(header,0);if(length==0||length>maximum)throw new InvalidDataException();byte[] body=ReadFramePart(input,(int)length);if(body==null)throw new EndOfStreamException();output.Write(header,0,4);output.Write(body,0,body.Length);output.Flush();}
+ }
  public static int Main(string[] args){
   try {
    if(args.Length==0 || args[0]!="$browserOrigin") return 3;
@@ -55,9 +62,9 @@ public static class ImagineBrowserReadHost {
    foreach(var p in pins){using(var sha=SHA256.Create()){string hash=BitConverter.ToString(sha.ComputeHash(File.ReadAllBytes(Path.Combine(root,p.Key)))).Replace("-", "").ToLowerInvariant(); if(hash!=p.Value)return 3;}}
    var info=new ProcessStartInfo(@"$browserNode");info.Arguments="\""+Path.Combine(root,"nativeHost.cjs")+"\" $browserOrigin";info.UseShellExecute=false;info.CreateNoWindow=true;info.RedirectStandardInput=true;info.RedirectStandardOutput=true;info.RedirectStandardError=true;
    using(var child=Process.Start(info)){
-    Task.Run(()=>{try{Console.OpenStandardInput().CopyTo(child.StandardInput.BaseStream);child.StandardInput.Close();}catch{}});
+    Task.Run(()=>{try{PumpFrames(Console.OpenStandardInput(),child.StandardInput.BaseStream,50000);}catch{}finally{try{child.StandardInput.Close();}catch{}}});
     Task.Run(()=>{try{child.StandardError.BaseStream.CopyTo(Console.OpenStandardError());}catch{}});
-    child.StandardOutput.BaseStream.CopyTo(Console.OpenStandardOutput());child.WaitForExit();return child.ExitCode;
+    PumpFrames(child.StandardOutput.BaseStream,Console.OpenStandardOutput(),200000);child.WaitForExit();return child.ExitCode;
    }
   }catch{Console.Error.WriteLine("Imagine browser read host unavailable.");return 3;}
  }

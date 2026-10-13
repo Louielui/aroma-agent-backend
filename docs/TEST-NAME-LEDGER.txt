@@ -5049,6 +5049,7 @@ company boundary denies all legacy owner paths, including anonymous callers and 
 comparison intent is bilingual, date bounded and excludes quoted, negated and write requests
 comparison is over fixed-length digests, so a length mismatch cannot throw
 comparison real HTTP path is bilingual, Owner-origin bounded, idempotent, durable and model-free
+compiled native launcher returns each small frame before the persistent input pipe closes
 complete Drive search chat uses measured context and saves once without model execution
 complete page boots visible labels and model controls in
 complete requires a known merge and verified live commit, never only tests or worker success
