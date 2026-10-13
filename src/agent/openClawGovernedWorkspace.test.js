@@ -159,7 +159,7 @@ function governed (over = {}) {
       spy.contracts.push({ contract, version })
       spy.cloneDirs.push(ctx.cloneDir)
       // a real transport would mark the ledger; do the same here
-      quarantine.markRunning(APPROVAL, { agentId: 'aroma-' + APPROVAL, sessionKey: 'agent:aroma-' + APPROVAL + ':' + APPROVAL, phase: 'agent_add_attempting' })
+      quarantine.markRunning(APPROVAL, { agentId: 'aroma-' + APPROVAL, sessionKey: 'agent:aroma-' + APPROVAL + ':' + APPROVAL, phase: 'executor_launch_attempting' })
       quarantine.markSucceeded(APPROVAL)
       return { ok: true, exit: 0, result: 'audit complete', output: {} }
     }
@@ -272,7 +272,7 @@ test('C2b. ⛔ EXECUTOR_RETIRED releases the process lock BEFORE any disk work',
   const wsl = fakeWslWorkspace()
   const gw = createOpenClawGovernedWorkspace({ workspace: wsl, quarantine: q, retirementProofFor: fakeRetirementProof })
   const prepared = gw.prepare(APPROVAL)
-  q.markRunning(APPROVAL, { agentId: 'aroma-' + APPROVAL, sessionKey: 'agent:aroma-' + APPROVAL + ':' + APPROVAL, phase: 'agent_add_attempting' })
+  q.markRunning(APPROVAL, { agentId: 'aroma-' + APPROVAL, sessionKey: 'agent:aroma-' + APPROVAL + ':' + APPROVAL, phase: 'executor_launch_attempting' })
   q.markSucceeded(APPROVAL); q.observeTerminal(APPROVAL, 'succeeded')
 
   assert.strictEqual(q.canStart('appr_other').ok, false)
@@ -288,7 +288,7 @@ test('C2c. ⛔ a FAILED removal at EXECUTOR_RETIRED does not regress state, and 
   const wsl = fakeWslWorkspace({ removeFails: true })
   const gw = createOpenClawGovernedWorkspace({ workspace: wsl, quarantine: q, retirementProofFor: fakeRetirementProof })
   const prepared = gw.prepare(APPROVAL)
-  q.markRunning(APPROVAL, { agentId: 'aroma-' + APPROVAL, sessionKey: 'agent:aroma-' + APPROVAL + ':' + APPROVAL, phase: 'agent_add_attempting' })
+  q.markRunning(APPROVAL, { agentId: 'aroma-' + APPROVAL, sessionKey: 'agent:aroma-' + APPROVAL + ':' + APPROVAL, phase: 'executor_launch_attempting' })
   q.markSucceeded(APPROVAL); q.observeTerminal(APPROVAL, 'succeeded')
   q.retire(APPROVAL, fakeRetirementProof(APPROVAL))
 
@@ -315,7 +315,7 @@ test('C3. ⛔ a QUARANTINED run: cleanup does NOT remove the envelope and the lo
   g.quarantine.markRunning(APPROVAL + '_x', {
     agentId: 'aroma-' + APPROVAL + '_x',
     sessionKey: 'agent:aroma-' + APPROVAL + '_x:' + APPROVAL + '_x',
-    phase: 'agent_add_attempting'
+    phase: 'executor_launch_attempting'
   })
   g.quarantine.markClientTimeout(APPROVAL + '_x')
   g.quarantine.quarantine(APPROVAL + '_x')
@@ -330,7 +330,7 @@ test('C3. ⛔ a QUARANTINED run: cleanup does NOT remove the envelope and the lo
   const results = []
   const gw = createOpenClawGovernedWorkspace({ workspace: wsl2, quarantine: q2, onCleanupResult: (r) => results.push(r), retirementProofFor: fakeRetirementProof })
   const prepared = gw.prepare(APPROVAL)
-  q2.markRunning(APPROVAL, { agentId: 'aroma-' + APPROVAL, sessionKey: 'agent:aroma-' + APPROVAL + ':' + APPROVAL, phase: 'agent_add_attempting' })
+  q2.markRunning(APPROVAL, { agentId: 'aroma-' + APPROVAL, sessionKey: 'agent:aroma-' + APPROVAL + ':' + APPROVAL, phase: 'executor_launch_attempting' })
   q2.markClientTimeout(APPROVAL)
   q2.quarantine(APPROVAL)
 
@@ -352,7 +352,7 @@ test('C4. a quarantined run becomes removable only after observation AND retirem
   const wsl = fakeWslWorkspace()
   const gw = createOpenClawGovernedWorkspace({ workspace: wsl, quarantine: q, retirementProofFor: fakeRetirementProof })
   const prepared = gw.prepare(APPROVAL)
-  q.markRunning(APPROVAL, { agentId: 'aroma-' + APPROVAL, sessionKey: 'agent:aroma-' + APPROVAL + ':' + APPROVAL, phase: 'agent_add_attempting' })
+  q.markRunning(APPROVAL, { agentId: 'aroma-' + APPROVAL, sessionKey: 'agent:aroma-' + APPROVAL + ':' + APPROVAL, phase: 'executor_launch_attempting' })
   q.markClientTimeout(APPROVAL); q.quarantine(APPROVAL)
 
   assert.strictEqual(gw.cleanup(prepared.dir).ok, false, 'quarantined: nothing removed')
@@ -378,7 +378,7 @@ test('C5. ⛔ terminality comes from the LEDGER, never from the caller', () => {
   const wsl = fakeWslWorkspace()
   const gw = createOpenClawGovernedWorkspace({ workspace: wsl, quarantine: q })
   const prepared = gw.prepare(APPROVAL)
-  q.markRunning(APPROVAL, { agentId: 'aroma-' + APPROVAL, sessionKey: 'agent:aroma-' + APPROVAL + ':' + APPROVAL, phase: 'agent_add_attempting' })
+  q.markRunning(APPROVAL, { agentId: 'aroma-' + APPROVAL, sessionKey: 'agent:aroma-' + APPROVAL + ':' + APPROVAL, phase: 'executor_launch_attempting' })
 
   // there is no parameter through which to assert it — extra arguments are ignored
   const r = gw.cleanup(prepared.dir, { terminal: true }, 'terminal', true)
@@ -397,7 +397,7 @@ test('C6. the ledger gate runs BEFORE a sandbox is created', () => {
   const wsl = fakeWslWorkspace()
   const gw = createOpenClawGovernedWorkspace({ workspace: wsl, quarantine: q })
 
-  q.begin('appr_live'); q.markRunning('appr_live', { agentId: 'aroma-appr_live', sessionKey: 'agent:aroma-appr_live:appr_live', phase: 'agent_add_attempting' })
+  q.begin('appr_live'); q.markRunning('appr_live', { agentId: 'aroma-appr_live', sessionKey: 'agent:aroma-appr_live:appr_live', phase: 'executor_launch_attempting' })
   assert.throws(() => gw.prepare(APPROVAL), /locked out/)
   assert.deepStrictEqual(wsl.seen.prepare, [], 'no sandbox may be prepared while locked out')
 })
@@ -575,7 +575,7 @@ test('C7. ⛔ a ledger failure AFTER removal is NOT retryable, and is not dresse
   const results = []
   const gw = createOpenClawGovernedWorkspace({ workspace: wsl, quarantine: q, onCleanupResult: (r) => results.push(r) })
   const prepared = gw.prepare(APPROVAL)
-  q.markRunning(APPROVAL, { agentId: 'aroma-' + APPROVAL, sessionKey: 'agent:aroma-' + APPROVAL + ':' + APPROVAL, phase: 'agent_add_attempting' })
+  q.markRunning(APPROVAL, { agentId: 'aroma-' + APPROVAL, sessionKey: 'agent:aroma-' + APPROVAL + ':' + APPROVAL, phase: 'executor_launch_attempting' })
   q.markSucceeded(APPROVAL); q.observeTerminal(APPROVAL, 'succeeded')
   q.retire(APPROVAL, fakeRetirementProof(APPROVAL))
 
