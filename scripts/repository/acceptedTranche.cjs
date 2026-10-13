@@ -1,10 +1,11 @@
 'use strict'
 const fs=require('node:fs'),path=require('node:path')
+const {promotionDirectory}=require('../../src/repositoryPromotion/paths')
 async function main () {
   const args=process.argv.slice(2)
   if(args.length!==2||args[0]!=='--run-id'||!/^[a-f0-9-]{36}$/.test(args[1]))throw Error('invalid_accepted_work_id')
   const id=args[1],root=path.resolve(__dirname,'../..'),local=process.env.LOCALAPPDATA||process.env.TEMP
-  const workerRoot=path.join(local,'AromaXiangXiang','worker-flow'),artifacts=path.join(local,'AromaXiangXiang','repository-promotion')
+  const workerRoot=path.join(local,'AromaXiangXiang','worker-flow'),artifacts=promotionDirectory()
   const {createRunStore}=require('../../src/core/operating/runStore')
   const workStore=createRunStore({dir:path.join(workerRoot,'project-runs'),workflow:'project_work'})
   const taskStore=createRunStore({dir:path.join(workerRoot,'project-tasks'),workflow:'project_task'})

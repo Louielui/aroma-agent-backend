@@ -8,7 +8,8 @@ $serviceControlAce = New-Object Security.AccessControl.CommonAce([Security.Acces
 $serviceControlDescriptor.DiscretionaryAcl.InsertAce($serviceControlDescriptor.DiscretionaryAcl.Count,$serviceControlAce)
 $serviceControlAfter = $serviceControlDescriptor.GetSddlForm([Security.AccessControl.AccessControlSections]::All)
 function DescriptorHash([string]$value) { $sha=[Security.Cryptography.SHA256]::Create(); try { return ([BitConverter]::ToString($sha.ComputeHash([Text.Encoding]::UTF8.GetBytes($value)))).Replace('-','').ToLowerInvariant() } finally { $sha.Dispose() } }
-$serviceControlDirectory = Join-Path $env:LOCALAPPDATA 'AromaXiangXiang/repository-promotion/permission-plans'
+if (-not $env:USERPROFILE -or -not [IO.Path]::IsPathRooted($env:USERPROFILE)) { throw 'InvalidPromotionOwnerProfile' }
+$serviceControlDirectory = Join-Path $env:USERPROFILE '.imagine/repository-promotion/permission-plans'
 New-Item -ItemType Directory -Path $serviceControlDirectory -Force | Out-Null
 $serviceControlPlan = @{ id=$PlanId;service='AromaXiangXiangBackend';ownerSid=$serviceControlOwner.Value;accessMask=0x30;scope='start_stop_existing_local_service';before=$serviceControlBefore;after=$serviceControlAfter;beforeHash=(DescriptorHash $serviceControlBefore);afterHash=(DescriptorHash $serviceControlAfter);approved=$false;createdAt=[DateTime]::UtcNow.ToString('o') }
 $serviceControlPlanPath = Join-Path $serviceControlDirectory ($PlanId+'.json')

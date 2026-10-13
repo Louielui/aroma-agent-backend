@@ -2,7 +2,8 @@ param([Parameter(Mandatory=$true)][ValidatePattern('^[a-f0-9-]{36}$')][string]$P
 $ErrorActionPreference = 'Stop'
 $serviceControlPrincipal = New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())
 if (-not $serviceControlPrincipal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) { throw 'WindowsAdministratorRequired' }
-$serviceControlDirectory = Join-Path $env:LOCALAPPDATA 'AromaXiangXiang/repository-promotion/permission-plans'
+if (-not $env:USERPROFILE -or -not [IO.Path]::IsPathRooted($env:USERPROFILE)) { throw 'InvalidPromotionOwnerProfile' }
+$serviceControlDirectory = Join-Path $env:USERPROFILE '.imagine/repository-promotion/permission-plans'
 $serviceControlFile = Join-Path $serviceControlDirectory ($PlanId+'.json')
 if (((Get-Item -LiteralPath $serviceControlFile).Attributes -band [IO.FileAttributes]::ReparsePoint) -or ((Get-Item -LiteralPath $serviceControlDirectory).Attributes -band [IO.FileAttributes]::ReparsePoint)) { throw 'UnsafePlan' }
 $serviceControlBytes=[IO.File]::ReadAllBytes($serviceControlFile)

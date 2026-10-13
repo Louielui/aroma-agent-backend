@@ -4605,6 +4605,7 @@ all of it is in the served page
 all of it reaches the SERVED page
 all of it reaches the SERVED page, not just the asset file
 all rejected translations retain an insufficient source receipt and never turn into supported facts
+all repository promotion entry points share the canonical path and permission plans match it
 all sources failing + flags ON → reply NOT blocked (fail-soft)
 all subscription investigation helper roles stay on the selected subscription without API keys
 all three bindings are now real, and the register says so
@@ -6178,6 +6179,7 @@ repeated display acknowledgement preserves the exact proposal and cannot refresh
 repeated identical questions do not crowd distinct original history out of recall
 repeated review refusal stops after one repair and retains the reason without authority
 reply languages have independent caches even when an upstream planner uses the same search words
+repository policy receipts and locks use the same Owner directory outside virtualized AppData
 request correlation is async scoped and phases are closed host vocabulary
 request id is durable and conflicts refuse rather than duplicating preparation
 request language is isolated from other concurrent dialogue replies

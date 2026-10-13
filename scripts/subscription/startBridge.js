@@ -4,6 +4,7 @@
 // No login token is copied into the service account and no API credential is used.
 const fs = require('node:fs')
 const path = require('node:path')
+const { promotionDirectory } = require('../../src/repositoryPromotion/paths')
 const { createBridge, DEFAULT_PORT } = require('../../src/subscription/bridge')
 // This is a closed Owner read grant at host composition, not a caller option.
 // The authenticated backend enforces its live READ_ACCESS flag before/after
@@ -48,7 +49,7 @@ function main () {
     return JSON.parse(fs.readFileSync(file, 'utf8'))
   }
   const repositoryPromotion = require('../../src/repositoryPromotion/acceptedWork').createAcceptedWork({
-    root: repo, artifacts: path.join(process.env.LOCALAPPDATA || process.env.TEMP, 'AromaXiangXiang', 'repository-promotion'),
+    root: repo, artifacts: promotionDirectory(),
     privateRefs: ['refs/heads/backup/imagine-20261012-dirty-checkpoint'], resolveRecipe, isolated: isolatedReceipt, invocationLedger })
   const observeLive = require('../../src/core/projectWork/liveVerification').createClient({token:env.HUB_TOKEN || process.env.HUB_TOKEN})
   const projectWork = require('../../src/core/projectWork/service').createProjectWork({

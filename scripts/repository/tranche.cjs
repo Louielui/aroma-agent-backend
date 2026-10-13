@@ -2,6 +2,7 @@
 const fs=require('node:fs'),path=require('node:path')
 const {createCoordinator}=require('../../src/repositoryPromotion/coordinator')
 const {command}=require('../../src/repositoryPromotion/repository')
+const {promotionDirectory}=require('../../src/repositoryPromotion/paths')
 function argumentsOf (argv) {
   const action=argv.shift(),options={}
   if(!['begin','finish','resume','status','install-hooks','hook-before-commit','hook-after-commit','hook-before-push'].includes(action))throw Error('invalid_repository_action')
@@ -11,7 +12,7 @@ function argumentsOf (argv) {
 async function main () {
   const {action,options}=argumentsOf(process.argv.slice(2))
   const root=path.resolve(options['--root']||command(process.cwd(),['rev-parse','--show-toplevel'])),runtimeRoot='C:/Aroma/aroma-agent-backend'
-  const artifacts=path.join(process.env.LOCALAPPDATA||process.env.TEMP,'AromaXiangXiang','repository-promotion')
+  const artifacts=promotionDirectory()
   const coordinator=createCoordinator({root,runtimeRoot,artifacts,privateRefs:['refs/heads/backup/imagine-20261012-dirty-checkpoint']})
   if(action==='hook-before-push'){
     const lines=fs.readFileSync(0,'utf8').split('\n').filter(Boolean)
