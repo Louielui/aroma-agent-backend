@@ -5116,6 +5116,7 @@ conversation archive retains the run reference after reopen without any ticket
 conversation changes during interpretation invalidate the result before starting work
 conversation deletion, forged evidence and stale saved report never grant action authority
 conversation hook runs only after archive success and a run records measured state, not raw tool content
+conversation limit and restart recovery do not trigger extra model calls
 conversation-contract rollback and non-chat callers keep the previous system bytes
 conversions still work and density is still refused
 corpus shape is stable
@@ -5439,6 +5440,8 @@ flags ON + chat → exactly ONE bounded context block in the adapter input
 flags resolve fail-closed (invalid/wrong-case → off)
 follow-central changes on the next resolution; captured running selection remains frozen
 follow-up recall includes bounded recent owner questions but never assistant claims or excluded history
+follow-up receives saved question/answer and current selected snapshot after fresh consent
+follow-up refuses changed document and unavailable parent without model dispatch
 follow-up rejects unknown or unfinished runs and cross-subject corrections
 foreground cancellation aborts the request and never returns an analysis result
 foreground cancellation and runtime pause yield between local classifications without changing remaining retries
@@ -6118,6 +6121,7 @@ real atomic storage retains diagnosis source evidence and conversation link acro
 real bounded transport reads published shifts and adjacent-day punches, compares exact links and keeps uncertainty
 real browser matrix visits requested breakpoint, height and theme combinations and refuses a failed case
 real chat card requires a checkbox and single click, then reads progress without retrying approval
+real chat panel carries follow-up history, restores without inference and fits narrow windows
 real chat route reports active website work, persists its outcome and never calls legacy models
 real fast-forward deployment preserves dirty bytes and all stash history without reset
 real intake carries only the host public receipt to the transcript persistence boundary
@@ -6131,6 +6135,7 @@ real registered planner retains the business goal as sealed context rather than 
 real rendered DOM collector excludes input values, hidden content and other frames and declares truncation
 real reviewed committed snapshot reproduces six failures and fixed recipes pass immutable checks
 real routing, policy-first, quoted-source verification and async terminal memory receipt
+real selected DOM capture includes only selected visible text and rejects input/hidden/empty selections
 real side-panel UI makes no model read before consent and renders untrusted answers as text
 reason is a closed enum, never free text
 reasoning effort is overridable per call and via OPENAI_REASONING_EFFORT; typos ignored
@@ -6330,6 +6335,7 @@ section coverage limitations can cite an unconnected billing receipt without inv
 security, secret, migration and external write changes are exceptions; fixture text is not a permission grant
 selected Claude adapter checks provider billing as well as selected model
 selected evidence sections do not invoke unrelated readers and malformed selection never broadens scope
+selection capture passes only a fixed scope argument and changed selected content refuses native dispatch
 semantic hits resolve only current authorized originals, include citations, and lexical fallback reports outage
 semantic review cannot rescue stale or unavailable enablement and configured-model observations
 semantic schema is closed, required and isolated from ordinary schemas
@@ -6385,6 +6391,7 @@ source failure is visible even when there are no execution receipts; never a zer
 source failure prevents model work, and never invents source state
 source presence, company setup and disabled reads are not live-connection proof and never make outbound requests
 source revocation denies controls and never advances the saved cursor
+source scope cannot change between prepare and consented dispatch
 source scope does not authorize invented URLs, account routes or cross-origin redirects
 source text, evidence IDs and output size are bounded, with no arbitrary source or URLs
 source timing counts actual paid stages with no query, source text or exception content in telemetry
@@ -7127,6 +7134,7 @@ workspace.prepare: isolated clone, agent branch, remotes removed
 workspace.prepare: refuse a workspace not under tmpdir (containment)
 workspace.prepare: refuse an unsafe approvalId
 workspace.prepare: refuse when a remote survives removal
+worst-case escaped answers remain inside the unchanged native response frame
 write rejects a record without id or createdAt
 write then read round-trips a task and a result
 write_file stays NEVER even though save is unlockable

@@ -109,3 +109,32 @@ revert registration; where no previous registration existed, remove only this
 named per-user host key. Retain package/history/evidence files. A restored older
 Backend without the route makes the new host unavailable; it never invents a
 fallback endpoint or model.
+
+## Current-page conversation interface
+
+The side panel has a message composer, source chip, separate user/assistant turns,
+new conversation action and explicit current-page/selected-text scope. Send prepares
+one snapshot and opens its egress preview; confirmation dispatches once. Returning
+to edit cancels only that pending preparation. Selecting text reads only the selected
+visible main-frame text nodes within the same collector root. Empty, hidden, editable
+or input-only selections refuse. Permissions, character/frame bounds and excluded
+images/iframes/inputs are unchanged. It is text selection, not an image attachment.
+
+A follow-up names a completed parent result. The server validates the entire chain,
+requiring the same origin, normalized URL digest, tab, window, document and scope.
+It uses the newly confirmed snapshot alongside quoted earlier questions/answers;
+prior answers are untrusted discussion, not verified current facts. Source changes
+require a new conversation. Each turn still needs fresh external-model consent.
+The preview includes the exact quoted history that will be sent. At most eight
+turns are allowed; earlier answers in model context are capped at 2,000 characters
+each, with visible truncation. Full individual answers remain saved locally and
+get-addressable. Native responses stay within the existing frame bound; restored
+history may be further shortened visibly for transport. Page text is never persisted.
+
+Reopening recovers the last job and its prior messages using get, without dispatch.
+A separate saved-status button handles pending/unknown replies without resubmission.
+The selected central model/effort is shown before sending; reported actual model is
+shown after an answer, remaining unknown when the provider does not supply evidence.
+Real Edge fixtures cover selection exclusion, consent, history transmission,
+restoration and narrow-window rendering. They are not live Chrome/subscription
+acceptance. Extension/native package update and Owner live acceptance remain pending.

@@ -1,10 +1,6 @@
-<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Imagine · 網頁唯讀助理</title><link rel="stylesheet" href="sidepanel.css"></head><body>
-<header><strong>香香 · Imagine</strong><span>網頁唯讀助理</span></header>
-<main><p>按 Chrome 工具列的香香圖示，授權目前分頁；再準備讀取。</p>
-<label for="question">想了解這個網頁甚麼？</label><textarea id="question" maxlength="1000">請用繁體中文解釋這個網頁的主要內容，並指出讀不到的部分。</textarea>
-<button id="prepare">準備讀取目前網頁</button>
-<section id="preview" hidden><h2>確認外送範圍</h2><p id="source"></p><p id="model"></p><p id="coverage"></p><details><summary>查看文字預覽</summary><pre id="excerpt"></pre></details><label><input id="consent" type="checkbox">我同意將上述範圍的文字交給所顯示的 AI 訂閱模型。答覆會保留在本機；原始頁面文字不保存。</label><button id="read" disabled>確認並讀取</button></section>
-<p id="status" role="status" aria-live="polite"></p><button id="cancel" hidden>停止這次讀取</button>
-<article id="answer" hidden><h2>香香的回答</h2><p id="evidence"></p><div id="text"></div></article>
-<p class="note">目前只讀取主框架可見文字，最多約 6,000 字；不讀輸入欄、其他分頁、cookies 或截圖，不會操作頁面。</p>
-</main><script src="sidepanel.js"></script></body></html>
+<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>香香 · 網頁對話</title><link rel="stylesheet" href="sidepanel.css"></head><body>
+<header><strong>香香 · Imagine</strong><button id="new-chat" type="button">新對話</button></header>
+<main><div id="welcome"><h1>一起看這個網頁</h1><p>解釋內容、整理重點，或接着追問。</p><p class="note">先按 Chrome 工具列的香香圖示，授權目前分頁。</p></div><div id="messages" aria-live="polite"></div><article id="answer" hidden><p id="evidence" class="note"></p><div id="text"></div></article></main>
+<footer><p id="status" role="status" aria-live="polite"></p><form id="composer"><label class="sr-only" for="coverage-mode">讀取範圍</label><select id="coverage-mode"><option value="main_frame_visible_text">目前網頁</option><option value="selection_text">選取文字</option></select><span id="context-chip" class="note">尚未加入網頁內容</span><label class="sr-only" for="question">傳訊息給香香</label><textarea id="question" maxlength="1000" rows="2" placeholder="傳訊息給香香，或接着追問…"></textarea><div class="actions"><span class="note">只讀文字 · 圖片未讀取</span><button id="recover" type="button" hidden>查看已保存狀態</button><button id="cancel" type="button" hidden>停止</button><button id="prepare" type="submit">傳送 ↑</button></div></form></footer>
+<section id="preview" hidden aria-labelledby="preview-title"><div class="preview-card"><h2 id="preview-title">確認交給香香的內容</h2><p id="source"></p><p id="model"></p><p id="coverage"></p><details><summary>查看文字預覽</summary><pre id="excerpt"></pre></details><details id="history-details" hidden><summary>查看會外送的先前對話</summary><pre id="history-preview"></pre></details><label><input id="consent" type="checkbox">我同意將這次文字及顯示的對話交給所選 AI 訂閱模型。回答保留在本機；原始網頁文字不保存。</label><div class="actions"><button id="dismiss" type="button">返回編輯</button><button id="read" type="button" disabled>確認並傳送</button></div></div></section>
+<script src="sidepanel.js"></script></body></html>
