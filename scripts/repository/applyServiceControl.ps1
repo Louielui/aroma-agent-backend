@@ -11,15 +11,32 @@ try { $serviceControlHash=([BitConverter]::ToString($serviceControlHasher.Comput
 if ($serviceControlHash -cne $OwnerApprovedPlanHash) { throw 'OwnerApprovedPlanChanged' }
 $serviceControlPlan = [Text.Encoding]::UTF8.GetString($serviceControlBytes).TrimStart([char]0xfeff) | ConvertFrom-Json
 function DescriptorHash([string]$value) { $sha=[Security.Cryptography.SHA256]::Create(); try { return ([BitConverter]::ToString($sha.ComputeHash([Text.Encoding]::UTF8.GetBytes($value)))).Replace('-','').ToLowerInvariant() } finally { $sha.Dispose() } }
+function DaclForm([string]$value) {
+  (New-Object Security.AccessControl.RawSecurityDescriptor($value)).GetSddlForm([Security.AccessControl.AccessControlSections]::Access)
+}
+function UnmodifiedDescriptorForm([string]$value) {
+  $sections=[Security.AccessControl.AccessControlSections]::Owner -bor [Security.AccessControl.AccessControlSections]::Group -bor [Security.AccessControl.AccessControlSections]::Audit
+  (New-Object Security.AccessControl.RawSecurityDescriptor($value)).GetSddlForm($sections)
+}
+function ReadServiceDescriptor {
+  $descriptorOutput=& (Join-Path $env:SystemRoot 'System32/sc.exe') sdshow AromaXiangXiangBackend
+  if ($LASTEXITCODE -ne 0) { throw 'ServiceDescriptorUnavailable' }
+  $descriptorText=($descriptorOutput | Where-Object { $_ -match '^[OGDS]:' }) -join ''
+  [void](DaclForm $descriptorText)
+  return $descriptorText
+}
 if ($serviceControlPlan.id -ne $PlanId -or $serviceControlPlan.service -cne 'AromaXiangXiangBackend' -or $serviceControlPlan.accessMask -ne 0x30 -or $serviceControlPlan.scope -cne 'start_stop_existing_local_service' -or $serviceControlPlan.ownerSid -cne [Security.Principal.WindowsIdentity]::GetCurrent().User.Value -or (DescriptorHash $serviceControlPlan.before) -cne $serviceControlPlan.beforeHash -or (DescriptorHash $serviceControlPlan.after) -cne $serviceControlPlan.afterHash) { throw 'UnapprovedOrChangedPlan' }
 # Reconstruct the only allowed difference rather than trusting an arbitrary SDDL.
 $serviceControlExpected = New-Object Security.AccessControl.RawSecurityDescriptor($serviceControlPlan.before)
 $serviceControlSid = New-Object Security.Principal.SecurityIdentifier($serviceControlPlan.ownerSid)
 $serviceControlExpected.DiscretionaryAcl.InsertAce($serviceControlExpected.DiscretionaryAcl.Count,(New-Object Security.AccessControl.CommonAce([Security.AccessControl.AceFlags]::None,[Security.AccessControl.AceQualifier]::AccessAllowed,0x30,$serviceControlSid,$false,$null)))
 if ($serviceControlExpected.GetSddlForm([Security.AccessControl.AccessControlSections]::All) -cne $serviceControlPlan.after) { throw 'UnexpectedPermissionDifference' }
-$serviceControlObserved = ((& sc.exe sdshow AromaXiangXiangBackend) | Where-Object { $_ -match '^D:' }) -join ''
+$serviceControlObserved = ReadServiceDescriptor
 $serviceControlExpectedCurrent = if ($Revoke) { $serviceControlPlan.after } else { $serviceControlPlan.before }
-if ($serviceControlObserved -cne $serviceControlExpectedCurrent) { throw 'ServiceDescriptorChanged' }
+# An elevated read may additionally expose audit/SACL that the Owner's original
+# read could not see. Only the exact approved DACL is writable through 0x4.
+if ((DaclForm $serviceControlObserved) -cne (DaclForm $serviceControlExpectedCurrent)) { throw 'ServiceDescriptorChanged' }
+$serviceControlUnmodified = UnmodifiedDescriptorForm $serviceControlObserved
 $serviceControlTarget = if ($Revoke) { $serviceControlPlan.before } else { $serviceControlPlan.after }
 # Write only DACL_SECURITY_INFORMATION (0x4). Owner, group and audit/SACL are
 # not writable through this call, including audit entries hidden by sdshow.
@@ -50,6 +67,6 @@ try {
   if ($serviceControlHandle -ne [IntPtr]::Zero) { [ImagineDaclWriter]::CloseServiceHandle($serviceControlHandle) | Out-Null }
   [ImagineDaclWriter]::CloseServiceHandle($serviceControlManager) | Out-Null
 }
-$serviceControlReadBack = ((& sc.exe sdshow AromaXiangXiangBackend) | Where-Object { $_ -match '^D:' }) -join ''
-if ($serviceControlReadBack -cne $serviceControlTarget) { throw 'ServicePermissionReadBackFailed' }
-@{ id=$PlanId;state=$(if($Revoke){'revoked'}else{'granted'});scope=$serviceControlPlan.scope;accessMask=0x30;checkedAt=[DateTime]::UtcNow.ToString('o') } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $serviceControlDirectory ($PlanId+'.result.json')) -Encoding UTF8
+$serviceControlReadBack = ReadServiceDescriptor
+if ((DaclForm $serviceControlReadBack) -cne (DaclForm $serviceControlTarget) -or (UnmodifiedDescriptorForm $serviceControlReadBack) -cne $serviceControlUnmodified) { throw 'ServicePermissionReadBackFailed' }
+@{ id=$PlanId;state=$(if($Revoke){'revoked'}else{'granted'});scope=$serviceControlPlan.scope;accessMask=0x30;unmodifiedDescriptorSectionsVerified=$true;approvedDaclReadBackVerified=$true;checkedAt=[DateTime]::UtcNow.ToString('o') } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $serviceControlDirectory ($PlanId+'.result.json')) -Encoding UTF8
