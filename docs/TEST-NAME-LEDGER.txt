@@ -4851,6 +4851,7 @@ backup failure is visible and backs off instead of printing provider errors or r
 bad company, range, filters and source responses cannot become live payroll evidence or leak upstream errors
 bad input degrades to keeping everything, never to throwing
 batch folders are read CONCURRENTLY, not one after another
+batched remote inventory keeps every shared tip and fetches an unknown remote-only commit
 before and after previews read distinct verified receipts and refuse missing or tampered baseline evidence
 before preview selects the original receipt explicitly; invalid phases cannot reach the bridge
 best-effort: a delete failure on one entry is logged, sweep CONTINUES, summary reflects it
@@ -6005,6 +6006,7 @@ planner, test registration, registry, sealed work approvals and development comp
 planning defaults to medium and creates a provider matching each requested reasoning level
 polling failure disables stale adoption actions
 pre-cancelled work never starts a VM
+pre-push preserves non-main ancestry and rejects divergent refs, main updates and deletion
 precedence: commit → execution_proposal (execute signal never masked)
 preflight applies the authoritative text policy to indexed source metadata as well as original body
 preflight distinguishes unpublished work, stale tracking refs and real divergence

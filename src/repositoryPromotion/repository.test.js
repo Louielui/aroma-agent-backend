@@ -45,6 +45,18 @@ test('a wrong repository or preservation directory inside the checkout fails clo
   await assert.rejects(wrong.inspect(),/repository_identity_mismatch/)
 })
 
+test('batched remote inventory keeps every shared tip and fetches an unknown remote-only commit',async t=>{
+ const f=fixture(t),other=path.join(f.dir,'other')
+ for(let i=0;i<12;i++)g(f.root,'push','origin',f.base+':refs/heads/backup/shared-'+i)
+ g(f.dir,'clone',f.remote,other);g(other,'checkout','main');fs.writeFileSync(path.join(other,'remote-only.js'),'remote-only');g(other,'add','.');g(other,'commit','-m','remote only');const remoteOnly=g(other,'rev-parse','HEAD');g(other,'push','origin','HEAD:refs/heads/feature/remote-only')
+ assert.throws(()=>g(f.root,'cat-file','-e',remoteOnly+'^{commit}'))
+ const refs=f.repo.remoteRefs();assert.equal(refs.main,f.base);assert.equal(refs.refs.length,14);assert.equal(refs.tips.length,2)
+ assert.ok(refs.refs.some(r=>r.ref==='refs/heads/feature/remote-only'&&r.sha===remoteOnly));assert.equal(g(f.root,'show',remoteOnly+':remote-only.js'),'remote-only')
+ g(f.root,'checkout','-b','feature/local-only');fs.writeFileSync(path.join(f.root,'local-only.js'),'local-only');g(f.root,'add','.');g(f.root,'commit','-m','local only');const localOnly=g(f.root,'rev-parse','HEAD');g(f.root,'branch','backup/shared-local',localOnly);g(f.root,'checkout','main')
+ const kept=f.repo.preserve(await f.repo.inspect());assert.equal(kept.remoteBackups.length,1);assert.equal(kept.remoteBackups[0].sha,localOnly)
+ assert.ok(f.repo.remoteRefs().refs.some(r=>r.ref===kept.remoteBackups[0].ref&&r.sha===localOnly));assert.equal(g(f.root,'show','feature/local-only:local-only.js'),'local-only')
+})
+
 test('history guard refuses alternate deletion, implicit main push and non-fast-forward refspec forms',()=>{
  for(const args of [['branch','-d','last'],['push','--delete=last','origin'],['push','origin','main'],['push','--mirror','origin'],['push','origin','+'+'a'.repeat(40)+':refs/heads/feature/safe'],['update-ref','refs/heads/main','a'.repeat(40)]])assert.throws(()=>safeGitArgs(args));
  assert.doesNotThrow(()=>safeGitArgs(['commit','-m','reset']));

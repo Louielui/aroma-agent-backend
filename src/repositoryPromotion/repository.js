@@ -69,7 +69,14 @@ function createRepository ({root,runtimeRoot=root,artifacts,remote=REMOTE,runtim
   function remoteRefs () {
     const refs=git(['ls-remote','--heads','--tags','origin']).split('\n').filter(Boolean).map(line=>{const[sha,ref]=line.split(/\s+/);return{sha,ref}})
     const tips=[...new Set(refs.filter(r=>r.ref.startsWith('refs/heads/')||r.ref.endsWith('^{}')).map(r=>r.sha))]
-    for(const sha of tips){try{git(['cat-file','-e',sha+'^{commit}'])}catch{git(['fetch','--no-tags','origin',sha])}}
+    if(tips.length){
+      const objects=git(['cat-file','--batch-check=%(objectname) %(objecttype)'],{input:tips.map(sha=>sha+'^{commit}').join('\n')+'\n'}).split('\n')
+      if(objects.length!==tips.length)throw Error('remote_inventory_unavailable')
+      for(let i=0;i<tips.length;i++){
+        if(objects[i]===tips[i]+'^{commit} missing')git(['fetch','--no-tags','origin',tips[i]])
+        else if(objects[i]!==tips[i]+' commit')throw Error('remote_inventory_unavailable')
+      }
+    }
     const main=refs.find(r=>r.ref==='refs/heads/main')?.sha
     if(!SHA.test(main||''))throw Error('remote_main_unavailable')
     return{refs,tips,main}
@@ -122,9 +129,12 @@ function createRepository ({root,runtimeRoot=root,artifacts,remote=REMOTE,runtim
     const bundle=path.join(directory,'repository.bundle');git(['bundle','create',bundle,'--all']);git(['bundle','verify',bundle])
     const live=remoteRefs(),targets=[]
     const refs=inspection.branches || git(['for-each-ref','--format=%(refname) %(objectname)','refs/heads']).split('\n').map(line=>{const[ref,sha]=line.split(' ');return{ref,sha}})
-    for(const r of refs){
-      if(privateRefs.includes(r.ref)||r.ref.startsWith('refs/heads/backup/private-checkpoint-'))continue
-      if(!git(['rev-list','--count',r.sha,'--not',...live.tips])||Number(git(['rev-list','--count',r.sha,'--not',...live.tips]))===0)continue
+    const eligible=refs.filter(r=>!privateRefs.includes(r.ref)&&!r.ref.startsWith('refs/heads/backup/private-checkpoint-'))
+    const unpublished=new Set(eligible.length?git(['rev-list',...new Set(eligible.map(r=>r.sha)),'--not',...live.tips]).split('\n').filter(Boolean):[])
+    for(const r of eligible){
+      // A remotely reachable tip has no unique ancestors. One union traversal
+      // proves this for every branch instead of launching Git twice per ref.
+      if(!unpublished.has(r.sha))continue
       if(!targets.some(x=>x.sha===r.sha))targets.push({sha:r.sha,ref:'refs/heads/backup/auto-'+stamp+'-'+r.sha.slice(0,10),originalRef:r.ref})
     }
     const scan=targets.length?scanObjects(root,targets.map(t=>t.sha),live.tips):{objects:0,blobs:0,findings:[]}

@@ -9,7 +9,7 @@ test('permission preparation is read-only for Windows ACLs and never silently ap
 })
 test('permission application reconstructs only start-stop rights for the same Owner and supports exact revocation',()=>{
   const source=fs.readFileSync(path.join(root,'scripts/repository/applyServiceControl.ps1'),'utf8')
-  assert.match(source,/WindowsAdministratorRequired/);assert.match(source,/OwnerApprovedPlanHash/);assert.match(source,/OwnerApprovedPlanChanged/)
+  assert.match(source,/WindowsAdministratorRequired/);assert.match(source,/OwnerApprovedPlanHash/);assert.match(source,/OwnerApprovedPlanChanged/);assert.match(source,/ReadAllBytes/);assert.match(source,/ComputeHash\(\$serviceControlBytes\)/);assert.ok(!/Get-FileHash/.test(source))
   assert.ok(!/approved -ne \$true/.test(source))
   assert.match(source,/GetCurrent\(\)\.User\.Value/);assert.match(source,/UnexpectedPermissionDifference/)
   assert.match(source,/ServiceDescriptorChanged/);assert.match(source,/ServicePermissionReadBackFailed/)

@@ -15,8 +15,9 @@ async function main () {
   const coordinator=createCoordinator({root,runtimeRoot,artifacts,privateRefs:['refs/heads/backup/imagine-20261012-dirty-checkpoint']})
   if(action==='hook-before-push'){
     const lines=fs.readFileSync(0,'utf8').split('\n').filter(Boolean)
-    for(const line of lines){const fields=line.trim().split(/\s+/);if(fields.length!==4||fields[2]==='refs/heads/main'||/^0{40}$/.test(fields[1]))throw Error('direct_main_or_ref_deletion_forbidden')}
-    coordinator.repository.identity();return
+    coordinator.repository.identity()
+    validatePush(lines,coordinator.repository)
+    return
   }
   if(action==='install-hooks'){
     coordinator.repository.identity()
@@ -40,5 +41,15 @@ async function main () {
   console.log(JSON.stringify({id:row.id,state:row.state,reason:row.reason||null,commit:row.merge?.commit||row.committed?.commit||null,pr:row.pr,runtime:row.runtime}))
   if(!['complete','awaiting_idle','awaiting_reload_idle','awaiting_administrator'].includes(row.state))process.exitCode=1
 }
+function validatePush (lines,repository) {
+    for(const line of lines){
+      const fields=line.trim().split(/\s+/)
+      if(fields.length!==4||!/^refs\/heads\/(?!main$)[A-Za-z0-9_./-]+$/.test(fields[2])||! /^[a-f0-9]{40}$/.test(fields[1])||/^0{40}$/.test(fields[1])||!/^[a-f0-9]{40}$/.test(fields[3]))throw Error('direct_main_or_ref_deletion_forbidden')
+      if(!/^0{40}$/.test(fields[3])){
+        try{repository.git(['cat-file','-e',fields[3]+'^{commit}'])}catch{repository.git(['fetch','--no-tags','origin',fields[3]])}
+        try{repository.git(['merge-base','--is-ancestor',fields[3],fields[1]])}catch{throw Error('remote_history_rewrite_forbidden')}
+      }
+    }
+}
 if(require.main===module)main().catch(e=>{console.error(e instanceof Error&&/^[a-z_]+$/.test(e.message)?e.message:'repository_promotion_failed');process.exitCode=1})
-module.exports={argumentsOf}
+module.exports={argumentsOf,validatePush}

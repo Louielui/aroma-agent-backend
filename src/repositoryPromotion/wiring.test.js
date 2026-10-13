@@ -35,3 +35,23 @@ test('Windows reload has one fixed service and owned bridge, with no permission 
   assert.match(source,/ExpectedCommitMismatch/)
   assert.ok(!/New-Service|schtasks|sdset|Set-ExecutionPolicy|Copy-Item/.test(source))
 })
+
+test('pre-push preserves non-main ancestry and rejects divergent refs, main updates and deletion',t=>{
+  const cp=require('node:child_process'),os=require('node:os')
+  const {validatePush}=require('../../scripts/repository/tranche.cjs')
+  const directory=fs.mkdtempSync(path.join(os.tmpdir(),'promotion-push-'))
+  t.after(()=>{assert.ok(path.resolve(directory).startsWith(path.resolve(os.tmpdir())+path.sep));fs.rmSync(directory,{recursive:true,force:true})})
+  const git=args=>cp.execFileSync('git',['-c','core.hooksPath=','-c','user.name=Fixture','-c','user.email=fixture@example.test','-C',directory,...args],{encoding:'utf8',windowsHide:true,stdio:['pipe','pipe','pipe']}).trim()
+  git(['init','-b','main']);fs.writeFileSync(path.join(directory,'file'),'base');git(['add','.']);git(['commit','-m','base']);const base=git(['rev-parse','HEAD'])
+  git(['checkout','-b','feature/one']);fs.writeFileSync(path.join(directory,'file'),'one');git(['add','.']);git(['commit','-m','one']);const one=git(['rev-parse','HEAD'])
+  git(['checkout','-b','feature/two',base]);fs.writeFileSync(path.join(directory,'file'),'two');git(['add','.']);git(['commit','-m','two']);const two=git(['rev-parse','HEAD'])
+  const repository={git},zero='0'.repeat(40)
+  const line=(next,old,ref='refs/heads/feature/target')=>`refs/heads/feature/local ${next} ${ref} ${old}`
+  assert.doesNotThrow(()=>validatePush([line(one,base)],repository))
+  assert.doesNotThrow(()=>validatePush([line(one,zero)],repository))
+  assert.throws(()=>validatePush([line(two,one)],repository),/remote_history_rewrite_forbidden/)
+  assert.throws(()=>validatePush([line(base,one)],repository),/remote_history_rewrite_forbidden/)
+  assert.throws(()=>validatePush([line(one,base,'refs/heads/main')],repository),/direct_main_or_ref_deletion_forbidden/)
+  assert.throws(()=>validatePush([line(zero,one)],repository),/direct_main_or_ref_deletion_forbidden/)
+  assert.throws(()=>validatePush([line(one,base,'refs/tags/unique')],repository),/direct_main_or_ref_deletion_forbidden/)
+})

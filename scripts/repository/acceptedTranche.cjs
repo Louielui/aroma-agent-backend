@@ -12,7 +12,7 @@ async function main () {
   const env=require('dotenv').parse(fs.readFileSync(path.join(root,'.env')))
   const workspaceRoot=env.XIANGXIANG_WORKER_WORKSPACE_ROOT&&path.isAbsolute(env.XIANGXIANG_WORKER_WORKSPACE_ROOT)?env.XIANGXIANG_WORKER_WORKSPACE_ROOT:path.join(require('node:os').homedir(),'Documents','AromaXiangXiang','worker-workspaces')
   const isolated=key=>{
-    if(!/^[a-f0-9-]{36}$/.test(key||''))throw Error('accepted_evidence_changed')
+    if(!/^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/.test(key||''))throw Error('accepted_evidence_changed')
     const file=path.join(workspaceRoot,'isolated-coding-runs',key+'.json'),stat=fs.lstatSync(file)
     if(!stat.isFile()||stat.isSymbolicLink()||stat.nlink!==1||stat.size>5000000)throw Error('accepted_evidence_changed')
     return JSON.parse(fs.readFileSync(file,'utf8'))
