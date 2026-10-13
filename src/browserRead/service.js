@@ -27,7 +27,7 @@ function createBrowserRead({store,selection,provider,now=Date.now,timeoutMs=1100
   if(b.op==='prepare'){
    const source=permittedSource(b.source,now()),requestHash=digest(JSON.stringify({question:b.question,source,parentId:b.parentId||null}))
    const history=ancestors(b.parentId)
-   if(history.length){const parent=history.at(-1);for(const key of ['origin','urlHash','tabId','windowId','documentId','coverage'])if((parent.source[key]||(key==='coverage'?'main_frame_visible_text':undefined))!==source[key])throw Error('conversation_source_changed')}
+   if(history.length){const parent=history.at(-1);for(const key of ['origin','urlHash','tabId','windowId','documentId','coverage'])if((parent.source[key]??(key==='coverage'?'main_frame_visible_text':undefined))!==source[key])throw Error('conversation_source_changed')}
    const prior=store.all().find(r=>r.requestId===b.requestId)
    if(prior){if(prior.requestHash!==requestHash)throw Error('request_changed');return view(prior)}
    if(store.all().length>=500)throw Error('read_capacity_reached')

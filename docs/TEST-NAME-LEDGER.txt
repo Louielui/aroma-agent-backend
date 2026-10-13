@@ -7048,6 +7048,7 @@ v2: the sealed response carries the Owner card, and it matches the sealed order
 valid current packet with changed reader or dependency bytes never inherits past adoption
 valid task → Proposal(status pending, linkState ready), task bound, provenance complete
 valid three-domain closure -> VERIFIED, productionPersonaMode NOT_VERIFIED
+valid zero tab and window ids support consented follow-ups
 validateAdapter passes for a well-formed adapter and returns it
 validateAdapter throws when a method is not a function
 validateAdapter throws when health is missing
