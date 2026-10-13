@@ -22,5 +22,5 @@ el('read').addEventListener('click',async()=>{
  if(busy||!capture||!job||!el('consent').checked)return;busy=true;el('read').disabled=true;el('prepare').disabled=true;el('status').textContent='再次核對頁面後交給香香…'
  try{present(await rpc({op:'read',id:job.id,consent:true,source:capture.source,text:capture.text}))}catch(e){error(e)}finally{busy=false;capture=null;el('prepare').disabled=false;el('question').readOnly=false}
 })
-el('cancel').addEventListener('click',async()=>{if(!job)return;try{present(await rpc({op:'cancel',id:job.id}));capture=null;el('read').disabled=true}catch(e){error(e)}})
+el('cancel').addEventListener('click',async()=>{if(!job)return;try{present(await rpc({op:'cancel',id:job.id}));capture=null;el('read').disabled=true;el('question').readOnly=false}catch(e){error(e)}})
 chrome.storage.local.get('lastReadId').then(async value=>{if(value.lastReadId){try{present(await rpc({op:'get',id:value.lastReadId}))}catch(e){error(e)}}})
