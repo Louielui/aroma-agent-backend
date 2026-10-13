@@ -1,0 +1,10 @@
+<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Imagine · 網頁唯讀助理</title><link rel="stylesheet" href="sidepanel.css"></head><body>
+<header><strong>香香 · Imagine</strong><span>網頁唯讀助理</span></header>
+<main><p>按 Chrome 工具列的香香圖示，授權目前分頁；再準備讀取。</p>
+<label for="question">想了解這個網頁甚麼？</label><textarea id="question" maxlength="1000">請用繁體中文解釋這個網頁的主要內容，並指出讀不到的部分。</textarea>
+<button id="prepare">準備讀取目前網頁</button>
+<section id="preview" hidden><h2>確認外送範圍</h2><p id="source"></p><p id="model"></p><p id="coverage"></p><details><summary>查看文字預覽</summary><pre id="excerpt"></pre></details><label><input id="consent" type="checkbox">我同意將上述範圍的文字交給所顯示的 AI 訂閱模型。答覆會保留在本機；原始頁面文字不保存。</label><button id="read" disabled>確認並讀取</button></section>
+<p id="status" role="status" aria-live="polite"></p><button id="cancel" hidden>停止這次讀取</button>
+<article id="answer" hidden><h2>香香的回答</h2><p id="evidence"></p><div id="text"></div></article>
+<p class="note">目前只讀取主框架可見文字，最多約 6,000 字；不讀輸入欄、其他分頁、cookies 或截圖，不會操作頁面。</p>
+</main><script src="sidepanel.js"></script></body></html>

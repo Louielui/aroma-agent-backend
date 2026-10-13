@@ -1224,6 +1224,16 @@ function createApp (options = {}) {
   const topicStore = require('./topics/workspaces').createTopicStore({ dataDir: require('./store/dataDir').resolveDataDir() })
   const brainCatalogue = () => new (require('./adapters/CodexSubscriptionAdapter').CodexSubscriptionAdapter)().models()
   const modelCenter = require('./modelCenter/service').createModelCenter({ dataDir: require('./store/dataDir').resolveDataDir(), catalogue: brainCatalogue, topicForConversation: topicStore.topicForConversation })
+  const browserRead = require('./browserRead/service').createBrowserRead({
+    store: require('./browserRead/store').createStore(path.join(require('./store/dataDir').resolveDataDir(), 'browser-context-reads')),
+    selection: () => modelCenter.read().brain,
+    provider: choice => {
+      if (process.env.CHAT_BACKEND !== 'codex-subscription') throw Error('model_unavailable')
+      return new (require('./adapters/CodexSubscriptionAdapter').CodexSubscriptionAdapter)(choice)
+    }
+  })
+  app.use('/api/v1/browser-read', requireServiceToken)
+  app.use(require('./browserRead/routes').createRouter({ service: browserRead }))
   app.use('/model-center', requireOwner)
   app.use('/action-center', requireOwner)
   app.use('/api/v1/scheduler-actions', requireOwner)
