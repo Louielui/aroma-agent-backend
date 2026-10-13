@@ -1,0 +1,90 @@
+param([switch]$PrepareOnly)
+$ErrorActionPreference='Stop'
+# Only this fixed Owner repository, per-user host and read-only extension.
+$browserRepo='C:\Aroma\aroma-agent-backend'
+$browserNode='C:\Program Files\nodejs\node.exe'
+if (-not (Test-Path -LiteralPath $browserNode)) { throw 'NodeRuntimeUnavailable' }
+$browserCommit=(& git -c "safe.directory=$browserRepo" -C $browserRepo rev-parse HEAD).Trim()
+if($LASTEXITCODE -ne 0 -or $browserCommit -notmatch '^[a-f0-9]{40}$'){throw 'RepositoryIdentityUnavailable'}
+$browserRemote=(& git -c "safe.directory=$browserRepo" -C $browserRepo remote get-url origin).Trim()
+if($browserRemote -notin @('https://github.com/Louielui/aroma-agent-backend.git','git@github.com:Louielui/aroma-agent-backend.git')){throw 'RepositoryIdentityChanged'}
+$browserRoot=Join-Path $env:USERPROFILE '.imagine/browser-context-read'
+$browserRelease=Join-Path $browserRoot ($browserCommit+'-'+[Guid]::NewGuid().ToString())
+if(Test-Path -LiteralPath $browserRelease){throw 'ReleaseAlreadyPrepared'}
+New-Item -ItemType Directory -Path $browserRelease -Force | Out-Null
+function Read-BrowserGitBlob([string]$name){
+  $info=New-Object Diagnostics.ProcessStartInfo('git.exe')
+  $info.Arguments='-c safe.directory="'+$browserRepo+'" -C "'+$browserRepo+'" show '+$browserCommit+':'+$name
+  $info.UseShellExecute=$false;$info.CreateNoWindow=$true;$info.RedirectStandardOutput=$true;$info.RedirectStandardError=$true
+  $process=New-Object Diagnostics.Process;$process.StartInfo=$info
+  $buffer=New-Object IO.MemoryStream
+  try{[void]$process.Start();$process.StandardOutput.BaseStream.CopyTo($buffer);$process.WaitForExit();if($process.ExitCode -ne 0){throw 'GitBlobUnavailable'};return $buffer.ToArray()}finally{$buffer.Dispose();$process.Dispose()}
+}
+$browserNames=@('src/browserRead/nativeHost.cjs','src/browserRead/contract.js','src/browserRead/nativeProtocol.js','extensions/browser-read/manifest.json','extensions/browser-read/worker.js','extensions/browser-read/collector.js','extensions/browser-read/sidepanel.html','extensions/browser-read/sidepanel.js','extensions/browser-read/sidepanel.css')
+$browserPins=@{}
+foreach($browserName in $browserNames){
+  $browserSource=Join-Path $browserRepo $browserName
+  $browserStat=Get-Item -LiteralPath $browserSource
+  if($browserStat.Attributes -band [IO.FileAttributes]::ReparsePoint){throw 'UnsafeSource'}
+  # Compare exact Git blob bytes; do not publish an unreviewed local overlay.
+  $browserExpected=(& git -c "safe.directory=$browserRepo" -C $browserRepo rev-parse ($browserCommit+':'+$browserName)).Trim()
+  $browserActual=(& git -c "safe.directory=$browserRepo" -C $browserRepo hash-object $browserSource).Trim()
+  if($LASTEXITCODE -ne 0 -or $browserActual -cne $browserExpected){throw 'UncommittedHostSource'}
+  $browserDestination=if($browserName.StartsWith('extensions/')){Join-Path (Join-Path $browserRelease 'extension') ([IO.Path]::GetFileName($browserName))}else{Join-Path $browserRelease ([IO.Path]::GetFileName($browserName))}
+  New-Item -ItemType Directory -Path ([IO.Path]::GetDirectoryName($browserDestination)) -Force | Out-Null
+  [IO.File]::WriteAllBytes($browserDestination,(Read-BrowserGitBlob $browserName))
+  $browserPins[[IO.Path]::GetFileName($browserDestination)]=(Get-FileHash -LiteralPath $browserDestination -Algorithm SHA256).Hash.ToLowerInvariant()
+}
+$browserManifest=Get-Content -LiteralPath (Join-Path $browserRelease 'extension/manifest.json') -Raw | ConvertFrom-Json
+$browserKey=[Convert]::FromBase64String($browserManifest.key)
+$browserHasher=[Security.Cryptography.SHA256]::Create()
+try{$browserIdHash=([BitConverter]::ToString($browserHasher.ComputeHash($browserKey))).Replace('-','').ToLowerInvariant().Substring(0,32)}finally{$browserHasher.Dispose()}
+$browserExtensionId=-join ($browserIdHash.ToCharArray() | ForEach-Object { [char](97+[Convert]::ToInt32($_.ToString(),16)) })
+$browserOrigin='chrome-extension://'+$browserExtensionId+'/'
+[IO.File]::WriteAllText((Join-Path $browserRelease 'host-config.json'),(@{extensionOrigin=$browserOrigin;commit=$browserCommit}|ConvertTo-Json -Compress),(New-Object Text.UTF8Encoding($false)))
+$browserPins['host-config.json']=(Get-FileHash -LiteralPath (Join-Path $browserRelease 'host-config.json')).Hash.ToLowerInvariant()
+$browserPinLiteral=($browserPins.GetEnumerator() | Where-Object {$_.Key -in @('nativeHost.cjs','contract.js','nativeProtocol.js','host-config.json')} | ForEach-Object {'{"'+$_.Key+'","'+$_.Value+'"}'} ) -join ','
+$browserCsharp=@"
+using System; using System.IO; using System.Diagnostics; using System.Collections.Generic; using System.Security.Cryptography; using System.Threading.Tasks;
+public static class ImagineBrowserReadHost {
+ public static int Main(string[] args){
+  try {
+   if(args.Length==0 || args[0]!="$browserOrigin") return 3;
+   string root=AppDomain.CurrentDomain.BaseDirectory;
+   var pins=new Dictionary<string,string>{$browserPinLiteral};
+   foreach(var p in pins){using(var sha=SHA256.Create()){string hash=BitConverter.ToString(sha.ComputeHash(File.ReadAllBytes(Path.Combine(root,p.Key)))).Replace("-", "").ToLowerInvariant(); if(hash!=p.Value)return 3;}}
+   var info=new ProcessStartInfo(@"$browserNode");info.Arguments="\""+Path.Combine(root,"nativeHost.cjs")+"\" $browserOrigin";info.UseShellExecute=false;info.CreateNoWindow=true;info.RedirectStandardInput=true;info.RedirectStandardOutput=true;info.RedirectStandardError=true;
+   using(var child=Process.Start(info)){
+    Task.Run(()=>{try{Console.OpenStandardInput().CopyTo(child.StandardInput.BaseStream);child.StandardInput.Close();}catch{}});
+    Task.Run(()=>{try{child.StandardError.BaseStream.CopyTo(Console.OpenStandardError());}catch{}});
+    child.StandardOutput.BaseStream.CopyTo(Console.OpenStandardOutput());child.WaitForExit();return child.ExitCode;
+   }
+  }catch{Console.Error.WriteLine("Imagine browser read host unavailable.");return 3;}
+ }
+}
+"@
+$browserExe=Join-Path $browserRelease 'ImagineBrowserReadHost.exe'
+Add-Type -TypeDefinition $browserCsharp -OutputAssembly $browserExe -OutputType ConsoleApplication
+$browserHostManifest=Join-Path $browserRelease 'native-host.json'
+[IO.File]::WriteAllText($browserHostManifest,(@{name='com.imagine.browser_read';description='Imagine approved current-page read broker';path=$browserExe;type='stdio';allowed_origins=@($browserOrigin)}|ConvertTo-Json -Depth 3),(New-Object Text.UTF8Encoding($false)))
+$browserRegistry='HKCU:\Software\Google\Chrome\NativeMessagingHosts\com.imagine.browser_read'
+$browserPrior=$null
+if(Test-Path -LiteralPath $browserRegistry){$browserPrior=(Get-Item -LiteralPath $browserRegistry).GetValue('')}
+$browserReceipt=@{commit=$browserCommit;extensionId=$browserExtensionId;extensionPath=(Join-Path $browserRelease 'extension');hostManifest=$browserHostManifest;previousManifest=$browserPrior;preparedOnly=[bool]$PrepareOnly;hashes=$browserPins;checkedAt=[DateTime]::UtcNow.ToString('o')}
+[IO.File]::WriteAllText((Join-Path $browserRelease 'installation.json'),($browserReceipt|ConvertTo-Json -Depth 4),(New-Object Text.UTF8Encoding($false)))
+if(-not $PrepareOnly){
+  try{
+    New-Item -Path $browserRegistry -Force | Out-Null
+    Set-Item -LiteralPath $browserRegistry -Value $browserHostManifest
+    if((Get-Item -LiteralPath $browserRegistry).GetValue('') -cne $browserHostManifest){throw 'HostRegistrationUnconfirmed'}
+    $browserReceipt.registrationVerified=$true
+  }catch{
+    if($null -ne $browserPrior){Set-Item -LiteralPath $browserRegistry -Value $browserPrior}else{if(Test-Path -LiteralPath $browserRegistry){Remove-Item -LiteralPath $browserRegistry}}
+    $browserReceipt.registrationVerified=$false
+    $browserReceipt.restoredPreviousRegistration=$true
+    [IO.File]::WriteAllText((Join-Path $browserRelease 'installation.json'),($browserReceipt|ConvertTo-Json -Depth 4),(New-Object Text.UTF8Encoding($false)))
+    throw 'HostRegistrationFailedAndRestored'
+  }
+  [IO.File]::WriteAllText((Join-Path $browserRelease 'installation.json'),($browserReceipt|ConvertTo-Json -Depth 4),(New-Object Text.UTF8Encoding($false)))
+}
+Write-Output ($browserReceipt|ConvertTo-Json -Depth 4)

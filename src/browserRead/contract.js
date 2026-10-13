@@ -1,0 +1,26 @@
+'use strict'
+const {createHash}=require('node:crypto')
+const ID=/^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/
+// Fits the existing 50 KiB JSON parser even with escaped control characters.
+const MAX_TEXT=6000,MAX_QUESTION=1000
+const exact=(o,keys)=>o&&typeof o==='object'&&!Array.isArray(o)&&Object.keys(o).sort().join(',')===keys.slice().sort().join(',')
+const digest=text=>createHash('sha256').update(text,'utf8').digest('hex')
+function site(url){
+ let u;try{u=new URL(url)}catch{throw Error('site_not_allowed')}
+ if(u.protocol!=='https:'||u.href!==url||u.username||u.password||u.search||u.hash||u.hostname==='localhost'||u.hostname.startsWith('[')||/^\d+(?:\.\d+){3}$/.test(u.hostname)||/(?:^|\.)(?:bank|banking|paypal|adp|localhost)(?:\.|$)/i.test(u.hostname)||/\.(?:local|internal)$/.test(u.hostname))throw Error('site_not_allowed')
+ return u.origin
+}
+function validateSource(s,now){
+ if(!exact(s,['url','tabId','windowId','documentId','frameId','capturedAt','contentHash','truncated'])||typeof s.url!=='string'||s.url.length>2048||!Number.isSafeInteger(s.tabId)||s.tabId<0||!Number.isSafeInteger(s.windowId)||s.windowId<0||typeof s.documentId!=='string'||!s.documentId||s.documentId.length>128||s.frameId!==0||! /^[a-f0-9]{64}$/.test(s.contentHash)||typeof s.truncated!=='boolean')throw Error('invalid_source')
+ const origin=site(s.url),time=Date.parse(s.capturedAt)
+ if(!Number.isFinite(time)||now-time>30000||time-now>5000)throw Error('capture_stale')
+ return {origin,tabId:s.tabId,windowId:s.windowId,documentId:s.documentId,frameId:0,contentHash:s.contentHash,truncated:s.truncated,capturedAt:s.capturedAt,urlHash:digest(s.url)}
+}
+function validate(b){
+ const shapes={prepare:['op','requestId','question','source'],read:['op','id','consent','source','text'],get:['op','id'],cancel:['op','id']}
+ if(!b||!Object.hasOwn(shapes,b.op)||!exact(b,shapes[b.op])||!ID.test(b.op==='prepare'?b.requestId:b.id))throw Error('invalid_request')
+ if(b.op==='prepare'&&(typeof b.question!=='string'||!b.question.trim()||b.question.length>MAX_QUESTION))throw Error('invalid_request')
+ if(b.op==='read'&&(typeof b.consent!=='boolean'||typeof b.text!=='string'||!b.text.trim()||b.text.length>MAX_TEXT))throw Error('invalid_request')
+ return b
+}
+module.exports={ID,MAX_TEXT,MAX_QUESTION,exact,digest,site,validateSource,validate}

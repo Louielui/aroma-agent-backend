@@ -131,10 +131,19 @@ test('E7/E8. LIVE. the bootstrap layer sits beside the repo and never inside it'
     assert.strictEqual(sh(`cd ${REPO_DIR} && git rev-parse --show-toplevel`).stdout.trim(), REPO_DIR,
       'the envelope git repo must not capture the clone')
 
-    // ── and no bootstrap artefact reached the repo ──
+    // No bootstrap artefact reaches the repo. A legitimate source instruction
+    // (e.g. the Owner's promotion-policy AGENTS.md) may already be tracked; it
+    // must retain its exact base blob, never the external bootstrap fixture.
     for (const f of BOOTSTRAP_FILES) {
-      assert.strictEqual(sh(`[ -e ${REPO_DIR}/${f} ] && echo present || echo absent`).stdout.trim(), 'absent',
-        `${f} must not exist inside the repo`)
+      const tracked = sh(`cd ${REPO_DIR} && git cat-file -e ${p.baseSha}:${f}`).status === 0
+      if (tracked) {
+        assert.strictEqual(sh(`cd ${REPO_DIR} && git hash-object ${f}`).stdout.trim(),
+          sh(`cd ${REPO_DIR} && git rev-parse ${p.baseSha}:${f}`).stdout.trim(),
+          `${f} must retain the exact original source blob, not the bootstrap fixture`)
+      } else {
+        assert.strictEqual(sh(`[ -e ${REPO_DIR}/${f} ] && echo present || echo absent`).stdout.trim(), 'absent',
+          `${f} must not be introduced inside the repo`)
+      }
     }
 
     // ── cleanup takes the WHOLE envelope, and only when terminal ──

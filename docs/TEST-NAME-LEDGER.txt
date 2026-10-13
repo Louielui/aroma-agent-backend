@@ -4562,6 +4562,7 @@ actual Calendar page renders nonempty linked events as text and preserves all-da
 actual HTTP dialogue, planner and registration services retain the design and produce a reviewed draft without coding
 actual HTTP intake produces a saved proposal, reload restores it and natural confirmation creates one bounded handoff
 actual Owner credit answer and archive retain source-bound call evidence with no billing inference
+actual app composition protects and mounts the read route with central selection and no provider fallback
 actual application owner gate, read switch and closed probe route reject unauthorised, query and arbitrary paths
 actual assembled bilingual mobile/desktop model controls follow the catalogue without model calls
 actual bridge adoption receipts enable continuation even when backend adoption store is empty
@@ -4569,6 +4570,7 @@ actual central settings and independent bilingual topic controls persist, follow
 actual component observations bind failure -> explicit correction -> tests -> adoption -> same loaded process; bilingual report states precise scope
 actual event detail chat includes source description, location and updated date
 actual fixed PowerShell projection preserves definitions and handles empty or unsupported triggers without touching Windows tasks
+actual native launcher compiles and refuses a different extension before opening the broker
 actual planner and task services bind edited criteria, protected tests and distinct approval stages without automatic coding
 actual read adapter continues other authorized sources after runtime source failure
 actual single-file commit and rollback preserve unrelated staged, unstaged and untracked bytes
@@ -4905,10 +4907,13 @@ briefing memory HTTP rejects foreign origins and forged inputs, persists one can
 briefing projects actionable mail with source evidence, unknown fields and review state
 broken Google creds → those sources skipped, github still registered; NEVER throws
 browser comparison phase crosses the bridge without accepting paths or arbitrary modes
+browser context persisted records cannot contain raw page content or prompts
 browser history and assistant approval prose cannot create a planning receipt
 browser image reads accept only a registered run and fixed screenshot name
 browser model history retains ordinary replies exactly but never retains a source-bound mail body
 browser proof rejects foreign routes, unbounded metadata and bad hashes
+browser read needs explicit egress consent and cannot infer on prepare or status
+browser read route requires existing service auth and refuses browser Origins before dispatch
 buildApplyArgs produces exactly three elements: the script path, then --yes, then the patch path
 buildArgs is byte-for-byte the B2-1 spike command
 buildAuthUrl: refuses to build with any non-readonly scope
@@ -4953,6 +4958,7 @@ calendar items carry the weekday from data
 calendar.write
 calendar: BOUNDED window — timeMax present and exactly windowDays after timeMin
 cancel aborts subscription work and discards late output; busy prevents overlapping jobs
+cancel during model processing aborts and never saves a late success
 cancel reaches the active worker and restart never resumes delegated consent
 cancel stops an uncooperative model promptly, rejects overlapping work and discards late output
 cancel stops subsequent tools and late results cannot overwrite cancellation; retries link once
@@ -4986,6 +4992,7 @@ changed live revision withholds the proposal rather than accepting stale evidenc
 changed original is read and checked again; an approved Owner decision is preserved
 changed snapshot is refused before consuming the subscription
 changed survivor before prepare or approval, forged assessment and model prose cannot turn into an action
+changed tab, document, origin or content refuses before any model dispatch
 changing a saved proposal context cannot change its sealed authority
 changing it changes what the server renders, at use time
 chat PNG artifacts are retained, hashed and refused when missing, altered or foreign
@@ -5353,6 +5360,8 @@ explicit sidebar improvement commands start planning without a prior discussion 
 explicit starts do not use other applications, arbitrary paths or history to infer a target
 explicit subscription provider works without OpenAI key and reports bridge presence instead of API credential
 exports are deep frozen, and mutating them cannot move the argv
+extension declares only the read-side permissions, one stable id and no site-wide content scripts
+extension source survey forbids network/model credentials, page actions and dynamic injected code
 extension-less requires are resolved — the case that broke the first walker
 external gap creates an exact saved proposal and approved development draft without new permissions or dispatch
 external observations require approval; opt-out does not retain content; no fabricated confidence
@@ -5438,6 +5447,7 @@ foreign actors, altered plan hash, injected fields and source drift never reach 
 foreign origins, forged recipes/files and vague profiles fail before planning or preparation
 foreign provenance and audit failure fail closed, including after a successful read
 foreign, trashed, cyclic and missing-parent originals are never emitted as source evidence
+forged digest, stale capture, unexpected body fields and disallowed URLs are rejected
 forged nonce cannot bind an identity
 forged target, expanded scope, extra schema authority and another actor cannot start work
 formal review failure retains safe diagnostics and cannot approve adoption or repeat work
@@ -5521,6 +5531,7 @@ history polling reads work and adoption sequentially through the shared bridge l
 history restores work without nonce and uncertain preparation offers only readback
 holding an Owner session grants nothing on the approval path
 host completion waits for dispatched cancellation to settle and blocks late provider calls
+host installer is restricted to one per-user registry key, reviewed blobs and fixed Node executable
 hourly budget survives restarts and one in five attempts is reserved for historical mail
 humanDuration renders caps the way a person reads them
 idempotent — a second promote returns the same proposal, no duplicate created
@@ -5805,6 +5816,8 @@ named first request reaches the fixed catalogue; existing pending proposal is re
 named operational records retain their identity and cannot borrow facts from a sibling record
 names what was counted, how old, AND what was not looked at
 names, models, past execution, partial overlap, missing source, unsupported or stale XML cannot recommend stopping
+native broker refuses arbitrary routes, shell, navigation and page-shaped action instructions
+native framing handles partial messages and rejects oversized or malformed data
 native service-manager calls preserve null strings and capture access errors inside C# before PowerShell marshaling
 natural confirmations without a receipt clarify visibly rather than ask for arbitrary files
 natural historical mail intent and scoped follow-up stay in the transient source-bound lane
@@ -5910,6 +5923,7 @@ official quote summaries lead with requested-language facts, preserve time meani
 old boundary-violating wording is gone and must not return
 old record missing status → normalized to controlled "unknown", never "pending" (not confirmable)
 one
+one approved document snapshot uses the captured central brain once and stores no page text
 one call clicks at most once — no retry, no fallback
 one entry renders inline too
 one explicit plan confirmation runs real task approval and coding; reading or planning alone never executes
@@ -6050,6 +6064,7 @@ provenance / extra fields present at create survive restart intact
 provider effort values and legacy aliases preserve the exact requested effort across adapter, bridge and turn
 provider effort vocabulary can cross the bridge; adapter binds it
 provider failure, malformed success and revoked reads never turn into empty business truth
+provider failures, blank answers and save failures remain visible and cannot retry inference
 provider rate-limit reset is respected without another network call
 provider token fields preserve explicit zero, unknown and separate helper usage without inventing charges
 provider-aware evidence is versioned and cannot reuse the legacy assertions
@@ -6111,8 +6126,10 @@ real named attendance reader selects clock-in dates, retains open punches, prove
 real quota failure is retained with no fallback or automatic retry
 real read adapter feeds a distinct job, usage, account and billing assessment
 real registered planner retains the business goal as sealed context rather than misclassifying it as a production modification
+real rendered DOM collector excludes input values, hidden content and other frames and declares truncation
 real reviewed committed snapshot reproduces six failures and fixed recipes pass immutable checks
 real routing, policy-first, quoted-source verification and async terminal memory receipt
+real side-panel UI makes no model read before consent and renders untrusted answers as text
 reason is a closed enum, never free text
 reasoning effort is overridable per call and via OPENAI_REASONING_EFFORT; typos ignored
 reasoning effort is pinned to the cheapest setting by default (budget guard)
@@ -6185,6 +6202,7 @@ request id is durable and conflicts refuse rather than duplicating preparation
 request language is isolated from other concurrent dialogue replies
 request touching the 'banking' data domain is denied and no adapter is called
 requestId is server-generated; browser-supplied requestId ignored
+requested aliases are not presented as proven actual models
 required authorised Gmail evidence is read and source-bound alongside operations
 required denied source still produces an honest investigation without performing a read
 required external evidence, mixed goals, conflicts and unresolved required facts retain the normal model path
@@ -6204,6 +6222,7 @@ resolveReleaseRef: partial flags -> RELEASE_REF_PARTIAL
 resolveSupersede: partial -> SUPERSEDE_PARTIAL; none -> null; both -> value
 resolving one removes it from waiting but NOT from history
 response passthrough preserved:
+restart interrupts unfinished jobs, expires approval and never repeats a paid call
 restart invalidates pending approval and never automatically replays approved work
 restart marks all persisted active work interrupted without re-running a model
 restart preserves failure backoff and unchanged analyses, while manual retry remains available
