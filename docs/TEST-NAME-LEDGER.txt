@@ -7449,3 +7449,5 @@ operator vision contract uses normalized coordinates and empty non-result fields
 operator invalid action diagnostics record only closed reasons without model text page text or input tickets
 native refusal preserves a closed diagnostic and consumed ticket without exposing an arbitrary exception
 native refusal reporting accepts legacy uncertainty but refuses arbitrary causes and causes on success
+owned fixture focused input remains visually stable without weakening native pixel validation
+owned fixture keeps both admitted controls visible after a real wheel scroll for post-action observation
