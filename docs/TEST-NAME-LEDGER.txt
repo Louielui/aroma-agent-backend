@@ -7502,3 +7502,7 @@ V2 saved wage follow-ups perform a fresh legacy read and numeric filtering witho
 ordinary V2 page questions reach the page-grounded answer branch without a general keyword or company read
 the actual Browser capture contract accepts its text limit and refuses oversized V2 payloads before planning
 same-tab navigation preserves existing Operator jobs while contextual reads retain their navigation stop
+Drive selection sees source MIME types and existing body-read support without trusting titles
+model-selected Drive folders are rejected before get rather than treated as readable recipes
+unsupported recipe results expose source metadata and limits without inventing document contents
+folder-only Drive matches do not dispatch document selection or get and remain incomplete

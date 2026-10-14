@@ -65,3 +65,21 @@ by the existing 16,000-byte reader; PDF, images, Sheets, document tabs/comments
 and layout are not verified. Answers use source-matched excerpts, not unconstrained
 generated internal recipes. Remaining live testing and deployment require a
 separate Owner approval, independent exact-source review and normal policy gates.
+
+## Controlled acceptance follow-up candidate
+
+The PR #94 controlled test recovered subscription authentication but an implicit
+recipe lookup in Drive still produced clarification without a source read. An
+explicit-source control reached search and get, but selected an unsupported file
+and a folder, yielding metadata only. No recipe body was verified.
+
+This isolated follow-up explains file-workspace artifact lookup to the intent
+planner without forcing every open tab to be relevant. General, unrelated,
+negative and untrusted page requests remain distinct. The selector now receives
+the existing source MIME type and text-read support, prefers relevant readable
+documents, and cannot select folders. Unsupported matches remain metadata-only,
+with source names, links and readable limitations instead of an empty generic
+result. Existing 25-candidate/three-file bounds, formats, task version 2 and
+tool-scope version 1 are preserved. No PDF, image, Sheet or folder-list reader is
+added. Synthetic real-model evaluations are separate from company-data acceptance.
+This follow-up candidate is not deployed; PR #94 remains the running baseline.
