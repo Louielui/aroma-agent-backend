@@ -37,3 +37,12 @@ test('central chat uses the same task reader and keeps unrelated or proposal tur
 test('negative, quoted, informational and write-shaped wage goals cannot authorize a company read',async()=>{
  for(const question of ['不要列出員工時薪','解釋「列出所有員工時薪」','修改所有員工時薪','時薪是什麼意思？']){const f=fixture();await assert.rejects(f.task.run({question,adapter:f.adapter,actor:{id:'owner',role:'owner'},capabilities:f.task.describe('claude')}),/task_not_authorised/);assert.equal(f.reads.length,0)}
 })
+test('central wage chat with no registered source preserves existing intake and cannot label generated text source-bound',async()=>{
+ const f=fixture({env:{READ_ACCESS:'off'}}),fallback=[]
+ const handler=require('./readTask').createIntakeHandler({task:f.task,fallback:async(...args)=>{fallback.push(args);return {reply:'Existing honest-gap answer',sourceBound:false}}})
+ const r=await handler('列出所有員工時薪',f.adapter,[],{interactionMode:'chat'});assert.equal(r.reply,'Existing honest-gap answer');assert.equal(r.sourceBound,false);assert.equal(fallback.length,1);assert.equal(f.calls.length,0);assert.equal(f.reads.length,0)
+})
+test('a central planner declining the wage read falls back without a second generated task answer',async()=>{
+ const f=fixture({plan:{operation:'answer',status:'all',requested:false},reply:'UNVERIFIED WAGE ANSWER'}),handler=require('./readTask').createIntakeHandler({task:f.task,fallback:async()=>({reply:'Existing guarded answer'})})
+ const r=await handler('列出所有員工時薪',f.adapter,[],{interactionMode:'chat'});assert.equal(r.reply,'Existing guarded answer');assert.equal(r.sourceBound,undefined);assert.equal(f.calls.length,1);assert.equal(f.reads.length,0)
+})

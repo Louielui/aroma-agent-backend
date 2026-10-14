@@ -4213,6 +4213,7 @@ a capability question is a question, never an instruction
 a card in the profile means NO BROWSER IS STARTED
 a cause asserted with no measurement in the same report is refused
 a caveat about the ANSWER and a caveat about the METHOD render in separate sections
+a central planner declining the wage read falls back without a second generated task answer
 a change verb still fires even in a sentence full of path talk
 a child given an explicit AROMA_DATA_DIR uses it — the pattern atomicStore already uses
 a child that NEVER closes still settles within the grace
@@ -4991,6 +4992,7 @@ catalogue read failure cannot save, charge or substitute a model
 central chat uses the same task reader and keeps unrelated or proposal turns on their existing intake
 central defaults, topic overrides and conversation overrides survive reload independently
 central task planner selects a registered wage read from the Owner goal and returns every grounded wage
+central wage chat with no registered source preserves existing intake and cannot label generated text source-bound
 changed hash and changed enabled state refuse after approval
 changed live revision withholds the proposal rather than accepting stale evidence
 changed original is read and checked again; an approved Owner decision is preserved

@@ -28,7 +28,7 @@ function renderWages(report,question){
 function createReadTask({env=process.env,reader,audit}={}){
  const source=reader||require('../context/adapters/sevenShiftsWagesRead').createSevenShiftsWagesReader({env})
  function describe(provider){return env.READ_ACCESS==='on'&&env.CONTEXT_SEVEN_SHIFTS==='on'&&Number.isSafeInteger(Number(env.SEVEN_SHIFTS_COMPANY_ID))&&Number(env.SEVEN_SHIFTS_COMPANY_ID)>0&&typeof env.SEVEN_SHIFTS_ACCESS_TOKEN==='string'&&env.SEVEN_SHIFTS_ACCESS_TOKEN.trim()&&isSharedWith(provider,'seven_shifts',env)?[{id:OP,source:'seven_shifts',companyId:Number(env.SEVEN_SHIFTS_COMPANY_ID),fields:['employee_id','employee_name','active','current_wages','assigned_roles'],readOnly:true}]:[]}
- async function run({question,conversation=[],page=null,adapter,actor,capabilities,signal,onEvent}){
+ async function run({question,conversation=[],page=null,adapter,actor,capabilities,signal,onEvent,generateAnswer=true}){
   if(actor?.id!=='owner'||actor.role!=='owner')throw Error('permission_denied')
   if(typeof question!=='string'||!question.trim()||question.length>1000||!Array.isArray(conversation)||conversation.length>7)throw Error('invalid_request')
   const token=env.SEVEN_SHIFTS_ACCESS_TOKEN
@@ -41,6 +41,7 @@ function createReadTask({env=process.env,reader,audit}={}){
    if(!plan||Object.keys(plan).sort().join(',')!=='operation,requested,status'||!['answer',OP].includes(plan.operation)||!['active','inactive','all'].includes(plan.status)||typeof plan.requested!=='boolean')throw Error('invalid_task_plan')
   }
   if(plan.operation==='answer'){
+   if(!generateAnswer)return {evidence:null}
    const result=await adapter.complete(JSON.stringify({question,conversation,source:page?.source||null,untrustedPageText:page?.text||null,availableReads:capabilities}),{system:ANSWER_SYSTEM,signal});check();return {...result,evidence:null}
   }
   if(!plan.requested||!capabilities.some(c=>c.id===OP)||!wageTaskRequest(question,conversation))throw Error('task_not_authorised')
@@ -58,7 +59,10 @@ function createIntakeHandler({task,fallback}){
   // Client-supplied central-chat history is discussion, not authority to start
   // a new company read. Browser follow-ups use their server-saved ancestry.
   if(opts?.interactionMode!=='chat'||!wageTaskRequest(message))return fallback(message,adapter,history,opts)
-  const result=await task.run({question:message,conversation,adapter,actor:{id:'owner',role:'owner'},capabilities:task.describe(adapter.providerName)})
+  const capabilities=task.describe(adapter.providerName)
+  if(!capabilities.length)return fallback(message,adapter,history,opts)
+  const result=await task.run({question:message,conversation,adapter,actor:{id:'owner',role:'owner'},capabilities,generateAnswer:false})
+  if(!result.evidence)return fallback(message,adapter,history,opts)
   if(opts.telemetry&&typeof result.model==='string')opts.telemetry.model=result.model
   return {blocked:false,mode:'chat',intent:'read_only_task',reply:result.text,tasks:[],decision:null,sourceBound:true,readTaskEvidence:result.evidence,requestId:opts.requestId}
  }
