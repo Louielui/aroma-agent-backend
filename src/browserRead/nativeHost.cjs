@@ -2,7 +2,7 @@
 const fs=require('node:fs'),path=require('node:path'),cp=require('node:child_process'),{validate,validateSource}=require('./contract'),{createReader,encode}=require('./nativeProtocol')
 function createBroker({request}){
  return async input=>{
-  validate(input);if(['prepare','read'].includes(input.op))validateSource(input.source,Date.now())
+  validate(input);if(['prepare','read'].includes(input.op)&&Object.hasOwn(input,'source'))validateSource(input.source,Date.now())
   return request(input)
  }
 }
