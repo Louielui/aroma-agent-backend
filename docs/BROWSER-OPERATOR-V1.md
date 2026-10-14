@@ -33,12 +33,21 @@ The owned local fixture additionally admits its button/input, the exact syntheti
 text `Imagine test`, and Enter in that fixture input. No shell, clipboard,
 arbitrary app, browser chrome, credentials, uploads or business writes exist.
 
-**Live sites are closed in this release.** The default service refuses a 7shifts
-start with `operation_native_acceptance_required` before any audit/provider/native
-dispatch. Only the owned fixture can start in the actual app composition.
-Tests explicitly inject the later live profile to exercise its route guard.
-Activation is a separate exact-source change after positive native acceptance;
-neither a client field nor an environment flag can unlock it today.
+The default service remains fixture-only. After measured positive native fixture
+acceptance, the actual app supplies one exact live profile: configured company
+153450, HTTPS employee landing and employee list only. Schedule, employee edits,
+query variants, other companies and sites remain refused. No client field or
+generic environment flag unlocks live scope. Authentication and the existing
+execution matrix are unchanged.
+
+Before each capture, the native broker requests authenticated `observe` admission
+for the actual current source. Backend validates tab/window, viewport, origin,
+expiry, execution lane and the live profile before returning a ready scope.
+Legacy live `get` replies are marked `native_admission_required`, so an older
+broker cannot treat them as screenshot authorization. Planning checks scope
+again. A live native click additionally requires the actual UIA hyperlink URI,
+not only its label, to match the sealed employee destination. Missing URI
+exposure refuses input rather than guessing a target.
 
 Backend consumes a five-second input ticket before native execution, once only.
 A failed or unknown native return never retries.
@@ -112,3 +121,16 @@ different focused-input images across the caret blink interval without any
 data change; wheel scrolling also removed both admitted controls from view.
 The fixture-only correction is tested with the real DOM collector and repeated
 caret-visible screenshots. Those headless checks are not native acceptance.
+
+Native fixture acceptance on source `5a3434f` completed real input in job
+`d585cc11-a724-4e5c-81c1-d3015168ce36`: visible text `Imagine test`, twelve
+trusted input events and one Enter. Job `7578a7f0-aafd-41e5-bc6e-afd04a4ba85c`
+completed one trusted wheel event and measured scrollY 272.727 CSS pixels.
+Job `b0bdeb91-e153-4423-a7f4-66eb6650f49a` recorded Stop while input was
+claimed; counters remained unchanged for ten seconds and no later input stage
+was recorded. Actual model was `claude-opus-5-5`, with zero untrusted events.
+The exact retained receipt is in the Owner artifact directory
+`browser-fixture-stability-20261014/native-acceptance.json`. These observations
+satisfy the native prerequisite; authorization comes from the direct Owner
+request for employee read/navigation, not from the receipt. Live 7shifts task
+success still requires separate measurement.

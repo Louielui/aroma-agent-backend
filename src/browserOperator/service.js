@@ -16,13 +16,13 @@ function createOperator({companyId,selection,provider,audit,now=Date.now,env=pro
  const changed=(a,b)=>['tabId','windowId','width','height'].some(k=>a[k]!==b[k])
  const executionAvailable=()=>env.COMPUTER_OPERATOR!=='on'&&require('../agent/agentAuthorization').authorizeExecution({computer:'on',computerSupervisorConfigured:true,worker:env.WORKER_INVOCATION,develop:env.DEVELOP_DISPATCH,agent:env.AGENT_BRIDGE,readOnlyEnquiry:env.READ_ONLY_ENQUIRY}).computerOperatorAuthorized
  async function handle(b){
-  const shapes={start:['op','requestId','question','consent','scope'],plan:['op','id','scope','frame','text','targets'],get:['op','id'],stop:['op','id'],claim:['op','id','ticket'],report:['op','id','success']}
+  const shapes={start:['op','requestId','question','consent','scope'],observe:['op','id','scope'],plan:['op','id','scope','frame','text','targets'],get:['op','id'],stop:['op','id'],claim:['op','id','ticket'],report:['op','id','success']}
   const refusalReport=b?.op==='report'&&exact(b,[...shapes.report,'reason'])&&b.success===false&&NATIVE_FAILURES.includes(b.reason)
   if(!b||!Object.hasOwn(shapes,b.op)||(!exact(b,shapes[b.op])&&!refusalReport)||!ID.test(b.op==='start'?b.requestId:b.id))throw Error('invalid_operator_request')
   if(b.op==='start'){
    if(!executionAvailable())throw Error('operation_execution_conflict')
    if(b.consent!==true||typeof b.question!=='string'||!b.question.trim()||b.question.length>1000||!scopeValid(b.scope,companyId))throw Error('operation_scope_unavailable')
-   if(b.scope.url!==FIXTURE&&liveEnabled()!==true)throw Error('operation_native_acceptance_required')
+   if(b.scope.url!==FIXTURE&&liveEnabled(b.scope)!==true)throw Error('operation_native_acceptance_required')
    if(requests.has(b.requestId)){const old=jobs.get(requests.get(b.requestId));if(old.question!==b.question||JSON.stringify(old.scope)!==JSON.stringify(b.scope))throw Error('operation_request_changed');return view(old)}
    if(jobs.size>=100)throw Error('operation_capacity_reached')
    if([...jobs.values()].some(j=>['ready','planning','awaiting_input','executing'].includes(j.state)&&j.deadline>now()))throw Error('operation_busy')
@@ -31,7 +31,14 @@ function createOperator({companyId,selection,provider,audit,now=Date.now,env=pro
    emit(j,'owner_started');jobs.set(j.id,j);requests.set(b.requestId,j.id);return view(j)
   }
   const j=jobs.get(b.id);if(!j)throw Error('operation_not_found')
-  if(b.op==='get')return {...view(j),scope:j.scope,companyId}
+  if(b.op==='get')return {...view(j),...(j.scope.url!==FIXTURE&&['ready','planning','awaiting_input','executing'].includes(j.state)?{state:'native_admission_required'}:{}),scope:j.scope,companyId}
+  if(b.op==='observe'){
+   available(j);if(j.state!=='ready')throw Error('operation_busy')
+   if(!executionAvailable())throw Error('operation_execution_conflict')
+   if(!scopeValid(b.scope,companyId)||changed(j.scope,b.scope)||new URL(j.scope.url).origin!==new URL(b.scope.url).origin)throw Error('operation_scope_changed')
+   if(b.scope.url!==FIXTURE&&liveEnabled(b.scope)!==true)throw Error('operation_native_acceptance_required')
+   return {...view(j),scope:j.scope,companyId}
+  }
   if(b.op==='stop'){if(['ready','planning','awaiting_input','executing'].includes(j.state)){j.state='stopped';j.ticket=null;j.controller?.abort();try{emit(j,'owner_stopped')}catch{j.stopAuditUnavailable=true}}return view(j)}
   if(b.op==='claim'){
    if(!executionAvailable())throw Error('operation_execution_conflict')
@@ -49,6 +56,7 @@ function createOperator({companyId,selection,provider,audit,now=Date.now,env=pro
   available(j);if(j.state!=='ready'||active)throw Error('operation_busy')
   if(!executionAvailable())throw Error('operation_execution_conflict')
   if(!scopeValid(b.scope,companyId)||changed(j.scope,b.scope)||new URL(j.scope.url).origin!==new URL(b.scope.url).origin)throw Error('operation_scope_changed')
+  if(b.scope.url!==FIXTURE&&liveEnabled(b.scope)!==true)throw Error('operation_native_acceptance_required')
   if(j.steps>=12)throw Error('operation_step_limit')
   const f=b.frame
   if(!exact(f,['image','fingerprint','window','rect','capturedAt'])||!/^[a-f0-9]{64}$/.test(f.fingerprint)||!/^\d+$/.test(f.window)||!exact(f.rect,['left','top','width','height'])||Object.values(f.rect).some(v=>!Number.isFinite(v))||f.rect.width<100||f.rect.height<100||f.rect.width>8000||f.rect.height>8000||!Number.isFinite(f.capturedAt)||now()-f.capturedAt>5000||f.capturedAt-now()>1000)throw Error('operation_frame_stale')

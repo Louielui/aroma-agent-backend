@@ -12,7 +12,7 @@ function createOperatorBroker({request,executor}){
   if(running.has(b.id))throw Error('operation_busy')
   const controller=new AbortController();running.set(b.id,controller)
   try{
-   const job=await request({op:'get',id:b.id},controller.signal)
+   const job=await request({op:'observe',id:b.id,scope:b.scope},controller.signal)
    if(job.state!=='ready')throw Error('operation_unavailable')
    // Bind to the authenticated job before any window observation.
    if(['tabId','windowId','width','height'].some(k=>job.scope[k]!==b.scope?.[k])||new URL(job.scope.url).origin!==new URL(b.scope?.url).origin)throw Error('operation_scope_changed')

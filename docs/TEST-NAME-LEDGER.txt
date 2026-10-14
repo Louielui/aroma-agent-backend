@@ -7451,3 +7451,7 @@ native refusal preserves a closed diagnostic and consumed ticket without exposin
 native refusal reporting accepts legacy uncertainty but refuses arbitrary causes and causes on success
 owned fixture focused input remains visually stable without weakening native pixel validation
 owned fixture keeps both admitted controls visible after a real wheel scroll for post-action observation
+employee live profile admits only the exact Owner company employee landing and list URLs
+native live admission rejects a changed source before capture and legacy live get cannot authorize a screenshot
+actual app employee profile is authenticated and refuses other routes without dispatching native or model work
+compiled native link guard requires the actual URI to match the sealed employee destination
