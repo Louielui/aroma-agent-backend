@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Imagine · Browser Read",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "minimum_chrome_version": "116",
   "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEArY5CJ4Fzspncpo0XBeWPl4NmfaxoNfFti+WCMkaZ2rsO/I7zwVYDiR6kpuFl2RZBaaTd4iaUTyhJ09JGQK6qzgtHpb7kV2S0jWRSP1qh1OBt3bE86QUd/DpU9pBbe3PgYb2dQwE4zBb9vg+UdYd5rdel2JHG3RB/Id2CY4ESwwXluCGZqeV4+azTnKsDjcmvpZZFGpY8jGxklC7QIKLz7Cfoh+fvfOLuaDEs5L5VoC8pw7i2r+E8Q1R7H80tn16e+0uHTQJGGtUC0IdqLs1jZQ1EugChnz7YIAo4nlwxcr7jrVZDlLKyt5SoZx5TRkNbaWT7b473BEq636O4XCBk2wIDAQAB",
   "permissions": [

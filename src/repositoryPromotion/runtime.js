@@ -114,7 +114,19 @@ function createRuntime ({repository,dependencies,restartImpl=null,readinessImpl=
     const smokePassed=[401,403].includes(unauthenticated.status)
     const files=['src/investigation/generalization.test.js','src/actions/continuation.test.js','src/context/adapters/sevenShiftsRead.test.js','src/routing/modelRouter.test.js']
     const regression=await require('./checks').runTests({root,dependencies,directory:path.join(repository.artifacts,'runtime-regression-'+expected),files,commit:expected,tree:repository.runtimeGit(['rev-parse',expected+'^{tree}'])})
-    return{verified:smokePassed&&regression.exitCode===0&&regression.failed===0&&regression.passed>0,expectedCommit:expected,bootCommit:backend.bootCommit,bridgeCommit:bridge.bootCommit,sourceVerified:source,smokePassed,regressionPassed:regression.exitCode===0&&regression.failed===0&&regression.passed>0,regression,checkedAt:new Date().toISOString()}
+    const verified=smokePassed&&regression.exitCode===0&&regression.failed===0&&regression.passed>0
+    let clientPublication=null
+    // Opt-in only: the Owner installs the managed slot once. Future reviewed
+    // deployments publish into it after runtime verification, never from chat.
+    if(verified&&path.resolve(root).toLowerCase()===path.resolve('C:/Aroma/aroma-agent-backend').toLowerCase()&&fs.existsSync(path.join(process.env.USERPROFILE,'.imagine/browser-client/current.json'))){
+      const script='scripts/browser/install-read-host.ps1',bytes=repository.runtimeGit(['show',expected+':'+script],{buffer:true})
+      if(digest(fs.readFileSync(path.join(root,script)))!==digest(bytes))return{verified:false,reason:'client_installer_source_changed'}
+      if(!bytes.toString('utf8').includes('[switch]$PublishClient'))return{verified:false,reason:'legacy_client_requires_explicit_restore',bootCommit:backend.bootCommit,bridgeCommit:bridge.bootCommit}
+      const executable=path.join(process.env.SystemRoot||'C:/Windows','System32/WindowsPowerShell/v1.0/powershell.exe'),result=cp.spawnSync(executable,['-NoProfile','-NonInteractive','-ExecutionPolicy','RemoteSigned','-File',path.join(root,script),'-PublishClient'],{windowsHide:true,shell:false,encoding:'utf8',timeout:90000})
+      if(result.status!==0)return{verified:false,reason:'client_publication_failed',bootCommit:backend.bootCommit,bridgeCommit:bridge.bootCommit}
+      try{clientPublication=JSON.parse(result.stdout);if(clientPublication.commit!==expected||clientPublication.registrationVerified!==true||require('../browserRead/clientUpdate').readInstallation({bootCommit:expected}).state!=='ready')throw Error('client_publication_unconfirmed')}catch{return{verified:false,reason:'client_publication_unconfirmed'}}
+    }
+    return{verified,expectedCommit:expected,bootCommit:backend.bootCommit,bridgeCommit:bridge.bootCommit,sourceVerified:source,smokePassed,regressionPassed:regression.exitCode===0&&regression.failed===0&&regression.passed>0,regression,clientPublication,checkedAt:new Date().toISOString()}
   }
   return{idle,restart,deploy,verify,health:()=>health('http://127.0.0.1:8090/health',fetchImpl)}
 }

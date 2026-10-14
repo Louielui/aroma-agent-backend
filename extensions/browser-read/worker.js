@@ -1,7 +1,21 @@
 'use strict'
-importScripts('collector.js','operator.js')
+importScripts('release.js','collector.js','operator.js')
 const HOST='com.imagine.browser_read',pending=new Map()
 let port=null,closeTimer=null
+let updating=false,updateUntil=0,startupReady=Promise.resolve()
+let bindingInit=null,coldStartup=false
+const SESSION='browser-session-ready-v1',HANDOFF='browser-update-handoff-v1'
+async function resetBindings(cold){
+ await chrome.storage.session.set({[SESSION]:{state:'clear_pending',cold}})
+ const stored=await chrome.storage.local.get(null);await chrome.storage.local.remove(Object.keys(stored).filter(k=>k.startsWith('browser-tab:')))
+ if(cold)await chrome.storage.local.set({'browser-client-topic-migration-v1':true})
+ topicLoads.clear();await chrome.storage.session.set({[SESSION]:{state:'ready'}})
+}
+async function ensureBindings(){
+ if(!chrome.storage.local)return
+ if(!bindingInit)bindingInit=(async()=>{const saved=(await chrome.storage.session.get(SESSION))[SESSION];if(saved?.state!=='ready')await resetBindings(saved?.state==='clear_pending'?saved.cold!==false:true)})().finally(()=>{bindingInit=null})
+ return bindingInit
+}
 // The explicit toolbar action grants activeTab; opening a persistent panel alone
 // is not evidence of a page grant. Open synchronously within that user gesture.
 chrome.sidePanel.setPanelBehavior({openPanelOnActionClick:false}).catch(()=>{})
@@ -15,15 +29,29 @@ chrome.action.onClicked.addListener(tab=>{if(Number.isSafeInteger(tab?.id)&&tab.
 chrome.tabs.onActivated?.addListener(info=>{for(const scope of operatorJobs.values())if(scope.windowId===info.windowId&&scope.tabId!==info.tabId)stopTabOperations(scope.tabId);for(const scope of readJobs.values())if(scope.windowId===info.windowId&&scope.tabId!==info.tabId)stopTabReads(scope.tabId);configureTab(info.tabId,info.windowId)})
 chrome.tabs.onAttached?.addListener((tabId,info)=>{stopTabOperations(tabId);stopTabReads(tabId);configureTab(tabId,info.newWindowId)})
 chrome.tabs.onUpdated?.addListener((tabId,change)=>{if(change.status==='loading'||typeof change.url==='string')stopTabReads(tabId)})
-chrome.tabs.onRemoved?.addListener(tabId=>{stopTabOperations(tabId);stopTabReads(tabId);topicLoads.delete(tabId);chrome.storage.session.remove('browser-tab:'+tabId).catch(()=>{})})
+chrome.tabs.onRemoved?.addListener(tabId=>{stopTabOperations(tabId);stopTabReads(tabId);topicLoads.delete(tabId);chrome.storage.session.remove('browser-tab:'+tabId).catch(()=>{});chrome.storage.local?.remove('browser-tab:'+tabId).catch(()=>{})})
 const configureExisting=()=>chrome.tabs.query({}).then(tabs=>Promise.all(tabs.map(t=>configureTab(t.id,t.windowId)))).catch(()=>{})
-chrome.runtime.onInstalled?.addListener(configureExisting)
-chrome.runtime.onStartup?.addListener(configureExisting)
+chrome.runtime.onInstalled?.addListener(details=>{startupReady=startupReady.catch(()=>{}).then(async()=>{const handoff=(await chrome.storage.local.get(HANDOFF))[HANDOFF];if(!coldStartup&&details?.reason==='update'&&handoff&&Object.keys(handoff).sort().join(',')==='expiresAt,nonce'&&/^[a-f0-9-]{36}$/.test(handoff.nonce||'')&&Number.isFinite(handoff.expiresAt)&&handoff.expiresAt>Date.now()&&handoff.expiresAt<Date.now()+5000)await chrome.storage.session.set({[SESSION]:{state:'ready'}});else await resetBindings(coldStartup);await chrome.storage.local.remove(HANDOFF);await configureExisting()});startupReady.catch(()=>{})})
+chrome.runtime.onStartup?.addListener(()=>{coldStartup=true;startupReady=startupReady.catch(()=>{}).then(async()=>{await resetBindings(true);await configureExisting()});startupReady.catch(()=>{})})
 function panelScope(url){const u=new URL(url);if(u.protocol!==new URL(chrome.runtime.getURL('')).protocol||u.host!==new URL(chrome.runtime.getURL('')).host||u.pathname!=='/sidepanel.html'||u.hash||[...u.searchParams.keys()].sort().join(',')!=='tabId,windowId')throw Error('side_panel_required');const tabId=u.searchParams.get('tabId'),windowId=u.searchParams.get('windowId');if(!/^\d+$/.test(tabId)||!/^\d+$/.test(windowId)||!Number.isSafeInteger(Number(tabId))||!Number.isSafeInteger(Number(windowId)))throw Error('side_panel_required');return {tabId:Number(tabId),windowId:Number(windowId)}}
 async function topicContext(scope,windowId){
+ await startupReady.catch(()=>{});await ensureBindings()
  const tab=scope?await chrome.tabs.get(scope.tabId):(await chrome.tabs.query({active:true,windowId}))[0]
  if(!tab||!Number.isSafeInteger(tab.id)||!Number.isSafeInteger(tab.windowId)||scope&&scope.windowId!==tab.windowId)throw Error('conversation_tab_changed')
- if(!topicLoads.has(tab.id)){const key='browser-tab:'+tab.id;topicLoads.set(tab.id,(async()=>{const stored=await chrome.storage.session.get(key);const id=stored[key]||crypto.randomUUID();if(!/^[a-f0-9-]{36}$/.test(id))throw Error('conversation_unavailable');if(!stored[key])await chrome.storage.session.set({[key]:id});return id})().catch(e=>{topicLoads.delete(tab.id);throw e}))}
+ if(!topicLoads.has(tab.id)){const key='browser-tab:'+tab.id;topicLoads.set(tab.id,(async()=>{
+  const storage=chrome.storage.local||chrome.storage.session,stored=await storage.get(key),legacy=await chrome.storage.session.get(key);let recovered=null
+  // activeTab exposes only the granted tab URL. Recover this tab independently;
+  // opening one panel must not permanently abandon topics in other tabs.
+  if(chrome.storage.local&&!stored[key]&&typeof tab.url==='string'){
+   const all=await storage.get(null),topics=Object.entries(all).filter(([k,v])=>/^browser-topic:[a-f0-9-]{36}$/.test(k)&&/^[a-f0-9-]{36}$/.test(v?.headId||''));if(topics.length>500)throw Error('conversation_unavailable')
+   if(!all['browser-client-topic-migration-v1']&&topics.length){
+    let metadata;try{metadata=await rpc({op:'client_status'})}catch{metadata=null}
+    const bindings=Array.isArray(metadata?.bindings)&&metadata.bindings.length<=500?metadata.bindings:[],bytes=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(tab.url)),urlHash=Array.from(new Uint8Array(bytes),x=>x.toString(16).padStart(2,'0')).join(''),current=await chrome.tabs.get(tab.id).catch(()=>null),keys=current?.windowId===tab.windowId&&current.url===tab.url?topics.filter(([,v])=>bindings.some(b=>b.headId===v.headId&&b.tabId===tab.id&&b.windowId===tab.windowId&&b.urlHash===urlHash)).map(([k])=>k.slice('browser-topic:'.length)):[]
+    if(keys.length===1)recovered=keys[0];else if(keys.includes(legacy[key]))recovered=legacy[key]
+   }
+  }
+  const id=stored[key]||recovered||legacy[key]||crypto.randomUUID();if(!/^[a-f0-9-]{36}$/.test(id))throw Error('conversation_unavailable');if(!stored[key])await storage.set({[key]:id});return id
+ })().catch(e=>{topicLoads.delete(tab.id);throw e}))}
  const id=await topicLoads.get(tab.id);return {key:'browser-topic:'+id,tabId:tab.id,windowId:tab.windowId}
 }
 async function capture(windowId,coverage='main_frame_visible_text',expectedTab=null){
@@ -53,6 +81,13 @@ chrome.runtime.onMessage.addListener((message,sender,sendResponse)=>{
  try{if(sender.url!==chrome.runtime.getURL('sidepanel.html'))scope=panelScope(sender.url)}catch{sendResponse({error:'side_panel_required'});return false}
  if(sender.id!==chrome.runtime.id||sender.tab){sendResponse({error:'side_panel_required'});return false}
  ;(async()=>{
+  if(updating&&Date.now()<updateUntil)throw Error('client_update_busy')
+  if(message?.type==='client_update'&&Object.keys(message).join(',')==='type'){
+   if(!scope)throw Error('side_panel_required')
+   if(pending.size||readJobs.size)throw Error('client_update_busy')
+   updating=true;updateUntil=Infinity
+   try{await topicContext(scope);const state=await rpc({op:'client_status'});if(state.state==='busy')throw Error('client_update_busy');if(state.state!=='ready'||! /^[a-f0-9]{40}$/.test(state.commit||'')||! /^[a-f0-9]{64}$/.test(state.workerHash||''))throw Error('client_update_unavailable');const reload=globalThis.IMAGINE_CLIENT_RELEASE?.workerHash===state.workerHash?'panel':'extension';if(reload==='extension')await chrome.storage.local.set({[HANDOFF]:{nonce:crypto.randomUUID(),expiresAt:Date.now()+3000}});updating=reload==='extension';updateUntil=Date.now()+3000;return {reload}}catch(e){updating=false;throw e}
+  }
   if(message?.type==='context'&&['type','type,windowId'].includes(Object.keys(message).sort().join(','))){if(!scope&&(!Number.isSafeInteger(message.windowId)||message.windowId<0))throw Error('invalid_request');return topicContext(scope,message.windowId)}
   if(message?.type==='capture'&&['type,windowId','coverage,type,windowId'].includes(Object.keys(message).sort().join(','))){if(scope&&message.windowId!==scope.windowId)throw Error('conversation_tab_changed');return capture(message.windowId,message.coverage,scope?.tabId??null)}
   if(message?.type==='operator_start'&&Object.keys(message).sort().join(',')==='consent,question,type'){
