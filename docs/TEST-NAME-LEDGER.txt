@@ -7462,3 +7462,5 @@ shared numeric selection retains unresolved mixed rows and never converts null i
 wage follow-ups reuse only a saved read topic and refresh source before selecting an exact numeric threshold
 numeric wage filtering surfaces uncertain membership and weekly salary without asserting a complete zero
 follow-up scope and thresholds come from Owner text and saved read metadata rather than previous answers
+numeric wage presentation separates verified matches from unresolved memberships without discarding salary details
+all-status wage filtering labels inactive matches separately from unresolved users while retaining complete selected output
