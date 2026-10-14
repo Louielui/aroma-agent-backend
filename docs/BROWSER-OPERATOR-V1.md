@@ -77,6 +77,10 @@ before any desktop observation/input. These are not a positive native input test
 Live acceptance must first prove nonzero trusted move, click, type, Enter and
 scroll counters on `/browser-operator-fixture`, then prove stopping prevents a
 later step. Only then attempt the explicitly authorized 7shifts navigation/read.
+The owned fixture uses a transparent caret to avoid blink-only pixel drift and
+keeps its controls/counters sticky during scrolling, so the existing visibility
+guard can still admit the next observation. These fixture-only styles change
+neither real-site styling nor native pixel, target, focus or input validation.
 An installed source revision alone never counts as native or 7shifts acceptance.
 
 Owner acceptance on 2026-10-14 verified Chrome loaded the `28ef758` extension.
@@ -101,3 +105,10 @@ read failure beside its stop notice. A separate typing job
 no text or Enter was measured. Its exact native cause was discarded by the old
 broker, so it remains unknown pending the bounded diagnostic update. Keyboard,
 scroll and complete live-site activation acceptance have not passed.
+
+The PR #84 diagnostic measured `browser_pixels_changed` on fixture type in job
+`8c532ce5-c267-43e2-a489-015995a645d2`. A headless reproduction captured two
+different focused-input images across the caret blink interval without any
+data change; wheel scrolling also removed both admitted controls from view.
+The fixture-only correction is tested with the real DOM collector and repeated
+caret-visible screenshots. Those headless checks are not native acceptance.
