@@ -26,8 +26,12 @@ establish a wage antecedent; client-supplied central-chat history cannot do so.
 
 Filtering matches any verified hourly role rate and retains full role rates for
 the selected user. Weekly salary is not converted into hourly pay. Missing or
-incompatible rates with no known match remain unresolved and visibly included;
-their count is distinct from verified matches. No verified match is not proof of
+incompatible rates with no known match remain unresolved and are retained in a
+labelled, initially collapsed list. Only verified matching active users reach
+the primary table; an inactive-only scope uses verified inactive users instead.
+For all-users scope, inactive matches and unresolved users retain explicit row
+labels in the secondary list. Their count is distinct from verified matches.
+No verified match is not proof of
 no matching user when source or membership coverage is incomplete. Amounts use
 the existing account units; currency remains unknown. Existing grouped answers,
 collapsed inactive users and role details remain. Structured/raw report limits
@@ -38,6 +42,15 @@ cursor loops, revoked authority, another numeric dataset, missing versus zero,
 exact thresholds, server-saved scope and a changing wage between two task turns.
 Real headless Edge verifies the existing tab-topic and grouped task-panel paths.
 This is not authenticated external acceptance or general website parity.
+
+Live Chrome acceptance on 2026-10-14 read all 28 active company users. Thirteen
+full wage rows were verified and fifteen were incomplete. The next saved-topic
+question, `Who is above 20?`, refreshed the source, parsed `gt 2000`, measured one
+known match and fourteen unresolved memberships, and retained all selected output.
+The original rendering mixed those fifteen rows in one primary table. This
+tranche separates the known match from the unresolved list using the existing
+presentation contract; it does not change source evidence or Chrome assets.
+These observed counts are one account snapshot, not a general completeness claim.
 
 The Chrome assets, native helper/profile, permissions, central brain, launcher,
 rollback points, production database and unrelated services are unchanged.

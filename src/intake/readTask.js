@@ -54,19 +54,23 @@ function renderWageResult(report,question){
   for(const wage of wages)if(wage.wageCents!==null)unique.set(wage.wageType+':'+wage.wageCents,wage)
   const rates=[...unique.values()].sort((a,b)=>a.wageType.localeCompare(b.wageType)||a.wageCents-b.wageCents),missing=wages.filter(w=>w.wageCents===null).length,notes=[]
   const rate=rates.slice(0,10).map(w=>(w.wageCents/100).toFixed(2)+(w.wageType==='hourly'?(zh?' / 小時':' / hour'):(zh?' / 星期（週薪）':' / week (salary)'))).join('；')||(zh?'薪率未能讀取':'Wages unavailable')
+  if(report.selection&&!row.active)notes.push(zh?'非在職':'Inactive')
+  if(row.queryMembership==='unresolved')notes.push(zh?'未能確認是否符合':'Membership unresolved')
+  else if(report.selection&&!row.active)notes.push(zh?'已確認符合':'Verified match')
   if(rates.some(w=>w.wageCents===0))notes.push(zh?'系統零薪率，需確認':'Zero rate in source; verify')
   if(rates.length>1)notes.push(zh?'不同職位薪率':'Rates vary by role')
   if(missing)notes.push(zh?missing+' 個職位薪率未確認':missing+' role rates unverified')
   if(rates.length>10)notes.push(zh?'另有 '+(rates.length-10)+' 項薪率，見明細':(rates.length-10)+' more rates; see details')
-  return {userId:row.userId,name:row.employeeName||(zh?'姓名未確認':'Name unconfirmed')+' #'+row.userId,rate,note:notes.join('；'),needsVerification:!rates.length||missing>0||rates.some(w=>w.wageCents===0)}
+  return {userId:row.userId,name:row.employeeName||(zh?'姓名未確認':'Name unconfirmed')+' #'+row.userId,rate,note:notes.join('；'),needsVerification:row.queryMembership==='unresolved'||!rates.length||missing>0||rates.some(w=>w.wageCents===0)}
  }
- const active=report.rows.filter(r=>r.active),inactive=report.rows.filter(r=>!r.active),primaryRows=report.status==='inactive'?inactive:active,otherRows=report.status==='all'?inactive:[]
+ const active=report.rows.filter(r=>r.active),inactive=report.rows.filter(r=>!r.active),primaryRows=(report.status==='inactive'?inactive:active).filter(r=>r.queryMembership!=='unresolved'),otherRows=report.selection?report.rows.filter(r=>r.queryMembership==='unresolved'||report.status==='all'&&!r.active):report.status==='all'?inactive:[]
  const presentation={version:1,heading:zh?(report.status==='inactive'?'非在職使用者薪率':'在職使用者薪率'):(report.status==='inactive'?'Inactive users — wages':'Active users — wages'),primary:primaryRows.map(summary),primaryTotal:primaryRows.length,other:otherRows.map(summary),otherTotal:otherRows.length,otherHeading:zh?'非在職使用者':'Inactive users',notes:[],details:''}
+ if(report.selection){presentation.heading=(zh?'已確認符合：':'Verified matches: ')+presentation.heading;presentation.otherHeading=zh?(report.status==='all'?'未確認及非在職使用者':'未能確認是否符合的使用者'):(report.status==='all'?'Unresolved and inactive users':'Users with unresolved membership');if(otherRows.length)presentation.notes.push(zh?'另有 '+otherRows.length+' 筆列於可展開的「'+presentation.otherHeading+'」清單。':otherRows.length+' other records are in the expandable "'+presentation.otherHeading+'" list.')}
  if(report.rosterComplete===false)presentation.notes.push(zh?'員工清單未完整讀取。':'The roster read is incomplete.')
  if(report.coverage){const c=report.coverage;presentation.notes.push(zh?'來源清單：'+c.roster.count+' 筆／'+c.roster.pages+' 頁；完整薪率已確認 '+c.values.verifiedRows+' 筆，未完整核對 '+c.values.unresolvedRows+' 筆。':'Source roster: '+c.roster.count+' records / '+c.roster.pages+' pages; '+c.values.verifiedRows+' fully verified wage rows, '+c.values.unresolvedRows+' unresolved.');if(c.roster.limitReason)presentation.notes.push(zh?'清單已達讀取上限，其餘未讀取。':'The roster reached its read budget; the remainder was not read.')}
  if(report.complete!==true)presentation.notes.push(zh?'部分薪率未確認；已讀到的數值仍列出，缺值不當作零。':'Some wages are unverified; verified values are listed and missing values are not zero.')
  if(report.selection){const s=report.selection,labels=zh?{gt:'超過',gte:'不少於',lt:'低於',lte:'不超過',eq:'等於'}:{gt:'above',gte:'at least',lt:'below',lte:'at most',eq:'equal to'};presentation.notes.push((zh?'時薪篩選：':'Hourly filter: ')+labels[s.query.operator]+' '+(s.query.value/100).toFixed(2)+(zh?'；任一已確認職位時薪符合即列入，完整職位薪率保留。':' — any verified role rate may match; full role rates are retained.'));presentation.notes.push(zh?'已掃描 '+s.scannedCount+' 筆；已確認符合 '+s.matchedCount+' 筆；未能確認是否符合 '+s.unresolvedCount+' 筆。':'Scanned '+s.scannedCount+' records; '+s.matchedCount+' verified matches; '+s.unresolvedCount+' unresolved memberships.');if(!s.matchedCount)presentation.notes.push(zh?'目前沒有已確認符合的紀錄；未確認及未讀到的資料不能當作不存在。':'No verified match currently; unresolved or unread data is not evidence of absence.');if(s.unresolvedCount)presentation.notes.push(zh?'未能確認是否符合的使用者仍列出；週薪不換算成時薪。':'Users with unresolved membership remain listed; weekly salary is not converted to hourly.');if(!s.complete)presentation.notes.push(zh?'篩選覆蓋未完整，不能斷言已找出所有符合者。':'Filter coverage is incomplete; this is not every matching user.')}
- if(report.status==='all'&&otherRows.length)presentation.notes.push(zh?'另有 '+otherRows.length+' 個非在職使用者，已收在可展開的清單。':otherRows.length+' inactive users are in the expandable list.')
+ if(!report.selection&&report.status==='all'&&otherRows.length)presentation.notes.push(zh?'另有 '+otherRows.length+' 個非在職使用者，已收在可展開的清單。':otherRows.length+' inactive users are in the expandable list.')
  presentation.notes.push(zh?'包含此公司的管理帳號；相同職位薪率已合併，幣別未由 API 回傳。':'Includes company management accounts; equal role rates are merged. The API did not return currency.')
  if(reason)presentation.notes.push(failureExplanation(reason,zh))
  let text
@@ -109,7 +113,7 @@ function createReadTask({env=process.env,reader,audit}={}){
   if(resolved.query&&report.state==='live'){
    const s=selectNumericRows(report.rows,resolved.query,row=>row.wages?.length?row.wages.map(w=>w.wageType==='hourly'?w.wageCents:null):[],report.complete)
    selection={query:resolved.query,scannedCount:s.scannedCount,matchedCount:s.matches.length,excludedCount:s.excluded.length,unresolvedCount:s.unresolved.length,complete:s.complete}
-   const included=new Set([...s.matches,...s.unresolved]);selected={...report,rows:report.rows.filter(row=>included.has(row)),selection}
+   const included=new Set([...s.matches,...s.unresolved]),matched=new Set(s.matches);selected={...report,rows:report.rows.filter(row=>included.has(row)).map(row=>({...row,queryMembership:matched.has(row)?'match':'unresolved'})),selection}
   }
   const answer=renderWageResult(selected,question),complete=report.complete===true?answer.outputComplete:report.complete??null
   record({stage:'read_task_finished',operation:OP,state:report.state,reason,complete,count:Array.isArray(report.rows)?report.rows.length:null,renderedCount:answer.renderedCount})
