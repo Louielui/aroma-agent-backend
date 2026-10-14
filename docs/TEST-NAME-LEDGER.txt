@@ -7444,3 +7444,4 @@ browser operator stop aborts and invalidates input even when its audit write fai
 native browser stop aborts the local helper before an unavailable backend can reject it
 actual app serves only the synthetic operator fixture without login while every operator API remains authenticated
 operator observation refuses an unavailable fixture before native capture or page text extraction
+compiled native URL matching accepts the fixed fixture Chrome display and refuses neighboring HTTP destinations
