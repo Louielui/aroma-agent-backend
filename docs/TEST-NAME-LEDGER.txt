@@ -7447,3 +7447,5 @@ operator observation refuses an unavailable fixture before native capture or pag
 compiled native URL matching accepts the fixed fixture Chrome display and refuses neighboring HTTP destinations
 operator vision contract uses normalized coordinates and empty non-result fields before a sealed fixture click
 operator invalid action diagnostics record only closed reasons without model text page text or input tickets
+native refusal preserves a closed diagnostic and consumed ticket without exposing an arbitrary exception
+native refusal reporting accepts legacy uncertainty but refuses arbitrary causes and causes on success
