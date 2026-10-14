@@ -60,12 +60,15 @@ function createBrowserRead({store,selection,provider,taskRunner,now=Date.now,tim
    const timer=setTimeout(()=>controller.abort(),timeoutMs)
    try{
     const adapter=provider(r.selection)
+    const checked=()=>{if(controller.signal.aborted||store.get(r.id)?.state==='cancelled')throw Error('read_timeout')}
+    const observedAdapter=Object.create(adapter)
+    Object.defineProperty(observedAdapter,'complete',{value:async(...args)=>{checked();save(r,'model_request_started');const result=await adapter.complete(...args);checked();save(r,'model_request_finished');return result}})
     const conversation=ancestors(r.parentId).map(m=>({question:m.question,answer:m.result.text.slice(0,2000),truncated:m.result.text.length>2000,...(m.result.taskEvidence?.operation==='seven_shifts.employee_wages'?{readOperation:m.result.taskEvidence.operation,readStatus:m.result.taskEvidence.status||'all'}:{})}))
     const pageSource=s?{origin:s.origin,capturedAt:s.capturedAt,coverage:s.coverage,truncated:s.truncated}:null
     const prompt=JSON.stringify({question:r.question,source:pageSource,conversation,untrustedPageText:b.text})
     // Legacy awaiting-consent records did not disclose company tools. Never
     // upgrade their consent into a new business read after a source update.
-    const out=taskRunner&&Object.hasOwn(r,'taskCapabilities')?await taskRunner.run({question:r.question,conversation,page:s?{source:pageSource,text:b.text}:null,adapter,actor:{id:'owner',role:'owner'},capabilities:r.taskCapabilities,signal:controller.signal,onEvent:event=>{if(controller.signal.aborted||store.get(r.id)?.state==='cancelled')throw Error('read_timeout');r.timeline.push({...event,at:new Date(now()).toISOString()});store.save(r)}}):await adapter.complete(prompt,{system:SYSTEM,signal:controller.signal})
+    const out=taskRunner&&Object.hasOwn(r,'taskCapabilities')?await taskRunner.run({question:r.question,conversation,page:s?{source:pageSource,text:b.text}:null,adapter:observedAdapter,actor:{id:'owner',role:'owner'},capabilities:r.taskCapabilities,signal:controller.signal,onEvent:event=>{checked();r.timeline.push({...event,at:new Date(now()).toISOString()});store.save(r)}}):await observedAdapter.complete(prompt,{system:SYSTEM,signal:controller.signal})
     const current=store.get(r.id);if(current.state==='cancelled')return view(current)
     if(controller.signal.aborted)throw Error('read_timeout')
     const wageReport=Object.hasOwn(r,'taskCapabilities')&&r.taskCapabilities.some(c=>c.id==='seven_shifts.employee_wages')&&out?.evidence?.operation==='seven_shifts.employee_wages'
