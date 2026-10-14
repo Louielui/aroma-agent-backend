@@ -6,16 +6,17 @@ let port=null,closeTimer=null
 // is not evidence of a page grant. Open synchronously within that user gesture.
 chrome.sidePanel.setPanelBehavior({openPanelOnActionClick:false}).catch(()=>{})
 chrome.action.onClicked.addListener(tab=>{if(Number.isInteger(tab?.windowId)&&tab.windowId>=0)chrome.sidePanel.open({windowId:tab.windowId}).catch(()=>{})})
-async function capture(windowId){
+async function capture(windowId,coverage='main_frame_visible_text'){
+ if(!['main_frame_visible_text','selection_text'].includes(coverage))throw Error('invalid_request')
  if(!Number.isInteger(windowId)||windowId<0)throw Error('invalid_request')
  const [tab]=await chrome.tabs.query({active:true,windowId})
  if(!tab||!Number.isInteger(tab.id))throw Error('current_tab_unavailable')
- const rows=await chrome.scripting.executeScript({target:{tabId:tab.id,frameIds:[0]},world:'ISOLATED',func:collectVisiblePage})
+ const rows=await chrome.scripting.executeScript({target:{tabId:tab.id,frameIds:[0]},world:'ISOLATED',func:collectVisiblePage,args:[coverage]})
  const row=rows.find(r=>r.frameId===0)
  if(!row?.documentId||!row.result?.text)throw Error('page_text_unavailable')
  const bytes=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(row.result.text))
  const contentHash=Array.from(new Uint8Array(bytes),b=>b.toString(16).padStart(2,'0')).join('')
- return{title:row.result.title,text:row.result.text,source:{url:row.result.url,tabId:tab.id,windowId:tab.windowId,documentId:row.documentId,frameId:0,capturedAt:new Date().toISOString(),contentHash,truncated:row.result.truncated}}
+ return{title:row.result.title,text:row.result.text,source:{url:row.result.url,tabId:tab.id,windowId:tab.windowId,documentId:row.documentId,frameId:0,capturedAt:new Date().toISOString(),contentHash,truncated:row.result.truncated,coverage}}
 }
 function rpc(body){
  clearTimeout(closeTimer)
@@ -29,12 +30,13 @@ function rpc(body){
 chrome.runtime.onMessage.addListener((message,sender,sendResponse)=>{
  if(sender.id!==chrome.runtime.id||sender.url!==chrome.runtime.getURL('sidepanel.html')||sender.tab){sendResponse({error:'side_panel_required'});return false}
  ;(async()=>{
-  if(message?.type==='capture'&&Object.keys(message).sort().join(',')==='type,windowId')return capture(message.windowId)
+  if(message?.type==='capture'&&['type,windowId','coverage,type,windowId'].includes(Object.keys(message).sort().join(',')))return capture(message.windowId,message.coverage)
   if(message?.type!=='rpc'||Object.keys(message).sort().join(',')!=='body,type')throw Error('invalid_request')
   const b=message.body
   if(b?.op==='read'){
-   const fresh=await capture(b.source?.windowId)
+   const fresh=await capture(b.source?.windowId,b.source?.coverage)
    for(const k of ['url','tabId','windowId','documentId','frameId','contentHash','truncated'])if(fresh.source[k]!==b.source?.[k])throw Error('source_changed')
+   if(fresh.source.coverage!==(b.source?.coverage||'main_frame_visible_text'))throw Error('source_changed')
    if(fresh.text!==b.text)throw Error('source_changed')
    return rpc({...b,source:fresh.source})
   }
