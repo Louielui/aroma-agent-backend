@@ -25,7 +25,7 @@ function failureExplanation(reason,zh){
  }
  return reason?messages[reason][zh?0:1]:''
 }
-function renderWageResult(report,question){
+function renderWageDetails(report,question,budget=110000){
  const zh=/[\u3400-\u9fff]/u.test(question)
  const reason=safeReason(report)
  if(report.state!=='live')return {text:failureExplanation(reason,zh)+'\n'+(zh?'本次未能讀取 7shifts 員工時薪；沒有取得可核對的薪率，亦未修改資料。':'The 7shifts wage read was unavailable. No verified wage data was obtained and no data was changed.'),renderedCount:null,outputComplete:true}
@@ -41,7 +41,7 @@ function renderWageResult(report,question){
   if(row.wages===null)rowLines.push(name+' · '+status+' · '+(zh?'薪率未能讀取':'Wages unavailable'))
   else for(const wage of row.wages){const role=wage.roleName||(wage.roleId?'Role #'+wage.roleId:zh?'全職位':'All roles');if(wage.wageCents===null){rowLines.push(name+' · '+status+' · '+role+' · '+(zh?'薪率未能讀取':'Wages unavailable'));continue}const amount=(wage.wageCents/100).toFixed(2),unit=wage.wageType==='hourly'?(zh?'/ 小時':'/ hour'):(zh?'/ 星期（週薪，沒有換算時薪）':'/ week (salary, no hourly conversion)');rowLines.push(name+' · '+status+' · '+role+' · '+amount+' '+unit+' · '+wage.effectiveDate)}
   const size=Buffer.byteLength(JSON.stringify(rowLines.join('\n')))+2
-  if(bytes+size>110000)break
+  if(bytes+size>budget)break
   lines.push(...rowLines);bytes+=size;renderedCount++
  }
  const outputComplete=renderedCount===report.rows.length
@@ -49,6 +49,38 @@ function renderWageResult(report,question){
  if(!report.rows.length)lines.push(zh?'此範圍沒有員工紀錄。':'No users in this scope.')
  lines.push('',zh?'薪率單位依 7shifts 設定；幣別未由此 API 回傳。':'Amounts use the 7shifts account units; this API did not return a currency.',(zh?'來源：':'Source: ')+(report.provenance?.wagesEndpoint||report.provenance?.endpoint||'https://developers.7shifts.com/reference/getuserwages'))
  return {text:lines.join('\n'),renderedCount,outputComplete}
+}
+function renderWageResult(report,question){
+ if(report.state!=='live')return renderWageDetails(report,question)
+ const zh=/[\u3400-\u9fff]/u.test(question),reason=safeReason(report)
+ const summary=row=>{
+  const wages=row.wages||[],unique=new Map()
+  for(const wage of wages)if(wage.wageCents!==null)unique.set(wage.wageType+':'+wage.wageCents,wage)
+  const rates=[...unique.values()].sort((a,b)=>a.wageType.localeCompare(b.wageType)||a.wageCents-b.wageCents),missing=wages.filter(w=>w.wageCents===null).length,notes=[]
+  const rate=rates.slice(0,10).map(w=>(w.wageCents/100).toFixed(2)+(w.wageType==='hourly'?(zh?' / 小時':' / hour'):(zh?' / 星期（週薪）':' / week (salary)'))).join('；')||(zh?'薪率未能讀取':'Wages unavailable')
+  if(rates.some(w=>w.wageCents===0))notes.push(zh?'系統零薪率，需確認':'Zero rate in source; verify')
+  if(rates.length>1)notes.push(zh?'不同職位薪率':'Rates vary by role')
+  if(missing)notes.push(zh?missing+' 個職位薪率未確認':missing+' role rates unverified')
+  if(rates.length>10)notes.push(zh?'另有 '+(rates.length-10)+' 項薪率，見明細':(rates.length-10)+' more rates; see details')
+  return {userId:row.userId,name:row.employeeName||(zh?'姓名未確認':'Name unconfirmed')+' #'+row.userId,rate,note:notes.join('；'),needsVerification:!rates.length||missing>0||rates.some(w=>w.wageCents===0)}
+ }
+ const active=report.rows.filter(r=>r.active),inactive=report.rows.filter(r=>!r.active),primaryRows=report.status==='inactive'?inactive:active,otherRows=report.status==='all'?inactive:[]
+ const presentation={version:1,heading:zh?(report.status==='inactive'?'非在職使用者薪率':'在職使用者薪率'):(report.status==='inactive'?'Inactive users — wages':'Active users — wages'),primary:primaryRows.map(summary),primaryTotal:primaryRows.length,other:otherRows.map(summary),otherTotal:otherRows.length,otherHeading:zh?'非在職使用者':'Inactive users',notes:[],details:''}
+ if(report.rosterComplete===false)presentation.notes.push(zh?'員工清單未完整讀取。':'The roster read is incomplete.')
+ if(report.complete!==true)presentation.notes.push(zh?'部分薪率未確認；已讀到的數值仍列出，缺值不當作零。':'Some wages are unverified; verified values are listed and missing values are not zero.')
+ if(report.status==='all'&&otherRows.length)presentation.notes.push(zh?'另有 '+otherRows.length+' 個非在職使用者，已收在可展開的清單。':otherRows.length+' inactive users are in the expandable list.')
+ presentation.notes.push(zh?'包含此公司的管理帳號；相同職位薪率已合併，幣別未由 API 回傳。':'Includes company management accounts; equal role rates are merged. The API did not return currency.')
+ if(reason)presentation.notes.push(failureExplanation(reason,zh))
+ let text
+ const refresh=()=>{const groups=new Map();for(const row of presentation.primary){const names=groups.get(row.rate)||[];names.push(row.name+(row.needsVerification?' *':''));groups.set(row.rate,names)}text=[presentation.heading+'（'+presentation.primaryTotal+'）',...Array.from(groups,([rate,names])=>rate+(zh?'：':': ')+names.join(zh?'、':', ')),...(presentation.primary.some(r=>r.needsVerification)?[zh?'* 有零薪率或未確認職位；詳情見明細。':'* Zero or unverified role rates; see details.']:[]),...presentation.notes].join('\n');return Buffer.byteLength(JSON.stringify({text,presentation}))}
+ let summarySize=refresh()
+ while(summarySize>80000&&(presentation.other.length||presentation.primary.length)){if(presentation.other.length)presentation.other.pop();else presentation.primary.pop();summarySize=refresh()}
+ const summaryComplete=presentation.primary.length===primaryRows.length&&presentation.other.length===otherRows.length
+ if(!summaryComplete){presentation.notes.push(zh?'摘要輸出未完整：已顯示 '+(presentation.primary.length+presentation.other.length)+' / '+report.rows.length+' 個使用者。':'Summary output incomplete: '+(presentation.primary.length+presentation.other.length)+' / '+report.rows.length+' users shown.');summarySize=refresh()}
+ const details=renderWageDetails(report,question,Math.max(0,115000-summarySize-1500))
+ presentation.details=details.text
+ if(!details.outputComplete){presentation.notes.push(zh?'職位明細輸出未完整；可追問較小的在職或非在職範圍。':'Role detail output is incomplete; ask for a narrower active or inactive scope.');refresh()}
+ return {text,presentation,renderedCount:details.renderedCount,outputComplete:summaryComplete&&details.outputComplete}
 }
 function renderWages(report,question){return renderWageResult(report,question).text}
 function createReadTask({env=process.env,reader,audit}={}){
@@ -76,7 +108,7 @@ function createReadTask({env=process.env,reader,audit}={}){
   const report=await source.read({status:plan.status,signal});check();if(env.SEVEN_SHIFTS_ACCESS_TOKEN!==token)throw Error('task_scope_changed')
   const reason=safeReason(report),answer=renderWageResult(report,question),complete=report.complete===true?answer.outputComplete:report.complete??null
   record({stage:'read_task_finished',operation:OP,state:report.state,reason,complete,count:Array.isArray(report.rows)?report.rows.length:null,renderedCount:answer.renderedCount})
-  return {...planning,text:answer.text,evidence:{operation:OP,state:report.state,reason,complete,sourceComplete:report.complete??null,outputComplete:answer.outputComplete,renderedCount:answer.renderedCount,companyId:report.companyId??null,count:Array.isArray(report.rows)?report.rows.length:null,retrievedAt:report.retrievedAt,provenance:report.provenance||null}}
+  return {...planning,text:answer.text,...(answer.presentation?{presentation:answer.presentation}:{}),evidence:{operation:OP,state:report.state,reason,complete,sourceComplete:report.complete??null,outputComplete:answer.outputComplete,renderedCount:answer.renderedCount,companyId:report.companyId??null,count:Array.isArray(report.rows)?report.rows.length:null,retrievedAt:report.retrievedAt,provenance:report.provenance||null}}
  }
  return {describe,run}
 }
@@ -94,4 +126,4 @@ function createIntakeHandler({task,fallback}){
   return {blocked:false,mode:'chat',intent:'read_only_task',reply:result.text,tasks:[],decision:null,sourceBound:true,readTaskEvidence:result.evidence,requestId:opts.requestId}
  }
 }
-module.exports={createReadTask,createIntakeHandler,wageTaskRequest,renderWages,PLAN_SYSTEM,ANSWER_SYSTEM}
+module.exports={createReadTask,createIntakeHandler,wageTaskRequest,renderWages,renderWageResult,PLAN_SYSTEM,ANSWER_SYSTEM}

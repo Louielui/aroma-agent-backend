@@ -15,6 +15,7 @@ function createBrowserRead({store,selection,provider,taskRunner,now=Date.now,tim
   if(!r)throw Error('read_not_found');const v=structuredClone(r);delete v.requestHash;delete v.requestId;if(v.source)delete v.source.urlHash
   const history=ancestors(r.parentId)
   v.messages=[...history,r].map(m=>({id:m.id,question:m.id===r.id?null:m.question,state:m.state,result:m.id!==r.id?{...structuredClone(m.result),text:m.result.text.slice(0,2000),truncated:m.result.text.length>2000}:null}))
+  for(const message of v.messages)if(message.result)delete message.result.wagePresentation
   v.historyTruncated=history.some(m=>m.result.text.length>2000)
   // Keep one native response below its existing frame bound even when text
   // contains JSON control characters. Full prior results remain get-addressable.
@@ -68,8 +69,8 @@ function createBrowserRead({store,selection,provider,taskRunner,now=Date.now,tim
     const current=store.get(r.id);if(current.state==='cancelled')return view(current)
     if(controller.signal.aborted)throw Error('read_timeout')
     const wageReport=Object.hasOwn(r,'taskCapabilities')&&r.taskCapabilities.some(c=>c.id==='seven_shifts.employee_wages')&&out?.evidence?.operation==='seven_shifts.employee_wages'
-    if(!out||typeof out.text!=='string'||!out.text.trim()||(wageReport?Buffer.byteLength(JSON.stringify(out.text))>120000:out.text.length>30000)||out.model!==r.selection.model)throw Error('invalid_model_result')
-    r.result={text:out.text.trim(),actualModel:typeof out.actualModel==='string'&&out.actualModel.length<=200?out.actualModel:null,requestedModel:r.selection.model,effort:r.selection.effort,billing:out.billing||null,source:s?{...pageSource,snapshot:true}:null,...(out.evidence?{taskEvidence:out.evidence}:{})}
+    if(!out||typeof out.text!=='string'||!out.text.trim()||(wageReport?Buffer.byteLength(JSON.stringify({text:out.text,presentation:out.presentation||null}))>120000:out.text.length>30000)||out.model!==r.selection.model)throw Error('invalid_model_result')
+    r.result={text:out.text.trim(),actualModel:typeof out.actualModel==='string'&&out.actualModel.length<=200?out.actualModel:null,requestedModel:r.selection.model,effort:r.selection.effort,billing:out.billing||null,source:s?{...pageSource,snapshot:true}:null,...(out.evidence?{taskEvidence:out.evidence}:{}),...(wageReport&&out.presentation?{wagePresentation:out.presentation}:{})}
     r.state='completed';save(r,'answer_saved')
    }finally{clearTimeout(timer)}
   }catch(e){

@@ -6,6 +6,20 @@ async function send(message){const response=await chrome.runtime.sendMessage(mes
 const rpc=body=>send({type:'rpc',body})
 async function capturePanelPage(){const window=await chrome.windows.getCurrent();return send({type:'capture',windowId:window.id,coverage:el('coverage-mode').value})}
 function error(e){if(e.message==='native_reply_unknown_check_saved_result')el('recover').hidden=false;el('status').textContent=ERRORS[e.message]||('讀取未完成：'+e.message)}
+function wageTable(id,rows){
+ const table=document.createElement('table');table.id=id;table.className='wage-table';const head=table.createTHead().insertRow();for(const title of ['薪率','人員']){const th=document.createElement('th');th.scope='col';th.textContent=title;head.append(th)}
+ const groups=new Map();for(const row of rows){const names=groups.get(row.rate)||[];names.push(row);groups.set(row.rate,names)}
+ const rank=rate=>!Number.isFinite(parseFloat(rate))?3:parseFloat(rate)===0?2:/週薪|salary/.test(rate)?1:0
+ const grouped=[...groups].sort((a,b)=>rank(a[0])-rank(b[0])||parseFloat(a[0])-parseFloat(b[0]))
+ const body=table.createTBody();for(const [rate,people]of grouped){const tr=body.insertRow(),cell=tr.insertCell();cell.textContent=rate;if(people.some(p=>p.note.includes('系統零薪率'))){const warning=document.createElement('small');warning.textContent='系統零薪率，需確認';cell.append(warning)}const names=tr.insertCell();for(const person of people){const line=document.createElement('div');line.textContent=person.name;if(person.needsVerification){const flag=document.createElement('abbr');flag.textContent=' *';flag.title=person.note||'薪率未確認';flag.tabIndex=0;flag.setAttribute('aria-label',person.name+'：'+flag.title);line.append(flag)}names.append(line)}}return table
+}
+function presentWages(p){
+ const box=el('text');box.replaceChildren();box.classList.add('wage-summary');const heading=document.createElement('h2');heading.textContent=p.heading+'（'+p.primaryTotal+'）';box.append(heading,wageTable('wage-primary',p.primary))
+ if(p.primary.some(row=>row.needsVerification)){const warning=document.createElement('p');warning.className='note';warning.textContent='* 零薪率或部分職位需確認；指向標記可看原因，完整資料在下方明細。';box.append(warning)}
+ for(const note of p.notes){const line=document.createElement('p');line.className='note';line.textContent=note;box.append(line)}
+ if(p.otherTotal){const other=document.createElement('details');other.id='wage-other';const title=document.createElement('summary');title.textContent=p.otherHeading+'（'+p.otherTotal+'）';other.append(title,wageTable('wage-inactive',p.other));box.append(other)}
+ const details=document.createElement('details');details.id='wage-details';const title=document.createElement('summary');title.textContent='查看職位薪率明細';const text=document.createElement('pre');text.textContent=p.details;details.append(title,text);box.append(details)
+}
 function present(r){
  job=r;el('recover').hidden=r.state!=='processing';el('welcome').hidden=true;el('messages').replaceChildren();
  const rows=r.messages||[{id:r.id,question:r.question,state:r.state,result:r.result}];
@@ -13,9 +27,12 @@ function present(r){
  el('coverage-mode').disabled=rows.some(m=>m.state==='completed');
  el('answer').hidden=r.state!=='completed';el('cancel').hidden=!['awaiting_consent','processing'].includes(r.state)
  if(r.state==='completed'){
-  el('answer').hidden=false;el('text').textContent=r.result.text
+  el('answer').hidden=false;el('text').classList.remove('wage-summary');el('text').textContent=r.result.text
   const source=r.result.source,tool=r.result.taskEvidence
-  el('evidence').textContent=(tool?`資料來源：7shifts · ${tool.retrievedAt} · ${tool.complete?'範圍完整':'未完整／未能讀取'}`:source?`快照來源：${source.origin} · ${new Date(source.capturedAt).toLocaleString()}`:'任務回答 · 未讀取網頁')+` · 所選 ${r.result.requestedModel} · 實際 ${r.result.actualModel||'未確認'}`
+  const metadata=(tool?`資料來源：7shifts · ${tool.retrievedAt} · ${tool.complete?'範圍完整':'未完整／未能讀取'} · 公司 ID：${tool.companyId??'未確認'}`:source?`快照來源：${source.origin} · ${new Date(source.capturedAt).toLocaleString()}`:'任務回答 · 未讀取網頁')+` · 所選 ${r.result.requestedModel} · 實際 ${r.result.actualModel||'未確認'}`
+  const wages=tool?.operation==='seven_shifts.employee_wages'&&r.result.wagePresentation?.version===1
+  el('read-evidence').hidden=!wages;el('read-evidence').open=false;el('read-evidence-text').textContent=metadata
+  if(wages){presentWages(r.result.wagePresentation);el('evidence').textContent='7shifts · '+(tool.state!=='live'?'本次未能讀取':tool.complete?'薪率已核對':tool.outputComplete===false?'明細未完整展示':'已讀取，部分薪率待確認')}else el('evidence').textContent=metadata
   el('context-chip').textContent=source?(source.coverage==='selection_text'?'選取文字':'網頁快照')+' · '+source.origin:'任務 · 不讀取網頁'
   el('coverage-mode').value=source?(source.coverage||'main_frame_visible_text'):'task_only';el('status').textContent='可以接着追問；每次會重新確認讀取範圍。'
  }
