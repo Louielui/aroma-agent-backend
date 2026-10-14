@@ -1,5 +1,6 @@
-param([switch]$PrepareOnly)
+param([switch]$PrepareOnly,[switch]$PublishClient)
 $ErrorActionPreference='Stop'
+if($PrepareOnly -and $PublishClient){throw 'ConflictingInstallationMode'}
 # Only this fixed Owner repository, per-user host and consent-bound extension.
 $browserRepo='C:\Aroma\aroma-agent-backend'
 $browserNode='C:\Program Files\nodejs\node.exe'
@@ -20,7 +21,7 @@ function Read-BrowserGitBlob([string]$name){
   $buffer=New-Object IO.MemoryStream
   try{[void]$process.Start();$process.StandardOutput.BaseStream.CopyTo($buffer);$process.WaitForExit();if($process.ExitCode -ne 0){throw 'GitBlobUnavailable'};return $buffer.ToArray()}finally{$buffer.Dispose();$process.Dispose()}
 }
-$browserNames=@('src/browserRead/nativeHost.cjs','src/browserRead/contract.js','src/browserRead/nativeProtocol.js','src/browserRead/operatorBroker.cjs','src/browserRead/nativeInput.cjs','src/browserOperator/NativeBrowserInput.cs','extensions/browser-read/manifest.json','extensions/browser-read/worker.js','extensions/browser-read/collector.js','extensions/browser-read/operator.js','extensions/browser-read/operator-panel.js','extensions/browser-read/sidepanel.html','extensions/browser-read/sidepanel.js','extensions/browser-read/sidepanel.css')
+$browserNames=@('src/browserRead/nativeHost.cjs','src/browserRead/clientUpdate.js','src/browserRead/contract.js','src/browserRead/nativeProtocol.js','src/browserRead/operatorBroker.cjs','src/browserRead/nativeInput.cjs','src/browserOperator/NativeBrowserInput.cs','extensions/browser-read/manifest.json','extensions/browser-read/worker.js','extensions/browser-read/collector.js','extensions/browser-read/operator.js','extensions/browser-read/operator-panel.js','extensions/browser-read/sidepanel.html','extensions/browser-read/sidepanel.js','extensions/browser-read/sidepanel.css','extensions/browser-read/release.js')
 $browserPins=@{}
 foreach($browserName in $browserNames){
   $browserSource=Join-Path $browserRepo $browserName
@@ -36,6 +37,11 @@ foreach($browserName in $browserNames){
   $browserPins[[IO.Path]::GetFileName($browserDestination)]=(Get-FileHash -LiteralPath $browserDestination -Algorithm SHA256).Hash.ToLowerInvariant()
 }
 $browserManifest=Get-Content -LiteralPath (Join-Path $browserRelease 'extension/manifest.json') -Raw | ConvertFrom-Json
+$browserWorkerHasher=[Security.Cryptography.SHA256]::Create()
+try{$browserWorkerHash=([BitConverter]::ToString($browserWorkerHasher.ComputeHash([Text.Encoding]::UTF8.GetBytes((@($browserPins['worker.js'],$browserPins['collector.js'],$browserPins['operator.js']) -join ':'))))).Replace('-','').ToLowerInvariant()}finally{$browserWorkerHasher.Dispose()}
+$browserReleaseScript='globalThis.IMAGINE_CLIENT_RELEASE='+(@{commit=$browserCommit;workerHash=$browserWorkerHash}|ConvertTo-Json -Compress)+";`n"
+[IO.File]::WriteAllText((Join-Path $browserRelease 'extension/release.js'),$browserReleaseScript,(New-Object Text.UTF8Encoding($false)))
+$browserPins['release.js']=(Get-FileHash -LiteralPath (Join-Path $browserRelease 'extension/release.js')).Hash.ToLowerInvariant()
 $browserKey=[Convert]::FromBase64String($browserManifest.key)
 $browserHasher=[Security.Cryptography.SHA256]::Create()
 try{$browserIdHash=([BitConverter]::ToString($browserHasher.ComputeHash($browserKey))).Replace('-','').ToLowerInvariant().Substring(0,32)}finally{$browserHasher.Dispose()}
@@ -47,7 +53,7 @@ $browserInputHash=(Get-FileHash -LiteralPath $browserInputExe).Hash.ToLowerInvar
 $browserPins['ImagineBrowserInput.exe']=$browserInputHash
 [IO.File]::WriteAllText((Join-Path $browserRelease 'host-config.json'),(@{extensionOrigin=$browserOrigin;commit=$browserCommit;inputHash=$browserInputHash}|ConvertTo-Json -Compress),(New-Object Text.UTF8Encoding($false)))
 $browserPins['host-config.json']=(Get-FileHash -LiteralPath (Join-Path $browserRelease 'host-config.json')).Hash.ToLowerInvariant()
-$browserPinLiteral=($browserPins.GetEnumerator() | Where-Object {$_.Key -in @('nativeHost.cjs','contract.js','nativeProtocol.js','operatorBroker.cjs','nativeInput.cjs','NativeBrowserInput.cs','ImagineBrowserInput.exe','host-config.json')} | ForEach-Object {'{"'+$_.Key+'","'+$_.Value+'"}'} ) -join ','
+$browserPinLiteral=($browserPins.GetEnumerator() | Where-Object {$_.Key -in @('nativeHost.cjs','clientUpdate.js','contract.js','nativeProtocol.js','operatorBroker.cjs','nativeInput.cjs','NativeBrowserInput.cs','ImagineBrowserInput.exe','host-config.json')} | ForEach-Object {'{"'+$_.Key+'","'+$_.Value+'"}'} ) -join ','
 $browserCsharp=@"
 using System; using System.IO; using System.Diagnostics; using System.Collections.Generic; using System.Security.Cryptography; using System.Threading.Tasks;
 public static class ImagineBrowserReadHost {
@@ -83,6 +89,14 @@ $browserPrior=$null
 if(Test-Path -LiteralPath $browserRegistry){$browserPrior=(Get-Item -LiteralPath $browserRegistry).GetValue('')}
 $browserReceipt=@{commit=$browserCommit;extensionId=$browserExtensionId;extensionPath=(Join-Path $browserRelease 'extension');hostManifest=$browserHostManifest;previousManifest=$browserPrior;preparedOnly=[bool]$PrepareOnly;hashes=$browserPins;checkedAt=[DateTime]::UtcNow.ToString('o')}
 [IO.File]::WriteAllText((Join-Path $browserRelease 'installation.json'),($browserReceipt|ConvertTo-Json -Depth 4),(New-Object Text.UTF8Encoding($false)))
+$browserPublished=$null
+if($PublishClient){
+  $browserPublicationText=(& $browserNode (Join-Path $browserRelease 'clientUpdate.js') publish (Join-Path $browserRelease 'installation.json'))
+  if($LASTEXITCODE -ne 0){throw 'ClientPublicationFailed'}
+  $browserPublished=$browserPublicationText | ConvertFrom-Json
+  [IO.File]::WriteAllText((Join-Path $browserRelease 'client-publication.json'),$browserPublicationText,(New-Object Text.UTF8Encoding($false)))
+  $browserReceipt.managedExtensionPath=$browserPublished.extensionDirectory
+}
 if(-not $PrepareOnly){
   try{
     New-Item -Path $browserRegistry -Force | Out-Null
@@ -93,6 +107,7 @@ if(-not $PrepareOnly){
     if($null -ne $browserPrior){Set-Item -LiteralPath $browserRegistry -Value $browserPrior}else{if(Test-Path -LiteralPath $browserRegistry){Remove-Item -LiteralPath $browserRegistry}}
     $browserReceipt.registrationVerified=$false
     $browserReceipt.restoredPreviousRegistration=$true
+    if($null -ne $browserPublished){& $browserNode (Join-Path $browserRelease 'clientUpdate.js') restore (Join-Path $browserRelease 'client-publication.json') | Out-Null;if($LASTEXITCODE -ne 0){throw 'ClientAndHostRollbackFailed'}}
     [IO.File]::WriteAllText((Join-Path $browserRelease 'installation.json'),($browserReceipt|ConvertTo-Json -Depth 4),(New-Object Text.UTF8Encoding($false)))
     throw 'HostRegistrationFailedAndRestored'
   }

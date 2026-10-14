@@ -2,6 +2,19 @@
 const el=id=>document.getElementById(id)
 let capture=null,job=null,busy=false,generation=0
 let topic=null,topicRecord={headId:null,title:'',draft:'',mode:'auto_context'},topicWrites=Promise.resolve()
+let clientUpdating=false
+el('client-update').addEventListener('click',async()=>{
+ if(clientUpdating||!topic)return
+ if(busy||['awaiting_consent','processing'].includes(job?.state)||['working','stopping','waiting','uncertain'].includes(workState)){el('status').textContent='請先完成或停止目前工作，再更新。';return}
+ clientUpdating=true;el('client-update').disabled=true
+ try{
+  topicRecord.draft=el('question').value;await saveTopic();await topicWrites
+  const update=await send({type:'client_update'})
+  if(!['panel','extension'].includes(update.reload))throw Error('client_update_unavailable')
+  el('status').textContent=update.reload==='panel'?'對話已保存，正在更新香香…':'對話已保存，正在更新 Extension；若側欄關閉，按香香圖示回來，無需重啟 Chrome。'
+  if(update.reload==='panel')location.reload();else chrome.runtime.reload()
+ }catch(e){el('status').textContent=e.message==='client_update_busy'?'有工作仍在執行，請完成或停止後再更新。':'未能確認更新，保留目前版本與對話。';clientUpdating=false;el('client-update').disabled=false}
+})
 let workEpoch=0,workTimer=null,workStart=null,workEnd=null,workState='idle',workLane=null
 function workTime(){if(workStart===null){el('work-time').textContent='';return}const seconds=Math.max(0,Math.floor(((workEnd??Date.now())-workStart)/1000));el('work-time').textContent=(workEnd===null?'已用 ':'用時 ')+seconds+' 秒'}
 function setWork(state,phase,start=workStart,end=null){
@@ -124,4 +137,4 @@ el('recover').addEventListener('click',async()=>{if(!job||busy)return;try{const 
 el('dismiss').addEventListener('click',async()=>{if(job?.state==='awaiting_consent'){try{present(await rpc({op:'cancel',id:job.id}))}catch(e){error(e);return}}clearWork();capture=null;el('preview').hidden=true;el('question').readOnly=false;el('read').disabled=true;el('status').textContent='已返回編輯，尚未外送。'})
  el('new-chat').addEventListener('click',async()=>{if(busy){el('status').textContent='請先停止這次讀取，再開新對話。';return}if(!topic)return;generation++;clearWork();if(job?.state==='awaiting_consent'){try{await rpc({op:'cancel',id:job.id})}catch(e){error(e);return}}try{await topicWrites;await chrome.storage.local.remove(topic.key)}catch{el('status').textContent='本機對話狀態未清除，請稍後再試。';return}topicRecord={headId:null,title:'',draft:'',mode:'auto_context'};el('coverage-mode').value='auto_context';job=null;capture=null;el('recover').hidden=true;el('cancel').hidden=true;el('messages').replaceChildren();el('answer').hidden=true;el('preview').hidden=true;el('welcome').hidden=false;el('question').value='';el('question').readOnly=false;el('coverage-mode').disabled=false;el('context-chip').textContent=el('coverage-mode').value==='task_only'?'任務 · 不讀取網頁':'尚未加入網頁內容';el('status').textContent=''})
  const restoreVersion=generation;el('prepare').disabled=true
- ;(async()=>{try{const params=new URL(location.href).searchParams;const context=params.has('tabId')?{type:'context'}:{type:'context',windowId:(await chrome.windows.getCurrent()).id};topic=await send(context);if(!/^browser-topic:[a-f0-9-]{36}$/.test(topic.key)||!Number.isSafeInteger(topic.tabId)||!Number.isSafeInteger(topic.windowId))throw Error('conversation_unavailable');const value=await chrome.storage.local.get(topic.key);if(restoreVersion!==generation)return;if(value[topic.key])topicRecord={...topicRecord,...value[topic.key]};el('question').value=topicRecord.draft;el('coverage-mode').value=topicRecord.mode;if(topicRecord.headId){const r=await rpc({op:'get',id:topicRecord.headId});if(restoreVersion===generation&&!busy){present(r);await restorePending(r)}}}catch(e){error(e)}finally{el('prepare').disabled=!topic||busy}})()
+ ;(async()=>{try{const params=new URL(location.href).searchParams;const context=params.has('tabId')?{type:'context'}:{type:'context',windowId:(await chrome.windows.getCurrent()).id};topic=await send(context);if(!/^browser-topic:[a-f0-9-]{36}$/.test(topic.key)||!Number.isSafeInteger(topic.tabId)||!Number.isSafeInteger(topic.windowId))throw Error('conversation_unavailable');const value=await chrome.storage.local.get(topic.key);if(restoreVersion!==generation)return;if(value[topic.key])topicRecord={...topicRecord,...value[topic.key]};el('question').value=topicRecord.draft;el('coverage-mode').value=topicRecord.mode;if(topicRecord.headId){const r=await rpc({op:'get',id:topicRecord.headId});if(restoreVersion===generation&&!busy){present(r);await restorePending(r)}}}catch(e){error(e)}finally{el('prepare').disabled=!topic||busy;el('client-update').disabled=!topic}})()

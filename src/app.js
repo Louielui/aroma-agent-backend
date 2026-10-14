@@ -1258,6 +1258,8 @@ function createApp (options = {}) {
     }
   })
   app.use(require('./browserOperator/routes').createRouter({ service: browserOperator }))
+  app.use('/api/v1/browser-client', requireServiceToken)
+  app.use(require('./browserRead/clientUpdate').createRouter({reads:browserReadStore,operators:browserOperator.inspectAll,bootCommit:BOOT_COMMIT}))
   const browserWorkView = require('./browserWork/view').createBrowserWork({
     reads: browserReadStore,
     operators: browserOperator.inspectAll,

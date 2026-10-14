@@ -1,7 +1,8 @@
 'use strict'
 const fs=require('node:fs'),path=require('node:path'),cp=require('node:child_process'),{validate,validateSource}=require('./contract'),{createReader,encode}=require('./nativeProtocol')
-function createBroker({request}){
+function createBroker({request,clientStatus}){
  return async input=>{
+  if(input?.op==='client_status'&&Object.keys(input).join(',')==='op'&&clientStatus)return clientStatus()
   validate(input);if(['prepare','read'].includes(input.op)&&Object.hasOwn(input,'source'))validateSource(input.source,Date.now())
   return request(input)
  }
@@ -17,7 +18,11 @@ async function main(){
   const bytes=Buffer.from(await response.arrayBuffer());if(bytes.length>200000)throw Error('native_response_too_large')
   const result=JSON.parse(bytes.toString('utf8'));if(!response.ok)throw Error(typeof result.error==='string'?result.error:'browser_read_unavailable');return result
  }
- const broker=createBroker({request:request('browser-read')})
+ const broker=createBroker({request:request('browser-read'),clientStatus:async()=>{
+  const state=await request('browser-client')({op:'status'})
+  if(state.state!=='ready'||state.activeJobs!==0)return {state:state.state==='busy'?'busy':'unavailable'}
+  return {...require('./clientUpdate.js').readInstallation({bootCommit:state.bootCommit}),bindings:state.bindings}
+ }})
  const operator=require('./operatorBroker.cjs').createOperatorBroker({request:request('browser-operator'),executor:require('./nativeInput.cjs').createExecutor()})
  const output=value=>process.stdout.write(encode(value))
  // Requests run concurrently so cancellation can abort an in-flight read.

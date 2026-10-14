@@ -7506,3 +7506,15 @@ Drive selection sees source MIME types and existing body-read support without tr
 model-selected Drive folders are rejected before get rather than treated as readable recipes
 unsupported recipe results expose source metadata and limits without inventing document contents
 folder-only Drive matches do not dispatch document selection or get and remain incomplete
+a pending consent cannot be updated into a new executable task
+client metadata route refuses browser origins and command-shaped payloads and returns only job occupancy
+client publication refuses a foreign package, extra Chrome permissions and a mismatched runtime
+client status refuses active and unknown jobs without returning task contents or granting operations
+extension reload preserves legacy topic bindings while a real browser startup discards only tab bindings
+managed client publication preserves the previous slot and refuses unaccounted local changes
+managed update fails closed for a busy or unknown host and rejects page senders and extra update arguments
+managed update observes only client metadata, blocks concurrent dispatch, and chooses panel refresh for identical worker bytes
+native client status is an exact metadata-only operation and never forwards a client command as a browser read
+the update button loads a newly published panel without closing Chrome or replaying a saved task and keeps the draft
+the update button retains the current panel on busy, unknown or failed draft persistence
+first managed installation recovers a unique saved read topic from content-free host bindings after session storage was cleared
