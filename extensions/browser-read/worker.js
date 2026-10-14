@@ -1,16 +1,18 @@
 'use strict'
-importScripts('collector.js')
+importScripts('collector.js','operator.js')
 const HOST='com.imagine.browser_read',pending=new Map()
 let port=null,closeTimer=null
 // The explicit toolbar action grants activeTab; opening a persistent panel alone
 // is not evidence of a page grant. Open synchronously within that user gesture.
 chrome.sidePanel.setPanelBehavior({openPanelOnActionClick:false}).catch(()=>{})
 const topicLoads=new Map()
+const operatorJobs=new Map()
+function stopTabOperations(tabId){for(const [id,scope]of operatorJobs)if(scope.tabId===tabId){rpc({op:'operator_stop',id}).catch(()=>{});operatorJobs.delete(id)}}
 function configureTab(tabId,windowId){if(!Number.isSafeInteger(tabId)||tabId<0||!Number.isSafeInteger(windowId)||windowId<0)return;return chrome.sidePanel.setOptions({tabId,path:'sidepanel.html?tabId='+tabId+'&windowId='+windowId,enabled:true}).catch(()=>{})}
 chrome.action.onClicked.addListener(tab=>{if(Number.isSafeInteger(tab?.id)&&tab.id>=0&&Number.isSafeInteger(tab.windowId)&&tab.windowId>=0){configureTab(tab.id,tab.windowId);chrome.sidePanel.open({tabId:tab.id}).catch(()=>{})}})
-chrome.tabs.onActivated?.addListener(info=>{configureTab(info.tabId,info.windowId)})
-chrome.tabs.onAttached?.addListener((tabId,info)=>{configureTab(tabId,info.newWindowId)})
-chrome.tabs.onRemoved?.addListener(tabId=>{topicLoads.delete(tabId);chrome.storage.session.remove('browser-tab:'+tabId).catch(()=>{})})
+chrome.tabs.onActivated?.addListener(info=>{for(const scope of operatorJobs.values())if(scope.windowId===info.windowId&&scope.tabId!==info.tabId)stopTabOperations(scope.tabId);configureTab(info.tabId,info.windowId)})
+chrome.tabs.onAttached?.addListener((tabId,info)=>{stopTabOperations(tabId);configureTab(tabId,info.newWindowId)})
+chrome.tabs.onRemoved?.addListener(tabId=>{stopTabOperations(tabId);topicLoads.delete(tabId);chrome.storage.session.remove('browser-tab:'+tabId).catch(()=>{})})
 const configureExisting=()=>chrome.tabs.query({}).then(tabs=>Promise.all(tabs.map(t=>configureTab(t.id,t.windowId)))).catch(()=>{})
 chrome.runtime.onInstalled?.addListener(configureExisting)
 chrome.runtime.onStartup?.addListener(configureExisting)
@@ -50,8 +52,18 @@ chrome.runtime.onMessage.addListener((message,sender,sendResponse)=>{
  ;(async()=>{
   if(message?.type==='context'&&['type','type,windowId'].includes(Object.keys(message).sort().join(','))){if(!scope&&(!Number.isSafeInteger(message.windowId)||message.windowId<0))throw Error('invalid_request');return topicContext(scope,message.windowId)}
   if(message?.type==='capture'&&['type,windowId','coverage,type,windowId'].includes(Object.keys(message).sort().join(','))){if(scope&&message.windowId!==scope.windowId)throw Error('conversation_tab_changed');return capture(message.windowId,message.coverage,scope?.tabId??null)}
+  if(message?.type==='operator_start'&&Object.keys(message).sort().join(',')==='consent,question,type'){
+   if(!scope)throw Error('conversation_tab_changed');const page=await operatorPage(scope)
+   const result=await rpc({op:'operator_start',requestId:crypto.randomUUID(),question:message.question,consent:message.consent,scope:page.scope});operatorJobs.set(result.id,scope);return result
+  }
+  if(['operator_next','operator_stop','operator_get'].includes(message?.type)&&Object.keys(message).sort().join(',')==='id,type'){
+   const bound=operatorJobs.get(message.id);if(!scope||!bound||bound.tabId!==scope.tabId||bound.windowId!==scope.windowId)throw Error('conversation_tab_changed')
+   if(message.type==='operator_next'){const page=await operatorPage(scope);return rpc({op:'operator_next',id:message.id,...page})}
+   return rpc({op:message.type,id:message.id})
+  }
   if(message?.type!=='rpc'||Object.keys(message).sort().join(',')!=='body,type')throw Error('invalid_request')
   const b=message.body
+  if(typeof b?.op==='string'&&b.op.startsWith('operator_'))throw Error('invalid_request')
   if(b?.op==='read'&&Object.hasOwn(b,'source')){
    if(scope&&(b.source?.windowId!==scope.windowId||b.source?.tabId!==scope.tabId))throw Error('conversation_tab_changed')
    const fresh=await capture(b.source?.windowId,b.source?.coverage,scope?.tabId??null)

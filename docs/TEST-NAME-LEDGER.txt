@@ -7427,3 +7427,16 @@ the default wage answer groups employees sharing an hourly rate and keeps salary
 real panels isolate topics, drafts and new-chat reset across tabs and windows without replaying inference
 topic context keys are unique per tab, survive concurrent restore, and never capture the page
 a scoped panel cannot capture another active tab or another window and rejects extra scope parameters
+native browser broker permits no input when scope, capture or single-use claim is refused
+native browser broker reports input uncertainty once and cannot accept extension-provided actions
+actual native browser input compiles and rejects an unapproved site before any desktop observation or input
+native browser executor refuses a replaced or unpinned executable before spawn
+real operator panel requires screenshot consent, stops inference and restores only saved answers without replay
+browser operator route refuses unauthenticated requests and browser origins before parsing screenshots
+browser operator seals a single action to the observed window, frame and central model
+browser operator cancellation during inference refuses all later native input
+browser operator rejects foreign tabs, stale frames, write routes, free clicks and live typing
+browser operator consumes input before execution and never retries an unknown native outcome
+browser operator refuses an unverified actual model and expires native tickets without input
+browser operator participates in execution mutual exclusion and rejects native window movement
+real browser sites remain closed until native acceptance while the owned fixture remains available
