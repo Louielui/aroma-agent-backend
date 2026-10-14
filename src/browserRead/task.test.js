@@ -1,9 +1,9 @@
 'use strict'
 const test=require('node:test'),assert=require('node:assert/strict'),{randomUUID}=require('node:crypto')
-function fixture(){
+function fixture({result}={}){
  const rows=new Map(),calls=[],runs=[],store={all:()=>[...rows.values()].map(r=>structuredClone(r)),get:id=>rows.has(id)?structuredClone(rows.get(id)):null,save:r=>rows.set(r.id,structuredClone(r))}
  const task=require('../intake/readTask').createReadTask({env:{READ_ACCESS:'on',CONTEXT_SEVEN_SHIFTS:'on',SEVEN_SHIFTS_COMPANY_ID:'17',SEVEN_SHIFTS_ACCESS_TOKEN:'fixture'},reader:{read:async input=>{runs.push(input);return {state:'live',companyId:17,status:input.status,complete:true,rosterComplete:true,rows:[{userId:1,employeeName:'Fixture Worker',active:true,wages:[{wageType:'hourly',wageCents:1750,roleId:null,roleName:null,effectiveDate:'2026-01-01'}]}],retrievedAt:'2026-10-13T18:00:00Z'}}}})
- const service=require('./service').createBrowserRead({store,selection:()=>({model:'claude-opus-5-5',effort:'medium'}),taskRunner:task,provider:selection=>({providerName:'claude',complete:async(p,opts)=>{calls.push({p,opts});return {text:JSON.stringify({operation:'seven_shifts.employee_wages',status:'all',requested:true}),model:selection.model}}})})
+ const service=require('./service').createBrowserRead({store,selection:()=>({model:'claude-opus-5-5',effort:'medium'}),taskRunner:result?{describe:task.describe,run:async()=>result}:task,provider:selection=>({providerName:'claude',complete:async(p,opts)=>{calls.push({p,opts});return {text:JSON.stringify({operation:'seven_shifts.employee_wages',status:'all',requested:true}),model:selection.model}}})})
  return {service,calls,runs,store}
 }
 test('task-only side-panel jobs need explicit consent, perform no page capture and save measured tool evidence',async()=>{
@@ -28,4 +28,9 @@ test('legacy page clients cannot silently acquire new company read authority',as
  const f=fixture(),text='Fixture page',source={url:'https://example.com/',tabId:1,windowId:1,documentId:'legacy',frameId:0,capturedAt:new Date().toISOString(),contentHash:require('./contract').digest(text),truncated:false}
  const p=await f.service.handle({op:'prepare',requestId:randomUUID(),question:'列出所有員工時薪',source});assert.equal(p.taskCapabilities,undefined)
  const r=await f.service.handle({op:'read',id:p.id,consent:true,source,text});assert.equal(f.runs.length,0);assert.equal(r.result.taskEvidence,undefined)
+})
+
+test('bounded deterministic wage reports fit native frames while generated answers retain their smaller limit',async()=>{
+ for(const operation of [null,'other','seven_shifts.employee_wages']){const f=fixture({result:{text:'Verified fixture '.repeat(3000),model:'claude-opus-5-5',...(operation?{evidence:{operation,state:'live',complete:false,count:189}}:{})}}),p=await f.service.handle({op:'prepare',requestId:randomUUID(),question:'列出所有員工時薪'}),r=await f.service.handle({op:'read',id:p.id,consent:true});assert.equal(r.state,operation==='seven_shifts.employee_wages'?'completed':'failed');if(r.state==='completed')assert.ok(Buffer.byteLength(JSON.stringify(r))<195000)}
+ const f=fixture({result:{text:'字'.repeat(50000),model:'claude-opus-5-5',evidence:{operation:'seven_shifts.employee_wages',state:'live'}}}),p=await f.service.handle({op:'prepare',requestId:randomUUID(),question:'列出員工時薪'});const r=await f.service.handle({op:'read',id:p.id,consent:true});assert.equal(r.state,'failed');assert.equal(r.error,'invalid_model_result')
 })

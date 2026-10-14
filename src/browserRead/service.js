@@ -67,7 +67,8 @@ function createBrowserRead({store,selection,provider,taskRunner,now=Date.now,tim
     const out=taskRunner&&Object.hasOwn(r,'taskCapabilities')?await taskRunner.run({question:r.question,conversation,page:s?{source:pageSource,text:b.text}:null,adapter,actor:{id:'owner',role:'owner'},capabilities:r.taskCapabilities,signal:controller.signal,onEvent:event=>{if(controller.signal.aborted||store.get(r.id)?.state==='cancelled')throw Error('read_timeout');r.timeline.push({...event,at:new Date(now()).toISOString()});store.save(r)}}):await adapter.complete(prompt,{system:SYSTEM,signal:controller.signal})
     const current=store.get(r.id);if(current.state==='cancelled')return view(current)
     if(controller.signal.aborted)throw Error('read_timeout')
-    if(!out||typeof out.text!=='string'||!out.text.trim()||out.text.length>30000||out.model!==r.selection.model)throw Error('invalid_model_result')
+    const wageReport=Object.hasOwn(r,'taskCapabilities')&&r.taskCapabilities.some(c=>c.id==='seven_shifts.employee_wages')&&out?.evidence?.operation==='seven_shifts.employee_wages'
+    if(!out||typeof out.text!=='string'||!out.text.trim()||(wageReport?Buffer.byteLength(JSON.stringify(out.text))>120000:out.text.length>30000)||out.model!==r.selection.model)throw Error('invalid_model_result')
     r.result={text:out.text.trim(),actualModel:typeof out.actualModel==='string'&&out.actualModel.length<=200?out.actualModel:null,requestedModel:r.selection.model,effort:r.selection.effort,billing:out.billing||null,source:s?{...pageSource,snapshot:true}:null,...(out.evidence?{taskEvidence:out.evidence}:{})}
     r.state='completed';save(r,'answer_saved')
    }finally{clearTimeout(timer)}

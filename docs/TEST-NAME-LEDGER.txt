@@ -7418,3 +7418,5 @@ a mixed roster caps the final page to remaining capacity and returns an explicit
 a wage timeout is visible in the answer and retained evidence while unsafe errors stay private
 company-scoped role responses may omit company_id but an explicit foreign company is rejected
 one missing assigned-role wage preserves other verified roles and never becomes a zero rate
+bounded deterministic wage reports fit native frames while generated answers retain their smaller limit
+large wage reports visibly bound rendered employee rows and retain every measured coverage count
