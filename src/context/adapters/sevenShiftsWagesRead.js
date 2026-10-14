@@ -17,10 +17,23 @@ function selectWages(rows,roles,roleBased,today){
  const selected=[]
  for(const key of keys){
   const matches=current.filter(w=>w.role_id===key.roleId&&w.wage_type===latest.wage_type).sort((a,b)=>b.effective_date.localeCompare(a.effective_date))
-  if(!matches.length||matches.some(w=>w.effective_date===matches[0].effective_date&&w.wage_cents!==matches[0].wage_cents)){selected.push({...key,wageType:latest.wage_type,wageCents:null,effectiveDate:null});continue}
+  if(!matches.length||matches.some(w=>w.effective_date===matches[0].effective_date&&w.wage_cents!==matches[0].wage_cents)){selected.push({...key,wageType:latest.wage_type,wageCents:null,effectiveDate:null,missingReason:!matches.length?'missing_role_wages':'conflicting_current_wages'});continue}
   selected.push({...key,wageType:latest.wage_type,wageCents:matches[0].wage_cents,effectiveDate:matches[0].effective_date})
  }
  return selected.some(w=>w.wageCents!==null)?selected:null
+}
+// Explain only validated source facts; a successful transport does not supply
+// an absent wage, and a UI zero is not proof of an API zero.
+function wageGapReason(rows,roles,roleBased,today,selected){
+ if(selected?.every(w=>w.wageCents!==null))return null
+ const current=rows.filter(w=>w.effective_date<=today),latest=current.slice().sort((a,b)=>b.effective_date.localeCompare(a.effective_date))[0]
+ if(latest&&current.some(w=>w.effective_date===latest.effective_date&&w.wage_type!==latest.wage_type))return 'conflicting_current_wages'
+ if(roleBased&&!roles.length&&(!latest||latest.wage_type==='hourly'))return 'no_assigned_roles'
+ if(!latest)return 'no_current_wages'
+ if(selected)return selected.some(w=>w.missingReason==='conflicting_current_wages')?'conflicting_current_wages':'missing_role_wages'
+ const keys=latest.wage_type==='weekly_salary'||!roleBased?[{roleId:null}]:roles
+ for(const key of keys){const matches=current.filter(w=>w.role_id===key.roleId&&w.wage_type===latest.wage_type).sort((a,b)=>b.effective_date.localeCompare(a.effective_date));if(matches.length&&matches.some(w=>w.effective_date===matches[0].effective_date&&w.wage_cents!==matches[0].wage_cents))return 'conflicting_current_wages'}
+ return roleBased&&latest.wage_type==='hourly'?'missing_role_wages':'no_current_wages'
 }
 // This capability accepts status only. Company, host, paths, method, version,
 // transport budget and credential source are host-owned, never model arguments.
@@ -33,9 +46,13 @@ function createSevenShiftsWagesReader({env=process.env,fetchFn,clock=()=>new Dat
   const abort=()=>controller.abort();outer?.addEventListener('abort',abort,{once:true});if(outer?.aborted)abort()
   const users=[],rows=[];let rosterComplete=false,pages=0,limitReason=null
   const accessCurrent=()=>env.READ_ACCESS==='on'&&env.CONTEXT_SEVEN_SHIFTS==='on'&&Number(env.SEVEN_SHIFTS_COMPANY_ID)===companyId&&env.SEVEN_SHIFTS_ACCESS_TOKEN===token
-  const report=reason=>({state:'live',companyId,status:input.status,rows:users.map((u,index)=>rows[index]||{...u,wages:null,error:reason}),rosterComplete,complete:!reason&&rosterComplete&&rows.every(r=>r&&r.wages!==null&&r.wages.every(w=>w.wageCents!==null)&&r.employeeName!==null),retrievedAt,...(reason?{reason}:{}),
-   coverage:{version:1,roster:{count:users.length,pages,complete:rosterComplete,limitReason},values:{verifiedRows:rows.filter(r=>r?.wages!==null&&r?.wages?.every(w=>w.wageCents!==null)&&r.employeeName!==null).length,unresolvedRows:users.length-rows.filter(r=>r?.wages!==null&&r?.wages?.every(w=>w.wageCents!==null)&&r.employeeName!==null).length}},
-   provenance:{endpoint:API+'/company/'+companyId+'/users',wagesEndpoint:API+'/company/'+companyId+'/users/{user_id}/wages',pages,maxUsers:MAX_USERS,readOnly:true,scope:'configured_company_users_including_management'}})
+  const report=reason=>{
+   const projected=users.map((u,index)=>rows[index]||{...u,wages:null,error:reason}),verified=r=>r.wages!==null&&r.wages.every(w=>w.wageCents!==null)&&r.employeeName!==null,verifiedRows=projected.filter(verified).length,reasons={}
+   for(const row of projected)if(!verified(row)){const key=row.wageReason||row.error||'unverified_wages';reasons[key]=(reasons[key]||0)+1}
+   return {state:'live',companyId,status:input.status,rows:projected,rosterComplete,complete:!reason&&rosterComplete&&verifiedRows===users.length,retrievedAt,...(reason?{reason}:{}),
+    coverage:{version:1,roster:{count:users.length,pages,complete:rosterComplete,limitReason},values:{verifiedRows,unresolvedRows:users.length-verifiedRows,reasons}},
+    provenance:{endpoint:API+'/company/'+companyId+'/users',wagesEndpoint:API+'/company/'+companyId+'/users/{user_id}/wages',pages,maxUsers:MAX_USERS,readOnly:true,scope:'configured_company_users_including_management'}}
+  }
   const verify=()=>{
    if(controller.signal.aborted)throw Error('read_timeout')
    if(env.READ_ACCESS!=='on'||env.CONTEXT_SEVEN_SHIFTS!=='on')throw Error('read_access_disabled')
@@ -79,7 +96,8 @@ function createSevenShiftsWagesReader({env=process.env,fetchFn,clock=()=>new Dat
     const value=await get('users/'+u.userId+'/wages');if(!Array.isArray(value.data?.current_wages))throw Error('invalid_source_response')
     let roles=[]
     if(settings.wage_based_roles_enabled){const assigned=await get('users/'+u.userId+'/role_assignments');if(!Array.isArray(assigned.data)||assigned.data.length>100||assigned.meta?.cursor?.next!=null)throw Error('invalid_source_response');const ids=new Set();roles=assigned.data.map(r=>{if(Object.hasOwn(r,'company_id')&&r.company_id!==companyId||!id(r.role_id)||ids.has(r.role_id))throw Error('invalid_source_response');ids.add(r.role_id);return {roleId:r.role_id,roleName:safeName(r.name)||null}})}
-    rows[index]={...u,wages:selectWages(value.data.current_wages,roles,settings.wage_based_roles_enabled,today),error:null}
+    const wages=selectWages(value.data.current_wages,roles,settings.wage_based_roles_enabled,today)
+    rows[index]={...u,wages,wageReason:wageGapReason(value.data.current_wages,roles,settings.wage_based_roles_enabled,today,wages),error:null}
    }catch(e){verify();rows[index]={...u,wages:null,error:['source_not_authorised','source_rate_limited','invalid_source_response'].includes(e.message)?e.message:'source_unavailable'}}}}
    await Promise.all(Array.from({length:Math.min(4,users.length)},collect));verify()
    return report(null)

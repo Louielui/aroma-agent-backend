@@ -52,6 +52,33 @@ tranche separates the known match from the unresolved list using the existing
 presentation contract; it does not change source evidence or Chrome assets.
 These observed counts are one account snapshot, not a general completeness claim.
 
+## Successful-source gaps versus failed reads
+
+A subsequent read on 2026-10-14 measured 58 successful GET responses and the
+same 28-user roster, with 13 full wage rows and 15 incomplete rows. Thirteen
+users had assigned roles without corresponding current wage objects; two had
+no assigned roles. This was not a transport timeout, API denial or pagination
+failure. A bounded manual web comparison observed zero values for absent API
+role records on multiple profiles, but the web host later rate-limited access.
+That comparison is partial and is not a new runtime source or a basis for
+turning absent API values into zero. No real employee values are test fixtures.
+
+The existing reader now projects fixed gap reasons from validated source
+facts: absent role records, no assigned roles, no effective wages or conflicting
+current wages. Successful values, explicit API zeros, null values, current-wage
+selection and numeric membership retain their prior semantics. The coverage
+report counts reasons across the original source roster, including records
+excluded by a numeric query. The existing summary and collapsed details explain
+these reasons in the Owner language, separately from permission denial, rate
+limit, malformed data and timeout. Older saved reports without reasons remain
+honest unknowns and are not rewritten or replayed. Reaching this boundary does
+not admit automated employee-profile traversal or new browser permissions.
+
+The interpretation of wage types, effective dates, role-based settings and
+assigned roles follows [7shifts' wage-read guide](https://developers.7shifts.com/docs/read-employee-wage-data).
+The guide does not establish that an absent role wage is an API zero. Automated
+read recovery is therefore not authorized to fill missing wage records.
+
 The Chrome assets, native helper/profile, permissions, central brain, launcher,
 rollback points, production database and unrelated services are unchanged.
 Native operator follow-up planning still has its earlier documented limits.

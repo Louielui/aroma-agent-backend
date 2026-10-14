@@ -20,6 +20,16 @@ function failureExplanation(reason,zh){
  }
  return reason?messages[reason][zh?0:1]:''
 }
+function wageGapExplanation(reason,zh){
+ if(SAFE_REASONS.has(reason))return failureExplanation(reason,zh)
+ const messages={
+  missing_role_wages:['來源未提供此職位薪率','Source did not provide this role wage'],
+  no_assigned_roles:['未分配職位；沒有可核對的職位薪率','No assigned roles; no role wage to verify'],
+  no_current_wages:['來源沒有可核對的已生效薪率','Source has no verifiable effective wage'],
+  conflicting_current_wages:['來源的現行薪率互相矛盾，未能確認','Current source wages conflict; unverified']
+ }
+ return Object.hasOwn(messages,reason)?messages[reason][zh?0:1]:(zh?'薪率未能讀取':'Wages unavailable')
+}
 function renderWageDetails(report,question,budget=110000){
  const zh=/[\u3400-\u9fff]/u.test(question)
  const reason=safeReason(report)
@@ -34,8 +44,8 @@ function renderWageDetails(report,question,budget=110000){
   const rowLines=[]
   const name=row.employeeName||(zh?'姓名未確認':'Name unconfirmed')+' #'+row.userId
   const status=zh?(row.active?'在職':'非在職'):(row.active?'active':'inactive')
-  if(row.wages===null)rowLines.push(name+' · '+status+' · '+(zh?'薪率未能讀取':'Wages unavailable'))
-  else for(const wage of row.wages){const role=wage.roleName||(wage.roleId?'Role #'+wage.roleId:zh?'全職位':'All roles');if(wage.wageCents===null){rowLines.push(name+' · '+status+' · '+role+' · '+(zh?'薪率未能讀取':'Wages unavailable'));continue}const amount=(wage.wageCents/100).toFixed(2),unit=wage.wageType==='hourly'?(zh?'/ 小時':'/ hour'):(zh?'/ 星期（週薪，沒有換算時薪）':'/ week (salary, no hourly conversion)');rowLines.push(name+' · '+status+' · '+role+' · '+amount+' '+unit+' · '+wage.effectiveDate)}
+  if(row.wages===null)rowLines.push(name+' · '+status+' · '+wageGapExplanation(row.wageReason||row.error,zh))
+  else for(const wage of row.wages){const role=wage.roleName||(wage.roleId?'Role #'+wage.roleId:zh?'全職位':'All roles');if(wage.wageCents===null){rowLines.push(name+' · '+status+' · '+role+' · '+wageGapExplanation(wage.missingReason,zh));continue}const amount=(wage.wageCents/100).toFixed(2),unit=wage.wageType==='hourly'?(zh?'/ 小時':'/ hour'):(zh?'/ 星期（週薪，沒有換算時薪）':'/ week (salary, no hourly conversion)');rowLines.push(name+' · '+status+' · '+role+' · '+amount+' '+unit+' · '+wage.effectiveDate)}
   const size=Buffer.byteLength(JSON.stringify(rowLines.join('\n')))+2
   if(bytes+size>budget)break
   lines.push(...rowLines);bytes+=size;renderedCount++
@@ -53,13 +63,14 @@ function renderWageResult(report,question){
   const wages=row.wages||[],unique=new Map()
   for(const wage of wages)if(wage.wageCents!==null)unique.set(wage.wageType+':'+wage.wageCents,wage)
   const rates=[...unique.values()].sort((a,b)=>a.wageType.localeCompare(b.wageType)||a.wageCents-b.wageCents),missing=wages.filter(w=>w.wageCents===null).length,notes=[]
-  const rate=rates.slice(0,10).map(w=>(w.wageCents/100).toFixed(2)+(w.wageType==='hourly'?(zh?' / 小時':' / hour'):(zh?' / 星期（週薪）':' / week (salary)'))).join('；')||(zh?'薪率未能讀取':'Wages unavailable')
+  const rate=rates.slice(0,10).map(w=>(w.wageCents/100).toFixed(2)+(w.wageType==='hourly'?(zh?' / 小時':' / hour'):(zh?' / 星期（週薪）':' / week (salary)'))).join('；')||wageGapExplanation(row.wageReason||row.error,zh)
   if(report.selection&&!row.active)notes.push(zh?'非在職':'Inactive')
   if(row.queryMembership==='unresolved')notes.push(zh?'未能確認是否符合':'Membership unresolved')
   else if(report.selection&&!row.active)notes.push(zh?'已確認符合':'Verified match')
   if(rates.some(w=>w.wageCents===0))notes.push(zh?'系統零薪率，需確認':'Zero rate in source; verify')
   if(rates.length>1)notes.push(zh?'不同職位薪率':'Rates vary by role')
   if(missing)notes.push(zh?missing+' 個職位薪率未確認':missing+' role rates unverified')
+  if(missing&&row.wageReason)notes.push(wageGapExplanation(row.wageReason,zh))
   if(rates.length>10)notes.push(zh?'另有 '+(rates.length-10)+' 項薪率，見明細':(rates.length-10)+' more rates; see details')
   return {userId:row.userId,name:row.employeeName||(zh?'姓名未確認':'Name unconfirmed')+' #'+row.userId,rate,note:notes.join('；'),needsVerification:row.queryMembership==='unresolved'||!rates.length||missing>0||rates.some(w=>w.wageCents===0)}
  }
@@ -68,6 +79,7 @@ function renderWageResult(report,question){
  if(report.selection){presentation.heading=(zh?'已確認符合：':'Verified matches: ')+presentation.heading;presentation.otherHeading=zh?(report.status==='all'?'未確認及非在職使用者':'未能確認是否符合的使用者'):(report.status==='all'?'Unresolved and inactive users':'Users with unresolved membership');if(otherRows.length)presentation.notes.push(zh?'另有 '+otherRows.length+' 筆列於可展開的「'+presentation.otherHeading+'」清單。':otherRows.length+' other records are in the expandable "'+presentation.otherHeading+'" list.')}
  if(report.rosterComplete===false)presentation.notes.push(zh?'員工清單未完整讀取。':'The roster read is incomplete.')
  if(report.coverage){const c=report.coverage;presentation.notes.push(zh?'來源清單：'+c.roster.count+' 筆／'+c.roster.pages+' 頁；完整薪率已確認 '+c.values.verifiedRows+' 筆，未完整核對 '+c.values.unresolvedRows+' 筆。':'Source roster: '+c.roster.count+' records / '+c.roster.pages+' pages; '+c.values.verifiedRows+' fully verified wage rows, '+c.values.unresolvedRows+' unresolved.');if(c.roster.limitReason)presentation.notes.push(zh?'清單已達讀取上限，其餘未讀取。':'The roster reached its read budget; the remainder was not read.')}
+ if(report.coverage?.values.reasons){const reasons=report.coverage.values.reasons,labels=zh?{missing_role_wages:'部分職位來源未提供薪率',no_assigned_roles:'未分配職位',no_current_wages:'沒有已生效薪率',conflicting_current_wages:'現行薪率矛盾',source_not_authorised:'API 權限遭拒',source_rate_limited:'來源限流',source_unavailable:'來源無法讀取',invalid_source_response:'資料格式未能核對',read_timeout:'讀取時間上限',unverified_wages:'其他未確認資料'}:{missing_role_wages:'role wage records absent',no_assigned_roles:'no assigned roles',no_current_wages:'no effective wage',conflicting_current_wages:'conflicting current wages',source_not_authorised:'API permission denied',source_rate_limited:'source rate limit',source_unavailable:'source unavailable',invalid_source_response:'response not validated',read_timeout:'read time limit',unverified_wages:'other unverified data'};const counts=Object.entries(reasons).filter(([key,n])=>Object.hasOwn(labels,key)&&Number.isSafeInteger(n)&&n>0).map(([key,n])=>labels[key]+(zh?' '+n+' 筆':': '+n));if(counts.length)presentation.notes.push((zh?'來源未完整原因：':'Source gaps: ')+counts.join(zh?'；':'; ')+(zh?'。':'.'))}
  if(report.complete!==true)presentation.notes.push(zh?'部分薪率未確認；已讀到的數值仍列出，缺值不當作零。':'Some wages are unverified; verified values are listed and missing values are not zero.')
  if(report.selection){const s=report.selection,labels=zh?{gt:'超過',gte:'不少於',lt:'低於',lte:'不超過',eq:'等於'}:{gt:'above',gte:'at least',lt:'below',lte:'at most',eq:'equal to'};presentation.notes.push((zh?'時薪篩選：':'Hourly filter: ')+labels[s.query.operator]+' '+(s.query.value/100).toFixed(2)+(zh?'；任一已確認職位時薪符合即列入，完整職位薪率保留。':' — any verified role rate may match; full role rates are retained.'));presentation.notes.push(zh?'已掃描 '+s.scannedCount+' 筆；已確認符合 '+s.matchedCount+' 筆；未能確認是否符合 '+s.unresolvedCount+' 筆。':'Scanned '+s.scannedCount+' records; '+s.matchedCount+' verified matches; '+s.unresolvedCount+' unresolved memberships.');if(!s.matchedCount)presentation.notes.push(zh?'目前沒有已確認符合的紀錄；未確認及未讀到的資料不能當作不存在。':'No verified match currently; unresolved or unread data is not evidence of absence.');if(s.unresolvedCount)presentation.notes.push(zh?'未能確認是否符合的使用者仍列出；週薪不換算成時薪。':'Users with unresolved membership remain listed; weekly salary is not converted to hourly.');if(!s.complete)presentation.notes.push(zh?'篩選覆蓋未完整，不能斷言已找出所有符合者。':'Filter coverage is incomplete; this is not every matching user.')}
  if(!report.selection&&report.status==='all'&&otherRows.length)presentation.notes.push(zh?'另有 '+otherRows.length+' 個非在職使用者，已收在可展開的清單。':otherRows.length+' inactive users are in the expandable list.')
