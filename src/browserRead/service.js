@@ -60,7 +60,7 @@ function createBrowserRead({store,selection,provider,taskRunner,now=Date.now,tim
    const timer=setTimeout(()=>controller.abort(),timeoutMs)
    try{
     const adapter=provider(r.selection)
-    const conversation=ancestors(r.parentId).map(m=>({question:m.question,answer:m.result.text.slice(0,2000),truncated:m.result.text.length>2000}))
+    const conversation=ancestors(r.parentId).map(m=>({question:m.question,answer:m.result.text.slice(0,2000),truncated:m.result.text.length>2000,...(m.result.taskEvidence?.operation==='seven_shifts.employee_wages'?{readOperation:m.result.taskEvidence.operation,readStatus:m.result.taskEvidence.status||'all'}:{})}))
     const pageSource=s?{origin:s.origin,capturedAt:s.capturedAt,coverage:s.coverage,truncated:s.truncated}:null
     const prompt=JSON.stringify({question:r.question,source:pageSource,conversation,untrustedPageText:b.text})
     // Legacy awaiting-consent records did not disclose company tools. Never

@@ -322,6 +322,7 @@ const FILE_CLASS = Object.freeze({
   'core/taskPlanner/dialogue.js': CLASS.INTERFACE, // Host action receipts in the current dialogue language.
   'core/taskPlanner/boundPlan.js': CLASS.INTERFACE, // Bound confirmation and localized actual job status.
   'core/taskPlanner/dialogueIntent.js': CLASS.MODEL, // Semantic intent prompt and fixed surface vocabulary must not be translated.
+  'intake/readFollowup.js': CLASS.MATCHING, // Owner intent, status and exact numeric comparisons; not interface translation.
   'intake/scopeNotes.js': CLASS.MATCHING,             //   3 — 「哪個倉」/「邊個倉」 both spellings
   'persona/ownerSettings.js': CLASS.MATCHING,         //   2 — injection patterns
   'intake/traditionalGuard.js': CLASS.MATCHING,       //   2 — the simplified charset IS the guard

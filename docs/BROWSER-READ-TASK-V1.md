@@ -41,6 +41,10 @@ Primary API specifications: [List Users](https://developers.7shifts.com/referenc
 
 ## Wage answer presentation
 
+Shared cursor/coverage and grounded numeric follow-ups are documented in
+[READ-COLLECTION-FOLLOWUPS-V1.md](READ-COLLECTION-FOLLOWUPS-V1.md). The existing
+Task mode is the adoption path; Chrome assets and per-turn consent are unchanged.
+
 The Owner requested grouping employees by hourly rate. The default answer groups active users sharing the same verified rate, merging repeated equal role rates without changing any amount. Different role rates remain separate combinations; weekly salary stays weekly. Zero source rates are explicitly marked for confirmation, and missing role rates remain unknown. Employee IDs retain separate users even when names match. There is no name-based exclusion or assumption that a zero account is not an employee.
 
 For an all-users read, inactive users are retained in an initially collapsed list, with their count visible. The full bounded role detail and company/source/model metadata are also initially collapsed. The plain central-chat answer contains the same grouped primary summary and states that the inactive rows are outside that summary. An explicitly inactive-only read shows inactive users as the primary group. Read scope, credentials, API operations, paid model planning and per-turn consent are unchanged.
