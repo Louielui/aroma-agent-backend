@@ -59,3 +59,28 @@ test('bounded roster pagination reports partial coverage and an abort-unaware tr
  const r=await capped.reader.read({status:'active'});assert.equal(r.rosterComplete,false);assert.equal(r.complete,false);assert.equal(r.rows.length,3)
  const timeout=createSevenShiftsWagesReader({env:env(),fetchFn:()=>new Promise(()=>{}),timeoutMs:100});const result=await timeout.read({status:'all'});assert.equal(result.state,'unavailable');assert.equal(result.reason,'read_timeout')
 })
+
+test('an internal deadline retains verified wages and labels unfinished employees without claiming completeness',async()=>{
+ const fetchFn=async url=>url.includes('/2/wages')?new Promise(()=>{}):fixtureResponse(url)
+ function fixtureResponse(url){const u=new URL(url);let body=u.pathname.endsWith('/labor_settings')?{data:{company_id:17,wage_based_roles_enabled:false}}:u.pathname.endsWith('/users')?{data:[{id:1,company_id:17,first_name:'Verified',active:true},{id:2,company_id:17,first_name:'Pending',active:true}],meta:{cursor:{next:null}}}:{data:{current_wages:[{id:9,effective_date:'2026-01-01',role_id:null,wage_type:'hourly',wage_cents:1750}]}};return {ok:true,status:200,text:async()=>JSON.stringify(body)}}
+ const r=await createSevenShiftsWagesReader({env:env(),fetchFn,timeoutMs:100}).read({status:'active'})
+ assert.equal(r.state,'live');assert.equal(r.reason,'read_timeout');assert.equal(r.complete,false);assert.equal(r.rosterComplete,true);assert.equal(r.rows.length,2);assert.equal(r.rows[0].wages[0].wageCents,1750);assert.equal(r.rows[1].wages,null);assert.equal(r.rows[1].error,'read_timeout')
+})
+
+test('Owner cancellation and revoked access discard partial wage results',async()=>{
+ for(const revoke of [false,true]){const e=env(),controller=new AbortController();const fetchFn=async url=>{let body;if(url.endsWith('/labor_settings'))body={data:{company_id:17,wage_based_roles_enabled:false}};else if(new URL(url).pathname.endsWith('/users'))body={data:[{id:1,company_id:17,first_name:'Fixture',active:true}],meta:{cursor:{next:null}}};else{if(revoke)e.READ_ACCESS='off';else controller.abort();return new Promise(()=>{})}return {ok:true,status:200,text:async()=>JSON.stringify(body)}};const r=await createSevenShiftsWagesReader({env:e,fetchFn,timeoutMs:100}).read({status:'active',signal:controller.signal});assert.equal(r.state,'unavailable');assert.equal(r.rows,null)}
+})
+
+test('a mixed roster caps the final page to remaining capacity and returns an explicitly partial read',async()=>{
+ let nextId=0;const limits=[];const f=fixture({transport:async url=>{const u=new URL(url);let body;if(u.pathname.endsWith('/labor_settings'))body={data:{company_id:17,wage_based_roles_enabled:false}};else if(u.pathname.endsWith('/users')){const active=u.searchParams.get('status')==='active',limit=Number(u.searchParams.get('limit'));limits.push(limit);body={data:Array.from({length:active?28:limit},()=>({id:++nextId,company_id:17,first_name:'Fixture',active})),meta:{cursor:{next:active?null:'page-'+nextId}}}}else body={data:{current_wages:[{id:9,effective_date:'2026-01-01',role_id:null,wage_type:'hourly',wage_cents:1750}]}};return {ok:true,status:200,text:async()=>JSON.stringify(body)}}})
+ const r=await f.reader.read({status:'all'});assert.equal(r.state,'live');assert.equal(r.rows.length,300);assert.equal(r.complete,false);assert.equal(r.rosterComplete,false);assert.deepEqual(limits,[100,100,100,72]);assert.ok(r.rows.every(r=>r.wages[0].wageCents===1750))
+})
+
+test('company-scoped role responses may omit company_id but an explicit foreign company is rejected',async()=>{
+ for(const companyId of [undefined,999]){const transport=async url=>{const path=new URL(url).pathname;const body=path.endsWith('/labor_settings')?{data:{company_id:17,wage_based_roles_enabled:true}}:path.endsWith('/users')?{data:[{id:1,company_id:17,first_name:'Fixture',active:true}],meta:{cursor:{next:null}}}:path.endsWith('/role_assignments')?{data:[{role_id:7,name:'Cook',...(companyId===undefined?{}:{company_id:companyId})}]}:{data:{current_wages:[{id:9,effective_date:'2026-01-01',role_id:7,wage_type:'hourly',wage_cents:1750}]}};return {ok:true,status:200,text:async()=>JSON.stringify(body)}};const r=await createSevenShiftsWagesReader({env:env(),fetchFn:transport}).read({status:'active'});if(companyId===undefined){assert.equal(r.complete,true);assert.equal(r.rows[0].wages[0].wageCents,1750)}else{assert.equal(r.complete,false);assert.equal(r.rows[0].wages,null);assert.equal(r.rows[0].error,'invalid_source_response')}}
+})
+
+test('one missing assigned-role wage preserves other verified roles and never becomes a zero rate',async()=>{
+ const fetchFn=async url=>{const p=new URL(url).pathname;const body=p.endsWith('/labor_settings')?{data:{company_id:17,wage_based_roles_enabled:true}}:p.endsWith('/users')?{data:[{id:1,company_id:17,first_name:'Fixture',active:true}],meta:{cursor:{next:null}}}:p.endsWith('/role_assignments')?{data:[{role_id:7,name:'Verified role'},{role_id:8,name:'Missing role'}]}:{data:{current_wages:[{id:9,effective_date:'2026-01-01',role_id:7,wage_type:'hourly',wage_cents:1750}]}};return {ok:true,status:200,text:async()=>JSON.stringify(body)}}
+ const r=await createSevenShiftsWagesReader({env:env(),fetchFn}).read({status:'active'});assert.equal(r.complete,false);assert.equal(r.rows[0].wages[0].wageCents,1750);assert.equal(r.rows[0].wages[1].wageCents,null);const text=require('../../intake/readTask').renderWages(r,'列出員工時薪');assert.match(text,/17\.50/);assert.match(text,/Missing role.*未能讀取/);assert.ok(!text.includes('0.00'))
+})
