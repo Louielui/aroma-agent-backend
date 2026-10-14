@@ -15,6 +15,7 @@ async function operatorPage(scope){
  const result=rows.find(r=>r.frameId===0)?.result;if(!result)throw Error('page_access_unavailable_click_extension_icon')
  // Guard before sending any source across the native boundary, including capture.
  if(result.scope.url!=='http://127.0.0.1:8090/browser-operator-fixture'&&!/^https:\/\/app\.7shifts\.com\/(?:company\/\d+\/employees(?:\/list)?|location\/\d+\/schedule\/\d{4}-\d{2}-\d{2})(?:\?[^#]*)?$/.test(result.scope.url))throw Error('operation_scope_unavailable')
+ if(result.scope.url==='http://127.0.0.1:8090/browser-operator-fixture'&&(!result.targets.some(t=>t.id==='fixture_button')||!result.targets.some(t=>t.id==='fixture_input')))throw Error('operation_scope_unavailable')
  const pageRows=await chrome.scripting.executeScript({target:{tabId:scope.tabId,frameIds:[0]},world:'ISOLATED',func:collectVisiblePage,args:['main_frame_visible_text']})
  const page=pageRows.find(r=>r.frameId===0)?.result;if(!page||page.url!==result.scope.url)throw Error('conversation_tab_changed')
  result.scope.tabId=scope.tabId;result.scope.windowId=scope.windowId;result.text=page.text;return result
