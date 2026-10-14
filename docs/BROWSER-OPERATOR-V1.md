@@ -13,6 +13,10 @@ desktop input from LocalService. A fixed, hash-pinned C# helper independently
 verifies the foreground Chrome process, address-bar URL, matching UIA Document,
 viewport geometry and unchanged pixels. Unknown or ambiguous URL/Document
 exposure refuses capture/input; there is no coordinate or URL guess fallback.
+Chrome's scheme-omitted address display is accepted for the exact owned HTTP
+fixture only. The independent Document URL still requires its complete fixture
+URL; other HTTP destinations, ports, queries, fragments and aliases do not gain
+this address-display exception.
 Window movement, resizing, focus or frame changes refuse the next native action.
 
 The same captured central subscription brain receives one ephemeral PNG and
@@ -63,3 +67,10 @@ Live acceptance must first prove nonzero trusted move, click, type, Enter and
 scroll counters on `/browser-operator-fixture`, then prove stopping prevents a
 later step. Only then attempt the explicitly authorized 7shifts navigation/read.
 An installed source revision alone never counts as native or 7shifts acceptance.
+
+Owner acceptance on 2026-10-14 verified Chrome loaded the `28ef758` extension.
+A narrow viewport first refused a clipped fixture input. After maximizing the
+window, the native host refused the fixture's scheme-omitted address display
+before capture or input. Compiled-predicate regression reproduces that refusal
+and exercises the bounded display correction and unchanged Document check.
+Positive trusted input and Stop acceptance remain pending after package update.
