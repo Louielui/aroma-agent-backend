@@ -7473,3 +7473,12 @@ work-card stop survives a late model reply and cannot overwrite the next questio
 stopping preparation before its reply arrives cancels only the orphan approval and preserves the next draft
 lost progress replies stop the spinner and recovery only observes the saved job without redispatch
 model progress is durable status evidence and status reads never dispatch or resurrect cancelled work
+Browser work observes the real native service without exposing input authority or mutating its jobs
+Browser work audit reader fails visibly on malformed files and accounts for its bounded operation history
+Browser work groups saved parent chains into independent topics and projects real phases without dispatch
+Browser work terminal clocks remain fixed and unknown or malformed evidence cannot claim active progress
+Browser work omits snapshots secrets tickets request hashes and private action data from both projections
+Browser work retains native audit status after restart without inventing lost questions or answers
+Browser work visibly reports unavailable stores and refuses broken parent chains instead of empty success
+Browser work exposes only authenticated Owner GET routes and observes the same source without executing jobs
+main Browser work panel shows measured progress saved results and errors through GET only while preserving the chat draft
