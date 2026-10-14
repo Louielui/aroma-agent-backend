@@ -7483,3 +7483,22 @@ Browser work visibly reports unavailable stores and refuses broken parent chains
 Browser work exposes only authenticated Owner GET routes and observes the same source without executing jobs
 main Browser work panel shows measured progress saved results and errors through GET only while preserving the chat draft
 Browser work never assigns terminal duration from an earlier or missing audit event
+Context intent contract treats Browser evidence as optional data and binds queries to direct Owner requests
+approved Browser context plans from the active environment and searches then retrieves actual Drive contents
+automatic Browser context uses the real Drive Context Gateway after confirmation and restores without replay
+cancelled and restarted context tasks cannot save late results or repeat source reads
+explicit general requests and unrelated pages do not cause company reads
+legacy and already saved tasks never inherit newly available Drive tools
+metadata-only and truncated documents cannot claim a complete verified recipe
+only source-returned candidate IDs and exact document quotations may become an answer
+page injection, negative requests and fabricated search terms cannot authorize Drive execution
+provider sharing, failed audit and mid-read revocation stop content and further reads
+revoked Drive scope and stale or changed Browser context prevent source dispatch
+tab switches and navigation cancel an in-flight contextual read without capturing the new tab
+V2 permission hashes bind the exact task, version, context and disclosed source scope before dispatch
+host-enforced selection budgets reject four valid candidates before any document retrieval
+current Drive locator verification uses metadata only and an out-of-scope locator cannot trigger search
+V2 saved wage follow-ups perform a fresh legacy read and numeric filtering without Drive routing
+ordinary V2 page questions reach the page-grounded answer branch without a general keyword or company read
+the actual Browser capture contract accepts its text limit and refuses oversized V2 payloads before planning
+same-tab navigation preserves existing Operator jobs while contextual reads retain their navigation stop

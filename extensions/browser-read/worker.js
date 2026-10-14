@@ -7,12 +7,15 @@ let port=null,closeTimer=null
 chrome.sidePanel.setPanelBehavior({openPanelOnActionClick:false}).catch(()=>{})
 const topicLoads=new Map()
 const operatorJobs=new Map()
+const readJobs=new Map()
+function stopTabReads(tabId){for(const [id,scope]of readJobs)if(scope.tabId===tabId){rpc({op:'cancel',id}).catch(()=>{});readJobs.delete(id)}}
 function stopTabOperations(tabId){for(const [id,scope]of operatorJobs)if(scope.tabId===tabId){rpc({op:'operator_stop',id}).catch(()=>{});operatorJobs.delete(id)}}
 function configureTab(tabId,windowId){if(!Number.isSafeInteger(tabId)||tabId<0||!Number.isSafeInteger(windowId)||windowId<0)return;return chrome.sidePanel.setOptions({tabId,path:'sidepanel.html?tabId='+tabId+'&windowId='+windowId,enabled:true}).catch(()=>{})}
 chrome.action.onClicked.addListener(tab=>{if(Number.isSafeInteger(tab?.id)&&tab.id>=0&&Number.isSafeInteger(tab.windowId)&&tab.windowId>=0){configureTab(tab.id,tab.windowId);chrome.sidePanel.open({tabId:tab.id}).catch(()=>{})}})
-chrome.tabs.onActivated?.addListener(info=>{for(const scope of operatorJobs.values())if(scope.windowId===info.windowId&&scope.tabId!==info.tabId)stopTabOperations(scope.tabId);configureTab(info.tabId,info.windowId)})
-chrome.tabs.onAttached?.addListener((tabId,info)=>{stopTabOperations(tabId);configureTab(tabId,info.newWindowId)})
-chrome.tabs.onRemoved?.addListener(tabId=>{stopTabOperations(tabId);topicLoads.delete(tabId);chrome.storage.session.remove('browser-tab:'+tabId).catch(()=>{})})
+chrome.tabs.onActivated?.addListener(info=>{for(const scope of operatorJobs.values())if(scope.windowId===info.windowId&&scope.tabId!==info.tabId)stopTabOperations(scope.tabId);for(const scope of readJobs.values())if(scope.windowId===info.windowId&&scope.tabId!==info.tabId)stopTabReads(scope.tabId);configureTab(info.tabId,info.windowId)})
+chrome.tabs.onAttached?.addListener((tabId,info)=>{stopTabOperations(tabId);stopTabReads(tabId);configureTab(tabId,info.newWindowId)})
+chrome.tabs.onUpdated?.addListener((tabId,change)=>{if(change.status==='loading'||typeof change.url==='string')stopTabReads(tabId)})
+chrome.tabs.onRemoved?.addListener(tabId=>{stopTabOperations(tabId);stopTabReads(tabId);topicLoads.delete(tabId);chrome.storage.session.remove('browser-tab:'+tabId).catch(()=>{})})
 const configureExisting=()=>chrome.tabs.query({}).then(tabs=>Promise.all(tabs.map(t=>configureTab(t.id,t.windowId)))).catch(()=>{})
 chrome.runtime.onInstalled?.addListener(configureExisting)
 chrome.runtime.onStartup?.addListener(configureExisting)
@@ -66,11 +69,16 @@ chrome.runtime.onMessage.addListener((message,sender,sendResponse)=>{
   if(typeof b?.op==='string'&&b.op.startsWith('operator_'))throw Error('invalid_request')
   if(b?.op==='read'&&Object.hasOwn(b,'source')){
    if(scope&&(b.source?.windowId!==scope.windowId||b.source?.tabId!==scope.tabId))throw Error('conversation_tab_changed')
-   const fresh=await capture(b.source?.windowId,b.source?.coverage,scope?.tabId??null)
+    readJobs.set(b.id,{tabId:b.source?.tabId,windowId:b.source?.windowId})
+    try{
+    const fresh=await capture(b.source?.windowId,b.source?.coverage,scope?.tabId??null)
+    const current=(await chrome.tabs.query({active:true,windowId:fresh.source.windowId}))[0]
+    if(!readJobs.has(b.id)||current?.id!==fresh.source.tabId)throw Error('source_changed')
    for(const k of ['url','tabId','windowId','documentId','frameId','contentHash','truncated'])if(fresh.source[k]!==b.source?.[k])throw Error('source_changed')
    if(fresh.source.coverage!==(b.source?.coverage||'main_frame_visible_text'))throw Error('source_changed')
    if(fresh.text!==b.text)throw Error('source_changed')
-   return rpc({...b,source:fresh.source})
+    return await rpc({...b,source:fresh.source})
+    }finally{readJobs.delete(b.id)}
   }
   return rpc(b)
  })().then(result=>sendResponse({result}),error=>sendResponse({error:/^[a-z_]+$/.test(error.message)?error.message:'page_access_unavailable_click_extension_icon'}))
