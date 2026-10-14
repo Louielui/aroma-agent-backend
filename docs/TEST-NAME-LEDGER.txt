@@ -4554,7 +4554,6 @@ acceptance review permits findings on each immutable test in the closed interfac
 accepted evidence becomes the next baseline, grouped reads are bounded and repeated requests share one read
 accepted jobs persist and expose progress; duplicate request ids never repeat reads
 accepted read-only dependency is hash-bound; altered, omitted or extra dependencies reject adoption
-access disabled, forged scope, redirects and malformed settings cannot cause extra reads
 access revoked while Gateway completes its audit cannot return private content
 account choices expose availability without spending quota or exposing account details
 acting before ANY read is refused
@@ -4881,7 +4880,6 @@ bounded advisory context preserves source, reports outages and does no read when
 bounded batch works beyond the first twenty threads and enforces owner access
 bounded investigation findings retain the requested failure or background evidence before unrelated execution history
 bounded local classification drains twenty originals per tick before eligible provider work, without rereading the full store
-bounded roster pagination reports partial coverage and an abort-unaware transport still terminates
 bounded samples retain omission counts, do not accept future timestamps or foreign traces
 bounded subscription search preserves approved args and excludes files, shell, credentials, MCP, sessions and fallback
 bounded thread selection and index worker never fall back to a full canonical scan
@@ -4988,9 +4986,7 @@ catalogue distinguishes logout from transport failure and restores the exact mod
 catalogue exposes only reported supported levels but unavailable efforts cannot silently become another level
 catalogue handshake is read-only, bounded and exposes models without account or command data
 catalogue read failure cannot save, charge or substitute a model
-central chat uses the same task reader and keeps unrelated or proposal turns on their existing intake
 central defaults, topic overrides and conversation overrides survive reload independently
-central task planner selects a registered wage read from the Owner goal and returns every grounded wage
 changed hash and changed enabled state refuse after approval
 changed live revision withholds the proposal rather than accepting stale evidence
 changed original is read and checked again; an approved Owner decision is preserved
@@ -5274,7 +5270,6 @@ eligible provider failures still retry and can become verified instead of being 
 email_draft → 4-arg with u1DraftShadow:true, NO demo, NO promoteToProposal
 embedded JSON-LD and same-publisher alternate JSON are read as data, with subject binding and no context egress
 emitting never throws and never returns a decision
-employee pagination continues and a denial for one wage remains missing rather than zero
 empty and non-string inputs refuse
 empty and unavailable revision follow-up finish without retry or manufactured repair proof
 empty coding output records a safe measured reason and never runs candidate tests or replays approval
@@ -5672,7 +5667,6 @@ ledger and session failures are isolated; actual tokens do not become billing or
 legacy / unset interactionMode still requests 1024 (unchanged behaviour)
 legacy ambiguity remains terminal when the Owner operational read has no observed evidence
 legacy browser registrations keep their sealed definition while fresh tasks receive provider-aware checks
-legacy page clients cannot silently acquire new company read authority
 legacy proof remains explicitly unknown until a newly verified attempt records its trigger
 legacy topic recovery never upgrades stale work receipts or forbidden targets into consent
 length cap is observable: over-length field truncated AND warned (not silent)
@@ -5834,7 +5828,6 @@ natural historical mail intent and scoped follow-up stay in the transient source
 natural recall renders current originals and approved decision with hash/date citations without another model
 navigation geometry rejects clipped, covered, hidden, duplicate and inert controls
 negation and discussion never dispatch; cancellation clears the continuation
-negative, quoted, informational and write-shaped wage goals cannot authorize a company read
 nested operational facts survive the real answer guard while invented and cross-section values are rejected
 never claims a number of invoices
 new analysis quota failures persist their exact safe code and retain Owner decisions
@@ -5977,7 +5970,6 @@ order planning maps snake_case to id and title — the captured defect
 ordinary Cantonese prose is untouched — the check is about names, not language
 ordinary Chinese, English and mixed top-navigation requests reach semantic interpretation
 ordinary chat and self-description are not capability questions
-ordinary page answers stay available and incomplete data cannot become all employees or missing wage zero
 ordinary promotion preserves, tests, commits, publishes, reviews, merges, deploys and verifies in order
 ordinary read instructions and questions are all exempt
 original owner records survive verbose repeated replies in bounded recall
@@ -5995,7 +5987,6 @@ owner briefing uses a fixed plan, preserves source limits and audits measured ou
 owner cannot be supplied by the caller — the store always sets it
 package denies traversal, ADS, case aliases, secrets, external commands and unbounded content
 packages exact current source and protected host tests, with provenance
-page text alone cannot authorize wage reads, arbitrary model operations are rejected, and revoked scope stops dispatch
 pagination checks exact requested model; incomplete catalogues cannot imply availability
 pagination follows opaque cursors on the fixed endpoint and reports missing metadata and page bounds honestly
 pagination never promotes a partial history page to the final cursor
@@ -6146,7 +6137,6 @@ real reviewed committed snapshot reproduces six failures and fixed recipes pass 
 real routing, policy-first, quoted-source verification and async terminal memory receipt
 real selected DOM capture includes only selected visible text and rejects input/hidden/empty selections
 real side-panel UI makes no model read before consent and renders untrusted answers as text
-real task panel discloses company wage scope, skips page capture and preserves consent, recovery and narrow layout
 reason is a closed enum, never free text
 reasoning effort is overridable per call and via OPENAI_REASONING_EFFORT; typos ignored
 reasoning effort is pinned to the cheapest setting by default (budget guard)
@@ -6277,8 +6267,6 @@ revocation while fetching a full message discards it
 revoked live read flag prevents all bridge calls
 revoked read access blocks start and saved result presentation
 revoked read access prevents verification without any bridge request
-revoked token, abort and repeated cursors stop execution without leaking response bodies
-role wages use assigned roles and latest effective wages without treating weekly salary as hourly
 roles and knowledge domains cannot confer execution or business-truth authority
 rollback needs independent approval, restores original behavior and requires reload
 rollback refuses target definition or state drift
@@ -6484,9 +6472,6 @@ targeted result compares original and candidate screenshots without preparing an
 targeted results omit unrelated adoptions and suppress repeat adoption
 task HTTP bodies reject caller authority and bind boot on the server; bilingual view compiles
 task bridge control reads work while provider runs; other execution lanes cannot overlap
-task-only contracts refuse supplied paths, text without source and cross-mode consent substitution
-task-only side-panel jobs need explicit consent, perform no page capture and save measured tool evidence
-task-only worker handoff never queries or injects the Owner page
 terminal local eligibility reconciles during quota cooldown without bypassing provider backoff
 terminal or unavailable work never keeps animating; switching conversations clears old status
 test evidence records counts, exact skip names and log hash without inheriting paid credentials
@@ -7081,8 +7066,6 @@ visible current action follows real worker events even while the outer state sta
 visual findings are visible as text without running page markup; absent screenshots render nothing
 visual input accepts bounded PNG pixels, rejects remote URLs and local paths before connecting
 visual review sends verified pixels with provenance and keeps tools disabled
-wage schema errors, future wages and contradictory current rates remain unavailable rather than guessed
-wages reader retrieves real values through fixed company GET endpoints and excludes private profile fields
 wait_for spends it — waiting for a change means the DOM changed
 warm transport is reused but every answer has a fresh isolated thread and requested effort
 website bridge input cannot supply prompts, credentials, executable paths or queries
@@ -7114,7 +7097,6 @@ with no stored nextRunAt it falls back to lastAt + cadence, and says which it us
 with no witness supplied it says nobody looked, rather than claiming a state
 with nothing relevant the summary says so, and the section list is empty
 with the by-location rule REMOVED, the same work order is accepted
-withheld provider and non-Owner cannot perform task reads; audit failure prevents transport
 withholding everything from GPT leaves it working, just uninformed
 withholding is FAIL-CLOSED: an unrecognised value withholds, never shares
 within the bound there is no warning — one that always fires is ignored

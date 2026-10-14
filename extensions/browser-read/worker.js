@@ -33,7 +33,7 @@ chrome.runtime.onMessage.addListener((message,sender,sendResponse)=>{
   if(message?.type==='capture'&&['type,windowId','coverage,type,windowId'].includes(Object.keys(message).sort().join(',')))return capture(message.windowId,message.coverage)
   if(message?.type!=='rpc'||Object.keys(message).sort().join(',')!=='body,type')throw Error('invalid_request')
   const b=message.body
-  if(b?.op==='read'&&Object.hasOwn(b,'source')){
+  if(b?.op==='read'){
    const fresh=await capture(b.source?.windowId,b.source?.coverage)
    for(const k of ['url','tabId','windowId','documentId','frameId','contentHash','truncated'])if(fresh.source[k]!==b.source?.[k])throw Error('source_changed')
    if(fresh.source.coverage!==(b.source?.coverage||'main_frame_visible_text'))throw Error('source_changed')
