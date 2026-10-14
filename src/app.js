@@ -1242,8 +1242,10 @@ function createApp (options = {}) {
   })
   app.use('/api/v1/browser-read', requireServiceToken)
   app.use(require('./browserRead/routes').createRouter({ service: browserRead }))
+  const browserOperatorCompanyId = Number(process.env.SEVEN_SHIFTS_COMPANY_ID)
   const browserOperator = require('./browserOperator/service').createOperator({
-    companyId: Number(process.env.SEVEN_SHIFTS_COMPANY_ID),
+    companyId: browserOperatorCompanyId,
+    liveEnabled: scope => require('./browserOperator/liveProfile').employeeReadProfile(browserOperatorCompanyId, scope),
     selection: () => modelCenter.read().brain,
     provider: choice => {
       if (process.env.CHAT_BACKEND !== 'codex-subscription') throw Error('model_unavailable')

@@ -37,6 +37,7 @@ public static class NativeBrowserInput {
  // Chrome may omit HTTP in the address display only for this exact owned fixture.
  // The independent Document URL below still uses the original full-URL predicate.
  static bool MatchesAddress(string value,string url){return Matches(value,url)||url=="http://127.0.0.1:8090/browser-operator-fixture"&&value==url.Substring(7);}
+ static bool MatchesLink(string value,string href){return href!=null&&System.Text.RegularExpressions.Regex.IsMatch(href,"^https://app\\.7shifts\\.com/company/[1-9][0-9]*/employees(/list)?$")&&Matches(value,href);}
  static AutomationElement Bind(string url,IntPtr expected){
   IntPtr hwnd=GetForegroundWindow();Need(hwnd!=IntPtr.Zero&&(expected==IntPtr.Zero||hwnd==expected),"browser_foreground_changed");uint pid;GetWindowThreadProcessId(hwnd,out pid);
   using(var p=Process.GetProcessById((int)pid)){Need(p.ProcessName.Equals("chrome",StringComparison.OrdinalIgnoreCase)&&p.SessionId==Process.GetCurrentProcess().SessionId,"browser_foreground_changed");string image=p.MainModule.FileName;var approved=new[]{Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles),"Google/Chrome/Application/chrome.exe"),Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86),"Google/Chrome/Application/chrome.exe"),Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"Google/Chrome/Application/chrome.exe")};Need(approved.Any(v=>Path.GetFullPath(v).Equals(image,StringComparison.OrdinalIgnoreCase)),"browser_foreground_changed");}
@@ -84,7 +85,7 @@ public static class NativeBrowserInput {
     var candidate=hit;bool matched=false;
     for(int i=0;candidate!=null&&i<12;i++,candidate=TreeWalker.ControlViewWalker.GetParent(candidate)){
      if(candidate.Current.ControlType==ControlType.Document)break;
-     if(candidate.Current.Name==label&&InDocument(candidate,doc)&&(fixture?(href==url&&(candidate.Current.ControlType==ControlType.Button||candidate.Current.ControlType==ControlType.Edit)):(candidate.Current.ControlType==ControlType.Hyperlink&&System.Text.RegularExpressions.Regex.IsMatch(href,"^https://app\\.7shifts\\.com/company/[1-9][0-9]*/employees(/list)?$")))){matched=true;break;}
+     if(candidate.Current.Name==label&&InDocument(candidate,doc)&&(fixture?(href==url&&(candidate.Current.ControlType==ControlType.Button||candidate.Current.ControlType==ControlType.Edit)):(candidate.Current.ControlType==ControlType.Hyperlink&&MatchesLink(Value(candidate),href)))){matched=true;break;}
     }
     Need(matched,"native_click_target_changed");Send(new[]{Mouse(0x0002),Mouse(0x0004)});
    }
