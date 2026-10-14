@@ -2,6 +2,31 @@
 const test=require('node:test'),assert=require('node:assert/strict')
 const {createSevenShiftsWagesReader}=require('./sevenShiftsWagesRead')
 const env=()=>({READ_ACCESS:'on',CONTEXT_SEVEN_SHIFTS:'on',SEVEN_SHIFTS_COMPANY_ID:'17',SEVEN_SHIFTS_ACCESS_TOKEN:'fixture-token'})
+test('successful wage reads distinguish missing role records and no assignments from permission failures',async()=>{
+ const requests=[],fetchFn=async(url,options)=>{requests.push({url,options});const p=new URL(url).pathname;let data
+  if(p.endsWith('/labor_settings'))data={data:{company_id:17,wage_based_roles_enabled:true}}
+  else if(p.endsWith('/users'))data={data:[1,2,3,4].map(id=>({id,company_id:17,active:true,first_name:'Fixture '+id})),meta:{cursor:{next:null}}}
+  else if(p.endsWith('/4/wages'))return {ok:false,status:403}
+  else if(p.endsWith('/role_assignments'))data={data:p.includes('/2/')?[]:[{role_id:7,name:'Verified role'},{role_id:8,name:'Missing role'}]}
+  else data={data:{current_wages:p.includes('/1/')?[{id:9,effective_date:'2026-01-01',role_id:7,wage_type:'hourly',wage_cents:1750}]:p.includes('/3/')?[{id:10,effective_date:'2026-01-01',role_id:99,wage_type:'hourly',wage_cents:1580}]:[]}}
+  return {ok:true,status:200,text:async()=>JSON.stringify(data)}
+ }
+ const r=await createSevenShiftsWagesReader({env:env(),fetchFn}).read({status:'active'})
+ assert.equal(r.state,'live');assert.equal(r.rosterComplete,true);assert.equal(r.complete,false)
+ assert.equal(r.rows[0].wages[0].wageCents,1750);assert.equal(r.rows[0].wages[1].wageCents,null);assert.equal(r.rows[0].wages[1].missingReason,'missing_role_wages')
+ assert.equal(r.rows[0].wageReason,'missing_role_wages');assert.equal(r.rows[1].wages,null);assert.equal(r.rows[1].wageReason,'no_assigned_roles');assert.equal(r.rows[2].wages,null);assert.equal(r.rows[2].wageReason,'missing_role_wages');assert.equal(r.rows[3].error,'source_not_authorised')
+ assert.deepEqual(r.coverage.values.reasons,{missing_role_wages:2,no_assigned_roles:1,source_not_authorised:1})
+ assert.equal(requests.length,9);assert.ok(requests.every(r=>r.options.method==='GET'&&r.options.redirect==='error'))
+})
+test('wage gap reasons preserve ambiguous rates and future records instead of inventing missing-role zeros',async()=>{
+ for(const [wages,reason] of [[[], 'no_current_wages'],[[{id:1,effective_date:'2099-01-01',role_id:null,wage_type:'hourly',wage_cents:1800}],'no_current_wages'],[[{id:1,effective_date:'2026-01-01',role_id:null,wage_type:'hourly',wage_cents:1800},{id:2,effective_date:'2026-01-01',role_id:null,wage_type:'hourly',wage_cents:2000}],'conflicting_current_wages']]){
+  const r=await fixture({wages}).reader.read({status:'active'});assert.equal(r.rows[0].wageReason,reason);assert.equal(r.rows[0].wages,null);assert.equal(r.complete,false)
+ }
+ const salary=await fixture({roles:true,wages:[{id:1,effective_date:'2026-01-01',role_id:null,wage_type:'weekly_salary',wage_cents:100000}]}).reader.read({status:'active'})
+ assert.equal(salary.rows[0].wages[0].wageCents,100000);assert.equal(salary.rows[0].wageReason,null);assert.equal(salary.complete,true)
+ const zero=await fixture({wages:[{id:1,effective_date:'2026-01-01',role_id:null,wage_type:'hourly',wage_cents:0}]}).reader.read({status:'active'})
+ assert.equal(zero.rows[0].wages[0].wageCents,0);assert.equal(zero.complete,true);assert.deepEqual(zero.coverage.values.reasons,{})
+})
 function fixture({roles=false,users,wages,settings,transport}={}){
  const calls=[],e=env(),now=()=> '2026-10-13T18:00:00Z'
  const fetchFn=async(url,options)=>{calls.push({url,options});if(transport)return transport(url,options)
@@ -41,7 +66,7 @@ test('employee pagination continues and a denial for one wage remains missing ra
   else body={data:{current_wages:[{id:9,effective_date:'2026-01-01',role_id:null,wage_type:'hourly',wage_cents:0}],upcoming_wages:[]}}
   return {ok:true,status:200,text:async()=>JSON.stringify(body)}
  }})
- const r=await f.reader.read({status:'active'});assert.equal(r.rows.length,2);assert.equal(r.complete,false);assert.equal(r.rows[0].wages,null);assert.equal(r.rows[1].wages[0].wageCents,0);assert.ok(f.calls.some(c=>new URL(c.url).searchParams.get('cursor')==='next-fixture'));assert.deepEqual(r.coverage,{version:1,roster:{count:2,pages:2,complete:true,limitReason:null},values:{verifiedRows:1,unresolvedRows:1}})
+ const r=await f.reader.read({status:'active'});assert.equal(r.rows.length,2);assert.equal(r.complete,false);assert.equal(r.rows[0].wages,null);assert.equal(r.rows[1].wages[0].wageCents,0);assert.ok(f.calls.some(c=>new URL(c.url).searchParams.get('cursor')==='next-fixture'));assert.deepEqual(r.coverage,{version:1,roster:{count:2,pages:2,complete:true,limitReason:null},values:{verifiedRows:1,unresolvedRows:1,reasons:{source_not_authorised:1}}})
 })
 test('revoked token, abort and repeated cursors stop execution without leaking response bodies',async()=>{
  const f=fixture({transport:async()=>{f.env.SEVEN_SHIFTS_ACCESS_TOKEN='changed';return {ok:true,status:200,text:async()=>'{"private":"secret"}'}}})
@@ -82,5 +107,5 @@ test('company-scoped role responses may omit company_id but an explicit foreign 
 
 test('one missing assigned-role wage preserves other verified roles and never becomes a zero rate',async()=>{
  const fetchFn=async url=>{const p=new URL(url).pathname;const body=p.endsWith('/labor_settings')?{data:{company_id:17,wage_based_roles_enabled:true}}:p.endsWith('/users')?{data:[{id:1,company_id:17,first_name:'Fixture',active:true}],meta:{cursor:{next:null}}}:p.endsWith('/role_assignments')?{data:[{role_id:7,name:'Verified role'},{role_id:8,name:'Missing role'}]}:{data:{current_wages:[{id:9,effective_date:'2026-01-01',role_id:7,wage_type:'hourly',wage_cents:1750}]}};return {ok:true,status:200,text:async()=>JSON.stringify(body)}}
- const r=await createSevenShiftsWagesReader({env:env(),fetchFn}).read({status:'active'});assert.equal(r.complete,false);assert.equal(r.rows[0].wages[0].wageCents,1750);assert.equal(r.rows[0].wages[1].wageCents,null);const answer=require('../../intake/readTask').renderWageResult(r,'列出員工時薪');assert.match(answer.text,/17\.50/);assert.match(answer.presentation.details,/Missing role.*未能讀取/);assert.ok(!answer.text.includes('0.00'))
+ const r=await createSevenShiftsWagesReader({env:env(),fetchFn}).read({status:'active'});assert.equal(r.complete,false);assert.equal(r.rows[0].wages[0].wageCents,1750);assert.equal(r.rows[0].wages[1].wageCents,null);const answer=require('../../intake/readTask').renderWageResult(r,'列出員工時薪');assert.match(answer.text,/17\.50/);assert.match(answer.presentation.details,/Missing role.*來源未提供此職位薪率/);assert.ok(!answer.text.includes('0.00'))
 })

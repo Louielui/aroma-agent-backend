@@ -1,5 +1,14 @@
 'use strict'
 const test=require('node:test'),assert=require('node:assert/strict')
+test('wage answers explain source gaps bilingually while retaining unknown membership and rejecting unsafe reasons',()=>{
+ const rows=[{userId:1,employeeName:'Known partial',active:true,wageReason:'missing_role_wages',wages:[{roleId:7,roleName:'Known role',wageType:'hourly',wageCents:1750,effectiveDate:'2026-01-01'},{roleId:8,roleName:'Missing role',wageType:'hourly',wageCents:null,effectiveDate:null,missingReason:'missing_role_wages'}]},{userId:2,employeeName:'No assignment',active:true,wages:null,wageReason:'no_assigned_roles'},{userId:3,employeeName:'Denied read',active:true,wages:null,error:'source_not_authorised'},{userId:4,employeeName:'Legacy unknown',active:true,wages:null,wageReason:'PRIVATE-ERROR-TOKEN'}]
+ const report={state:'live',status:'active',companyId:17,rows,complete:false,rosterComplete:true,retrievedAt:'2026-10-14T12:00:00Z',coverage:{version:1,roster:{count:4,pages:1,complete:true,limitReason:null},values:{verifiedRows:0,unresolvedRows:4,reasons:{missing_role_wages:1,no_assigned_roles:1,source_not_authorised:1,unverified_wages:1}}}}
+ for(const [q,missing,noRoles,denied] of [['列出所有員工時薪',/來源未提供此職位薪率/,/未分配職位/,/拒絕此 API 讀取權限/],['List all employee wages',/Source did not provide this role wage/,/No assigned roles/,/denied permission for this API read/]]){
+  const r=require('./readTask').renderWageResult(report,q);assert.match(r.presentation.details,missing);assert.match(r.presentation.primary[0].note,missing);assert.match(r.presentation.primary[1].rate,noRoles);assert.match(r.presentation.primary[2].rate,denied);assert.match(r.presentation.details,/17\.50/);assert.ok(!JSON.stringify(r).includes('PRIVATE-ERROR-TOKEN'));assert.ok(!r.presentation.details.includes('0.00'));assert.equal(r.outputComplete,true);assert.equal(r.renderedCount,4)
+ }
+ const selection=require('../context/numericSelection').selectNumericRows(rows,{operator:'gt',value:2000},row=>row.wages?.map(w=>w.wageCents)||[],false)
+ assert.equal(selection.matches.length,0);assert.equal(selection.unresolved.length,4);assert.equal(selection.complete,false)
+})
 const {createReadTask}=require('./readTask')
 function fixture({plan,reply='Page answer',env={},read}={}){
  const calls=[],reads=[],events=[],settings={READ_ACCESS:'on',CONTEXT_SEVEN_SHIFTS:'on',SEVEN_SHIFTS_COMPANY_ID:'17',SEVEN_SHIFTS_ACCESS_TOKEN:'fixture-token',...env}

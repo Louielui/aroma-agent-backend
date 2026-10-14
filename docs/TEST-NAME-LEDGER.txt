@@ -7464,3 +7464,6 @@ numeric wage filtering surfaces uncertain membership and weekly salary without a
 follow-up scope and thresholds come from Owner text and saved read metadata rather than previous answers
 numeric wage presentation separates verified matches from unresolved memberships without discarding salary details
 all-status wage filtering labels inactive matches separately from unresolved users while retaining complete selected output
+successful wage reads distinguish missing role records and no assignments from permission failures
+wage gap reasons preserve ambiguous rates and future records instead of inventing missing-role zeros
+wage answers explain source gaps bilingually while retaining unknown membership and rejecting unsafe reasons
