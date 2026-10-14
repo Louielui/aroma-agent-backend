@@ -10,16 +10,34 @@ function wageTaskRequest(question,conversation=[]){
  if(wageWords.test(question)&&action)return true
  return /(?:只列|只要|僅|\b(?:only|just|filter)\b)/i.test(question)&&conversation.some(c=>wageTaskRequest(c.question))
 }
+const SAFE_REASONS=new Set(['read_access_disabled','connection_not_configured','source_access_changed','source_not_authorised','source_rate_limited','read_timeout','invalid_source_response','source_unavailable'])
+const safeReason=report=>report.reason?SAFE_REASONS.has(report.reason)?report.reason:'source_unavailable':report.state==='live'?null:'source_unavailable'
+function failureExplanation(reason,zh){
+ const messages={
+  read_timeout:['讀取已達時間上限。','The read reached its time limit.'],
+  source_not_authorised:['7shifts 拒絕此 API 讀取權限。','7shifts denied permission for this API read.'],
+  source_rate_limited:['7shifts 限制了讀取頻率。','7shifts rate-limited the read.'],
+  connection_not_configured:['7shifts 連線尚未完整設定。','The 7shifts connection is not fully configured.'],
+  read_access_disabled:['7shifts 讀取存取目前關閉。','7shifts read access is disabled.'],
+  source_access_changed:['讀取期間連線授權已改變。','Source access changed during the read.'],
+  invalid_source_response:['7shifts 回傳的資料格式未能核對。','The 7shifts response could not be validated.'],
+  source_unavailable:['7shifts 來源暫時無法讀取。','The 7shifts source is currently unavailable.']
+ }
+ return reason?messages[reason][zh?0:1]:''
+}
 function renderWages(report,question){
  const zh=/[\u3400-\u9fff]/u.test(question)
- if(report.state!=='live')return zh?'本次未能讀取 7shifts 員工時薪；沒有取得可核對的薪率，亦未修改資料。':'The 7shifts wage read was unavailable. No verified wage data was obtained and no data was changed.'
+ const reason=safeReason(report)
+ if(report.state!=='live')return failureExplanation(reason,zh)+'\n'+(zh?'本次未能讀取 7shifts 員工時薪；沒有取得可核對的薪率，亦未修改資料。':'The 7shifts wage read was unavailable. No verified wage data was obtained and no data was changed.')
  const scope=zh?{all:'全部公司使用者（含離職及管理帳號）',active:'在職公司使用者（含管理帳號）',inactive:'非在職公司使用者'}[report.status]:{all:'All company users, including inactive and management accounts',active:'Active company users, including management accounts',inactive:'Inactive company users'}[report.status]
  const lines=[(zh?'7shifts 查詢範圍：':'7shifts scope: ')+scope,(zh?'公司 ID：':'Company ID: ')+report.companyId,(zh?'讀取時間：':'Retrieved: ')+report.retrievedAt,report.complete?(zh?'此範圍資料已完整讀取。':'This scoped read is complete.'):(zh?'資料未完整：員工清單、姓名或部分薪率未能完整核對。':'Incomplete: the roster, names or some wages could not be verified.'),'']
+ if(reason)lines.splice(4,0,failureExplanation(reason,zh))
+ if(reason==='read_timeout')lines.splice(5,0,zh?'已核對的部分結果保留；未完成的薪率標示為未能讀取。':'Verified partial results are retained; unfinished wages are marked unavailable.')
  for(const row of report.rows){
   const name=row.employeeName||(zh?'姓名未確認':'Name unconfirmed')+' #'+row.userId
   const status=zh?(row.active?'在職':'非在職'):(row.active?'active':'inactive')
   if(row.wages===null){lines.push(name+' · '+status+' · '+(zh?'薪率未能讀取':'Wages unavailable'));continue}
-  for(const wage of row.wages){const amount=(wage.wageCents/100).toFixed(2),unit=wage.wageType==='hourly'?(zh?'/ 小時':'/ hour'):(zh?'/ 星期（週薪，沒有換算時薪）':'/ week (salary, no hourly conversion)');lines.push(name+' · '+status+' · '+(wage.roleName|| (wage.roleId? 'Role #'+wage.roleId:zh?'全職位':'All roles'))+' · '+amount+' '+unit+' · '+wage.effectiveDate)}
+  for(const wage of row.wages){const role=wage.roleName||(wage.roleId?'Role #'+wage.roleId:zh?'全職位':'All roles');if(wage.wageCents===null){lines.push(name+' · '+status+' · '+role+' · '+(zh?'薪率未能讀取':'Wages unavailable'));continue}const amount=(wage.wageCents/100).toFixed(2),unit=wage.wageType==='hourly'?(zh?'/ 小時':'/ hour'):(zh?'/ 星期（週薪，沒有換算時薪）':'/ week (salary, no hourly conversion)');lines.push(name+' · '+status+' · '+role+' · '+amount+' '+unit+' · '+wage.effectiveDate)}
  }
  if(!report.rows.length)lines.push(zh?'此範圍沒有員工紀錄。':'No users in this scope.')
  lines.push('',zh?'薪率單位依 7shifts 設定；幣別未由此 API 回傳。':'Amounts use the 7shifts account units; this API did not return a currency.',(zh?'來源：':'Source: ')+(report.provenance?.wagesEndpoint||report.provenance?.endpoint||'https://developers.7shifts.com/reference/getuserwages'))
@@ -48,8 +66,9 @@ function createReadTask({env=process.env,reader,audit}={}){
   const record=event=>{if(onEvent)onEvent(event);else if(audit)audit.append(event);else throw Error('audit_unavailable')}
   record({stage:'read_task_started',operation:OP,status:plan.status,companyId:capabilities[0].companyId});check()
   const report=await source.read({status:plan.status,signal});check();if(env.SEVEN_SHIFTS_ACCESS_TOKEN!==token)throw Error('task_scope_changed')
-  record({stage:'read_task_finished',operation:OP,state:report.state,complete:report.complete??null,count:Array.isArray(report.rows)?report.rows.length:null})
-  return {...planning,text:renderWages(report,question),evidence:{operation:OP,state:report.state,complete:report.complete??null,companyId:report.companyId??null,count:Array.isArray(report.rows)?report.rows.length:null,retrievedAt:report.retrievedAt,provenance:report.provenance||null}}
+  const reason=safeReason(report)
+  record({stage:'read_task_finished',operation:OP,state:report.state,reason,complete:report.complete??null,count:Array.isArray(report.rows)?report.rows.length:null})
+  return {...planning,text:renderWages(report,question),evidence:{operation:OP,state:report.state,reason,complete:report.complete??null,companyId:report.companyId??null,count:Array.isArray(report.rows)?report.rows.length:null,retrievedAt:report.retrievedAt,provenance:report.provenance||null}}
  }
  return {describe,run}
 }

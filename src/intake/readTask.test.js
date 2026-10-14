@@ -46,3 +46,7 @@ test('a central planner declining the wage read falls back without a second gene
  const f=fixture({plan:{operation:'answer',status:'all',requested:false},reply:'UNVERIFIED WAGE ANSWER'}),handler=require('./readTask').createIntakeHandler({task:f.task,fallback:async()=>({reply:'Existing guarded answer'})})
  const r=await handler('列出所有員工時薪',f.adapter,[],{interactionMode:'chat'});assert.equal(r.reply,'Existing guarded answer');assert.equal(r.sourceBound,undefined);assert.equal(f.calls.length,1);assert.equal(f.reads.length,0)
 })
+
+test('a wage timeout is visible in the answer and retained evidence while unsafe errors stay private',async()=>{
+ for(const reason of ['read_timeout','PRIVATE-TOKEN-ERROR']){const f=fixture({read:{state:'unavailable',reason,complete:null,rows:null,retrievedAt:'2026-10-13T18:00:00Z'}});const r=await f.task.run({question:'列出所有員工時薪',adapter:f.adapter,actor:{id:'owner',role:'owner'},capabilities:f.task.describe('claude')});assert.equal(r.evidence.reason,reason==='read_timeout'?'read_timeout':'source_unavailable');assert.equal(f.events[1].reason,r.evidence.reason);assert.ok(!JSON.stringify(r).includes('PRIVATE-TOKEN'));if(reason==='read_timeout')assert.match(r.text,/時間上限/)}
+})
