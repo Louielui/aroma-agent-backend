@@ -1,13 +1,13 @@
 'use strict'
 const test=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path'),vm=require('node:vm')
-function fixture({native=false,local={},session={},releaseHash=null}={}){
+function fixture({native=false,local={},session={},releaseHash=null,url='https://example.com/',failLocalRemove=false}={}){
  const calls=[],listeners={},injections=[],nativeCalls=[];let nativeReply;let focusedWindow=99,nextText='Example Domain'
- const storage=data=>({get:async key=>key===null?{...data}:Object.fromEntries((Array.isArray(key)?key:[key]).map(k=>[k,data[k]])),set:async v=>{Object.assign(data,v)},remove:async key=>{for(const k of Array.isArray(key)?key:[key])delete data[k]}})
+ const storage=data=>({get:async key=>key===null?{...data}:Object.fromEntries((Array.isArray(key)?key:[key]).map(k=>[k,data[k]])),set:async v=>{Object.assign(data,v)},remove:async key=>{if(data===local&&failLocalRemove)throw Error('fixture_storage_failure');for(const k of Array.isArray(key)?key:[key])delete data[k]}})
  const chrome={
   action:{onClicked:{addListener:f=>{listeners.action=f}}},
   sidePanel:{setPanelBehavior:async o=>{calls.push({kind:'behavior',...o})},setOptions:async o=>{calls.push({kind:'options',...o})},open:async o=>{calls.push({kind:'open',...o})}},
   storage:{session:storage(session),local:storage(local)},
-  tabs:{get:async id=>({id,windowId:id-100}),query:async o=>{calls.push({kind:'query',...o});const windowId=o.windowId??focusedWindow;return[{id:windowId+100,windowId}]},onActivated:{addListener:f=>{listeners.activated=f}},onAttached:{addListener:f=>{listeners.attached=f}},onUpdated:{addListener:f=>{listeners.updated=f}},onRemoved:{addListener:f=>{listeners.removed=f}}},
+  tabs:{get:async id=>({id,windowId:id-100,url}),query:async o=>{calls.push({kind:'query',...o});const windowId=o.windowId??focusedWindow;return[{id:windowId+100,windowId,url}]},onActivated:{addListener:f=>{listeners.activated=f}},onAttached:{addListener:f=>{listeners.attached=f}},onUpdated:{addListener:f=>{listeners.updated=f}},onRemoved:{addListener:f=>{listeners.removed=f}}},
   scripting:{executeScript:async o=>{injections.push(o);return[{frameId:0,documentId:'document-'+o.target.tabId,result:{title:'Public fixture',url:'https://example.com/',text:nextText,truncated:false}}]}},
   runtime:{id:'test-extension',getURL:s=>'chrome-extension://test-extension/'+s,onStartup:{addListener:f=>{listeners.startup=f}},onInstalled:{addListener:f=>{listeners.installed=f}},onMessage:{addListener:f=>{listeners.message=f}},connectNative:()=>{if(!native)throw Error('unexpected_native_dispatch');return {onMessage:{addListener:f=>{nativeReply=f}},onDisconnect:{addListener:()=>{}},postMessage:m=>nativeCalls.push(m),disconnect:()=>{}}}}
  }
@@ -33,14 +33,26 @@ test('managed update fails closed for a busy or unknown host and rejects page se
  const f=fixture();assert.equal((await f.send({type:'client_update'},'https://example.com/')).error,'side_panel_required');assert.equal((await f.send({type:'client_update',command:'arbitrary'},url)).error,'invalid_request');assert.equal(f.nativeCalls.length,0)
 })
 test('extension reload preserves legacy topic bindings while a real browser startup discards only tab bindings',async()=>{
- const local={},session={'browser-tab:107':'00000000-0000-4000-8000-000000000007'},url='chrome-extension://test-extension/sidepanel.html?tabId=107&windowId=7',f=fixture({local,session}),first=await f.send({type:'context'},url);local[first.result.key]={draft:'Fixture draft'};assert.equal(first.result.key,'browser-topic:'+session['browser-tab:107'])
- const reloaded=fixture({local});assert.equal((await reloaded.send({type:'context'},url)).result.key,first.result.key);reloaded.listeners.startup();const fresh=await reloaded.send({type:'context'},url);assert.notEqual(fresh.result.key,first.result.key);assert.equal(local[first.result.key].draft,'Fixture draft')
+ const local={},session={'browser-tab:107':'00000000-0000-4000-8000-000000000007'},url='chrome-extension://test-extension/sidepanel.html?tabId=107&windowId=7',f=fixture({native:true,local,session}),first=await f.send({type:'context'},url);local[first.result.key]={draft:'Fixture draft'};assert.equal(first.result.key,'browser-topic:'+session['browser-tab:107'])
+ const update=f.send({type:'client_update'},url);while(!f.nativeCalls.length)await new Promise(r=>setImmediate(r));f.reply(f.nativeCalls[0],{state:'ready',commit:'a'.repeat(40),workerHash:'b'.repeat(64)});assert.equal((await update).result.reload,'extension')
+ const reloaded=fixture({local});reloaded.listeners.installed({reason:'update'});assert.equal((await reloaded.send({type:'context'},url)).result.key,first.result.key);reloaded.listeners.startup();const fresh=await reloaded.send({type:'context'},url);assert.notEqual(fresh.result.key,first.result.key);assert.equal(local[first.result.key].draft,'Fixture draft')
 })
 
 test('first managed installation recovers a unique saved read topic from content-free host bindings after session storage was cleared',async()=>{
- const key='browser-topic:00000000-0000-4000-8000-000000000007',headId='00000000-0000-4000-8000-000000000017',local={[key]:{headId,draft:'Fixture retained draft'}},f=fixture({native:true,local}),url='chrome-extension://test-extension/sidepanel.html?tabId=107&windowId=7',pending=f.send({type:'context'},url)
- while(!f.nativeCalls.length)await new Promise(r=>setImmediate(r));assert.equal(f.nativeCalls[0].body.op,'client_status');f.reply(f.nativeCalls[0],{state:'ready',bindings:[{headId,tabId:107,windowId:7}]});assert.equal((await pending).result.key,key);assert.equal(local[key].draft,'Fixture retained draft');assert.equal(f.injections.length,0);assert.equal(f.nativeCalls.length,1)
+ const key='browser-topic:00000000-0000-4000-8000-000000000007',headId='00000000-0000-4000-8000-000000000017',local={[key]:{headId,draft:'Fixture retained draft'}},f=fixture({native:true,local}),url='chrome-extension://test-extension/sidepanel.html?tabId=107&windowId=7';f.listeners.installed({reason:'update'});const pending=f.send({type:'context'},url)
+ while(!f.nativeCalls.length)await new Promise(r=>setImmediate(r));assert.equal(f.nativeCalls[0].body.op,'client_status');f.reply(f.nativeCalls[0],{state:'ready',bindings:[{headId,tabId:107,windowId:7,urlHash:require('node:crypto').createHash('sha256').update('https://example.com/').digest('hex')}]});assert.equal((await pending).result.key,key);assert.equal(local[key].draft,'Fixture retained draft');assert.equal(f.injections.length,0);assert.equal(f.nativeCalls.length,1)
  const newBoot=fixture({local});newBoot.listeners.startup();assert.notEqual((await newBoot.send({type:'context'},url)).result.key,key);assert.equal(local[key].draft,'Fixture retained draft')
+})
+
+test('busy or unavailable legacy migration preserves archived topics and still opens a fresh conversation',async()=>{
+ const key='browser-topic:00000000-0000-4000-8000-000000000007',headId='00000000-0000-4000-8000-000000000017',url='chrome-extension://test-extension/sidepanel.html?tabId=107&windowId=7'
+ for(const state of ['busy','unavailable']){const local={[key]:{headId,draft:'Fixture preserved'}},f=fixture({native:true,local});f.listeners.installed({reason:'update'});const pending=f.send({type:'context'},url);while(!f.nativeCalls.length)await new Promise(r=>setImmediate(r));f.reply(f.nativeCalls[0],{state});const result=await pending;assert.equal(result.error,undefined);assert.notEqual(result.result.key,key);assert.equal(local[key].draft,'Fixture preserved')}
+})
+test('legacy migration refuses a reused tab identifier whose live URL hash differs from the saved source',async()=>{
+ const key='browser-topic:00000000-0000-4000-8000-000000000007',headId='00000000-0000-4000-8000-000000000017',local={[key]:{headId,draft:'Fixture preserved'}},f=fixture({native:true,local,url:'https://unrelated.example/'});f.listeners.installed({reason:'update'});const pending=f.send({type:'context'},'chrome-extension://test-extension/sidepanel.html?tabId=107&windowId=7');while(!f.nativeCalls.length)await new Promise(r=>setImmediate(r));f.reply(f.nativeCalls[0],{state:'ready',bindings:[{headId,tabId:107,windowId:7,urlHash:require('node:crypto').createHash('sha256').update('https://example.com/').digest('hex')}]});assert.notEqual((await pending).result.key,key);assert.equal(local[key].draft,'Fixture preserved');assert.equal(f.injections.length,0)
+})
+test('a failed startup clear cannot revive stale tab bindings when Chrome later recreates the worker',async()=>{
+ const id='00000000-0000-4000-8000-000000000007',local={'browser-tab:107':id,'browser-client-topic-migration-v1':true,['browser-topic:'+id]:{draft:'Fixture old draft'}},session={},url='chrome-extension://test-extension/sidepanel.html?tabId=107&windowId=7',failed=fixture({local,session,failLocalRemove:true});failed.listeners.startup();assert.equal((await failed.send({type:'context'},url)).error!==undefined,true);const recovered=fixture({local,session});assert.notEqual((await recovered.send({type:'context'},url)).result.key,'browser-topic:'+id);assert.equal(local['browser-topic:'+id].draft,'Fixture old draft')
 })
 test('side-panel capture stays bound to its own window when another Chrome window has focus',async()=>{
  const f=fixture();f.setFocusedWindow(99)

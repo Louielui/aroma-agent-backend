@@ -7518,3 +7518,8 @@ native client status is an exact metadata-only operation and never forwards a cl
 the update button loads a newly published panel without closing Chrome or replaying a saved task and keeps the draft
 the update button retains the current panel on busy, unknown or failed draft persistence
 first managed installation recovers a unique saved read topic from content-free host bindings after session storage was cleared
+busy or unavailable legacy migration preserves archived topics and still opens a fresh conversation
+legacy migration refuses a reused tab identifier whose live URL hash differs from the saved source
+a failed startup clear cannot revive stale tab bindings when Chrome later recreates the worker
+a manifest change invalidates panel-only reload even when all worker scripts are unchanged
+managed publication rejects optional hosts and unexpected manifest capabilities

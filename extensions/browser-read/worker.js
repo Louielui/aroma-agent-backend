@@ -4,6 +4,19 @@ const HOST='com.imagine.browser_read',pending=new Map()
 let port=null,closeTimer=null
 let updating=false,updateUntil=0,startupReady=Promise.resolve()
 let migration=null
+let bindingInit=null,coldStartup=false
+const SESSION='browser-session-ready-v1',HANDOFF='browser-update-handoff-v1'
+async function resetBindings(cold){
+ await chrome.storage.session.set({[SESSION]:{state:'clear_pending',cold}})
+ const stored=await chrome.storage.local.get(null);await chrome.storage.local.remove(Object.keys(stored).filter(k=>k.startsWith('browser-tab:')))
+ if(cold)await chrome.storage.local.set({'browser-client-topic-migration-v1':true})
+ topicLoads.clear();await chrome.storage.session.set({[SESSION]:{state:'ready'}})
+}
+async function ensureBindings(){
+ if(!chrome.storage.local)return
+ if(!bindingInit)bindingInit=(async()=>{const saved=(await chrome.storage.session.get(SESSION))[SESSION];if(saved?.state!=='ready')await resetBindings(saved?.state==='clear_pending'?saved.cold!==false:true)})().finally(()=>{bindingInit=null})
+ return bindingInit
+}
 // The explicit toolbar action grants activeTab; opening a persistent panel alone
 // is not evidence of a page grant. Open synchronously within that user gesture.
 chrome.sidePanel.setPanelBehavior({openPanelOnActionClick:false}).catch(()=>{})
@@ -19,16 +32,16 @@ chrome.tabs.onAttached?.addListener((tabId,info)=>{stopTabOperations(tabId);stop
 chrome.tabs.onUpdated?.addListener((tabId,change)=>{if(change.status==='loading'||typeof change.url==='string')stopTabReads(tabId)})
 chrome.tabs.onRemoved?.addListener(tabId=>{stopTabOperations(tabId);stopTabReads(tabId);topicLoads.delete(tabId);chrome.storage.session.remove('browser-tab:'+tabId).catch(()=>{});chrome.storage.local?.remove('browser-tab:'+tabId).catch(()=>{})})
 const configureExisting=()=>chrome.tabs.query({}).then(tabs=>Promise.all(tabs.map(t=>configureTab(t.id,t.windowId)))).catch(()=>{})
-chrome.runtime.onInstalled?.addListener(configureExisting)
-chrome.runtime.onStartup?.addListener(()=>{startupReady=(async()=>{const stored=await chrome.storage.local.get(null);await chrome.storage.local.remove(Object.keys(stored).filter(k=>k.startsWith('browser-tab:')));await chrome.storage.local.set({'browser-client-topic-migration-v1':true});topicLoads.clear();await configureExisting()})();startupReady.catch(()=>{})})
+chrome.runtime.onInstalled?.addListener(details=>{startupReady=startupReady.catch(()=>{}).then(async()=>{const handoff=(await chrome.storage.local.get(HANDOFF))[HANDOFF];if(!coldStartup&&details?.reason==='update'&&handoff&&Object.keys(handoff).sort().join(',')==='expiresAt,nonce'&&/^[a-f0-9-]{36}$/.test(handoff.nonce||'')&&Number.isFinite(handoff.expiresAt)&&handoff.expiresAt>Date.now()&&handoff.expiresAt<Date.now()+5000)await chrome.storage.session.set({[SESSION]:{state:'ready'}});else await resetBindings(coldStartup);await chrome.storage.local.remove(HANDOFF);await configureExisting()});startupReady.catch(()=>{})})
+chrome.runtime.onStartup?.addListener(()=>{coldStartup=true;startupReady=startupReady.catch(()=>{}).then(async()=>{await resetBindings(true);await configureExisting()});startupReady.catch(()=>{})})
 function panelScope(url){const u=new URL(url);if(u.protocol!==new URL(chrome.runtime.getURL('')).protocol||u.host!==new URL(chrome.runtime.getURL('')).host||u.pathname!=='/sidepanel.html'||u.hash||[...u.searchParams.keys()].sort().join(',')!=='tabId,windowId')throw Error('side_panel_required');const tabId=u.searchParams.get('tabId'),windowId=u.searchParams.get('windowId');if(!/^\d+$/.test(tabId)||!/^\d+$/.test(windowId)||!Number.isSafeInteger(Number(tabId))||!Number.isSafeInteger(Number(windowId)))throw Error('side_panel_required');return {tabId:Number(tabId),windowId:Number(windowId)}}
 async function topicContext(scope,windowId){
- await startupReady
+ await startupReady.catch(()=>{});await ensureBindings()
  if(chrome.storage.local&&!migration)migration=(async()=>{
   const stored=await chrome.storage.local.get(null);if(stored['browser-client-topic-migration-v1'])return
   const topics=Object.entries(stored).filter(([key,value])=>/^browser-topic:[a-f0-9-]{36}$/.test(key)&&/^[a-f0-9-]{36}$/.test(value?.headId||''));if(topics.length>500)throw Error('conversation_unavailable')
-  if(topics.length){const metadata=await rpc({op:'client_status'});if(metadata.state!=='ready'||!Array.isArray(metadata.bindings)||metadata.bindings.length>500)throw Error('conversation_unavailable');const byTab=new Map()
-   for(const[key,value]of topics){const b=metadata.bindings.find(b=>b.headId===value.headId);if(!b||!Number.isSafeInteger(b.tabId)||b.tabId<0||!Number.isSafeInteger(b.windowId)||b.windowId<0)continue;const tab=await chrome.tabs.get(b.tabId).catch(()=>null);if(!tab||tab.windowId!==b.windowId)continue;byTab.set(b.tabId,[...(byTab.get(b.tabId)||[]),key.slice('browser-topic:'.length)])}
+  if(topics.length){let metadata;try{metadata=await rpc({op:'client_status'})}catch{metadata=null}const bindings=Array.isArray(metadata?.bindings)&&metadata.bindings.length<=500?metadata.bindings:[],byTab=new Map()
+   for(const[key,value]of topics){const b=bindings.find(b=>b.headId===value.headId);if(!b||!Number.isSafeInteger(b.tabId)||b.tabId<0||!Number.isSafeInteger(b.windowId)||b.windowId<0||! /^[a-f0-9]{64}$/.test(b.urlHash||''))continue;const tab=await chrome.tabs.get(b.tabId).catch(()=>null);if(!tab||tab.windowId!==b.windowId||typeof tab.url!=='string')continue;const bytes=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(tab.url)),urlHash=Array.from(new Uint8Array(bytes),x=>x.toString(16).padStart(2,'0')).join('');if(urlHash!==b.urlHash)continue;byTab.set(b.tabId,[...(byTab.get(b.tabId)||[]),key.slice('browser-topic:'.length)])}
    for(const [id,keys]of byTab){const key='browser-tab:'+id,legacy=await chrome.storage.session.get(key);if(!stored[key]&&keys.length===1)await chrome.storage.local.set({[key]:keys[0]});else if(!stored[key]&&keys.includes(legacy[key]))await chrome.storage.local.set({[key]:legacy[key]})}
   }
   await chrome.storage.local.set({'browser-client-topic-migration-v1':true})
@@ -71,7 +84,7 @@ chrome.runtime.onMessage.addListener((message,sender,sendResponse)=>{
    if(!scope)throw Error('side_panel_required')
    if(pending.size||readJobs.size)throw Error('client_update_busy')
    updating=true;updateUntil=Infinity
-   try{await topicContext(scope);const state=await rpc({op:'client_status'});if(state.state==='busy')throw Error('client_update_busy');if(state.state!=='ready'||! /^[a-f0-9]{40}$/.test(state.commit||'')||! /^[a-f0-9]{64}$/.test(state.workerHash||''))throw Error('client_update_unavailable');const reload=globalThis.IMAGINE_CLIENT_RELEASE?.workerHash===state.workerHash?'panel':'extension';updating=reload==='extension';updateUntil=Date.now()+3000;return {reload}}catch(e){updating=false;throw e}
+   try{await topicContext(scope);const state=await rpc({op:'client_status'});if(state.state==='busy')throw Error('client_update_busy');if(state.state!=='ready'||! /^[a-f0-9]{40}$/.test(state.commit||'')||! /^[a-f0-9]{64}$/.test(state.workerHash||''))throw Error('client_update_unavailable');const reload=globalThis.IMAGINE_CLIENT_RELEASE?.workerHash===state.workerHash?'panel':'extension';if(reload==='extension')await chrome.storage.local.set({[HANDOFF]:{nonce:crypto.randomUUID(),expiresAt:Date.now()+3000}});updating=reload==='extension';updateUntil=Date.now()+3000;return {reload}}catch(e){updating=false;throw e}
   }
   if(message?.type==='context'&&['type','type,windowId'].includes(Object.keys(message).sort().join(','))){if(!scope&&(!Number.isSafeInteger(message.windowId)||message.windowId<0))throw Error('invalid_request');return topicContext(scope,message.windowId)}
   if(message?.type==='capture'&&['type,windowId','coverage,type,windowId'].includes(Object.keys(message).sort().join(','))){if(scope&&message.windowId!==scope.windowId)throw Error('conversation_tab_changed');return capture(message.windowId,message.coverage,scope?.tabId??null)}

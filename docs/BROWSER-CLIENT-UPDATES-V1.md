@@ -27,18 +27,24 @@ scoped side panel can request an update; arbitrary paths and commands are reject
 
 Update refuses active or uncertain work, unconsumed consent, unknown installation
 state and failed draft persistence. It never dispatches another read or reuses
-consent. An unchanged worker bundle allows the panel to reload in place. A changed
+consent. An unchanged manifest and worker bundle allows the panel to reload in place. A changed
 worker bundle requires `chrome.runtime.reload()`; Chrome may close the side panel,
 in which case clicking the existing toolbar icon restores it. Chrome itself does
 not need restarting. A fresh Toolbar Grant remains necessary if Chrome cleared
 page access. No button can manufacture that grant.
 
-Tab-topic bindings migrate from session storage to local storage so extension
-reload can retain the same topic. A genuine browser startup clears only the tab
+Tab-topic bindings migrate from session storage to local storage so an approved
+extension reload can retain the same topic through a short-lived own-worker
+handoff. A session sentinel is checked on each worker wake. Pending clears survive
+worker replacement and are retried; a missing sentinel fails closed into clearing.
+A genuine browser startup clears only the tab
 bindings, not saved topic records, avoiding reuse of old browser tab identifiers.
 Completed jobs are recovered with status reads only. Pending jobs are not replayed.
 First installation can recover a unique legacy saved read topic using content-free
-host task/tab/window bindings. Ambiguous topics, task-only/operator legacy records
+host task/tab/window bindings and a saved URL hash matched to live permitted tab
+metadata. Migration does not require installation/occupancy readiness and degrades
+to a fresh topic when binding evidence is unavailable. No capture or broader grant
+is requested. Ambiguous topics, task-only/operator legacy records
 with no source binding, and draft-only legacy records are retained in local storage
 but are not guessed into a tab. Future updates retain their new durable bindings.
 

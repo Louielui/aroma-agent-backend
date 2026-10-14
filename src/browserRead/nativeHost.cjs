@@ -20,7 +20,7 @@ async function main(){
  }
  const broker=createBroker({request:request('browser-read'),clientStatus:async()=>{
   const state=await request('browser-client')({op:'status'})
-  if(state.state!=='ready'||state.activeJobs!==0)return {state:state.state==='busy'?'busy':'unavailable'}
+  if(state.state!=='ready'||state.activeJobs!==0)return {state:state.state==='busy'?'busy':'unavailable',bindings:state.bindings}
   return {...require('./clientUpdate.js').readInstallation({bootCommit:state.bootCommit}),bindings:state.bindings}
  }})
  const operator=require('./operatorBroker.cjs').createOperatorBroker({request:request('browser-operator'),executor:require('./nativeInput.cjs').createExecutor()})

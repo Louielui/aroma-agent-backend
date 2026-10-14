@@ -38,7 +38,7 @@ foreach($browserName in $browserNames){
 }
 $browserManifest=Get-Content -LiteralPath (Join-Path $browserRelease 'extension/manifest.json') -Raw | ConvertFrom-Json
 $browserWorkerHasher=[Security.Cryptography.SHA256]::Create()
-try{$browserWorkerHash=([BitConverter]::ToString($browserWorkerHasher.ComputeHash([Text.Encoding]::UTF8.GetBytes((@($browserPins['worker.js'],$browserPins['collector.js'],$browserPins['operator.js']) -join ':'))))).Replace('-','').ToLowerInvariant()}finally{$browserWorkerHasher.Dispose()}
+try{$browserWorkerHash=([BitConverter]::ToString($browserWorkerHasher.ComputeHash([Text.Encoding]::UTF8.GetBytes((@($browserPins['manifest.json'],$browserPins['worker.js'],$browserPins['collector.js'],$browserPins['operator.js']) -join ':'))))).Replace('-','').ToLowerInvariant()}finally{$browserWorkerHasher.Dispose()}
 $browserReleaseScript='globalThis.IMAGINE_CLIENT_RELEASE='+(@{commit=$browserCommit;workerHash=$browserWorkerHash}|ConvertTo-Json -Compress)+";`n"
 [IO.File]::WriteAllText((Join-Path $browserRelease 'extension/release.js'),$browserReleaseScript,(New-Object Text.UTF8Encoding($false)))
 $browserPins['release.js']=(Get-FileHash -LiteralPath (Join-Path $browserRelease 'extension/release.js')).Hash.ToLowerInvariant()

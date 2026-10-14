@@ -320,6 +320,7 @@ const FILE_CLASS = Object.freeze({
   //                                                          leaves six opaque names to guess among.
 
   // ── MATCHING — his words are compared against this. ────────────────────────
+  'browserRead/clientUpdate.js': CLASS.MATCHING, // Exact closed manifest identity; translation would alter the publication guard.
   'core/taskPlanner/continuation.js': CLASS.MATCHING, // Current Owner confirmation and bounded design scope.
   'core/taskPlanner/dialogue.js': CLASS.INTERFACE, // Host action receipts in the current dialogue language.
   'core/taskPlanner/boundPlan.js': CLASS.INTERFACE, // Bound confirmation and localized actual job status.
