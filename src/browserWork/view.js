@@ -12,7 +12,7 @@ function answer(v){return v&&typeof v.text==='string'?{text:v.text.slice(0,12000
 function clock(start,end,now){if(!start)return null;const finish=end?Date.parse(end):now,duration=finish-Date.parse(start);return Number.isFinite(duration)&&duration>=0?Math.floor(duration/1000):null}
 function readView(r,now){
  if(!ID.test(r?.id||'')||r.workflow!=='browser_context_read'||!READ_STATES.has(r.state)||typeof r.question!=='string'||!Array.isArray(r.timeline)||r.timeline.length>50)throw Error('browser_work_unavailable')
- const timeline=r.timeline.map(e=>({stage:READ_PHASES.has(e.stage)?e.stage:'unknown',at:time(e.at)})),last=timeline.at(-1),startedAt=timeline.find(e=>e.stage==='consent_consumed_before_dispatch')?.at||null,terminal=['completed','failed','cancelled','interrupted'].includes(r.state),endedAt=terminal?last?.at||null:null
+ const timeline=r.timeline.map(e=>({stage:READ_PHASES.has(e.stage)?e.stage:'unknown',at:time(e.at)})),last=timeline.at(-1),startedAt=timeline.find(e=>e.stage==='consent_consumed_before_dispatch')?.at||null,terminalStage={completed:'answer_saved',failed:'failed_no_retry',cancelled:'cancelled',interrupted:'process_restarted_no_retry'}[r.state],endedAt=terminalStage&&last?.stage===terminalStage?last.at:null
  const phase=last?.stage||'unknown',active=r.state==='processing'&&phase!=='unknown'&&!!last?.at&&!!startedAt
  return {id:r.id,state:r.state,phase,active,startedAt,endedAt,elapsedSeconds:clock(startedAt,endedAt,active?now:NaN),updatedAt:last?.at||null,question:r.question.slice(0,1000),selection:selection(r.selection),answer:answer(r.result),sourceOrigin:origin(r.source?.origin)}
 }
@@ -35,7 +35,8 @@ function createBrowserWork({reads,operators=()=>[],audits=()=>[],now=Date.now}){
    let state=j?.state||({answer_from_observation:'completed',owner_stopped:'stopped',failed_no_retry:'failed',native_input_unknown:'failed'}[last?.stage]||'unavailable')
    if(j&&OP_ACTIVE.has(state)&&Number.isFinite(j.deadline)&&j.deadline<=now())state='expired'
    if(!OP_ACTIVE.has(state)&&!['completed','stopped','failed','expired','unavailable'].includes(state))state='unavailable'
-   const phase=last?.stage||'unknown',active=!!j&&OP_ACTIVE.has(state)&&phase!=='unknown'&&!!startedAt,endedAt=['completed','stopped','failed'].includes(state)?last?.at||null:null,scope=j?.scope
+   const phase=last?.stage||'unknown',active=!!j&&OP_ACTIVE.has(state)&&phase!=='unknown'&&!!startedAt,terminalStage=state==='completed'?'answer_from_observation':state==='stopped'?'owner_stopped':state==='failed'?'failed_no_retry':null
+   const endedAt=terminalStage&&(last?.stage===terminalStage||state==='failed'&&last?.stage==='native_input_unknown')?last.at:null,scope=j?.scope
    const latest={id,state,phase,active,startedAt,endedAt,elapsedSeconds:clock(startedAt,endedAt,active?now():NaN),updatedAt:last?.at||null,question:text(j?.question,1000),selection:selection(j?.selection||{model:timeline.find(e=>e.model)?.model}),answer:answer(j?.result),sourceOrigin:origin(scope?.url),steps:Number.isSafeInteger(j?.steps)?j.steps:last?.step||null}
    nativeTopics.push({kind:'operator',id,title:text(j?.question,180),turnCount:1,latest,sourceOrigin:latest.sourceOrigin,turns:[latest],historyAvailable:!!j})
   }

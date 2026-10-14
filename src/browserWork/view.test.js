@@ -34,6 +34,10 @@ test('Browser work retains native audit status after restart without inventing l
  const complete=f.view.detail('operator',a);assert.equal(complete.latest.state,'completed');assert.equal(complete.turns[0].answer,null);assert.equal(complete.turns[0].question,null);assert.equal(complete.historyAvailable,false);assert.equal(complete.latest.elapsedSeconds,3)
  const lost=f.view.detail('operator',b);assert.equal(lost.latest.state,'unavailable');assert.equal(lost.latest.active,false);f.unchanged()
 })
+test('Browser work never assigns terminal duration from an earlier or missing audit event',()=>{
+ const a=randomUUID(),b=randomUUID(),f=fixture([read(a,{timeline:[{stage:'consent_consumed_before_dispatch',at},{stage:'unsupported_terminal_event',at:'2026-10-14T17:00:09Z'}]})],[{id:b,state:'stopped',warning:'stop_audit_unavailable',selection:model}],[{id:b,workflow:'browser_operator',stage:'owner_started',at:Date.parse(at)},{id:b,workflow:'browser_operator',stage:'vision_dispatched',at:Date.parse(at)+1000}])
+ assert.equal(f.view.detail('read',a).latest.elapsedSeconds,null);assert.equal(f.view.detail('operator',b).latest.state,'stopped');assert.equal(f.view.detail('operator',b).latest.active,false);assert.equal(f.view.detail('operator',b).latest.endedAt,null);assert.equal(f.view.detail('operator',b).latest.elapsedSeconds,null);f.unchanged()
+})
 test('Browser work visibly reports unavailable stores and refuses broken parent chains instead of empty success',()=>{
  const f=require('./view').createBrowserWork({reads:{all:()=>{throw Error('SECRET_PATH')}},operators:()=>[],audits:()=>[]});assert.deepEqual(f.list().unavailableSources,['read']);assert.throws(()=>f.detail('read',randomUUID()),/browser_work_unavailable/)
  const a=randomUUID(),broken=fixture([read(a,{parentId:randomUUID()})]);assert.deepEqual(broken.view.list().unavailableSources,['read']);assert.throws(()=>broken.view.detail('read',a),/browser_work_unavailable/)

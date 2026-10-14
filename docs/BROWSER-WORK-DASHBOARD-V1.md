@@ -30,6 +30,10 @@ closed panel. Failed observation marks the view unconfirmed, retains earlier
 retrieved content and stops the spinner and clock. Manual refresh still reads
 only the original records. Terminal clocks remain fixed. Unknown phases and
 missing timestamps cannot create activity or an invented duration.
+Terminal duration requires the matching terminal event. A stopped operation
+with a failed Stop audit retains its observed stopped state, but cannot borrow
+the earlier model-start timestamp as its end time. Unknown read terminal events
+similarly leave duration unavailable.
 
 All saved read jobs are bounded by their existing 500-job store. The latest 100
 native operations are shown, retaining every current live job; older audit
