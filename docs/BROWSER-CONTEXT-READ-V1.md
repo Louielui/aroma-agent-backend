@@ -27,12 +27,22 @@ effort and omitted scope before explicit external-model consent.
 
 The worker registers an explicit `chrome.action.onClicked` handler and disables
 automatic action-to-panel toggling. A side-panel button is not itself an activeTab
-grant. The handler opens only the window returned by Chrome's toolbar action;
+grant. The handler opens only the tab returned by Chrome's toolbar action;
 it does not read a page or call the model. Preparation gets the panel's own
 window ID, and read verification rechecks that same prepared window instead of
 whichever unrelated Chrome/PWA window most recently acquired focus. Opening a
 panel from another browser entry point can still require the toolbar gesture.
 No persistent host permissions or new Chrome permissions are added.
+
+## Independent browser topics
+
+The panel is configured per Chrome tab, with explicit tab and window IDs in its packaged panel URL. Each tab receives a random topic binding in `chrome.storage.session`; the binding survives service-worker restart but is cleared with the browser session. A tab moved to another window retains its topic while its panel path is rebound. Closing a tab removes only its session binding, not saved answers.
+
+Each topic has a separate local head, draft, mode and title. Switching tabs or windows never loads another topic's head. New Chat removes only the current topic's display state; backend answers remain retained. Concurrent restore shares one binding initialization per tab. A late restore cannot replace a newer New Chat state. The legacy global `lastReadId` is preserved but not silently assigned to a new tab. Topic metadata uses tab/window IDs only; it does not collect page titles, URLs, history, cookies or pixels, or dispatch a model.
+
+The worker accepts only its own exact packaged panel path and closed numeric tab/window parameters. A scoped page capture refuses another active tab or window before script injection. A moved page-read conversation can still require a new source-bound conversation; task-only topics keep their independent history. This tranche changes conversation isolation only. Website operation, screenshot input and real mouse execution remain separate capabilities and are not enabled by topic storage.
+
+Tests drive three real headless panel instances with a real browser-read service and synthetic provider: two tabs in one window and a third in another window. They prove independent restore, draft isolation, same-topic follow-up, per-topic reset, preserved legacy state and no repeated inference on reload. Worker fixtures separately test concurrent binding, cross-window refusal, foreign extension URLs, extra parameters and no page capture during topic initialization.
 
 The server binds the lease to tab/window/document/main-frame identity, URL digest,
 content digest and captured central choice. The worker re-collects on confirmation,
