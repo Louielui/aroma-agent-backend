@@ -1,6 +1,6 @@
 param([switch]$PrepareOnly)
 $ErrorActionPreference='Stop'
-# Only this fixed Owner repository, per-user host and read-only extension.
+# Only this fixed Owner repository, per-user host and consent-bound extension.
 $browserRepo='C:\Aroma\aroma-agent-backend'
 $browserNode='C:\Program Files\nodejs\node.exe'
 if (-not (Test-Path -LiteralPath $browserNode)) { throw 'NodeRuntimeUnavailable' }
@@ -20,7 +20,7 @@ function Read-BrowserGitBlob([string]$name){
   $buffer=New-Object IO.MemoryStream
   try{[void]$process.Start();$process.StandardOutput.BaseStream.CopyTo($buffer);$process.WaitForExit();if($process.ExitCode -ne 0){throw 'GitBlobUnavailable'};return $buffer.ToArray()}finally{$buffer.Dispose();$process.Dispose()}
 }
-$browserNames=@('src/browserRead/nativeHost.cjs','src/browserRead/contract.js','src/browserRead/nativeProtocol.js','extensions/browser-read/manifest.json','extensions/browser-read/worker.js','extensions/browser-read/collector.js','extensions/browser-read/sidepanel.html','extensions/browser-read/sidepanel.js','extensions/browser-read/sidepanel.css')
+$browserNames=@('src/browserRead/nativeHost.cjs','src/browserRead/contract.js','src/browserRead/nativeProtocol.js','src/browserRead/operatorBroker.cjs','src/browserRead/nativeInput.cjs','src/browserOperator/NativeBrowserInput.cs','extensions/browser-read/manifest.json','extensions/browser-read/worker.js','extensions/browser-read/collector.js','extensions/browser-read/operator.js','extensions/browser-read/operator-panel.js','extensions/browser-read/sidepanel.html','extensions/browser-read/sidepanel.js','extensions/browser-read/sidepanel.css')
 $browserPins=@{}
 foreach($browserName in $browserNames){
   $browserSource=Join-Path $browserRepo $browserName
@@ -41,9 +41,13 @@ $browserHasher=[Security.Cryptography.SHA256]::Create()
 try{$browserIdHash=([BitConverter]::ToString($browserHasher.ComputeHash($browserKey))).Replace('-','').ToLowerInvariant().Substring(0,32)}finally{$browserHasher.Dispose()}
 $browserExtensionId=-join ($browserIdHash.ToCharArray() | ForEach-Object { [char](97+[Convert]::ToInt32($_.ToString(),16)) })
 $browserOrigin='chrome-extension://'+$browserExtensionId+'/'
-[IO.File]::WriteAllText((Join-Path $browserRelease 'host-config.json'),(@{extensionOrigin=$browserOrigin;commit=$browserCommit}|ConvertTo-Json -Compress),(New-Object Text.UTF8Encoding($false)))
+$browserInputExe=Join-Path $browserRelease 'ImagineBrowserInput.exe'
+Add-Type -Path (Join-Path $browserRelease 'NativeBrowserInput.cs') -ReferencedAssemblies 'System.Core','System.Drawing','System.Web.Extensions',(Join-Path $env:SystemRoot 'Microsoft.NET/Framework64/v4.0.30319/WPF/UIAutomationClient.dll'),(Join-Path $env:SystemRoot 'Microsoft.NET/Framework64/v4.0.30319/WPF/UIAutomationTypes.dll'),(Join-Path $env:SystemRoot 'Microsoft.NET/Framework64/v4.0.30319/WPF/WindowsBase.dll') -OutputAssembly $browserInputExe -OutputType ConsoleApplication
+$browserInputHash=(Get-FileHash -LiteralPath $browserInputExe).Hash.ToLowerInvariant()
+$browserPins['ImagineBrowserInput.exe']=$browserInputHash
+[IO.File]::WriteAllText((Join-Path $browserRelease 'host-config.json'),(@{extensionOrigin=$browserOrigin;commit=$browserCommit;inputHash=$browserInputHash}|ConvertTo-Json -Compress),(New-Object Text.UTF8Encoding($false)))
 $browserPins['host-config.json']=(Get-FileHash -LiteralPath (Join-Path $browserRelease 'host-config.json')).Hash.ToLowerInvariant()
-$browserPinLiteral=($browserPins.GetEnumerator() | Where-Object {$_.Key -in @('nativeHost.cjs','contract.js','nativeProtocol.js','host-config.json')} | ForEach-Object {'{"'+$_.Key+'","'+$_.Value+'"}'} ) -join ','
+$browserPinLiteral=($browserPins.GetEnumerator() | Where-Object {$_.Key -in @('nativeHost.cjs','contract.js','nativeProtocol.js','operatorBroker.cjs','nativeInput.cjs','NativeBrowserInput.cs','ImagineBrowserInput.exe','host-config.json')} | ForEach-Object {'{"'+$_.Key+'","'+$_.Value+'"}'} ) -join ','
 $browserCsharp=@"
 using System; using System.IO; using System.Diagnostics; using System.Collections.Generic; using System.Security.Cryptography; using System.Threading.Tasks;
 public static class ImagineBrowserReadHost {

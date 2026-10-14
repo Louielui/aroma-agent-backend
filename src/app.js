@@ -805,7 +805,9 @@ function createApp (options = {}) {
 
   // ── Middleware ────────────────────────────────────────────────────────────────
   const ordinaryJson = express.json({ limit: '50kb' }), imageJson = require('./chat/imageBodyParser').createImageBodyParser()
-  app.use((req, res, next) => (req.path === '/api/v1/demo/image-intake' ? imageJson : ordinaryJson)(req, res, next))
+  const operatorJson = express.json({ limit: '3mb' })
+  app.use('/api/v1/browser-operator', requireServiceToken, (req,res,next)=>req.headers.origin?res.status(403).json({error:'native_broker_required'}):next())
+  app.use((req, res, next) => (req.path === '/api/v1/browser-operator' ? operatorJson : req.path === '/api/v1/demo/image-intake' ? imageJson : ordinaryJson)(req, res, next))
   app.use(express.urlencoded({ extended: false }))
 
   // ── OWNER AUTHENTICATION ──────────────────────────────────────────────────────
@@ -1239,6 +1241,22 @@ function createApp (options = {}) {
   })
   app.use('/api/v1/browser-read', requireServiceToken)
   app.use(require('./browserRead/routes').createRouter({ service: browserRead }))
+  const browserOperator = require('./browserOperator/service').createOperator({
+    companyId: Number(process.env.SEVEN_SHIFTS_COMPANY_ID),
+    selection: () => modelCenter.read().brain,
+    provider: choice => {
+      if (process.env.CHAT_BACKEND !== 'codex-subscription') throw Error('model_unavailable')
+      return new (require('./adapters/CodexSubscriptionAdapter').CodexSubscriptionAdapter)(choice)
+    },
+    audit: event => {
+      const fs=require('node:fs'),dir=path.join(require('./store/dataDir').resolveDataDir(),'browser-operator-audit')
+      fs.mkdirSync(dir,{recursive:true});fs.writeFileSync(path.join(dir,require('node:crypto').randomUUID()+'.json'),JSON.stringify(event),{flag:'wx',mode:0o600})
+    }
+  })
+  app.use(require('./browserOperator/routes').createRouter({ service: browserOperator }))
+  app.get('/browser-operator-fixture', (req,res) => {
+    res.set('Cache-Control','no-store').type('html').send(require('node:fs').readFileSync(path.join(__dirname,'browserOperator/fixture.html'),'utf8'))
+  })
   app.use('/model-center', requireOwner)
   app.use('/action-center', requireOwner)
   app.use('/api/v1/scheduler-actions', requireOwner)
