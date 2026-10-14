@@ -7420,3 +7420,7 @@ company-scoped role responses may omit company_id but an explicit foreign compan
 one missing assigned-role wage preserves other verified roles and never becomes a zero rate
 bounded deterministic wage reports fit native frames while generated answers retain their smaller limit
 large wage reports visibly bound rendered employee rows and retain every measured coverage count
+saved wage presentation survives get but is omitted from follow-up history and shares the result byte bound
+the real wage panel groups active users by rate and keeps inactive rows, roles and models collapsed
+wage summaries merge equal rates per employee and separate inactive rows without hiding zero or missing wages
+the default wage answer groups employees sharing an hourly rate and keeps salary and role-dependent rates distinct
