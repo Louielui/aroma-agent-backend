@@ -21,8 +21,13 @@ Window movement, resizing, focus or frame changes refuse the next native action.
 
 The same captured central subscription brain receives one ephemeral PNG and
 bounded visible text per step. Page data and prior observations are untrusted.
-The model returns a closed action. Live 7shifts clicks can only select an observed,
-unobscured company Employee/Employee list link; free clicks, other routes and
+The model returns a closed action.
+The schema explicitly constrains coordinates to normalized fractions from zero
+to one and explains that text is empty except for fixture typing, and answer is
+empty except for done. Invalid actions record only a closed refusal category;
+neither raw model output, page text, frames nor input tickets enter that audit.
+Live 7shifts clicks can only select an observed, unobscured company
+Employee/Employee list link; free clicks, other routes and
 typing are refused. Move and scroll are supported in the approved viewport.
 The owned local fixture additionally admits its button/input, the exact synthetic
 text `Imagine test`, and Enter in that fixture input. No shell, clipboard,
@@ -74,3 +79,8 @@ window, the native host refused the fixture's scheme-omitted address display
 before capture or input. Compiled-predicate regression reproduces that refusal
 and exercises the bounded display correction and unchanged Document check.
 Positive trusted input and Stop acceptance remain pending after package update.
+After the PR #82 Native Host update, the real fixture reached vision dispatch
+and an actual `claude-opus-5-5` return, then refused `invalid_operator_action`
+before sealing or claiming input. The earlier generic error did not identify
+the malformed field; its cause remains unknown until the bounded diagnostics
+measure it. Native input and Stop acceptance remain pending.
