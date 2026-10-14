@@ -7482,3 +7482,4 @@ Browser work retains native audit status after restart without inventing lost qu
 Browser work visibly reports unavailable stores and refuses broken parent chains instead of empty success
 Browser work exposes only authenticated Owner GET routes and observes the same source without executing jobs
 main Browser work panel shows measured progress saved results and errors through GET only while preserving the chat draft
+Browser work never assigns terminal duration from an earlier or missing audit event
