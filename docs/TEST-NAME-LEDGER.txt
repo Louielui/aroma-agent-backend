@@ -7467,3 +7467,9 @@ all-status wage filtering labels inactive matches separately from unresolved use
 successful wage reads distinguish missing role records and no assignments from permission failures
 wage gap reasons preserve ambiguous rates and future records instead of inventing missing-role zeros
 wage answers explain source gaps bilingually while retaining unknown membership and rejecting unsafe reasons
+the live work card measures elapsed time and host phases and remains visible in a narrow long conversation
+status-only recovery shows a pending phase and finishes a saved answer without replaying read or model calls
+work-card stop survives a late model reply and cannot overwrite the next question or revive a spinner
+stopping preparation before its reply arrives cancels only the orphan approval and preserves the next draft
+lost progress replies stop the spinner and recovery only observes the saved job without redispatch
+model progress is durable status evidence and status reads never dispatch or resurrect cancelled work
