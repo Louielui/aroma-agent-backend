@@ -42,7 +42,10 @@ bindings, not saved topic records, avoiding reuse of old browser tab identifiers
 Completed jobs are recovered with status reads only. Pending jobs are not replayed.
 First installation can recover a unique legacy saved read topic using content-free
 host task/tab/window bindings and a saved URL hash matched to live permitted tab
-metadata. Migration does not require installation/occupancy readiness and degrades
+metadata. Recovery runs separately when each tab requests its own context and its
+URL is readable through its existing grant; opening one panel does not mark other
+tabs as migrated. The URL is checked again after the metadata reply. Migration
+does not require installation/occupancy readiness and degrades
 to a fresh topic when binding evidence is unavailable. No capture or broader grant
 is requested. Ambiguous topics, task-only/operator legacy records
 with no source binding, and draft-only legacy records are retained in local storage

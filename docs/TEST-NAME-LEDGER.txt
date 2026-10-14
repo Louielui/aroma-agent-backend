@@ -7523,3 +7523,4 @@ legacy migration refuses a reused tab identifier whose live URL hash differs fro
 a failed startup clear cannot revive stale tab bindings when Chrome later recreates the worker
 a manifest change invalidates panel-only reload even when all worker scripts are unchanged
 managed publication rejects optional hosts and unexpected manifest capabilities
+legacy topics recover separately when each tab receives its own activeTab grant

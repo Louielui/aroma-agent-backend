@@ -3,7 +3,6 @@ importScripts('release.js','collector.js','operator.js')
 const HOST='com.imagine.browser_read',pending=new Map()
 let port=null,closeTimer=null
 let updating=false,updateUntil=0,startupReady=Promise.resolve()
-let migration=null
 let bindingInit=null,coldStartup=false
 const SESSION='browser-session-ready-v1',HANDOFF='browser-update-handoff-v1'
 async function resetBindings(cold){
@@ -37,19 +36,22 @@ chrome.runtime.onStartup?.addListener(()=>{coldStartup=true;startupReady=startup
 function panelScope(url){const u=new URL(url);if(u.protocol!==new URL(chrome.runtime.getURL('')).protocol||u.host!==new URL(chrome.runtime.getURL('')).host||u.pathname!=='/sidepanel.html'||u.hash||[...u.searchParams.keys()].sort().join(',')!=='tabId,windowId')throw Error('side_panel_required');const tabId=u.searchParams.get('tabId'),windowId=u.searchParams.get('windowId');if(!/^\d+$/.test(tabId)||!/^\d+$/.test(windowId)||!Number.isSafeInteger(Number(tabId))||!Number.isSafeInteger(Number(windowId)))throw Error('side_panel_required');return {tabId:Number(tabId),windowId:Number(windowId)}}
 async function topicContext(scope,windowId){
  await startupReady.catch(()=>{});await ensureBindings()
- if(chrome.storage.local&&!migration)migration=(async()=>{
-  const stored=await chrome.storage.local.get(null);if(stored['browser-client-topic-migration-v1'])return
-  const topics=Object.entries(stored).filter(([key,value])=>/^browser-topic:[a-f0-9-]{36}$/.test(key)&&/^[a-f0-9-]{36}$/.test(value?.headId||''));if(topics.length>500)throw Error('conversation_unavailable')
-  if(topics.length){let metadata;try{metadata=await rpc({op:'client_status'})}catch{metadata=null}const bindings=Array.isArray(metadata?.bindings)&&metadata.bindings.length<=500?metadata.bindings:[],byTab=new Map()
-   for(const[key,value]of topics){const b=bindings.find(b=>b.headId===value.headId);if(!b||!Number.isSafeInteger(b.tabId)||b.tabId<0||!Number.isSafeInteger(b.windowId)||b.windowId<0||! /^[a-f0-9]{64}$/.test(b.urlHash||''))continue;const tab=await chrome.tabs.get(b.tabId).catch(()=>null);if(!tab||tab.windowId!==b.windowId||typeof tab.url!=='string')continue;const bytes=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(tab.url)),urlHash=Array.from(new Uint8Array(bytes),x=>x.toString(16).padStart(2,'0')).join('');if(urlHash!==b.urlHash)continue;byTab.set(b.tabId,[...(byTab.get(b.tabId)||[]),key.slice('browser-topic:'.length)])}
-   for(const [id,keys]of byTab){const key='browser-tab:'+id,legacy=await chrome.storage.session.get(key);if(!stored[key]&&keys.length===1)await chrome.storage.local.set({[key]:keys[0]});else if(!stored[key]&&keys.includes(legacy[key]))await chrome.storage.local.set({[key]:legacy[key]})}
-  }
-  await chrome.storage.local.set({'browser-client-topic-migration-v1':true})
- })().catch(e=>{migration=null;throw e})
- await migration
  const tab=scope?await chrome.tabs.get(scope.tabId):(await chrome.tabs.query({active:true,windowId}))[0]
  if(!tab||!Number.isSafeInteger(tab.id)||!Number.isSafeInteger(tab.windowId)||scope&&scope.windowId!==tab.windowId)throw Error('conversation_tab_changed')
- if(!topicLoads.has(tab.id)){const key='browser-tab:'+tab.id;topicLoads.set(tab.id,(async()=>{const storage=chrome.storage.local||chrome.storage.session,stored=await storage.get(key),legacy=await chrome.storage.session.get(key);const id=stored[key]||legacy[key]||crypto.randomUUID();if(!/^[a-f0-9-]{36}$/.test(id))throw Error('conversation_unavailable');if(!stored[key])await storage.set({[key]:id});return id})().catch(e=>{topicLoads.delete(tab.id);throw e}))}
+ if(!topicLoads.has(tab.id)){const key='browser-tab:'+tab.id;topicLoads.set(tab.id,(async()=>{
+  const storage=chrome.storage.local||chrome.storage.session,stored=await storage.get(key),legacy=await chrome.storage.session.get(key);let recovered=null
+  // activeTab exposes only the granted tab URL. Recover this tab independently;
+  // opening one panel must not permanently abandon topics in other tabs.
+  if(chrome.storage.local&&!stored[key]&&typeof tab.url==='string'){
+   const all=await storage.get(null),topics=Object.entries(all).filter(([k,v])=>/^browser-topic:[a-f0-9-]{36}$/.test(k)&&/^[a-f0-9-]{36}$/.test(v?.headId||''));if(topics.length>500)throw Error('conversation_unavailable')
+   if(!all['browser-client-topic-migration-v1']&&topics.length){
+    let metadata;try{metadata=await rpc({op:'client_status'})}catch{metadata=null}
+    const bindings=Array.isArray(metadata?.bindings)&&metadata.bindings.length<=500?metadata.bindings:[],bytes=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(tab.url)),urlHash=Array.from(new Uint8Array(bytes),x=>x.toString(16).padStart(2,'0')).join(''),current=await chrome.tabs.get(tab.id).catch(()=>null),keys=current?.windowId===tab.windowId&&current.url===tab.url?topics.filter(([,v])=>bindings.some(b=>b.headId===v.headId&&b.tabId===tab.id&&b.windowId===tab.windowId&&b.urlHash===urlHash)).map(([k])=>k.slice('browser-topic:'.length)):[]
+    if(keys.length===1)recovered=keys[0];else if(keys.includes(legacy[key]))recovered=legacy[key]
+   }
+  }
+  const id=stored[key]||recovered||legacy[key]||crypto.randomUUID();if(!/^[a-f0-9-]{36}$/.test(id))throw Error('conversation_unavailable');if(!stored[key])await storage.set({[key]:id});return id
+ })().catch(e=>{topicLoads.delete(tab.id);throw e}))}
  const id=await topicLoads.get(tab.id);return {key:'browser-topic:'+id,tabId:tab.id,windowId:tab.windowId}
 }
 async function capture(windowId,coverage='main_frame_visible_text',expectedTab=null){
