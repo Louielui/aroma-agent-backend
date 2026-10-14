@@ -7424,3 +7424,6 @@ saved wage presentation survives get but is omitted from follow-up history and s
 the real wage panel groups active users by rate and keeps inactive rows, roles and models collapsed
 wage summaries merge equal rates per employee and separate inactive rows without hiding zero or missing wages
 the default wage answer groups employees sharing an hourly rate and keeps salary and role-dependent rates distinct
+real panels isolate topics, drafts and new-chat reset across tabs and windows without replaying inference
+topic context keys are unique per tab, survive concurrent restore, and never capture the page
+a scoped panel cannot capture another active tab or another window and rejects extra scope parameters
