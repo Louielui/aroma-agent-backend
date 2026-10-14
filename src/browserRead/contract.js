@@ -19,12 +19,9 @@ function validateSource(s,now){
 }
 function validate(b){
  const shapes={prepare:['op','requestId','question','source'],read:['op','id','consent','source','text'],get:['op','id'],cancel:['op','id']}
- const taskShape=b?.op==='prepare'?['op','requestId','question']:b?.op==='read'?['op','id','consent']:null
- const task=taskShape&&(exact(b,taskShape)||(b.op==='prepare'&&exact(b,[...taskShape,'parentId'])&&ID.test(b.parentId)))
- const taskPage=b?.op==='prepare'&&b.taskVersion===1&&(exact(b,[...shapes.prepare,'taskVersion'])||(exact(b,[...shapes.prepare,'taskVersion','parentId'])&&ID.test(b.parentId)))
- if(!b||!Object.hasOwn(shapes,b.op)||(!task&&!taskPage&&!exact(b,shapes[b.op])&&!(b.op==='prepare'&&exact(b,[...shapes.prepare,'parentId'])&&ID.test(b.parentId)))||!ID.test(b.op==='prepare'?b.requestId:b.id))throw Error('invalid_request')
+ if(!b||!Object.hasOwn(shapes,b.op)||(!exact(b,shapes[b.op])&&!(b.op==='prepare'&&exact(b,[...shapes.prepare,'parentId'])&&ID.test(b.parentId)))||!ID.test(b.op==='prepare'?b.requestId:b.id))throw Error('invalid_request')
  if(b.op==='prepare'&&(typeof b.question!=='string'||!b.question.trim()||b.question.length>MAX_QUESTION))throw Error('invalid_request')
- if(b.op==='read'&&(typeof b.consent!=='boolean'||(!task&&(typeof b.text!=='string'||!b.text.trim()||b.text.length>MAX_TEXT))))throw Error('invalid_request')
+ if(b.op==='read'&&(typeof b.consent!=='boolean'||typeof b.text!=='string'||!b.text.trim()||b.text.length>MAX_TEXT))throw Error('invalid_request')
  return b
 }
 module.exports={ID,MAX_TEXT,MAX_QUESTION,exact,digest,site,validateSource,validate}

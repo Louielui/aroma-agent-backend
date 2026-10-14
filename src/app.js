@@ -1224,12 +1224,7 @@ function createApp (options = {}) {
   const topicStore = require('./topics/workspaces').createTopicStore({ dataDir: require('./store/dataDir').resolveDataDir() })
   const brainCatalogue = () => new (require('./adapters/CodexSubscriptionAdapter').CodexSubscriptionAdapter)().models()
   const modelCenter = require('./modelCenter/service').createModelCenter({ dataDir: require('./store/dataDir').resolveDataDir(), catalogue: brainCatalogue, topicForConversation: topicStore.topicForConversation })
-  const readTask = opts.readTask || require('./intake/readTask').createReadTask({audit:{append:event=>{
-    const fs=require('node:fs'),dir=path.join(require('./store/dataDir').resolveDataDir(),'read-task-audit')
-    fs.mkdirSync(dir,{recursive:true});fs.writeFileSync(path.join(dir,require('node:crypto').randomUUID()+'.json'),JSON.stringify({...event,at:new Date().toISOString()}),{flag:'wx',mode:0o600})
-  }}})
   const browserRead = require('./browserRead/service').createBrowserRead({
-    taskRunner: readTask,
     store: require('./browserRead/store').createStore(path.join(require('./store/dataDir').resolveDataDir(), 'browser-context-reads')),
     selection: () => modelCenter.read().brain,
     provider: choice => {
@@ -1282,7 +1277,6 @@ function createApp (options = {}) {
   app.use('/api/v1/capability-gaps', requireOwner)
   app.use(require('./capabilities/gapRoutes').createGapRouter({service:capabilityGaps}))
   app.use(createDemoRouter({
-    processIntakeFn: require('./intake/readTask').createIntakeHandler({task:readTask,fallback:require('./intake/intakeService').processIntake}),
     hrRechecks,
     capabilityGaps,
     sevenShiftsReport,
