@@ -3372,6 +3372,106 @@
   // ── 首頁 as a destination ──
   var homeBtn = document.getElementById('open-home')
   if (homeBtn) homeBtn.addEventListener('click', function () { showHome() })
+  // This panel observes existing Browser records. It has no execution endpoint.
+  var browserWork = { open: false, sequence: 0, busy: false, timer: null, clock: null, controller: null, selected: null, topics: [], until: 0 }
+  function bwNode (id) { return document.getElementById(id) }
+  function bwState (r) {
+    var states = { awaiting_consent: t('browserWork.waiting'), completed: t('browserWork.completed'), cancelled: t('browserWork.stopped'), stopped: t('browserWork.stopped'), failed: t('browserWork.failed'), interrupted: t('browserWork.interrupted'), expired: t('browserWork.expired'), unavailable: t('browserWork.unknown') }
+    return r.active ? t('browserWork.working') : (states[r.state] || t('browserWork.unknown'))
+  }
+  function bwPhase (r) {
+    if (r.state === 'completed') return r.hasAnswer ? (r.partial ? t('browserWork.savedPartial') : t('browserWork.saved')) : t('browserWork.noAnswer')
+    var phases = { prepared_no_model_call: t('browserWork.noModel'), consent_consumed_before_dispatch: t('browserWork.processing'), model_request_started: t('browserWork.model'), model_request_finished: t('browserWork.modelReturned'), read_task_started: t('browserWork.source'), read_task_finished: t('browserWork.sourceReturned'), vision_dispatched: t('browserWork.model'), vision_returned: t('browserWork.modelReturned'), owner_started: t('browserWork.native'), input_sealed: t('browserWork.native'), input_claimed: t('browserWork.native'), native_input_returned: t('browserWork.native') }
+    return r.active || r.state === 'awaiting_consent' ? (phases[r.phase] || t('browserWork.unknown')) : bwState(r)
+  }
+  function bwStopTimers () { clearTimeout(browserWork.timer); clearInterval(browserWork.clock); browserWork.timer = null; browserWork.clock = null }
+  function bwList () {
+    var list = bwNode('browser-work-list'), query = bwNode('browser-work-search').value.trim().toLocaleLowerCase()
+    var focused = document.activeElement && document.activeElement.getAttribute('data-browser-topic')
+    list.textContent = ''
+    var rows = browserWork.topics.filter(function (r) { return (r.title || t('browserWork.operator')).toLocaleLowerCase().indexOf(query) >= 0 })
+    if (!rows.length) list.appendChild(el('p', '', query ? t('browserWork.noMatch') : browserWork.incomplete ? t('browserWork.partial') : t('browserWork.empty')))
+    rows.forEach(function (r) {
+      var button = el('button', '', r.title || t('browserWork.operator')), key = r.kind + ':' + r.id
+      button.type = 'button'; button.setAttribute('data-browser-topic', key); button.setAttribute('aria-current', String(!!browserWork.selected && key === browserWork.selected.kind + ':' + browserWork.selected.id))
+      button.appendChild(el('small', '', (r.kind === 'read' ? t('browserWork.read') : t('browserWork.operator')) + ' · ' + bwState(r.latest) + ' · ' + t('browserWork.turns', { count: r.turnCount })))
+      if (r.latest.updatedAt && Number.isFinite(Date.parse(r.latest.updatedAt))) button.appendChild(el('small', '', t('browserWork.updated', { time: new Date(r.latest.updatedAt).toLocaleString() })))
+      button.addEventListener('click', function () {
+        browserWork.sequence++; if (browserWork.controller) browserWork.controller.abort(); browserWork.busy = false; bwStopTimers()
+        browserWork.selected = { kind: r.kind, id: r.id }; browserWork.until = Date.now() + 130000
+        bwNode('browser-work-detail').textContent = t('browserWork.loading'); bwList(); bwRefresh()
+      })
+      list.appendChild(button); if (focused === key) button.focus()
+    })
+  }
+  function bwDetail (data) {
+    if (!data || !Array.isArray(data.turns) || data.turns.length > 500 || !data.latest) throw Error('unavailable')
+    var box = bwNode('browser-work-detail'), oldScroll = bwNode('browser-work-overlay').querySelector('.browser-work-columns').scrollTop
+    var expanded = Array.from(box.querySelectorAll('details[open][data-browser-turn]')).map(function (n) { return n.getAttribute('data-browser-turn') })
+    clearInterval(browserWork.clock); browserWork.clock = null; box.textContent = ''
+    var latestTurn = data.turns.find(function (r) { return r.id === data.latest.id }), latest = Object.assign({}, data.latest, { hasAnswer: !!(latestTurn && latestTurn.answer), partial: latestTurn && latestTurn.answer && latestTurn.answer.complete === false })
+    var progress = el('section', 'browser-work-progress' + (latest.active ? ' is-working' : '')), title = el('strong', '', bwState(latest)), phase = el('p', '', bwPhase(latest)), timer = el('span')
+    title.id = 'browser-work-progress-title'; progress.appendChild(title); progress.appendChild(phase); progress.appendChild(timer); box.appendChild(progress)
+    var measured = performance.now()
+    function showTime () { timer.textContent = Number.isSafeInteger(latest.elapsedSeconds) && latest.elapsedSeconds >= 0 ? (latest.active ? t('browserWork.elapsed', { seconds: latest.elapsedSeconds + Math.floor((performance.now() - measured) / 1000) }) : t('browserWork.duration', { seconds: latest.elapsedSeconds })) : '' }
+    showTime(); if (latest.active) browserWork.clock = setInterval(showTime, 1000)
+    if (!data.historyAvailable) box.appendChild(el('p', '', t('browserWork.noNativeContent')))
+    data.turns.forEach(function (r) {
+      var current = r.id === data.latest.id, turn = el(current ? 'article' : 'details', 'browser-work-turn')
+      if (!current) { turn.setAttribute('data-browser-turn', r.id); turn.open = expanded.includes(r.id); turn.appendChild(el('summary', '', r.question || t('browserWork.operator'))) } else if (r.question) turn.appendChild(el('h3', '', r.question))
+      if (r.answer && typeof r.answer.text === 'string') turn.appendChild(el('div', 'browser-work-answer', r.answer.text))
+      else turn.appendChild(el('p', '', r.state === 'processing' ? t('browserWork.processing') : t('browserWork.noAnswer')))
+      var evidence = el('details'); evidence.appendChild(el('summary', '', t('browserWork.evidence')))
+      var facts = [r.selection && r.selection.model, r.selection && r.selection.effort, r.answer && r.answer.actualModel, data.sourceOrigin].filter(function (v) { return typeof v === 'string' && v.length })
+      if (facts.length) evidence.appendChild(el('p', '', facts.join(' · '))); turn.appendChild(evidence); box.appendChild(turn)
+    })
+    bwNode('browser-work-overlay').querySelector('.browser-work-columns').scrollTop = oldScroll
+  }
+  async function bwRefresh () {
+    if (!browserWork.open || browserWork.busy) return
+    bwStopTimers(); browserWork.busy = true; var sequence = ++browserWork.sequence, controller = new AbortController(); browserWork.controller = controller
+    var timeout = setTimeout(function () { controller.abort() }, 12000)
+    async function get (url) { var r = await fetch(url, { credentials: 'same-origin', redirect: 'error', signal: controller.signal }); if (!r.ok) throw Error('unavailable'); return r.json() }
+    try {
+      var list = await get('/api/v1/demo/browser-work')
+      if (!browserWork.open || sequence !== browserWork.sequence) return
+      if (!list || !Array.isArray(list.topics) || list.topics.length > 600 || list.topics.some(function (r) { return !['read', 'operator'].includes(r.kind) || !/^[a-f0-9-]{36}$/.test(r.id) || !r.latest })) throw Error('unavailable')
+      browserWork.topics = list.topics; browserWork.incomplete = !!(list.unavailableSources && list.unavailableSources.length); bwList()
+      bwNode('browser-work-status').textContent = list.unavailableSources && list.unavailableSources.length ? t('browserWork.partial') : list.coverage && list.coverage.operatorAuditLimited ? t('browserWork.limited') : t('browserWork.intro')
+      if (browserWork.selected) {
+        var selected = browserWork.selected, detail = await get('/api/v1/demo/browser-work/' + selected.kind + '/' + encodeURIComponent(selected.id))
+        if (!browserWork.open || sequence !== browserWork.sequence) return
+        if (detail.kind !== selected.kind || detail.id !== selected.id) throw Error('unavailable')
+        bwDetail(detail)
+      }
+      if (list.topics.some(function (r) { return r.latest.active }) && browserWork.open) {
+        if (Date.now() < browserWork.until) browserWork.timer = setTimeout(bwRefresh, 2000)
+        else throw Error('unavailable')
+      }
+    } catch (_) {
+      if (sequence === browserWork.sequence && browserWork.open) {
+        bwStopTimers(); bwNode('browser-work-status').textContent = t('browserWork.unconfirmed')
+        bwNode('browser-work-detail').querySelectorAll('.is-working').forEach(function (n) { n.classList.remove('is-working') })
+        var title = bwNode('browser-work-progress-title'); if (title) title.textContent = t('browserWork.unknown')
+      }
+    } finally { clearTimeout(timeout); if (sequence === browserWork.sequence) { browserWork.busy = false; browserWork.controller = null } }
+  }
+  function bwClose () {
+    browserWork.open = false; browserWork.sequence++; bwStopTimers(); if (browserWork.controller) browserWork.controller.abort(); browserWork.busy = false
+    bwNode('browser-work-overlay').classList.add('hidden'); bwNode('app').inert = browserWork.priorInert === true
+    bwNode('open-browser-work').focus()
+  }
+  bwNode('open-browser-work').addEventListener('click', function () {
+    browserWork.open = true; browserWork.selected = null; browserWork.until = Date.now() + 130000; browserWork.priorInert = bwNode('app').inert
+    bwNode('app').inert = true; bwNode('browser-work-overlay').classList.remove('hidden'); bwNode('browser-work-detail').textContent = t('browserWork.choose'); bwNode('browser-work-status').textContent = t('browserWork.loading'); bwNode('browser-work-close').focus(); bwRefresh()
+  })
+  bwNode('browser-work-refresh').addEventListener('click', function () { browserWork.until = Date.now() + 130000; bwRefresh() })
+  bwNode('browser-work-close').addEventListener('click', bwClose); bwNode('browser-work-backdrop').addEventListener('click', bwClose)
+  bwNode('browser-work-search').addEventListener('input', bwList)
+  bwNode('browser-work-overlay').addEventListener('keydown', function (e) {
+    if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); bwClose() }
+    if (e.key === 'Tab') { var focus = Array.from(this.querySelectorAll('button:not([disabled]),input,summary')).filter(function (n) { return n.getClientRects().length }); if (!focus.length) return; var first = focus[0], last = focus[focus.length - 1]; if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus() } else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus() } }
+  })
   var managerBtn = document.getElementById('open-manager')
   var liveContextBtn = document.getElementById('open-live-context')
   if (liveContextBtn) liveContextBtn.addEventListener('click', function () { window.location.href = '/live-context' })
@@ -3591,6 +3691,14 @@
     ['chat-level-xhigh', 'text', function () { return t('chat.xhigh') }],
     ['chat-level-max', 'text', function () { return t('chat.max') }],
     ['manager-label', 'text', function () { return t('manager.title') }],
+    ['browser-work-label', 'text', function () { return t('browserWork.title') }],
+    ['browser-work-title', 'text', function () { return t('browserWork.title') }],
+    ['browser-work-close', 'aria', function () { return t('shell.close') }],
+    ['browser-work-refresh', 'text', function () { return t('browserWork.refresh') }],
+    ['browser-work-search', 'placeholder', function () { return t('browserWork.search') }],
+    ['browser-work-search', 'aria', function () { return t('browserWork.search') }],
+    ['browser-work-scope-title', 'text', function () { return t('browserWork.scopeTitle') }],
+    ['browser-work-scope-text', 'text', function () { return t('browserWork.scope') }],
     ['live-context-label', 'text', function () { return t('live.title') }],
     ['drive-context-label', 'text', function () { return t('driveContext.title') }],
     ['aroma-context-label', 'text', function () { return t('department.operations') }],

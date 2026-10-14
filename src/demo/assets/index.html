@@ -36,6 +36,7 @@
       <details class="side-workspace" open>
         <summary id="workspace-label"></summary>
         <nav id="workspace-nav">
+          <button id="open-browser-work" class="side-item" type="button"><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M3 4h18v16H3z M3 9h18 M7 6h1 M11 6h1"/></svg><span id="browser-work-label"></span></button>
           <button id="open-hr" class="side-item" type="button"><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8 M2 21v-3a7 7 0 0 1 14 0v3 M17 4a4 4 0 0 1 0 7 M22 21v-3a7 7 0 0 0-4-6"/></svg><span id="hr-label"></span></button>
           <button id="open-purchasing" class="side-item" type="button"><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M3 3h2l3 13h11l2-9H6 M9 21h1 M18 21h1"/></svg><span id="purchasing-label"></span></button>
           <button id="open-accounting" class="side-item" type="button"><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M5 3h14v18H5z M8 7h8 M8 12h2 M14 12h2 M8 16h2 M14 16h2"/></svg><span id="accounting-label"></span></button>
@@ -127,6 +128,16 @@
        assemble markup from strings, so the shell lives here and only the switch rows (which
        are data-driven) are built with createElement + textContent in app.js.
        Same window, same session: opening it does not leave the conversation. -->
+  <div id="browser-work-overlay" class="overlay hidden" role="dialog" aria-modal="true" aria-labelledby="browser-work-title">
+    <div class="overlay-backdrop" id="browser-work-backdrop"></div>
+    <section class="sheet browser-work-sheet">
+      <header class="sheet-head"><h2 id="browser-work-title"></h2><button id="browser-work-close" class="icon-btn" type="button">✕</button></header>
+      <div class="browser-work-toolbar"><input id="browser-work-search" type="search" autocomplete="off"><button id="browser-work-refresh" type="button"></button></div>
+      <p id="browser-work-status" role="status" aria-live="polite"></p>
+      <div class="browser-work-columns"><nav id="browser-work-list"></nav><section id="browser-work-detail" aria-live="polite"></section></div>
+      <details class="browser-work-scope"><summary id="browser-work-scope-title"></summary><p id="browser-work-scope-text"></p></details>
+    </section>
+  </div>
   <div id="settings-overlay" class="overlay hidden" role="dialog" aria-modal="true" aria-labelledby="settings-title">
     <div class="overlay-backdrop" id="settings-backdrop"></div>
     <div class="sheet" role="document">

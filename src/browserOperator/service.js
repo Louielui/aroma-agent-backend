@@ -90,6 +90,8 @@ function createOperator({companyId,selection,provider,audit,now=Date.now,env=pro
    j.steps++;j.action={kind:a.kind,x:target?.x??(a.kind.startsWith('scroll_')?0.7:a.x),y:target?.y??(a.kind.startsWith('scroll_')?0.6:a.y),text:a.kind==='type'?a.text:'',targetLabel:a.kind==='click'?target.label:'',targetHref:a.kind==='click'?target.href:''};j.history.push({step:j.steps,kind:a.kind});j.ticket=randomUUID();j.ticketExpiry=now()+5000;j.frame={fingerprint:f.fingerprint,window:f.window,rect:f.rect};j.state='awaiting_input';emit(j,'input_sealed',{kind:a.kind,step:j.steps});return {...view(j),ticket:j.ticket}
   }catch(e){if(j.state==='stopped')return view(j);j.state='failed';j.error=SAFE_ERRORS.has(e.code||e.message)?e.code||e.message:'operation_unavailable';emit(j,'failed_no_retry',{error:j.error});throw Error(j.error)}finally{clearTimeout(timer);j.controller=null;active=null}
  }
- return {handle}
+ // Owner display projection only: no tickets, frames or executable actions.
+ const inspectAll=()=>[...jobs.values()].map(j=>structuredClone({...view(j),question:j.question,scope:j.scope,deadline:j.deadline}))
+ return {handle,inspectAll}
 }
 module.exports={createOperator,permittedURL,readTarget,FIXTURE,SYSTEM}

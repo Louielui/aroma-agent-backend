@@ -1231,9 +1231,10 @@ function createApp (options = {}) {
     const fs=require('node:fs'),dir=path.join(require('./store/dataDir').resolveDataDir(),'read-task-audit')
     fs.mkdirSync(dir,{recursive:true});fs.writeFileSync(path.join(dir,require('node:crypto').randomUUID()+'.json'),JSON.stringify({...event,at:new Date().toISOString()}),{flag:'wx',mode:0o600})
   }}})
+  const browserReadStore = require('./browserRead/store').createStore(path.join(require('./store/dataDir').resolveDataDir(), 'browser-context-reads'))
   const browserRead = require('./browserRead/service').createBrowserRead({
     taskRunner: readTask,
-    store: require('./browserRead/store').createStore(path.join(require('./store/dataDir').resolveDataDir(), 'browser-context-reads')),
+    store: browserReadStore,
     selection: () => modelCenter.read().brain,
     provider: choice => {
       if (process.env.CHAT_BACKEND !== 'codex-subscription') throw Error('model_unavailable')
@@ -1257,6 +1258,12 @@ function createApp (options = {}) {
     }
   })
   app.use(require('./browserOperator/routes').createRouter({ service: browserOperator }))
+  const browserWorkView = require('./browserWork/view').createBrowserWork({
+    reads: browserReadStore,
+    operators: browserOperator.inspectAll,
+    audits: require('./browserWork/view').createAuditReader(path.join(require('./store/dataDir').resolveDataDir(), 'browser-operator-audit'))
+  })
+  app.use(require('./browserWork/routes').createRouter({ view: browserWorkView }))
   app.get('/browser-operator-fixture', (req,res) => {
     res.set('Cache-Control','no-store').type('html').send(require('node:fs').readFileSync(path.join(__dirname,'browserOperator/fixture.html'),'utf8'))
   })

@@ -5,7 +5,7 @@
 })(typeof globalThis === 'object' ? globalThis : this, function () {
   'use strict'
   var DESTINATIONS = {
-    daily: ['open-hr', 'open-purchasing', 'open-aroma-context', 'open-accounting', 'open-marketing', 'open-manager', 'open-drive-context', 'open-calendar-context', 'open-gmail-context'],
+    daily: ['open-hr', 'open-purchasing', 'open-aroma-context', 'open-accounting', 'open-marketing', 'open-manager', 'open-browser-work', 'open-drive-context', 'open-calendar-context', 'open-gmail-context'],
     development: ['open-live-context', 'open-development-plan', 'open-project-tasks', 'open-workers'],
     management: ['open-memory', 'open-connections', 'open-company-access', 'open-architecture']
   }

@@ -1081,3 +1081,22 @@ button[disabled] { opacity: .45; cursor: default; }
 .recheck-running { animation: recheck-pulse 1.4s ease-in-out infinite; }
 @keyframes recheck-pulse { 50% { opacity: .5; } }
 @media (prefers-reduced-motion: reduce) { .recheck-running { animation: none; } }
+.browser-work-sheet { width:min(1040px,calc(100vw - 24px)); max-width:calc(100vw - 24px); max-height:calc(100dvh - 24px); display:flex; flex-direction:column; overflow:hidden; }
+.browser-work-toolbar { display:flex; gap:8px; padding:12px 20px 4px; }
+.browser-work-toolbar input { min-width:0; flex:1; }
+#browser-work-status { margin:8px 20px; font-size:var(--small-size); color:var(--muted); }
+.browser-work-columns { display:grid; grid-template-columns:minmax(160px,260px) minmax(0,1fr); overflow:auto; min-height:0; padding:0 20px 12px; gap:16px; }
+#browser-work-list { display:flex; flex-direction:column; gap:6px; min-width:0; }
+#browser-work-list button { display:block; text-align:left; width:100%; border:1px solid var(--line); border-radius:10px; padding:10px; background:transparent; color:var(--ink); overflow-wrap:anywhere; }
+#browser-work-list button[aria-current="true"] { background:var(--line); }
+#browser-work-list small { display:block; font-size:var(--small-size); color:var(--muted); margin-top:5px; }
+#browser-work-detail { min-width:0; overflow-wrap:anywhere; }
+.browser-work-progress { padding:12px; background:var(--card); border:1px solid var(--line); border-radius:12px; margin-bottom:12px; }
+.browser-work-progress.is-working::before { content:''; display:inline-block; width:10px; height:10px; margin-right:8px; border:2px solid var(--line); border-top-color:var(--ink); border-radius:50%; animation:browser-work-spin 1s linear infinite; }
+.browser-work-answer { white-space:pre-wrap; font-family:inherit; font-size:var(--ui-size); line-height:var(--ui-line); overflow-wrap:anywhere; }
+.browser-work-turn { border-top:1px solid var(--line); padding:12px 0; }
+.browser-work-scope { padding:10px 20px; font-size:var(--small-size); color:var(--muted); }
+.browser-work-scope p { margin:8px 0; }
+@keyframes browser-work-spin { to { transform:rotate(360deg); } }
+@media (max-width:600px) { .browser-work-columns { grid-template-columns:minmax(0,1fr); } #browser-work-list { max-height:155px; overflow:auto; } .browser-work-toolbar { padding:10px 12px; } }
+@media (prefers-reduced-motion:reduce) { .browser-work-progress.is-working::before { animation:none; } }
