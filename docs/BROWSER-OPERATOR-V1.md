@@ -41,8 +41,14 @@ Activation is a separate exact-source change after positive native acceptance;
 neither a client field nor an environment flag can unlock it today.
 
 Backend consumes a five-second input ticket before native execution, once only.
-A failed or unknown native return never retries. Twelve steps and ten minutes
-bound a job. Stop aborts inference and the exact tracked helper process; a native
+A failed or unknown native return never retries.
+The native broker retains only a closed failure code such as pixel change or
+typing-target refusal alongside `native_input_unknown`; arbitrary exceptions
+are replaced by that generic code. Legacy failure reports remain compatible.
+Failure codes do not prove whether input reached Windows, release a consumed
+ticket, permit replay or weaken any native guard.
+Twelve steps and ten minutes bound a job. Stop aborts inference and the exact
+tracked helper process; a native
 SendInput batch already handed to Windows cannot be recalled. Closing/moving or
 switching the source tab stops its job. Pointer movement by the Owner and Escape
 are checked during native execution; the side-panel Stop also works during
@@ -84,3 +90,14 @@ and an actual `claude-opus-5-5` return, then refused `invalid_operator_action`
 before sealing or claiming input. The earlier generic error did not identify
 the malformed field; its cause remains unknown until the bounded diagnostics
 measure it. Native input and Stop acceptance remain pending.
+
+After PR #83, actual job `926f3d22-e1e2-4fab-8dae-f4dbc8bf14d4` completed
+one native fixture-button click and answered from a fresh observation; trusted
+button clicks increased from 2 to 3. Job `70c012b6-d701-47d7-aa42-01daa58d5d24`
+recorded Owner Stop and fixture counters stayed unchanged during the following
+ten-second observation. The panel cancellation race still displayed a generic
+read failure beside its stop notice. A separate typing job
+`7482983b-5d61-4b09-b026-054ea7b227a2` refused an unknown native type result;
+no text or Enter was measured. Its exact native cause was discarded by the old
+broker, so it remains unknown pending the bounded diagnostic update. Keyboard,
+scroll and complete live-site activation acceptance have not passed.

@@ -3,6 +3,7 @@ const {createHash}=require('node:crypto')
 const ID=/^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/
 // Fits the existing 50 KiB JSON parser even with escaped control characters.
 const MAX_TEXT=6000,MAX_QUESTION=1000
+const NATIVE_FAILURES=Object.freeze(['native_input_unknown','native_input_unavailable','native_input_timeout','native_input_source_changed','browser_pixels_changed','browser_viewport_changed','browser_foreground_changed','browser_url_unverified','browser_viewport_unverified','browser_viewport_ambiguous','native_target_outside_page','native_click_target_changed','native_typing_target_unavailable','owner_moved_pointer','owner_stopped_native_input','native_site_unavailable','invalid_native_action'])
 const exact=(o,keys)=>o&&typeof o==='object'&&!Array.isArray(o)&&Object.keys(o).sort().join(',')===keys.slice().sort().join(',')
 const digest=text=>createHash('sha256').update(text,'utf8').digest('hex')
 function site(url){
@@ -27,4 +28,4 @@ function validate(b){
  if(b.op==='read'&&(typeof b.consent!=='boolean'||(!task&&(typeof b.text!=='string'||!b.text.trim()||b.text.length>MAX_TEXT))))throw Error('invalid_request')
  return b
 }
-module.exports={ID,MAX_TEXT,MAX_QUESTION,exact,digest,site,validateSource,validate}
+module.exports={ID,MAX_TEXT,MAX_QUESTION,NATIVE_FAILURES,exact,digest,site,validateSource,validate}

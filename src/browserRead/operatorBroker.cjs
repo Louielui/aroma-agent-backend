@@ -1,5 +1,5 @@
 'use strict'
-const {ID,exact}=require('./contract')
+const {ID,exact,NATIVE_FAILURES}=require('./contract')
 // The extension cannot supply an action, HWND, frame, image, executable or URL to a model route.
 function createOperatorBroker({request,executor}){
  const running=new Map()
@@ -29,8 +29,9 @@ function createOperatorBroker({request,executor}){
    try{
     const input=await executor({op:'execute',url:sealed.scope.url,width:sealed.scope.width,height:sealed.scope.height,frame:sealed.frame,action:sealed.action},controller.signal)
     if(input?.success!==true)throw Error('native_input_unknown')
-   }catch{
-    const failed=await request({op:'report',id:b.id,success:false});return failed
+   }catch(error){
+    const code=error?.code||error?.message,reason=NATIVE_FAILURES.includes(code)?code:'native_input_unknown'
+    const failed=await request({op:'report',id:b.id,success:false,reason});return failed
    }
    return request({op:'report',id:b.id,success:true})
   }finally{running.delete(b.id)}
