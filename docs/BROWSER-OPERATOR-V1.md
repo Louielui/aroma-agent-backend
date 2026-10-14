@@ -134,3 +134,34 @@ The exact retained receipt is in the Owner artifact directory
 satisfy the native prerequisite; authorization comes from the direct Owner
 request for employee read/navigation, not from the receipt. Live 7shifts task
 success still requires separate measurement.
+
+## Live acceptance measured on 2026-10-14
+
+Source `ff3fc538` and the matching immutable Native Host completed job
+`00faacf4-87c0-42f5-8c1f-79ea1236d21c` with two native click returns and a
+fresh answer from actual `claude-opus-5-5` at medium effort. Focused Chrome
+history recorded the employee landing at 07:56:30.297 UTC and the list at
+07:56:38.945 UTC. Codex did not click those site links; it selected the source
+tab and operated only the assistant controls. The real assistant executed
+the site inputs through its sealed native broker.
+
+The page label was Employee (28); all fifteen names returned from the rendered
+rows were independently found on the actual page. This is a partial read,
+not the complete roster, pending/inactive accounts or wage acceptance. The
+fixture and employee tab retained separate answers; a same-tab fresh-page
+follow-up rendered a concise plain-text summary. Operator planning receives
+the current job's action history, not all earlier saved operator answers.
+
+The initial model reply wrongly claimed contact data was not read. The frame
+and rendered text contained visible contact fields; there is no field-level
+redaction. A follow-up corrected that description to contacts not being listed
+in the reply. The saved proof image clips below the roster header to avoid
+retaining contact columns. The broader side-panel mode footer still uses the
+prototype local-test wording; no general website or desktop parity is claimed.
+
+Retained private metadata is in
+`browser-employee-live-profile-20261014/live-acceptance.json`. Launcher and
+environment hashes matched before/after deployment; the only runtime working
+file remains the original launcher overlay. Previous source refs and Native
+Host registration packages remain available. No Aroma System production
+database, unrelated service or employee business write was used in acceptance.
