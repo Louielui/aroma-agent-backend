@@ -19,7 +19,7 @@ function createOwnerDriveScope ({ registry, env = process.env, credentials = req
   return Object.freeze({ source: () => copy(projection().source), lease () {
     const p = projection(); if (!valid(p)) throw Error('source_access_unavailable')
     const revision = JSON.stringify(p)
-    return { source: copy(p.source), ownerEmail: p.owner.email.toLowerCase(), verify () {
+    return { source: copy(p.source), ownerEmail: p.owner.email.toLowerCase(), revisionHash: require('node:crypto').createHash('sha256').update(revision).digest('hex'), verify () {
       const current = projection()
       if (!valid(current) || JSON.stringify(current) !== revision) throw Error('source_access_changed')
     } }

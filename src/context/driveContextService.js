@@ -21,7 +21,11 @@ function driveIntent (message) {
   try { return { operation: 'search', input: validateDriveRequest('search', { query: match[1] }) } } catch (_) { return null }
 }
 function createDriveContextService ({ gateway, scope }) {
-  return Object.freeze({ describe () {
+  return Object.freeze({ captureTaskScope () {
+    const lease = scope.lease(); lease.verify()
+    return { capability: { id: 'drive.company_files', source: 'drive', scope: lease.source.rootId, version: 1,
+      accessRevision: lease.revisionHash, operations: ['readMetadata','search','get'], readOnly: true }, verify: lease.verify }
+  }, describe () {
     const source = scope.source()
     return source ? { id: source.id, name: source.name, rootId: source.rootId, registered: source.state === 'registered',
       access: 'owner_only', textFormats: ['google_document','plain_text'], textByteLimit: 16000 } : null
