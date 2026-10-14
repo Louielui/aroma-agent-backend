@@ -14,6 +14,8 @@ test('real task panel discloses company wage scope, skips page capture and prese
  await page.check('#consent');await page.click('#read');await page.waitForSelector('#answer:not([hidden])');assert.match(await page.locator('#text').textContent(),/Fixture Employee.*17\.50/);assert.match(await page.locator('#evidence').textContent(),/7shifts/);assert.equal(sourceReads,1);assert.equal(captures,0)
  await page.reload();await page.waitForSelector('#answer:not([hidden])');assert.equal(modelCalls,1);assert.equal(sourceReads,1);assert.equal(captures,0)
  for(const size of [{width:320,height:480},{width:620,height:900}]){await page.setViewportSize(size);assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true)}
+ await page.fill('#question','哪些人超過 20？');await page.click('#prepare');await page.waitForSelector('#preview:not([hidden])');assert.equal(sourceReads,1);await page.check('#consent');await page.click('#read');await page.waitForFunction(()=>document.querySelector('#text').textContent.includes('沒有已確認符合'));assert.equal(sourceReads,2);assert.equal(captures,0);assert.match(await page.locator('#text').textContent(),/已掃描 1 筆.*已確認符合 0 筆/);assert.ok(!(await page.locator('#text').textContent()).includes('Fixture Employee'))
+ await page.reload();await page.waitForFunction(()=>document.querySelector('#text').textContent.includes('沒有已確認符合'));assert.equal(sourceReads,2);assert.equal(modelCalls,2)
  if(process.env.BROWSER_CHAT_SCREENSHOT_DIR){fs.mkdirSync(process.env.BROWSER_CHAT_SCREENSHOT_DIR,{recursive:true});await page.setViewportSize({width:430,height:850});await page.screenshot({path:path.join(process.env.BROWSER_CHAT_SCREENSHOT_DIR,'task-fixture.png')})}
 })
 

@@ -7455,3 +7455,10 @@ employee live profile admits only the exact Owner company employee landing and l
 native live admission rejects a changed source before capture and legacy live get cannot authorize a screenshot
 actual app employee profile is authenticated and refuses other routes without dispatching native or model work
 compiled native link guard requires the actual URI to match the sealed employee destination
+shared read collection follows opaque cursors and records every page before proving exhaustion
+shared read collection reports budget coverage and refuses loops duplicates and revoked reads
+shared numeric selection preserves unknown values and reports source coverage independently of matches
+shared numeric selection retains unresolved mixed rows and never converts null into zero
+wage follow-ups reuse only a saved read topic and refresh source before selecting an exact numeric threshold
+numeric wage filtering surfaces uncertain membership and weekly salary without asserting a complete zero
+follow-up scope and thresholds come from Owner text and saved read metadata rather than previous answers

@@ -41,7 +41,7 @@ test('employee pagination continues and a denial for one wage remains missing ra
   else body={data:{current_wages:[{id:9,effective_date:'2026-01-01',role_id:null,wage_type:'hourly',wage_cents:0}],upcoming_wages:[]}}
   return {ok:true,status:200,text:async()=>JSON.stringify(body)}
  }})
- const r=await f.reader.read({status:'active'});assert.equal(r.rows.length,2);assert.equal(r.complete,false);assert.equal(r.rows[0].wages,null);assert.equal(r.rows[1].wages[0].wageCents,0);assert.ok(f.calls.some(c=>new URL(c.url).searchParams.get('cursor')==='next-fixture'))
+ const r=await f.reader.read({status:'active'});assert.equal(r.rows.length,2);assert.equal(r.complete,false);assert.equal(r.rows[0].wages,null);assert.equal(r.rows[1].wages[0].wageCents,0);assert.ok(f.calls.some(c=>new URL(c.url).searchParams.get('cursor')==='next-fixture'));assert.deepEqual(r.coverage,{version:1,roster:{count:2,pages:2,complete:true,limitReason:null},values:{verifiedRows:1,unresolvedRows:1}})
 })
 test('revoked token, abort and repeated cursors stop execution without leaking response bodies',async()=>{
  const f=fixture({transport:async()=>{f.env.SEVEN_SHIFTS_ACCESS_TOKEN='changed';return {ok:true,status:200,text:async()=>'{"private":"secret"}'}}})

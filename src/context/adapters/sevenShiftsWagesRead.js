@@ -1,4 +1,5 @@
 'use strict'
+const {collectReadPages}=require('../readCollection')
 const API='https://api.7shifts.com/v2',MAX_PAGES=3,MAX_USERS=300,MAX_BYTES=500000
 const id=n=>Number.isSafeInteger(n)&&n>0
 const safeName=s=>typeof s==='string'?s.replace(/[\x00-\x1f\x7f-\x9f\u200e\u200f\u202a-\u202e\u2066-\u2069]/g,' ').replace(/\s+/g,' ').trim().slice(0,200):''
@@ -30,9 +31,10 @@ function createSevenShiftsWagesReader({env=process.env,fetchFn,clock=()=>new Dat
   let deadlineReached=false
   const controller=new AbortController(),timer=setTimeout(()=>{deadlineReached=true;controller.abort()},timeoutMs)
   const abort=()=>controller.abort();outer?.addEventListener('abort',abort,{once:true});if(outer?.aborted)abort()
-  const users=[],rows=[];let rosterComplete=false,pages=0
+  const users=[],rows=[];let rosterComplete=false,pages=0,limitReason=null
   const accessCurrent=()=>env.READ_ACCESS==='on'&&env.CONTEXT_SEVEN_SHIFTS==='on'&&Number(env.SEVEN_SHIFTS_COMPANY_ID)===companyId&&env.SEVEN_SHIFTS_ACCESS_TOKEN===token
   const report=reason=>({state:'live',companyId,status:input.status,rows:users.map((u,index)=>rows[index]||{...u,wages:null,error:reason}),rosterComplete,complete:!reason&&rosterComplete&&rows.every(r=>r&&r.wages!==null&&r.wages.every(w=>w.wageCents!==null)&&r.employeeName!==null),retrievedAt,...(reason?{reason}:{}),
+   coverage:{version:1,roster:{count:users.length,pages,complete:rosterComplete,limitReason},values:{verifiedRows:rows.filter(r=>r?.wages!==null&&r?.wages?.every(w=>w.wageCents!==null)&&r.employeeName!==null).length,unresolvedRows:users.length-rows.filter(r=>r?.wages!==null&&r?.wages?.every(w=>w.wageCents!==null)&&r.employeeName!==null).length}},
    provenance:{endpoint:API+'/company/'+companyId+'/users',wagesEndpoint:API+'/company/'+companyId+'/users/{user_id}/wages',pages,maxUsers:MAX_USERS,readOnly:true,scope:'configured_company_users_including_management'}})
   const verify=()=>{
    if(controller.signal.aborted)throw Error('read_timeout')
@@ -66,22 +68,11 @@ function createSevenShiftsWagesReader({env=process.env,fetchFn,clock=()=>new Dat
    const today=new Intl.DateTimeFormat('en-CA',{timeZone:'America/Winnipeg',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date(retrievedAt))
    const seen=new Set();let scopesComplete=true
    for(const status of input.status==='all'?['active','inactive']:[input.status]){
-    let cursor=null,complete=false;const cursors=new Set()
-    for(let n=0;n<MAX_PAGES&&users.length<MAX_USERS;n++){
-     const limit=Math.min(100,MAX_USERS-users.length),value=await get('users',{status,limit,...(cursor?{cursor}:{})});pages++
-     if(!Array.isArray(value.data)||value.data.length>limit)throw Error('invalid_source_response')
-     for(const u of value.data){
-      if(!u||u.company_id!==companyId||!id(u.id)||seen.has(u.id)||u.active!==(status==='active'))throw Error('invalid_source_response')
-      seen.add(u.id);const name=[safeName(u.first_name),safeName(u.last_name)].filter(Boolean).join(' ')
-      users.push({userId:u.id,employeeName:name||null,active:u.active})
-      if(users.length>MAX_USERS)throw Error('invalid_source_response')
-     }
-     const next=value.meta?.cursor?.next
-     if(next===null){complete=true;break}
-     if(typeof next!=='string'||!next||next.length>2048||cursors.has(next))throw Error('invalid_source_response')
-     cursors.add(next);cursor=next
-    }
-    scopesComplete=scopesComplete&&complete
+    const scope=await collectReadPages({maxPages:MAX_PAGES,maxRows:MAX_USERS-users.length,pageSize:100,seen,verify,
+     readPage:async({cursor,limit})=>{const value=await get('users',{status,limit,...(cursor?{cursor}:{})});pages++;return {rows:value.data,next:value.meta?.cursor?.next}},
+     key:u=>{if(!u||u.company_id!==companyId||!id(u.id)||u.active!==(status==='active'))throw Error('invalid_source_response');return u.id},
+     onRow:u=>{const name=[safeName(u.first_name),safeName(u.last_name)].filter(Boolean).join(' ');users.push({userId:u.id,employeeName:name||null,active:u.active})}})
+    scopesComplete=scopesComplete&&scope.complete;if(scope.reason)limitReason=scope.reason
    }
    rosterComplete=scopesComplete;let offset=0
    async function collect(){while(offset<users.length){verify();const index=offset++,u=users[index];try{
