@@ -11,7 +11,7 @@ function readTarget(t,url,companyId){if(!exact(t,['id','label','href','x','y'])|
 function createOperator({companyId,selection,provider,audit,now=Date.now,env=process.env,liveEnabled=()=>false}){
  const jobs=new Map(),requests=new Map();let active=null
  const emit=(j,stage,extra={})=>audit({id:j.id,workflow:'browser_operator',stage,at:now(),model:j.selection.model,...extra})
- const view=j=>({id:j.id,state:j.state,steps:j.steps,selection:j.selection,...(j.result?{result:j.result}:{}),...(j.error?{error:j.error}:{})})
+ const view=j=>({id:j.id,state:j.state,steps:j.steps,selection:j.selection,...(j.result?{result:j.result}:{}),...(j.error?{error:j.error}:{}),...(j.stopAuditUnavailable?{warning:'stop_audit_unavailable'}:{})})
  const available=j=>{if(j.deadline<=now()){j.state='failed';j.error='operation_expired';j.controller?.abort()}if(!['ready','planning','awaiting_input','executing'].includes(j.state))throw Error('operation_unavailable')}
  const changed=(a,b)=>['tabId','windowId','width','height'].some(k=>a[k]!==b[k])
  const executionAvailable=()=>env.COMPUTER_OPERATOR!=='on'&&require('../agent/agentAuthorization').authorizeExecution({computer:'on',computerSupervisorConfigured:true,worker:env.WORKER_INVOCATION,develop:env.DEVELOP_DISPATCH,agent:env.AGENT_BRIDGE,readOnlyEnquiry:env.READ_ONLY_ENQUIRY}).computerOperatorAuthorized
@@ -31,7 +31,7 @@ function createOperator({companyId,selection,provider,audit,now=Date.now,env=pro
   }
   const j=jobs.get(b.id);if(!j)throw Error('operation_not_found')
   if(b.op==='get')return {...view(j),scope:j.scope,companyId}
-  if(b.op==='stop'){if(['ready','planning','awaiting_input','executing'].includes(j.state)){emit(j,'owner_stopped');j.state='stopped';j.ticket=null;j.controller?.abort()}return view(j)}
+  if(b.op==='stop'){if(['ready','planning','awaiting_input','executing'].includes(j.state)){j.state='stopped';j.ticket=null;j.controller?.abort();try{emit(j,'owner_stopped')}catch{j.stopAuditUnavailable=true}}return view(j)}
   if(b.op==='claim'){
    if(!executionAvailable())throw Error('operation_execution_conflict')
    if(j.state!=='awaiting_input'||b.ticket!==j.ticket||j.ticketExpiry<=now()||j.deadline<=now())throw Error('input_ticket_unavailable')

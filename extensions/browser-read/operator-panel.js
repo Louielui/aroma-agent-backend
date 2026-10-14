@@ -5,6 +5,7 @@ const mode=document.createElement('option');mode.value='browser_control';mode.te
 const operatorSend=body=>send(body)
 function showOperation(r){
  operation=r;el('status').textContent=r.state==='ready'?'正在核對畫面…':r.state==='completed'?'已根據操作後的畫面回答。':r.state==='stopped'?'已停止，不會接着操作。':r.state==='failed'?'本次操作未完成：'+r.error:'正在操作…'
+ if(r.state==='stopped'&&r.warning==='stop_audit_unavailable')el('status').textContent='已停止；停止紀錄未能寫入，不會接着操作。'
  if(r.state==='completed'){
   const rows=topicRecord.operatorMessages||[];rows.push({question:el('question').value,text:r.result.text,requestedModel:r.result.requestedModel,actualModel:r.result.actualModel,steps:r.result.steps});topicRecord.operatorMessages=rows.slice(-10);topicRecord.mode='browser_control';topicRecord.draft='';el('question').value='';saveTopic().catch(error);renderOperations()
  }

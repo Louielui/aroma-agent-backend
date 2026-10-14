@@ -7440,3 +7440,5 @@ browser operator consumes input before execution and never retries an unknown na
 browser operator refuses an unverified actual model and expires native tickets without input
 browser operator participates in execution mutual exclusion and rejects native window movement
 real browser sites remain closed until native acceptance while the owned fixture remains available
+browser operator stop aborts and invalidates input even when its audit write fails
+native browser stop aborts the local helper before an unavailable backend can reject it

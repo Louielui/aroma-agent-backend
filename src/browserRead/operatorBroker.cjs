@@ -8,7 +8,7 @@ function createOperatorBroker({request,executor}){
   if(!b||!Object.hasOwn(shapes,b.op)||!exact(b,shapes[b.op])||!ID.test(b.op==='operator_start'?b.requestId:b.id))throw Error('invalid_operator_request')
   if(b.op==='operator_start')return request({...b,op:'start'})
   if(b.op==='operator_get')return request({op:'get',id:b.id})
-  if(b.op==='operator_stop'){const result=await request({op:'stop',id:b.id});running.get(b.id)?.abort();return result}
+  if(b.op==='operator_stop'){running.get(b.id)?.abort();return request({op:'stop',id:b.id})}
   if(running.has(b.id))throw Error('operation_busy')
   const controller=new AbortController();running.set(b.id,controller)
   try{
