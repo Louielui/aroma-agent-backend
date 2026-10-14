@@ -16,7 +16,7 @@ function renderOperations(){
  for(const row of topicRecord.operatorMessages){const q=document.createElement('div');q.className='message user';q.textContent=row.question;const a=document.createElement('div');a.className='message assistant';a.textContent=row.text;el('messages').append(q,a)}
  const last=topicRecord.operatorMessages.at(-1);const details=document.createElement('details'),summary=document.createElement('summary'),metadata=document.createElement('p');summary.textContent='來源與模型';metadata.textContent='7shifts / 本機測試頁 · 所選 '+last.requestedModel+' · 實際 '+last.actualModel+' · 原生操作 '+last.steps+' 步';metadata.className='note';details.append(summary,metadata);el('messages').append(details)
 }
-function setOperatorMode(){const on=el('coverage-mode').value==='browser_control';el('operator-scope').hidden=!on;if(on){el('context-chip').textContent='網頁操作 · 畫面與可見文字';renderOperations()}}
+function setOperatorMode(){const on=el('coverage-mode').value==='browser_control';el('operator-scope').hidden=!on;document.querySelector('#composer .actions .note').textContent=on?'本機測試 · 畫面與原生操作':'唯讀查詢 · 圖片未讀取';if(on){el('context-chip').textContent='網頁操作 · 畫面與可見文字';renderOperations()}}
 el('coverage-mode').addEventListener('change',setOperatorMode)
 async function runOperation(){
  if(busy||!topic)return;if(!el('question').value.trim()){el('status').textContent='請輸入要香香完成的查閱任務。';return}if(!el('operator-consent').checked){el('status').textContent='請先確認這次分頁操作與畫面讀取範圍。';return}

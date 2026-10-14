@@ -7442,3 +7442,5 @@ browser operator participates in execution mutual exclusion and rejects native w
 real browser sites remain closed until native acceptance while the owned fixture remains available
 browser operator stop aborts and invalidates input even when its audit write fails
 native browser stop aborts the local helper before an unavailable backend can reject it
+actual app serves only the synthetic operator fixture without login while every operator API remains authenticated
+operator observation refuses an unavailable fixture before native capture or page text extraction

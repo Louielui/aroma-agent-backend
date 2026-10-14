@@ -903,7 +903,8 @@ function createApp (options = {}) {
   }))
   if (companyAccessEnabled) {
     app.use((req, res, next) => {
-      if (req.method === 'GET' && ['/health', '/oauth/google/callback'].includes(req.path)) return next()
+      // The fixed synthetic fixture carries no account data or API capability.
+      if (req.method === 'GET' && ['/health', '/oauth/google/callback', '/browser-operator-fixture'].includes(req.path)) return next()
       return requireOwner(req, res, next)
     })
   }
