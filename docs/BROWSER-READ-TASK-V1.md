@@ -25,6 +25,8 @@ The same account's role-assignment response omits `company_id`, despite that fie
 
 A missing or contradictory rate for one assigned role no longer erases other verified roles for that employee. The missing role retains a null rate and is visibly unavailable; it is never rendered as zero. The result remains incomplete until every scoped role is verified.
 
+Deterministic wage details use at most 120 KB of JSON-encoded text, inside the unchanged 195 KB native result budget. Generated answers keep their existing 30,000-character limit. Rendering reserves space for metadata/footer and stops only between whole employee rows. Any omitted rows are explicitly counted, the output is marked incomplete, and the evidence distinguishes measured source coverage from rendered coverage. A real 189-user read produced 51,006 characters, which exceeded the old generated-answer limit despite fitting the native frame.
+
 Latest effective current wages are resolved according to the official guide. Weekly salary stays weekly; no invented hourly conversion. Role-based rates include only verified assigned roles. Missing, denied, future-only or contradictory rates stay unknown, never zero. Currency is not inferred. A partial roster or missing name/rate is visibly incomplete. The report is rendered from measured rows, not generated amounts. The model plans the read; its selected/actual identity remains distinguished in the UI.
 
 ## Evidence and acceptance

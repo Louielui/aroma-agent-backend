@@ -25,24 +25,32 @@ function failureExplanation(reason,zh){
  }
  return reason?messages[reason][zh?0:1]:''
 }
-function renderWages(report,question){
+function renderWageResult(report,question){
  const zh=/[\u3400-\u9fff]/u.test(question)
  const reason=safeReason(report)
- if(report.state!=='live')return failureExplanation(reason,zh)+'\n'+(zh?'本次未能讀取 7shifts 員工時薪；沒有取得可核對的薪率，亦未修改資料。':'The 7shifts wage read was unavailable. No verified wage data was obtained and no data was changed.')
+ if(report.state!=='live')return {text:failureExplanation(reason,zh)+'\n'+(zh?'本次未能讀取 7shifts 員工時薪；沒有取得可核對的薪率，亦未修改資料。':'The 7shifts wage read was unavailable. No verified wage data was obtained and no data was changed.'),renderedCount:null,outputComplete:true}
  const scope=zh?{all:'全部公司使用者（含離職及管理帳號）',active:'在職公司使用者（含管理帳號）',inactive:'非在職公司使用者'}[report.status]:{all:'All company users, including inactive and management accounts',active:'Active company users, including management accounts',inactive:'Inactive company users'}[report.status]
  const lines=[(zh?'7shifts 查詢範圍：':'7shifts scope: ')+scope,(zh?'公司 ID：':'Company ID: ')+report.companyId,(zh?'讀取時間：':'Retrieved: ')+report.retrievedAt,report.complete?(zh?'此範圍資料已完整讀取。':'This scoped read is complete.'):(zh?'資料未完整：員工清單、姓名或部分薪率未能完整核對。':'Incomplete: the roster, names or some wages could not be verified.'),'']
  if(reason)lines.splice(4,0,failureExplanation(reason,zh))
  if(reason==='read_timeout')lines.splice(5,0,zh?'已核對的部分結果保留；未完成的薪率標示為未能讀取。':'Verified partial results are retained; unfinished wages are marked unavailable.')
+ let renderedCount=0,bytes=Buffer.byteLength(JSON.stringify(lines.join('\n')))
  for(const row of report.rows){
+  const rowLines=[]
   const name=row.employeeName||(zh?'姓名未確認':'Name unconfirmed')+' #'+row.userId
   const status=zh?(row.active?'在職':'非在職'):(row.active?'active':'inactive')
-  if(row.wages===null){lines.push(name+' · '+status+' · '+(zh?'薪率未能讀取':'Wages unavailable'));continue}
-  for(const wage of row.wages){const role=wage.roleName||(wage.roleId?'Role #'+wage.roleId:zh?'全職位':'All roles');if(wage.wageCents===null){lines.push(name+' · '+status+' · '+role+' · '+(zh?'薪率未能讀取':'Wages unavailable'));continue}const amount=(wage.wageCents/100).toFixed(2),unit=wage.wageType==='hourly'?(zh?'/ 小時':'/ hour'):(zh?'/ 星期（週薪，沒有換算時薪）':'/ week (salary, no hourly conversion)');lines.push(name+' · '+status+' · '+role+' · '+amount+' '+unit+' · '+wage.effectiveDate)}
+  if(row.wages===null)rowLines.push(name+' · '+status+' · '+(zh?'薪率未能讀取':'Wages unavailable'))
+  else for(const wage of row.wages){const role=wage.roleName||(wage.roleId?'Role #'+wage.roleId:zh?'全職位':'All roles');if(wage.wageCents===null){rowLines.push(name+' · '+status+' · '+role+' · '+(zh?'薪率未能讀取':'Wages unavailable'));continue}const amount=(wage.wageCents/100).toFixed(2),unit=wage.wageType==='hourly'?(zh?'/ 小時':'/ hour'):(zh?'/ 星期（週薪，沒有換算時薪）':'/ week (salary, no hourly conversion)');rowLines.push(name+' · '+status+' · '+role+' · '+amount+' '+unit+' · '+wage.effectiveDate)}
+  const size=Buffer.byteLength(JSON.stringify(rowLines.join('\n')))+2
+  if(bytes+size>110000)break
+  lines.push(...rowLines);bytes+=size;renderedCount++
  }
+ const outputComplete=renderedCount===report.rows.length
+ if(!outputComplete){lines[3]=zh?'輸出未完整：明細已達傳送上限。':'Output incomplete: details reached the response limit.';lines.push('',zh?'已顯示 '+renderedCount+' / '+report.rows.length+' 位使用者；其餘未顯示。可追問只列在職或非在職員工。':'Showing '+renderedCount+' / '+report.rows.length+' users; the remainder is not shown. Ask for active or inactive users separately.')}
  if(!report.rows.length)lines.push(zh?'此範圍沒有員工紀錄。':'No users in this scope.')
  lines.push('',zh?'薪率單位依 7shifts 設定；幣別未由此 API 回傳。':'Amounts use the 7shifts account units; this API did not return a currency.',(zh?'來源：':'Source: ')+(report.provenance?.wagesEndpoint||report.provenance?.endpoint||'https://developers.7shifts.com/reference/getuserwages'))
- return lines.join('\n')
+ return {text:lines.join('\n'),renderedCount,outputComplete}
 }
+function renderWages(report,question){return renderWageResult(report,question).text}
 function createReadTask({env=process.env,reader,audit}={}){
  const source=reader||require('../context/adapters/sevenShiftsWagesRead').createSevenShiftsWagesReader({env})
  function describe(provider){return env.READ_ACCESS==='on'&&env.CONTEXT_SEVEN_SHIFTS==='on'&&Number.isSafeInteger(Number(env.SEVEN_SHIFTS_COMPANY_ID))&&Number(env.SEVEN_SHIFTS_COMPANY_ID)>0&&typeof env.SEVEN_SHIFTS_ACCESS_TOKEN==='string'&&env.SEVEN_SHIFTS_ACCESS_TOKEN.trim()&&isSharedWith(provider,'seven_shifts',env)?[{id:OP,source:'seven_shifts',companyId:Number(env.SEVEN_SHIFTS_COMPANY_ID),fields:['employee_id','employee_name','active','current_wages','assigned_roles'],readOnly:true}]:[]}
@@ -66,9 +74,9 @@ function createReadTask({env=process.env,reader,audit}={}){
   const record=event=>{if(onEvent)onEvent(event);else if(audit)audit.append(event);else throw Error('audit_unavailable')}
   record({stage:'read_task_started',operation:OP,status:plan.status,companyId:capabilities[0].companyId});check()
   const report=await source.read({status:plan.status,signal});check();if(env.SEVEN_SHIFTS_ACCESS_TOKEN!==token)throw Error('task_scope_changed')
-  const reason=safeReason(report)
-  record({stage:'read_task_finished',operation:OP,state:report.state,reason,complete:report.complete??null,count:Array.isArray(report.rows)?report.rows.length:null})
-  return {...planning,text:renderWages(report,question),evidence:{operation:OP,state:report.state,reason,complete:report.complete??null,companyId:report.companyId??null,count:Array.isArray(report.rows)?report.rows.length:null,retrievedAt:report.retrievedAt,provenance:report.provenance||null}}
+  const reason=safeReason(report),answer=renderWageResult(report,question),complete=report.complete===true?answer.outputComplete:report.complete??null
+  record({stage:'read_task_finished',operation:OP,state:report.state,reason,complete,count:Array.isArray(report.rows)?report.rows.length:null,renderedCount:answer.renderedCount})
+  return {...planning,text:answer.text,evidence:{operation:OP,state:report.state,reason,complete,sourceComplete:report.complete??null,outputComplete:answer.outputComplete,renderedCount:answer.renderedCount,companyId:report.companyId??null,count:Array.isArray(report.rows)?report.rows.length:null,retrievedAt:report.retrievedAt,provenance:report.provenance||null}}
  }
  return {describe,run}
 }
