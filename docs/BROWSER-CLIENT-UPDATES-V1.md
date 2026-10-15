@@ -19,6 +19,10 @@ restore its native registration/Chrome path explicitly instead of guessing that
 the managed slot is compatible. The first opt-in is a separately measured client
 installation after Backend and Bridge verification.
 
+The deployment installer pin accepts Git's CRLF checkout expansion by comparing
+the LF-normalized bytes. All other bytes remain exact: code, spaces, BOMs and
+trailing-newline changes still fail. This changes no install command or permission.
+
 Native client status is one closed metadata operation. It checks the Backend boot
 commit, active browser jobs, current slot pins and the unchanged five permissions.
 The endpoint requires the existing service token and refuses browser origins.
