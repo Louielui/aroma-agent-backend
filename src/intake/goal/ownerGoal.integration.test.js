@@ -70,6 +70,18 @@ test('malformed canonical goal history fails closed without overwriting or hidin
  const file=path.join(store.dir,cid+'.json'),record=JSON.parse(fs.readFileSync(file,'utf8'));record.ownerGoals.push({...goal,status:'GOAL_COMPLETED'});fs.writeFileSync(file,JSON.stringify(record));const before=fs.readFileSync(file)
  assert.throws(()=>goals.currentGoal(store.get(cid)),/owner_goal_history_unavailable/);assert.throws(()=>store.appendTurn({id:cid,userText:'Another topic',replyText:'x'}),/owner_goal_history_unavailable/);assert.deepEqual(fs.readFileSync(file),before)
 })
+test('ordinary acknowledgements accept the immediate unrelated offer rather than a persistent or completed goal cursor',async()=>{
+ const express=require('express'),dir=fs.mkdtempSync(path.join(os.tmpdir(),'owner-goal-ack-topic-')),store=require('../../store/conversationStore').createConversationStore({dataDir:dir}),cid=randomUUID(),goal=goals.createGoal({objective:REQUEST,requestId:randomUUID()});let calls=0
+ store.appendTurn({id:cid,userText:REQUEST,replyText:'Incomplete',ownerGoal:goal});store.appendTurn({id:cid,userText:'Explain inventory',replyText:'Would you like more detail?'})
+ const app=express();app.locals.conversationDemo=true;app.use(express.json());app.use(require('../../routes/demoRouter').createDemoRouter({conversationStore:store,getAdapterFn:()=>({providerName:'spy'}),processIntakeFn:async()=>{calls++;return {mode:'chat',reply:'Ordinary follow-up handled'}}}));const server=app.listen(0,'127.0.0.1');await new Promise(r=>server.once('listening',r));const origin='http://127.0.0.1:'+server.address().port
+ const post=message=>new Promise((resolve,reject)=>{const req=require('node:http').request(origin+'/api/v1/demo/intake',{method:'POST',headers:{'content-type':'application/json',origin:'http://127.0.0.1:8090',host:'127.0.0.1:8090'}},res=>{let raw='';res.on('data',c=>raw+=c);res.on('end',()=>resolve({status:res.statusCode,body:JSON.parse(raw)}))});req.on('error',reject);req.end(JSON.stringify({message,conversationId:cid}))})
+ try{
+  const normal=await post('好');assert.equal(normal.status,200);assert.equal(normal.body.reply,'Ordinary follow-up handled');assert.equal(calls,1);assert.equal(goals.currentGoal(store.get(cid)).goalId,goal.goalId)
+  const objective='Read the approved record',next=goals.refineGoal(goals.createGoal({objective,requestId:randomUUID()}),[{ownerQuote:objective,capability:'aroma_system.read',kind:'read'}]),completed=goals.applyEvidence(next,[{goalId:next.goalId,scopeHash:next.scopeHash,outcomeId:'outcome-0',capability:'aroma_system.read',receiptId:'offline-complete',state:'verified',complete:true}],()=>true)
+  store.appendTurn({id:cid,userText:objective,replyText:'This goal is complete. Need something else?',ownerGoal:completed});const afterComplete=await post('ok');assert.equal(afterComplete.body.reply,'Ordinary follow-up handled');assert.equal(calls,2)
+  const status=await post('做完了嗎');assert.equal(status.status,200);assert.equal(calls,2);assert.equal(status.body.ownerGoal.goalId,completed.goalId);assert.equal(status.body.hasUnresolvedOwnerGoals,true);assert.ok(status.body.pendingOwnerGoals.some(g=>g.goalId===goal.goalId))
+ }finally{server.closeAllConnections();await new Promise(r=>server.close(r))}
+})
 test('same-conversation whole-goal status survives reload and reads back without a model call or action',async()=>{
  const express=require('express'),dir=fs.mkdtempSync(path.join(os.tmpdir(),'owner-goal-http-')),conversations=require('../../store/conversationStore').createConversationStore({dataDir:dir}),cid=randomUUID(),g=goals.createGoal({objective:REQUEST,requestId:randomUUID()})
  conversations.appendTurn({id:cid,userText:REQUEST,replyText:'Incomplete',ownerGoal:g})

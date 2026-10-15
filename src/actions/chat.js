@@ -156,7 +156,7 @@ function createChatGateway({request,receipts,conversations,providerFor,semanticT
   if(!parsed.candidate)return null
   return prepareTurn(input,parsed)
  }
- async function prepareTurn({message,conversationId,requestId},parsed,{continuation=false}={}){
+ async function prepareTurn({message,conversationId,requestId},parsed){
   if(continuationStore.get(requestId))throw Error('request_conflict')
   const requestHash=hash({message,conversationId}),prior=receipts.get(requestId)
   if(prior){if(prior.requestHash!==requestHash||prior.conversationId!==conversationId)throw Error('request_conflict');if(prior.state!=='completed')throw Error('investigation_unavailable');return {...prior.response,investigationRunId:requestId,replayed:true}}
@@ -167,13 +167,13 @@ function createChatGateway({request,receipts,conversations,providerFor,semanticT
    const i=(await call({op:'inspect'})).inspection
    const report={readOnly:true,focus:'background',goal:message,duplicateState:'UNKNOWN',sections:[{section:'schedules',state:i.observations.some(o=>o.state==='CONFIRMED')?'partial':'unavailable',sourceId:i.id,retrievedAt:new Date().toISOString(),records:i.observations.map(o=>({sourceId:o.target.id,state:o.state,taskName:o.target.taskName,...(o.snapshot?{enabled:o.snapshot.enabled,currentRunningState:o.snapshot.runtime,definitionHash:o.snapshot.definitionHash,at:o.snapshot.at}:{})}))}],persistenceState:'saved'}
    let result={mode:'chat',lane:'chat',reply:parsed.action?t('actions.chatPrepared'):t('actions.unknown'),investigation:report,investigationRunId:requestId,servedBy:null}
-   if(parsed.action&&!continuation)result.ownerGoal=goals.createGoal({objective:message,requestId})
+   if(parsed.action)result.ownerGoal=goals.createGoal({objective:message,requestId})
    else if(goals.validGoal(priorGoal))result.ownerGoal=structuredClone(priorGoal)
    if(parsed.action){
     try{
      const prepared=(await call({op:'chat_prepare',inspectionId:i.id,targetId:parsed.targetId,action:parsed.action,context:{conversationId,investigationId:requestId}})).run
      const fresh=goals.bindGatewayGoal(goals.createGoal({objective:message,requestId}),prepared)
-     if(!continuation||!result.ownerGoal)result.ownerGoal=fresh
+     result.ownerGoal=fresh
     }
     catch(_){result.reply=t('actions.chatRefused')}
    }
@@ -233,7 +233,7 @@ function createChatGateway({request,receipts,conversations,providerFor,semanticT
     else{
      // Reinspect and create a proposal only. Understanding can never consume approval.
      ongoing.delete(conversationId)
-     result=await prepareTurn(input,{candidate:true,targetId,action:decision.capability},{continuation:!!decision.referenceQuote&&!decision.targetQuote})
+     result=await prepareTurn(input,{candidate:true,targetId,action:decision.capability})
     }
    }
    receipt.state='completed';receipt.response=result;receipt.timeline.push({phase:'completed',at:new Date(now()).toISOString()});semanticStore.save(receipt)

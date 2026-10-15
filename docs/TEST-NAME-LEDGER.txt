@@ -7563,3 +7563,5 @@ conversation goal index survives ordinary topics and preserves independently sco
 malformed canonical goal history fails closed without overwriting or hiding unfinished records
 
 existing button approval records exact-scope goal evidence without replacing another active goal or replaying execution
+
+ordinary acknowledgements accept the immediate unrelated offer rather than a persistent or completed goal cursor

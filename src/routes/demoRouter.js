@@ -720,7 +720,9 @@ function createDemoRouter ({ getAdapterFn = getAdapterForLane, processIntakeFn =
       if(planningLane&&['status','ambiguous'].includes(require('../actions/chat').parseContinuation(message)?.kind)){
         let saved,goal
         try{saved=conversationStore.get?.(req.body.conversationId);goal=require('../intake/goal/ownerGoal').currentGoal(saved)}catch{return res.status(503).json({error:'owner_goal_history_unavailable'})}
-        if(require('../intake/goal/ownerGoal').validGoal(goal)){
+        const kind=require('../actions/chat').parseContinuation(message)?.kind,last=saved?.messages?.at(-1)
+        const immediateReport=last?.role==='assistant'&&last.ownerGoal?.goalId===goal?.goalId&&goal?.status!=='GOAL_COMPLETED'&&!last.planningOffer&&!last.planningContext
+        if(require('../intake/goal/ownerGoal').validGoal(goal)&&(kind==='status'||immediateReport)){
           if(!require('../core/operating/chatRequest').sameOrigin(req))return res.status(403).json({error:'same_origin_required'})
           const contract=require('../intake/goal/ownerGoal'),answer=contract.withOutstanding(contract.attachResult({lane:'chat',mode:'chat',reply:'',servedBy:null,tasks:[]},goal),saved)
           let historySaved=false

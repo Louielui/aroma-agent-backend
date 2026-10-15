@@ -60,9 +60,10 @@ turns retain the prior goal unchanged; they supply no execution evidence. A
 closed acknowledgement in the ordinary intake route likewise keeps the saved
 goal, without a new model call, source read, task execution or approval. A
 free-form inverse that cannot be exactly bound preserves the original goal rather
-than replacing it with an unbound goal. The prior goal is also preserved for a
-semantic reference-only prepare continuation, including refused prepare attempts.
-A genuinely new request establishes its own goal even when unbound, without
+than replacing it with an unbound goal. Every prepare request, including semantic
+reference wording and refused attempts, records its own full current objective;
+earlier goals remain independently indexed rather than being replaced. A new
+request establishes its own goal even when unbound, without
 erasing other unresolved goals. Every new proposal still needs its own display
 and approval; goal continuity never inherits those permissions. Completion evidence
 binds only one exact supported target/effect clause or the existing closed inverse
@@ -95,6 +96,9 @@ new annotated tasks. Conversation and investigation records retain the same
 metadata. A same-conversation status question reads it back across intervening
 ordinary messages without a new model call, source read, action dispatch or
 permission renewal.
+Closed acknowledgements use the no-model status shortcut only immediately after
+an unresolved goal report with no planning offer/context. A persistent or completed
+goal cursor cannot swallow acceptance of an unrelated assistant offer.
 
 Answer plans have an attributed `ownerInstructions` channel for exact quotes of
 the current Owner message. Dates, times, quantities and constraints in that
