@@ -715,6 +715,22 @@ function createDemoRouter ({ getAdapterFn = getAdapterForLane, processIntakeFn =
           return res.status(['worker_busy', 'request_conflict', 'conversation_changed'].includes(e.message) ? 409 : 503).json({ error: { message: t('taskPlan.error'), retryable: false } })
         }
       }
+      // Status and closed acknowledgements retain the saved whole goal;
+      // neither re-executes it nor grants approval. Specialized handlers ran first.
+      if(planningLane&&['status','ambiguous'].includes(require('../actions/chat').parseContinuation(message)?.kind)){
+        let saved,goal
+        try{saved=conversationStore.get?.(req.body.conversationId);goal=require('../intake/goal/ownerGoal').currentGoal(saved)}catch{return res.status(503).json({error:'owner_goal_history_unavailable'})}
+        const kind=require('../actions/chat').parseContinuation(message)?.kind,last=saved?.messages?.at(-1)
+        const immediateReport=last?.role==='assistant'&&last.ownerGoal?.goalId===goal?.goalId&&goal?.status!=='GOAL_COMPLETED'&&!last.planningOffer&&!last.planningContext
+        if(require('../intake/goal/ownerGoal').validGoal(goal)&&(kind==='status'||immediateReport)){
+          if(!require('../core/operating/chatRequest').sameOrigin(req))return res.status(403).json({error:'same_origin_required'})
+          const contract=require('../intake/goal/ownerGoal'),answer=contract.withOutstanding(contract.attachResult({lane:'chat',mode:'chat',reply:'',servedBy:null,tasks:[]},goal),saved)
+          let historySaved=false
+          try{conversationStore.appendTurn({id:req.body.conversationId,userText:message,replyText:answer.reply,ownerGoal:goal});historySaved=true}catch{}
+          const warning=historySaved?'':'\n\n'+t('ownerGoal.trackingUnavailable')
+          return res.set('Cache-Control','no-store').json({...answer,historySaved,...(!historySaved?{ownerGoalTrackingUnavailable:true}:{}),reply:answer.reply+warning,replyForArchive:(answer.replyForArchive||answer.reply)+warning})
+        }
+      }
       const mailRequest = !generalRequest && !contextCard && !req.body.attachSection && (!req.body.interactionMode || req.body.interactionMode === 'chat')
         ? require('../company/mailIntent').parseMailRequest(message, history) : null
       const gmailRequest = !generalRequest && liveContext?.gmail && !contextCard && !req.body.attachSection && (!req.body.interactionMode || req.body.interactionMode === 'chat')
@@ -1239,7 +1255,16 @@ function createDemoRouter ({ getAdapterFn = getAdapterForLane, processIntakeFn =
         // from the same result, so the two cannot disagree.
         const offer = offerDecision.offer
         const withOffer0 = offer ? Object.assign({}, withInference, { workRequestOffer: offer }) : withInference
-        const withOffer = settingsOffer ? Object.assign({}, withOffer0, { settingsOffer }) : withOffer0
+        const offered = settingsOffer ? Object.assign({}, withOffer0, { settingsOffer }) : withOffer0
+        let withOffer=offered,goalHistoryUnavailable=false
+        if(offered.ownerGoal){
+          try{withOffer=require('../intake/goal/ownerGoal').withOutstanding(offered,conversationStore.get?.(req.body.conversationId))}
+          catch{
+            goalHistoryUnavailable=true
+            const warning='\n\n'+t('ownerGoal.trackingUnavailable')
+            withOffer={...offered,ownerGoalTrackingUnavailable:true,reply:offered.reply+warning,replyForArchive:(offered.replyForArchive||offered.reply)+warning}
+          }
+        }
         /**
          * ⛔ THE REQUEST HE CLEARLY MADE, WITH ONE THING MISSING (P1-C1b1).
          *
@@ -1329,6 +1354,7 @@ function createDemoRouter ({ getAdapterFn = getAdapterForLane, processIntakeFn =
                 userText: message,
                 replyText: shown,
                 publicAnswerReceipt: withOffer.publicAnswerReceipt || null,
+                ownerGoal: withOffer.ownerGoal || null,
                 investigationRunId: withOffer.investigationRunId || null,
                 capabilityGapRunId: withOffer.capabilityGapRunId || null,
                 planningOffer: planningLane ? planContinuation.makeOffer(message, withOffer.mode, conversationStore.get?.(conversationId)?.messages?.at(-1)?.planningOffer, planningRevision) : null,
@@ -1364,6 +1390,10 @@ function createDemoRouter ({ getAdapterFn = getAdapterForLane, processIntakeFn =
           }
         }
 
+        if(withClarification.ownerGoal){
+          const warning=publicHistorySaved||goalHistoryUnavailable?'':'\n\n'+t('ownerGoal.trackingUnavailable')
+          return res.status(200).json({...withClarification,historySaved:publicHistorySaved,...(!publicHistorySaved||goalHistoryUnavailable?{ownerGoalTrackingUnavailable:true}:{}),reply:withClarification.reply+warning,replyForArchive:(withClarification.replyForArchive||withClarification.reply)+warning})
+        }
         return res.status(200).json(withClarification.publicAnswerReceipt ? {...withClarification,historySaved:publicHistorySaved} : withClarification)
       } catch (err) {
         // Reuse the existing safe-disclosure boundary. Never leak provider body/stack/key/prompt.

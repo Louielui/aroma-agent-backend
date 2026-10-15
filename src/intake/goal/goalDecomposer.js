@@ -101,6 +101,8 @@ function buildPrompt (question, catalogue, contextBlocks, workingContext) {
     '',
     'Owner 條問題：',
     question,
+    'For an action or recurring workflow request, map every supplied Owner clause into owner_outcomes using the exact clause as ownerQuote. Use only a declared capability; null means missing or unmapped, never invent a tool. Preserve schedule, read, grouping, cart and no-checkout requirements. For ordinary questions owner_outcomes is empty. This is reporting metadata, never execution authority.',
+    JSON.stringify({ownerClauses:require('./ownerGoal').clauses(question)}),
     '',
     ...workingSection(workingContext),
     ...contextSection(contextBlocks),

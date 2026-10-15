@@ -23,6 +23,7 @@ function createReceipts ({ dir = path.join(resolveDataDir(), 'investigation-runs
     const r = store.get(id); if (!r || !active.has(id)) return
     r.state = failed ? 'failed' : 'completed'; r.updatedAt = clock(); r.reply = typeof result?.reply === 'string' ? result.reply : null
     r.response = result ? structuredClone(result) : null
+    if(require('../intake/goal/ownerGoal').validGoal(result?.ownerGoal)){r.ownerGoal=structuredClone(result.ownerGoal);r.goalStatus=result.ownerGoal.status}
     if (result?.investigation) r.investigation = structuredClone(result.investigation)
     r.events.push({ state: r.state, at: r.updatedAt }); store.save(r); active.delete(id)
   }

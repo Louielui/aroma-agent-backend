@@ -376,7 +376,7 @@ test('the schema closes every object so nothing can be smuggled past the validat
   // answerClaims joined required on 2026-08-08, after a LIVE HTTP 400 from OpenAI:
   // strict Structured Outputs reject any property not in required, so optionality must be
   // a NULL UNION. Its semantics are unchanged — null means UNBOUND.
-  assert.deepEqual(ANSWER_PLAN_SCHEMA.required.slice().sort(), ['answerClaims', 'citesEvidence', 'directAnswer', 'followUp', 'limitations', 'sections', 'unanswerable'])
+  assert.deepEqual(ANSWER_PLAN_SCHEMA.required.slice().sort(), ['answerClaims', 'citesEvidence', 'directAnswer', 'followUp', 'limitations', 'ownerInstructions', 'sections', 'unanswerable'])
 })
 
 test('length rules are bounded by the server, not by the model behaving', () => {

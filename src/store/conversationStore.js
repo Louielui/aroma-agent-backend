@@ -195,7 +195,7 @@ function createConversationStore (options = {}) {
    * Called once per completed turn from the UI path and nowhere else. A turn is only
    * written after the reply exists, so a failed turn leaves no half-conversation behind.
    */
-  function appendTurn ({ id, userText, replyText, servedBy = null, now = null, images, operatingRunId = null, developmentPlanRunId = null, codeDiagnosisRunId = null, codeRepairRunId = null, projectWorkRunId = null, taskPlanRunId = null, planningOffer = null, planningContext = null, investigationRunId = null, capabilityGapRunId = null, evidenceReport = null, evidenceReportAttempt = false, hrRecheckId = null, publicAnswerReceipt = null, publicCompletionRequestId = null } = {}) {
+  function appendTurn ({ id, userText, replyText, servedBy = null, now = null, images, operatingRunId = null, developmentPlanRunId = null, codeDiagnosisRunId = null, codeRepairRunId = null, projectWorkRunId = null, taskPlanRunId = null, planningOffer = null, planningContext = null, investigationRunId = null, capabilityGapRunId = null, evidenceReport = null, evidenceReportAttempt = false, hrRecheckId = null, publicAnswerReceipt = null, publicCompletionRequestId = null, ownerGoal = null, ownerGoalReference = null } = {}) {
     if (!isValidId(id)) throw new Error('invalid_conversation_id')
     const attachments = images === undefined ? null : require('../chat/imageAttachments').validateImages(images)
     const ts = now || new Date().toISOString()
@@ -225,8 +225,21 @@ function createConversationStore (options = {}) {
     // conversation the Owner has already learned to recognise in the list.
     if (!conversation.title) conversation.title = titleFrom(userText)
 
+    const goalContract=require('../intake/goal/ownerGoal'),knownGoals=goalContract.goalsFor(conversation)
+    const previousOwnerGoal=goalContract.currentGoal(conversation)
     conversation.messages.push({ role: 'user', content: String(userText == null ? '' : userText), servedBy: null, ts, ...(attachments ? { images: attachments } : {}) })
     const assistantMessage = { role: 'assistant', content: String(replyText == null ? '' : replyText), servedBy: servedBy || null, ts }
+    if(ownerGoal!==undefined&&ownerGoal!==null){
+      const previous=knownGoals.find(g=>g.goalId===ownerGoalReference)||previousOwnerGoal
+      const continuation=require('../actions/chat').parseContinuation(String(userText))
+      const hostReference=ownerGoalReference===previous?.goalId&&typeof previous?.goalId==='string'
+      const statusReference=(hostReference||continuation&&['status','approve','restore','ambiguous'].includes(continuation.kind))&&previous?.goalId===ownerGoal.goalId&&previous?.originalObjective===ownerGoal.originalObjective&&previous?.scopeHash===ownerGoal.scopeHash
+      if(!require('../intake/goal/ownerGoal').validGoal(ownerGoal)||(ownerGoal.originalObjective!==String(userText)&&!statusReference))throw Error('invalid_owner_goal')
+      assistantMessage.ownerGoal=structuredClone(ownerGoal)
+      const records=new Map(knownGoals.map(g=>[g.goalId,g]));records.set(ownerGoal.goalId,structuredClone(ownerGoal))
+      conversation.ownerGoals=[...records.values()]
+      conversation.activeOwnerGoalId=ownerGoal.goalId
+    }
     if (publicAnswerReceipt !== null) {
       if (!require('../topics/publicAnswerFollowups').validReceipt(publicAnswerReceipt)) throw Error('invalid_public_answer_receipt')
       assistantMessage.publicAnswerReceipt = structuredClone(publicAnswerReceipt)
@@ -255,6 +268,19 @@ function createConversationStore (options = {}) {
     return { id, messageCount: conversation.messages.length }
   }
 
+  // Host-only evidence refresh. Never creates a goal, changes its scope/binding,
+  // selects a different active goal, or fabricates an Owner conversation turn.
+  function updateOwnerGoal(id,updated){
+    if(!isValidId(id))throw Error('invalid_conversation_id')
+    const goals=require('../intake/goal/ownerGoal'),conversation=readOne(id,true),all=goals.goalsFor(conversation),previous=all.find(g=>g.goalId===updated?.goalId)
+    if(!previous||!goals.validGoal(updated))throw Error('invalid_owner_goal')
+    const immutable=g=>({goalId:g.goalId,requestId:g.requestId,originalObjective:g.originalObjective,scopeHash:g.scopeHash,scopeVersion:g.scopeVersion,constraints:g.constraints,outcomes:g.outcomes.map(o=>({id:o.id,ownerQuote:o.ownerQuote,mandatory:o.mandatory,steps:o.steps,requiredCapabilities:o.requiredCapabilities,authorizationRequirements:o.authorizationRequirements,executionBinding:o.executionBinding}))})
+    if(JSON.stringify(immutable(previous))!==JSON.stringify(immutable(updated)))throw Error('owner_goal_scope_changed')
+    conversation.ownerGoals=all.map(g=>g.goalId===updated.goalId?structuredClone(updated):g)
+    conversation.updatedAt=new Date().toISOString();writeConversation(conversation)
+    return {stored:true,goalId:updated.goalId,goalStatus:updated.status}
+  }
+
   /** @returns {boolean} whether a conversation was actually removed. */
   function remove (id) {
     if (!isValidId(id)) return false
@@ -266,7 +292,7 @@ function createConversationStore (options = {}) {
     }
   }
 
-  return { list, get, appendTurn, remove, dir, reservePublicCompletion }
+  return { list, get, appendTurn, updateOwnerGoal, remove, dir, reservePublicCompletion }
 }
 
 /**
@@ -298,6 +324,7 @@ const INERT_CONVERSATION_STORE = Object.freeze({
   list: () => [],
   get: () => null,
   appendTurn: () => { throw new Error('conversation_store_not_wired') },
+  updateOwnerGoal: () => { throw new Error('conversation_store_not_wired') },
   remove: () => false,
   dir: null,
   inert: true

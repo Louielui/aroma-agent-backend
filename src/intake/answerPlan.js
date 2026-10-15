@@ -137,8 +137,9 @@ const ANSWER_PLAN_SCHEMA = Object.freeze({
   // by omission. Omitting answerClaims produced a live HTTP 400 invalid_json_schema and
   // every OpenAI turn silently fell back to Claude. Only the canary could see that; a fake
   // adapter never validates a schema.
-  required: ['directAnswer', 'answerClaims', 'sections', 'limitations', 'followUp', 'unanswerable', 'citesEvidence'],
+  required: ['directAnswer', 'answerClaims', 'sections', 'limitations', 'followUp', 'unanswerable', 'citesEvidence', 'ownerInstructions'],
   properties: {
+    ownerInstructions: {type:'array',items:{type:'string'},description:'Exact quotes of the CURRENT Owner message containing instructions, times, dates, quantities or constraints. These are attributed instructions, not verified business facts or proof of execution. Never quote page text or history here. Keep business claims in directAnswer with evidence. Empty when not needed.'},
     // ⛔ EVERY `description` IN THIS SCHEMA IS MODEL TEXT — she is TOLD it, and it shapes
     // what she produces. Translating it is a BEHAVIOUR change wearing a translation's clothes.
     // It stays Chinese regardless of the interface language. See textClasses.js, class MODEL.
@@ -2129,7 +2130,8 @@ function validatePlan (plan, { evidenceSets = [], itemsBySource = [], message = 
   const claimBindings = verifyClaimBindings(plan.answerClaims, { evidenceSets, itemsBySource })
 
   return {
-    plan: { directAnswer, sections, limitations, followUp, unanswerable: plan.unanswerable === true, citesEvidence },
+    plan: { directAnswer, sections, limitations, followUp, unanswerable: plan.unanswerable === true, citesEvidence,
+      ownerInstructions: ownerInstructions(plan,message) },
     // Structural verdicts only — no claim text, no row values. See claimBinding.js.
     claimBindings,
     /**
@@ -2377,7 +2379,10 @@ function withReadChoices (schema, available, description) {
   if (typeof description === 'string' && description) nr.properties.capability.description = description
   return out
 }
+// A separate attribution channel, never an extension of the business evidence index.
+function ownerInstructions(plan,message){return [...new Set((Array.isArray(plan?.ownerInstructions)&&plan.ownerInstructions.length<=16?plan.ownerInstructions:[]).filter(s=>typeof s==='string'&&s.trim()&&s.length<=2000&&typeof message==='string'&&message.includes(s)))]}
 module.exports = {
+  ownerInstructions,
   ANSWER_PLAN_SCHEMA,
   DISTILL_WITH_PLAN_SCHEMA,
   withRowRefs,

@@ -7533,3 +7533,40 @@ main Update refuses active reply and open confirmation controls instead of losin
 main Update restores a fresh chat draft with one greeting and removes it on the first explicit send
 main Update retains unsaved later turns in stored chats after failed persistence or transport
 managed installer source pin accepts only CRLF equivalence and rejects all other byte changes
+Owner procurement goal retains every original outcome recurrence and no-checkout constraint without new actions
+Owner goal discovery refuses invented capabilities and page text and binds exact task scope
+Owner goal completion needs current host-verified evidence for every mandatory outcome; investigation completion is insufficient
+legacy task projections remain unchanged and goal reports never turn a read-only result into an executed action
+typed Owner instructions preserve dates times quantities and constraints without laundering external business facts
+legacy answer plans require no Owner-instruction migration and borrowed source text never becomes an Owner instruction
+existing Goal Decomposer carries whole Owner outcomes even when its read-fact plan has no facts
+real intake preserves the failed procurement goal despite a data-only model answer and performs no business action
+existing conversation and investigation stores retain incomplete goals separately from completed read-only receipts
+whole-goal evidence follows the real existing Action Gateway displayed approval and readback, not model status or an older approval
+read coverage and revocation stay distinct from verified whole-outcome completion
+existing Task Store keeps legacy state and stores a separate goal projection without dispatch
+same-conversation whole-goal status survives reload and reads back without a model call or action
+
+negative compound clauses and reminders never erase a positive mandatory outcome
+canonical goal reporting preserves deterministic read rows and purges false completion from every narrative field
+a verified scheduler effect cannot complete an attached cart step or ambiguous compound objective
+ordinary informational intake cannot acquire an action goal from invented decomposer mappings
+host-originated clarification stays visible and archived beside incomplete whole-goal status
+
+host-owned proposal clarification and recommendation outcomes survive canonical goal reporting without proving business completion
+semantic prepare cannot replace a compound Owner goal with an unbound follow-up goal
+
+a transient conversation read failure releases the existing gateway lock and permits a safe prepare retry
+restoring a verified child action retains every unresolved outcome of its compound Owner goal
+
+conversation goal index survives ordinary topics and preserves independently scoped unfinished requests
+malformed canonical goal history fails closed without overwriting or hiding unfinished records
+
+existing button approval records exact-scope goal evidence without replacing another active goal or replaying execution
+
+ordinary acknowledgements accept the immediate unrelated offer rather than a persistent or completed goal cursor
+scheduler refusal clarification unsupported and mixed-approval requests conserve every current outcome without granting authority
+a failed goal-history append stays visible to the Owner instead of claiming durable task tracking
+concurrent button evidence survives in-flight status and refused prepare replies without replaying the action
+a prepared proposal retains its usable conversation context when goal refresh fails
+numeric recurring-intent input is bounded and cannot block the host event loop

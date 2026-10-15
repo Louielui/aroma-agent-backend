@@ -386,7 +386,15 @@ async function processIntake (message, adapter, history = [], opts = {}) {
   const supplied = opts && opts.requestId
   const requestId = (typeof supplied === 'string' && UUID_RE.test(supplied)) ? supplied : uuidv4()
   try {
-    return await require('../investigation/invocationContext').withInvocationContext(requestId,()=>runIntakePipeline(message, adapter, history, opts, requestId))
+    const goals=require('./goal/ownerGoal')
+    let ownerGoal=opts.interactionMode==='chat'&&goals.isTaskRequest(message)?goals.createGoal({objective:message,requestId}):null
+    let ownerReadReply='',ownerHostReply=''
+    const pipelineOpts={...opts,onOwnerUnderstanding:understanding=>{
+      const outcomes=understanding?.ownerOutcomes
+      if(ownerGoal&&Array.isArray(outcomes)&&outcomes.length){ownerGoal=goals.refineGoal(ownerGoal,outcomes);pipelineOpts.ownerGoal=ownerGoal}
+    },onOwnerRead:observations=>{if(ownerGoal){ownerGoal=goals.observeReads(ownerGoal,observations);pipelineOpts.ownerGoal=ownerGoal}},onOwnerReadView:reply=>{ownerReadReply=reply},onOwnerClarification:reply=>{ownerHostReply=reply},ownerGoal}
+    const result=await require('../investigation/invocationContext').withInvocationContext(requestId,()=>runIntakePipeline(message, adapter, history, pipelineOpts, requestId))
+    return ownerGoal&&result?(result.blocked?{...result,ownerGoal}:goals.attachResult(result,ownerGoal,{readReply:ownerReadReply,hostReply:ownerHostReply})):result
   } catch (err) {
     // Slice B: every error leaving intake carries the correlationId (== requestId).
     // IntakeUpstreamError sets it in its constructor; DistillParseError and any
@@ -1111,6 +1119,7 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
             return { text: r && r.text, usage: r && r.usage }
           }
         })
+        opts.onOwnerUnderstanding?.(out?.plan||out?.understanding)
         emitPhase({
           requestId,
           phase: PHASE.MODEL_CALL,
@@ -3507,7 +3516,10 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
     // The count now comes from `view.readClaim`, below, which judges the finished text.
     // THE OWNER-FACING SHAPE, applied last so it wraps the reply the guard approved.
     // With nothing retrieved it is a no-op and the reply passes through untouched.
+    opts.onOwnerRead?.({perSource:Array.from(turnPerSource.values()),evidenceSets:Array.from(turnEvidence.values())})
+    if(opts.ownerGoal&&(gateAuthoredAsk||semanticClarifyTerminal))opts.onOwnerClarification?.(guarded.reply)
     const view = buildReadResultReply({
+      ownerGoalReporting:!!opts.ownerGoal,
       reply: guarded.reply,
       correction: guarded.correction || null,
       // E2: the sources/kind the DRAFT judgment named, so a carried note stays as specific in
@@ -3529,6 +3541,7 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
       // source of business facts, and recall-is-not-evidence is unchanged by it.
       history
     })
+    if(opts.ownerGoal)opts.onOwnerReadView?.(view.reply)
     // ⛔ E2: ONE outcome decides both the screen and the count. `view.readClaim` was judged
     // against `view.reply` — the exact bytes he receives — so this can no longer report a
     // correction he never saw, nor stay silent about one he did.
@@ -3562,6 +3575,7 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
   if (demo && distilled.mode === 'commit' && (!Array.isArray(distilled.tasks) || distilled.tasks.length !== 1)) {
     await recordProviderUsage(llmResult) // idempotent: already recorded pre-parse
     const clarificationReason = recordClarification(tel, (Array.isArray(distilled.tasks) && distilled.tasks.length > 1) ? 'multiple_tasks_narrow_to_one' : 'no_actionable_task')
+    opts.onOwnerClarification?.(buildGroundedReply({type:'clarification',clarificationReason}))
     return {
       blocked: false, mode: 'commit', intent: distilled.intent, demoOutcome: 'clarification',
       // Change B: ground the reply — narrowing created NO proposal; never echo the
@@ -3659,7 +3673,10 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
       requestId,
       route: (routeDecision && routeDecision.route) ? routeDecision.route : null
     })
+    opts.onOwnerRead?.({perSource:Array.from(turnPerSource.values()),evidenceSets:Array.from(turnEvidence.values())})
+    if(opts.ownerGoal&&(gateAuthoredAsk||semanticClarifyTerminal))opts.onOwnerClarification?.(guarded.reply)
     const view = buildReadResultReply({
+      ownerGoalReporting:!!opts.ownerGoal,
       reply: guarded.reply,
       historicalMemoryAnswer,
       correction: guarded.correction || null,
@@ -3682,6 +3699,7 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
       // source of business facts, and recall-is-not-evidence is unchanged by it.
       history
     })
+    if(opts.ownerGoal)opts.onOwnerReadView?.(view.reply)
     // ⛔ E2: same single outcome as the commit path — judged against the bytes he receives.
     leadWithJudgment(view, distilled, requestId, 'chat', operationalInvestigation)
     const operationalBrief = require('../investigation/operationalBrief').renderOperationalBrief(operationalInvestigation, { message })
@@ -3822,6 +3840,7 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
     requestId
   }
   // Persist locally (in-process store); capture ids to return to the UI
+  if(opts.ownerGoal)persistPayload.ownerGoal=opts.ownerGoal
   const persisted = await persistIntake(persistPayload)
 
   // ── STEP 5: WRITE LLM USAGE via Wall-E's hub endpoint ────────────────────
