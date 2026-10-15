@@ -7,7 +7,7 @@ const KINDS=['read','action','recurring','answer','unknown']
 const schema={type:'array',items:{type:'object',additionalProperties:false,required:['ownerQuote','capability','kind'],properties:{ownerQuote:{type:'string'},capability:{anyOf:[{type:'string',enum:[...require('../../governance/selfCapability').CAPABILITY_NAMES,...require('../../actions/understanding').SCHEMA.properties.capability.enum.filter(v=>v!=='none')]},{type:'null'}]},kind:{type:'string',enum:KINDS}}}}
 function scope(){return hash({version:1,capabilities:require('../../governance/selfCapability').REGISTRY,actions:require('../../actions/understanding').SCHEMA.properties.capability.enum,targets:require('../../actions/contract').TARGETS})}
 function capability(id){const own=require('../../governance/selfCapability').capabilityEntry(id);if(own)return own;return require('../../actions/understanding').SCHEMA.properties.capability.enum.includes(id)&&id!=='none'?{capability:id,implementation:'implemented',kind:'execution'}:null}
-const clauses=s=>s.split(/\n+|[。!！;；，]+|,(?!\d{3}(?:\D|$))|(?<!\d)\.(?!\d)|\s+(?:and(?: then)?|then)\s+|(?=(?:之後|然後|並且|以及)(?:把|請|幫我|麻煩|新增|建立|設定|安排|暫停|停用|恢復|啟用|停止|取消|刪除|放進|放入|加入|加到))/iu).map(v=>v.trim()).filter(Boolean)
+const clauses=s=>s.split(/\n+|[。!！;；，]+|(?<=[?？])\s*|,(?!\d{3}(?:\D|$))|(?<!\d)\.(?!\d)|\s+(?:and(?: then)?|then)\s+|(?=(?:之後|然後|並且|以及)(?:把|請|幫我|麻煩|新增|建立|設定|安排|暫停|停用|恢復|啟用|停止|取消|刪除|放進|放入|加入|加到))/iu).map(v=>v.trim()).filter(Boolean)
 const constraint=s=>/^(?:不需要|不要|不可|禁止|唔好|不准|do not\b|don't\b|never\b|without\b)/iu.test(s)
 // Only an entire closed prohibition can be excluded from mandatory outcomes.
 // Unknown/compound negatives remain mandatory as well as retained constraints.

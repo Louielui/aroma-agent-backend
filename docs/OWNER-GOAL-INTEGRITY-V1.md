@@ -25,6 +25,8 @@ intake routing. Question syntax uses word boundaries; whole-team wording and
 stock-condition when clauses remain directives. Closed scheduler imperatives
 are checked directly rather than filtered through a broad substring read test.
 A question in one information step cannot erase another explicit action clause.
+Question marks form clause boundaries and remain attached to the question, so
+a following directive is independently recognized without losing question syntax.
 An explicit schedule object may include relative information such as which items
 to order. Creation how-to and permission questions still follow the ordinary
 question path. Both language variants of the scheduler fallback require complete
