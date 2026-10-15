@@ -2,6 +2,18 @@
 const test=require('node:test'),assert=require('node:assert/strict'),{randomUUID}=require('node:crypto'),fs=require('node:fs'),os=require('node:os'),path=require('node:path')
 const {createGateway}=require('../../actions/service'),{createChatGateway}=require('../../actions/chat'),{TARGETS}=require('../../actions/contract'),goals=require('./ownerGoal')
 
+test('a prepared proposal retains its usable conversation context when goal refresh fails',async()=>{
+ for(const appendFails of [false,true]){
+ let enabled=false,writes=0,fail=false;const rows=new Map(),memory=m=>({get:id=>structuredClone(m.get(id)),save:r=>m.set(r.id,structuredClone(r)),list:()=>[...m.values()].map(v=>structuredClone(v)),lock:()=>()=>{}}),dir=fs.mkdtempSync(path.join(os.tmpdir(),'owner-goal-prepare-refresh-')),base=require('../../store/conversationStore').createConversationStore({dataDir:dir}),conversations={...base,get:id=>{if(fail){fail=false;throw Error('EBUSY')}return base.get(id)}},receipts=require('../../investigation/receipts').createReceipts({dir:path.join(dir,'receipts')})
+ const gateway=createGateway({store:memory(rows),scheduler:{read:async id=>({...TARGETS.find(t=>t.id===id),targetId:id,enabled,runtime:enabled?'Ready':'Disabled',definitionHash:'a'.repeat(64),at:new Date().toISOString()}),apply:async()=>{writes++;enabled=!enabled}}}),chat=createChatGateway({request:async b=>{const result=await gateway.handle({id:'owner',role:'owner'},b);if(b.op==='chat_prepare')fail=true;return result},receipts,conversations,continuationStore:memory(new Map())}),cid=randomUUID(),requestId=randomUUID()
+ if(appendFails){conversations.appendTurn=()=>{throw Error('ENOSPC')};await assert.rejects(chat.start({message:'Resume ActionGatewayAcceptance',conversationId:cid,requestId}),/ENOSPC/);assert.notEqual(receipts.get(requestId).state,'completed');assert.equal(writes,0);continue}
+ const result=await chat.start({message:'Resume ActionGatewayAcceptance',conversationId:cid,requestId})
+ assert.equal(result.ownerGoalTrackingUnavailable,true);assert.equal(base.get(cid).messages.at(-1).investigationRunId,requestId);assert.equal(receipts.get(requestId).state,'completed')
+ const proposal=(await chat.handle({op:'list',conversationId:cid,investigationId:requestId})).runs[0];assert.ok(proposal.nonce)
+ const done=await chat.handle({op:'approve',conversationId:cid,investigationId:requestId,id:proposal.id,hash:proposal.hash,nonce:proposal.nonce});assert.equal(done.run.state,'verified');assert.equal(writes,1)
+ }
+})
+
 test('concurrent button evidence survives in-flight status and refused prepare replies without replaying the action',async()=>{
  for(const [op,failRefresh] of [['list',false],['inspect',false],['list',true],['inspect',true]]){
   let enabled=false,writes=0,intercept=false,release,entered;const held=new Promise(r=>release=r),seen=new Promise(r=>entered=r),rows=new Map(),memory=m=>({get:id=>structuredClone(m.get(id)),save:r=>m.set(r.id,structuredClone(r)),list:()=>[...m.values()].map(v=>structuredClone(v)),lock:()=>()=>{}}),dir=fs.mkdtempSync(path.join(os.tmpdir(),'owner-goal-race-')),conversations=require('../../store/conversationStore').createConversationStore({dataDir:dir}),receipts=require('../../investigation/receipts').createReceipts({dir:path.join(dir,'receipts')})
@@ -10,7 +22,7 @@ test('concurrent button evidence survives in-flight status and refused prepare r
   const done=await chat.handle({op:'approve',conversationId:cid,investigationId:proposal.context.investigationId,id:proposal.id,hash:proposal.hash,nonce:proposal.nonce});assert.equal(done.run.state,'verified');assert.equal(writes,1);assert.equal(goals.currentGoal(conversations.get(cid)).status,'GOAL_COMPLETED')
   const before=conversations.get(cid).messages.length,get=conversations.get;let fail=failRefresh;conversations.get=id=>{if(fail){fail=false;throw Error('EBUSY')}return get(id)}
   release();const result=await pending;assert.equal(result.ownerGoal.goalId,initial.ownerGoal.goalId);assert.equal(goals.currentGoal(conversations.get(cid)).status,'GOAL_COMPLETED');assert.equal(writes,1)
-  if(failRefresh){assert.equal(result.ownerGoalTrackingUnavailable,true);assert.match(result.reply,/未能保存|could not be saved/);assert.equal(conversations.get(cid).messages.length,before)}else{assert.equal(result.ownerGoal.status,'GOAL_COMPLETED');assert.equal(result.hasUnresolvedOwnerGoals,false);assert.ok(result.ownerGoal.outcomes[0].completionEvidence.length)}
+  if(failRefresh){assert.equal(result.ownerGoalTrackingUnavailable,true);assert.match(result.reply,/未能保存|could not be saved/);assert.equal(conversations.get(cid).messages.length,before+2);assert.equal(conversations.get(cid).messages.at(-1).ownerGoal,undefined)}else{assert.equal(result.ownerGoal.status,'GOAL_COMPLETED');assert.equal(result.hasUnresolvedOwnerGoals,false);assert.ok(result.ownerGoal.outcomes[0].completionEvidence.length)}
  }
 })
 test('whole-goal evidence follows the real existing Action Gateway displayed approval and readback, not model status or an older approval',async()=>{

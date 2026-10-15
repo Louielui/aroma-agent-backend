@@ -129,8 +129,16 @@ function isTaskRequest(message){
  if(['question','capability_question','investigation_request','arrangement_request','general_knowledge'].includes(router.routeLane(text).reason))return false
  const primaryTask=/^(?:(?:please|help me)\s+|(?:請|幫我|麻煩你?)\s*)?(?:pause|resume|enable|disable|stop|cancel|delete|create|schedule|set up|run|restart)\b|^(?:請|幫我|麻煩你?)?(?:暫停|停用|恢復|啟用|停止|取消|刪除|新增|建立|設定)/iu.test(text)
  if(router.isReadRequest(text)&&!primaryTask)return false
- const domain=/costco|購物車|採購|訂貨|排程|背景工作|自動工作|scheduler|scheduled?\b|(?:background|automatic) (?:job|task)|Windows service|backend|bridge|AromaXiangXiang|ActionGatewayAcceptance/iu.test(text)
- return shouldTrack(text)||domain&&clauses(text).some(s=>/^(?:(?:please|help me)\s+|(?:請|幫我|麻煩你?)\s*)?(?:pause|resume|enable|disable|stop|cancel|delete|add|create|schedule|set up|run|restart)\b|^(?:請|幫我|麻煩你?)?(?:暫停|停用|恢復|啟用|停止|取消|刪除|新增|建立|設定|放進|加入)/iu.test(s))
+ return clauses(text).some(s=>{
+  const command=s.replace(/^(?:(?:please|help me)\s+|(?:請|幫我|麻煩你?)\s*)/iu,'')
+  // An analytic object is not an external business effect. Examine clauses
+  // independently so a real attached action still retains the full objective.
+  if(/^(?:add\s+up\b|(?:create|make|build|generate|prepare|run)\s+(?:(?:a|an|the|new|daily|weekly|monthly)\s+)*(?:summary|report|analysis|comparison|overview|breakdown|table|chart|list|description)\b)|^(?:新增|建立|產生|製作|整理)(?:一[個份張]|每日|每天|每週|每月)*(?:摘要|報告|分析|比較|概覽|明細|表格|圖表|清單)/iu.test(command))return false
+  if(shouldTrack(s))return true
+  const scheduler=/^(?:pause|resume|enable|disable|stop|cancel|delete|restart|run)\s+(?:(?:both|all|the|that|this|these|previous|two)\s+)*(?:(?:scheduled?|background|automatic)\s+(?:tasks?|jobs?)|scheduler|Windows service|backend|bridge|AromaXiangXiang[\w-]*|ActionGatewayAcceptance|gateway-acceptance|errand-recall)\b|^(?:暫停|停用|恢復|啟用|停止|取消|刪除|執行|重新啟動)(?:這個|那個|所有|全部|兩個)?(?:排程|背景工作|自動工作|服務|後端|橋接器|AromaXiangXiang|ActionGatewayAcceptance)/iu.test(command)
+  const cart=/^(?:add|put|place|move)\b.+\b(?:to|into|in)\s+(?:the\s+)?(?:Costco\s+)?(?:shopping\s+)?cart\b|^(?:放進|加入).*(?:購物車)/iu.test(command)
+  return scheduler||cart
+ })
 }
 // Conversation-owned reporting records only. Each request retains its own scope
 // and evidence; indexing several goals never merges their execution authority.

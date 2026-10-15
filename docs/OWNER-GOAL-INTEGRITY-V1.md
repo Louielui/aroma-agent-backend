@@ -127,3 +127,12 @@ after asynchronous gateway calls, immediately before synchronous render/save, so
 a concurrent authenticated button receipt cannot be overwritten by an older
 pending snapshot. If that refresh fails, no stale goal turn is appended and the
 Owner receives the tracking-unavailable warning; execution is never replayed.
+
+Scheduler fallback admission is bound to a scheduler/service action object or a
+cart insertion effect, not an arbitrary add/create/run verb near a domain word.
+Analytic objects such as summaries, reports and sums retain ordinary answer
+behavior. Mixed clauses retain any real action and the complete original request.
+If a goal refresh fails, the conversation turn still retains its proposal context
+without stale goal metadata. The warning identifies unavailable goal tracking;
+existing approval remains usable. If the transcript itself cannot be saved, the
+proposal request is not marked completed or replayed as a successful preparation.

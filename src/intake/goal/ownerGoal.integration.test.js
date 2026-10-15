@@ -16,11 +16,11 @@ test('ordinary informational intake cannot acquire an action goal from invented 
    if(opts.responseFormat?.name==='goal_plan'){decomposed++;return {text:JSON.stringify({question_restated:message,executive_frame:{taskType:'act',decisionNeeded:false,successDefinition:'Read records',answerPosture:'evidence_first'},requested_capability:null,facts:[],joins:[],owner_outcomes:[{ownerQuote:message,capability:'aroma_system.read',kind:'read'}]})}}
    return {text:JSON.stringify({intent:'query',mode:'chat',reply:'Inventory describes the goods held for use.',tasks:[],decision:null}),model:'offline-fixture',usage:{inputTokens:1,outputTokens:1},latencyMs:1}
   }}
-  for(message of ['What is inventory?','每天的訂貨單是怎麼建立的？','請問系統每天的設定是什麼','背景工作停了嗎','Why did the scheduled tasks stop running']){
+  for(message of ['What is inventory?','每天的訂貨單是怎麼建立的？','請問系統每天的設定是什麼','背景工作停了嗎','Why did the scheduled tasks stop running','Add up the Costco receipts for September','Create a summary of the Costco orders','Run a report on the scheduled tasks']){
    const result=await require('../intakeService').processIntake(message,adapter,[],{demo:true,interactionMode:'chat',requestId:randomUUID(),providerHint:'claude',readContextDeps:{sources:[]}})
    assert.equal(result.ownerGoal,undefined);assert.match(result.reply,/Inventory describes/)
   }
-  assert.equal(decomposed,5)
+  assert.equal(decomposed,8)
  }finally{for(const[k,v]of Object.entries(prior))if(v===undefined)delete process.env[k];else process.env[k]=v}
 })
 test('real intake preserves the failed procurement goal despite a data-only model answer and performs no business action',async()=>{

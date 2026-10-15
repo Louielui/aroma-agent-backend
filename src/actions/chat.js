@@ -153,7 +153,7 @@ function createChatGateway({request,receipts,conversations,providerFor,semanticT
    result=goals.withOutstanding(result,priorConversation)
    if(result.ownerGoalTrackingUnavailable)result.reply+='\n\n'+t('ownerGoal.trackingUnavailable')
    receipt.state='completed';receipt.response=result;receipt.timeline.push({phase:'completed',at:new Date(now()).toISOString()});continuationStore.save(receipt)
-   if(saveConversation)conversations.appendTurn({id:conversationId,userText:message,replyText:result.reply,investigationRunId:result.investigationRunId,...(result.ownerGoal?{ownerGoal:result.ownerGoal,ownerGoalReference:priorGoal?.goalId}:{})})
+   conversations.appendTurn({id:conversationId,userText:message,replyText:result.reply,investigationRunId:result.investigationRunId,...(saveConversation&&result.ownerGoal?{ownerGoal:result.ownerGoal,ownerGoalReference:priorGoal?.goalId}:{})})
    return result
   }catch(e){receipt.state='interrupted';continuationStore.save(receipt);throw e}
  }
@@ -202,8 +202,10 @@ function createChatGateway({request,receipts,conversations,providerFor,semanticT
    if(result.ownerGoal)result.reply+='\n\n'+require('../intake/goal/ownerGoalView').renderGoal(result.ownerGoal)
    result=goals.withOutstanding(result,priorConversation)
    if(result.ownerGoalTrackingUnavailable)result.reply+='\n\n'+t('ownerGoal.trackingUnavailable')
+   // Persist the proposal context even when only goal metadata is unavailable.
+   // A failed transcript append cannot become a completed, replay-only receipt.
+   conversations.appendTurn({id:conversationId,userText:message,replyText:result.reply,investigationRunId:requestId,...(saveConversation&&result.ownerGoal?{ownerGoal:result.ownerGoal,ownerGoalReference:priorGoal?.goalId}:{})})
    receipts.finish(requestId,result)
-   if(saveConversation)conversations.appendTurn({id:conversationId,userText:message,replyText:result.reply,investigationRunId:requestId,...(result.ownerGoal?{ownerGoal:result.ownerGoal,ownerGoalReference:priorGoal?.goalId}:{})})
    return result
   }catch(e){try{receipts.finish(requestId,null,true)}catch(_){}throw e}finally{ongoing.delete(conversationId)}
  }
