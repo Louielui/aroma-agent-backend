@@ -715,6 +715,17 @@ function createDemoRouter ({ getAdapterFn = getAdapterForLane, processIntakeFn =
           return res.status(['worker_busy', 'request_conflict', 'conversation_changed'].includes(e.message) ? 409 : 503).json({ error: { message: t('taskPlan.error'), retryable: false } })
         }
       }
+      // A saved whole-goal status is read back, never re-executed or upgraded.
+      if(planningLane&&require('../actions/chat').parseContinuation(message)?.kind==='status'){
+        const goal=conversationStore.get?.(req.body.conversationId)?.messages?.at(-1)?.ownerGoal
+        if(require('../intake/goal/ownerGoal').validGoal(goal)){
+          if(!require('../core/operating/chatRequest').sameOrigin(req))return res.status(403).json({error:'same_origin_required'})
+          const answer=require('../intake/goal/ownerGoal').attachResult({lane:'chat',mode:'chat',reply:'',servedBy:null,tasks:[]},goal)
+          let historySaved=false
+          try{conversationStore.appendTurn({id:req.body.conversationId,userText:message,replyText:answer.reply,ownerGoal:goal});historySaved=true}catch{}
+          return res.set('Cache-Control','no-store').json({...answer,historySaved})
+        }
+      }
       const mailRequest = !generalRequest && !contextCard && !req.body.attachSection && (!req.body.interactionMode || req.body.interactionMode === 'chat')
         ? require('../company/mailIntent').parseMailRequest(message, history) : null
       const gmailRequest = !generalRequest && liveContext?.gmail && !contextCard && !req.body.attachSection && (!req.body.interactionMode || req.body.interactionMode === 'chat')
@@ -1329,6 +1340,7 @@ function createDemoRouter ({ getAdapterFn = getAdapterForLane, processIntakeFn =
                 userText: message,
                 replyText: shown,
                 publicAnswerReceipt: withOffer.publicAnswerReceipt || null,
+                ownerGoal: withOffer.ownerGoal || null,
                 investigationRunId: withOffer.investigationRunId || null,
                 capabilityGapRunId: withOffer.capabilityGapRunId || null,
                 planningOffer: planningLane ? planContinuation.makeOffer(message, withOffer.mode, conversationStore.get?.(conversationId)?.messages?.at(-1)?.planningOffer, planningRevision) : null,

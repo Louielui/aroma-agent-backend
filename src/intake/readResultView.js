@@ -729,7 +729,9 @@ function buildReadResultReply (input = {}) {
   const provenance = summary ? null : publicView.publicProvenance(input)
   if (summary) afterRoute = { ...afterRoute, reply: summary, publicSummaryRendered: true, publicAnswerReceipt: require('../topics/publicAnswerFollowups').createReceipt(input) }
   else if (provenance) afterRoute = { ...afterRoute, reply: afterRoute.reply + '\n\n' + provenance }
-  return withFinalReadStateBoundary(afterRoute, input)
+  const finished=withFinalReadStateBoundary(afterRoute, input)
+  const quotes=require('./answerPlan').ownerInstructions(input.answerPlan,input.message)
+  return quotes.length?{...finished,reply:[finished.reply,...quotes.map(text=>t('ownerGoal.ownerSaid',{text}))].join('\n\n')}:finished
 }
 
 /**

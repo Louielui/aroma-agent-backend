@@ -38,6 +38,21 @@
  * than editing the same strings twice.
  */
 const CATALOGUE = Object.freeze({
+  'ownerGoal.available': {zh:"已取得授權來源讀取紀錄；完整結果仍待核實",en:"Authorized source read recorded; the complete outcome remains unverified"},
+  'ownerGoal.blocked': {zh:"讀取失敗或範圍不完整，尚未完成",en:"Read unavailable or coverage incomplete; not complete"},
+  'ownerGoal.heading': {"zh":"原任務進度","en":"Original goal status"},
+  'ownerGoal.completed': {"zh":"所有必要結果已有核實證據。","en":"All mandatory outcomes have verified evidence."},
+  'ownerGoal.partial': {"zh":"部分完成；原任務尚未全部完成。","en":"Partially complete; the original goal is not fully complete."},
+  'ownerGoal.incomplete': {"zh":"原任務尚未完成。","en":"The original goal is incomplete."},
+  'ownerGoal.verified': {"zh":"已核實完成","en":"Completed with verified evidence"},
+  'ownerGoal.authorization': {"zh":"能力已登記；本任務授權及執行結果仍待核實","en":"Capability registered; this task authorization and execution remain unverified"},
+  'ownerGoal.unavailable': {"zh":"所需能力未對應或未實作，尚未完成","en":"Required capability unmapped or unimplemented; incomplete"},
+  'ownerGoal.constraint': {"zh":"限制：{text}","en":"Constraint: {text}"},
+  'ownerGoal.investigationOnly': {"zh":"本次查詢或調查結束，不代表上述業務工作已執行；此進度紀錄不授予權限。","en":"Finishing this query or investigation does not establish execution of the business steps. This status record grants no authority."},
+  'ownerGoal.ownerSaid': {"zh":"Owner 原文（指示或條件，不是已核實業務結果）：{text}","en":"Owner text (instruction or condition, not a verified business result): {text}"},
+  'ownerGoal.archTitle': {"zh":"完整目標與完成核實","en":"Whole-goal preservation and verification"},
+  'ownerGoal.archCurrent': {"zh":"共用原始目標、逐項要求、能力與阻塞紀錄；調查結束與目標完成分開。","en":"Shared original objective, required outcomes, capabilities and blockers; investigation completion is separate from goal completion."},
+  'ownerGoal.archLimits': {"zh":"此階段只補目標追蹤與匯報；不新增排程、Costco 操作或執行權限。候選版本尚未部署及真人驗收。","en":"This phase adds goal tracking and reporting only; no new scheduling, Costco operations or execution authority. Candidate deployment and live acceptance remain pending."},
   'browserWork.title': { zh: 'Browser 工作', en: 'Browser work' },
   'browserWork.current': { zh: '主系統可唯讀查看已保存 Browser 話題、目前進度、已用時間及回覆；先前回合收起。查詢使用原有紀錄，沒有模型、網站或滑鼠重跑。真實 Edge fixture 已核對讀取、錯誤狀態與草稿保留；目前執行版本及 Owner 原始紀錄須另行驗收。', en: 'The main system can inspect saved Browser topics, current progress, elapsed time and replies with earlier turns collapsed. It reads original records without model, website or mouse replay. Real Edge fixtures verify reads, errors and draft preservation; the running version and original Owner records require separate acceptance.' },
   'browserWork.limits': { zh: '只提供查看；要追問或停止仍使用原 Browser 側欄。舊任務模式紀錄沒有分頁來源資料，不會推測目前分頁名稱。滑鼠操作問題及答案只在目前程序內可查看，重啟後只保留無內容狀態；最近 100 項操作及來源不完整情況另有標示。', en: 'Observation only; follow up or stop in the original Browser sidebar. Older task-only records lack page identity, so current tab titles are not inferred. Native questions and answers are viewable during the current process only; after restart only content-free state remains. Recent 100-operation coverage and unavailable sources are disclosed.' },

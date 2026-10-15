@@ -199,7 +199,8 @@ function sweepStaleTemps () {
 }
 
 /** Persist a distilled intake: Decision + Tasks + Events, atomically. */
-function persistIntake ({ understanding, decision, tasks = [], provenance = {} }) {
+function persistIntake ({ understanding, decision, tasks = [], provenance = {}, ownerGoal = null }) {
+  if(ownerGoal!==null&&!require('../intake/goal/ownerGoal').validGoal(ownerGoal))throw Error('invalid_owner_goal')
   // SERIALISED ACROSS PROCESSES. load->mutate->save is one critical section;
   // without this two processes each save their own snapshot and one set of
   // records simply disappears, with no corruption anywhere to notice.
@@ -227,6 +228,7 @@ function persistIntake ({ understanding, decision, tasks = [], provenance = {} }
   const storedTasks = tasks.map((t) => {
     const taskId = 'task_' + uuidv4().slice(0, 8)
     const task = { id: taskId, title: t.title || '', note: t.note || '', decision_id: decisionId, state: 'todo', created_at: now }
+    if(ownerGoal)task.ownerGoal=structuredClone(ownerGoal)
     db.events.push({ id: 'evt_' + uuidv4().slice(0, 8), type: 'task.created', entity_id: taskId, actor: 'louie', at: now })
     return task
   })
@@ -342,14 +344,14 @@ function listApprovalEvents () {
 }
 
 function listDecisions () { return load().decisions }
-function listTasks () { return load().tasks }
+function listTasks () { return load().tasks.map(require('../intake/goal/ownerGoal').projectTask) }
 
 /**
  * Return one Task by id, or null. Back-compat: a Task persisted before the
  * bridge simply has no `proposalId` field (missing ⇒ not promoted).
  */
 function getTask (taskId) {
-  return (load().tasks || []).find(t => t.id === taskId) || null
+  return require('../intake/goal/ownerGoal').projectTask((load().tasks || []).find(t => t.id === taskId) || null)
 }
 
 /**

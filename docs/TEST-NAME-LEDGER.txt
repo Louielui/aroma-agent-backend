@@ -7533,3 +7533,16 @@ main Update refuses active reply and open confirmation controls instead of losin
 main Update restores a fresh chat draft with one greeting and removes it on the first explicit send
 main Update retains unsaved later turns in stored chats after failed persistence or transport
 managed installer source pin accepts only CRLF equivalence and rejects all other byte changes
+Owner procurement goal retains every original outcome recurrence and no-checkout constraint without new actions
+Owner goal discovery refuses invented capabilities and page text and binds exact task scope
+Owner goal completion needs current host-verified evidence for every mandatory outcome; investigation completion is insufficient
+legacy task projections remain unchanged and goal reports never turn a read-only result into an executed action
+typed Owner instructions preserve dates times quantities and constraints without laundering external business facts
+legacy answer plans require no Owner-instruction migration and borrowed source text never becomes an Owner instruction
+existing Goal Decomposer carries whole Owner outcomes even when its read-fact plan has no facts
+real intake preserves the failed procurement goal despite a data-only model answer and performs no business action
+existing conversation and investigation stores retain incomplete goals separately from completed read-only receipts
+whole-goal evidence follows the real existing Action Gateway displayed approval and readback, not model status or an older approval
+read coverage and revocation stay distinct from verified whole-outcome completion
+existing Task Store keeps legacy state and stores a separate goal projection without dispatch
+same-conversation whole-goal status survives reload and reads back without a model call or action

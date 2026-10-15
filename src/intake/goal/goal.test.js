@@ -339,7 +339,12 @@ test('*** ⛔ B reaches production through ONE call site, and is not a second re
   const dec = fs.readFileSync(path.resolve(__dirname, 'goalDecomposer.js'), 'utf8')
     .split('\n').filter((l) => { const t = l.trim(); return !(t.startsWith('//') || t.startsWith('*') || t.startsWith('/*')) }).join('\n')
   assert.equal(/MAX_(REASONING_)?STEPS|maxSteps|for\s*\(|while\s*\(/.test(dec), false, '⛔ a step loop appeared in the decomposer')
-  assert.equal(/runReasoningLoop|capability|dispatch/i.test(dec), false, '⛔ the decomposer started executing things')
+  // Instructions may name capabilities; only executable tokens can reach them.
+  // Keep template expressions visible rather than erasing executable interpolation.
+  const executable=dec.replace(/(['"])(?:\\[\s\S]|(?!\1)[^\\])*?\1/g,'')
+  const execution=/runReasoningLoop|capability|dispatch/i
+  assert.equal(execution.test(executable), false, '⛔ the decomposer started executing things')
+  for(const mutant of ['dispatch()', 'capability.execute()', 'runReasoningLoop(input)'])assert.equal(execution.test(mutant),true)
 })
 
 /* ═══ SPARSE, AND THE RATIO THAT TRAVELS ══════════════════════════════════ */

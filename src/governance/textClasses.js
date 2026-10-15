@@ -75,6 +75,7 @@ const CLASS = Object.freeze({
  * the test checks COVERAGE (is every such file listed), never the number.
  */
 const FILE_CLASS = Object.freeze({
+  'intake/goal/ownerGoalView.js': CLASS.INTERFACE,
   'capabilities/gapContract.js': CLASS.INTERFACE,
   'capabilities/gapService.js': CLASS.MATCHING,
   'subscription/publicAnswer.js': CLASS.MATCHING, // Bilingual output guards; translating patterns would change evidence admission.

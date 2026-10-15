@@ -386,7 +386,14 @@ async function processIntake (message, adapter, history = [], opts = {}) {
   const supplied = opts && opts.requestId
   const requestId = (typeof supplied === 'string' && UUID_RE.test(supplied)) ? supplied : uuidv4()
   try {
-    return await require('../investigation/invocationContext').withInvocationContext(requestId,()=>runIntakePipeline(message, adapter, history, opts, requestId))
+    const goals=require('./goal/ownerGoal')
+    let ownerGoal=opts.interactionMode==='chat'&&goals.shouldTrack(message)?goals.createGoal({objective:message,requestId}):null
+    const pipelineOpts={...opts,onOwnerUnderstanding:understanding=>{
+      const outcomes=understanding?.ownerOutcomes
+      if(opts.interactionMode==='chat'&&Array.isArray(outcomes)&&outcomes.length){ownerGoal=goals.refineGoal(ownerGoal||goals.createGoal({objective:message,requestId}),outcomes);pipelineOpts.ownerGoal=ownerGoal}
+    },onOwnerRead:observations=>{if(ownerGoal){ownerGoal=goals.observeReads(ownerGoal,observations);pipelineOpts.ownerGoal=ownerGoal}},ownerGoal}
+    const result=await require('../investigation/invocationContext').withInvocationContext(requestId,()=>runIntakePipeline(message, adapter, history, pipelineOpts, requestId))
+    return ownerGoal&&!result?.blocked?goals.attachResult(result,ownerGoal):result
   } catch (err) {
     // Slice B: every error leaving intake carries the correlationId (== requestId).
     // IntakeUpstreamError sets it in its constructor; DistillParseError and any
@@ -1111,6 +1118,7 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
             return { text: r && r.text, usage: r && r.usage }
           }
         })
+        opts.onOwnerUnderstanding?.(out?.plan||out?.understanding)
         emitPhase({
           requestId,
           phase: PHASE.MODEL_CALL,
@@ -3507,6 +3515,7 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
     // The count now comes from `view.readClaim`, below, which judges the finished text.
     // THE OWNER-FACING SHAPE, applied last so it wraps the reply the guard approved.
     // With nothing retrieved it is a no-op and the reply passes through untouched.
+    opts.onOwnerRead?.({perSource:Array.from(turnPerSource.values()),evidenceSets:Array.from(turnEvidence.values())})
     const view = buildReadResultReply({
       reply: guarded.reply,
       correction: guarded.correction || null,
@@ -3659,6 +3668,7 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
       requestId,
       route: (routeDecision && routeDecision.route) ? routeDecision.route : null
     })
+    opts.onOwnerRead?.({perSource:Array.from(turnPerSource.values()),evidenceSets:Array.from(turnEvidence.values())})
     const view = buildReadResultReply({
       reply: guarded.reply,
       historicalMemoryAnswer,
@@ -3822,6 +3832,7 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
     requestId
   }
   // Persist locally (in-process store); capture ids to return to the UI
+  if(opts.ownerGoal)persistPayload.ownerGoal=opts.ownerGoal
   const persisted = await persistIntake(persistPayload)
 
   // ── STEP 5: WRITE LLM USAGE via Wall-E's hub endpoint ────────────────────

@@ -72,7 +72,9 @@ function createChatGateway({request,receipts,conversations,providerFor,semanticT
   continuationStore.save(receipt)
   const context=latestContext(conversationId)
   const result={mode:'chat',lane:'chat',servedBy:null,reply:t('actions.continuationNoContext')}
-  function explain(key,run){result.reply=REPLIES[key]();if(run){result.reply+='\n'+run.target.taskPath+run.target.taskName;if(run.state==='verified'&&run.after?.at)result.reply+='\n'+t('actions.checkedAt',{at:run.after.at});result.actionContinuation={id:run.id,state:run.state,readOnly:receipt.readOnly}}}
+  const goals=require('../intake/goal/ownerGoal'),priorGoal=conversations.get(conversationId)?.messages?.at(-1)?.ownerGoal
+  let observedRun=null
+  function explain(key,run){result.reply=REPLIES[key]();if(run){observedRun=run;result.reply+='\n'+run.target.taskPath+run.target.taskName;if(run.state==='verified'&&run.after?.at)result.reply+='\n'+t('actions.checkedAt',{at:run.after.at});result.actionContinuation={id:run.id,state:run.state,readOnly:receipt.readOnly}}}
   try{
    if(context){
     result.investigationRunId=context.investigationId
@@ -112,8 +114,12 @@ function createChatGateway({request,receipts,conversations,providerFor,semanticT
     }
    }
    // A durable request receipt precedes dispatch. A lost response is never retried.
+   if(goals.validGoal(priorGoal)&&observedRun){
+    result.ownerGoal=parsed.kind==='restore'?goals.bindGatewayGoal(goals.createGoal({objective:message,requestId}),observedRun,priorGoal):goals.applyGatewayEvidence(priorGoal,observedRun)
+    result.reply+='\n\n'+require('../intake/goal/ownerGoalView').renderGoal(result.ownerGoal)
+   }
    receipt.state='completed';receipt.response=result;receipt.timeline.push({phase:'completed',at:new Date(now()).toISOString()});continuationStore.save(receipt)
-   conversations.appendTurn({id:conversationId,userText:message,replyText:result.reply,investigationRunId:result.investigationRunId})
+   conversations.appendTurn({id:conversationId,userText:message,replyText:result.reply,investigationRunId:result.investigationRunId,...(result.ownerGoal?{ownerGoal:result.ownerGoal,ownerGoalReference:priorGoal.goalId}:{})})
    return result
   }catch(e){receipt.state='interrupted';continuationStore.save(receipt);throw e}
  }
@@ -142,11 +148,15 @@ function createChatGateway({request,receipts,conversations,providerFor,semanticT
    const report={readOnly:true,focus:'background',goal:message,duplicateState:'UNKNOWN',sections:[{section:'schedules',state:i.observations.some(o=>o.state==='CONFIRMED')?'partial':'unavailable',sourceId:i.id,retrievedAt:new Date().toISOString(),records:i.observations.map(o=>({sourceId:o.target.id,state:o.state,taskName:o.target.taskName,...(o.snapshot?{enabled:o.snapshot.enabled,currentRunningState:o.snapshot.runtime,definitionHash:o.snapshot.definitionHash,at:o.snapshot.at}:{})}))}],persistenceState:'saved'}
    const result={mode:'chat',lane:'chat',reply:parsed.action?t('actions.chatPrepared'):t('actions.unknown'),investigation:report,investigationRunId:requestId,servedBy:null}
    if(parsed.action){
-    try{await call({op:'chat_prepare',inspectionId:i.id,targetId:parsed.targetId,action:parsed.action,context:{conversationId,investigationId:requestId}})}
+    try{
+     const prepared=(await call({op:'chat_prepare',inspectionId:i.id,targetId:parsed.targetId,action:parsed.action,context:{conversationId,investigationId:requestId}})).run
+     const goals=require('../intake/goal/ownerGoal');result.ownerGoal=goals.bindGatewayGoal(goals.createGoal({objective:message,requestId}),prepared)
+     result.reply+='\n\n'+require('../intake/goal/ownerGoalView').renderGoal(result.ownerGoal)
+    }
     catch(_){result.reply=t('actions.chatRefused')}
    }
    receipts.finish(requestId,result)
-   conversations.appendTurn({id:conversationId,userText:message,replyText:result.reply,investigationRunId:requestId})
+   conversations.appendTurn({id:conversationId,userText:message,replyText:result.reply,investigationRunId:requestId,...(result.ownerGoal?{ownerGoal:result.ownerGoal}:{})})
    return result
   }catch(e){try{receipts.finish(requestId,null,true)}catch(_){}throw e}finally{ongoing.delete(conversationId)}
  }

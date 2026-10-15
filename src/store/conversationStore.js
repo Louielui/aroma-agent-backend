@@ -195,7 +195,7 @@ function createConversationStore (options = {}) {
    * Called once per completed turn from the UI path and nowhere else. A turn is only
    * written after the reply exists, so a failed turn leaves no half-conversation behind.
    */
-  function appendTurn ({ id, userText, replyText, servedBy = null, now = null, images, operatingRunId = null, developmentPlanRunId = null, codeDiagnosisRunId = null, codeRepairRunId = null, projectWorkRunId = null, taskPlanRunId = null, planningOffer = null, planningContext = null, investigationRunId = null, capabilityGapRunId = null, evidenceReport = null, evidenceReportAttempt = false, hrRecheckId = null, publicAnswerReceipt = null, publicCompletionRequestId = null } = {}) {
+  function appendTurn ({ id, userText, replyText, servedBy = null, now = null, images, operatingRunId = null, developmentPlanRunId = null, codeDiagnosisRunId = null, codeRepairRunId = null, projectWorkRunId = null, taskPlanRunId = null, planningOffer = null, planningContext = null, investigationRunId = null, capabilityGapRunId = null, evidenceReport = null, evidenceReportAttempt = false, hrRecheckId = null, publicAnswerReceipt = null, publicCompletionRequestId = null, ownerGoal = null, ownerGoalReference = null } = {}) {
     if (!isValidId(id)) throw new Error('invalid_conversation_id')
     const attachments = images === undefined ? null : require('../chat/imageAttachments').validateImages(images)
     const ts = now || new Date().toISOString()
@@ -225,8 +225,17 @@ function createConversationStore (options = {}) {
     // conversation the Owner has already learned to recognise in the list.
     if (!conversation.title) conversation.title = titleFrom(userText)
 
+    const previousOwnerGoal=conversation.messages.at(-1)?.ownerGoal
     conversation.messages.push({ role: 'user', content: String(userText == null ? '' : userText), servedBy: null, ts, ...(attachments ? { images: attachments } : {}) })
     const assistantMessage = { role: 'assistant', content: String(replyText == null ? '' : replyText), servedBy: servedBy || null, ts }
+    if(ownerGoal!==undefined&&ownerGoal!==null){
+      const previous=previousOwnerGoal
+      const continuation=require('../actions/chat').parseContinuation(String(userText))
+      const hostReference=ownerGoalReference===previous?.goalId&&typeof previous?.goalId==='string'
+      const statusReference=(hostReference||continuation&&['status','approve','restore','ambiguous'].includes(continuation.kind))&&previous?.goalId===ownerGoal.goalId&&previous?.originalObjective===ownerGoal.originalObjective&&previous?.scopeHash===ownerGoal.scopeHash
+      if(!require('../intake/goal/ownerGoal').validGoal(ownerGoal)||(ownerGoal.originalObjective!==String(userText)&&!statusReference))throw Error('invalid_owner_goal')
+      assistantMessage.ownerGoal=structuredClone(ownerGoal)
+    }
     if (publicAnswerReceipt !== null) {
       if (!require('../topics/publicAnswerFollowups').validReceipt(publicAnswerReceipt)) throw Error('invalid_public_answer_receipt')
       assistantMessage.publicAnswerReceipt = structuredClone(publicAnswerReceipt)
