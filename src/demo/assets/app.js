@@ -2311,6 +2311,17 @@
     return (e && e.retryable === true) ? t('err.retrySuffix', { message: message }) : message
   }
 
+  function renderProcurement(res,conv) {
+    var turn=addBot(res.reply||'',conv),p=res.procurementProposal
+    if(!p)return turn
+    var panel=el('section','scheduler-chat'),note=el('p','meta'),approve=el('button','',t('procurement.approve')),busy=false,requestId=crypto.randomUUID()
+    approve.type='button';approve.disabled=true;panel.appendChild(note);panel.appendChild(approve);turn.body.appendChild(panel)
+    function call(op,id){return fetch('/api/v1/demo/procurement-actions',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({op:op,id:p.id,hash:p.hash,conversationId:conv.id,requestId:id})}).then(function(r){if(!r.ok)throw Error('approval_unavailable');return r.json()})}
+    call('present',crypto.randomUUID()).then(function(r){if(!r.presented)throw Error('presentation_required');if(panel.isConnected&&conv===active)approve.disabled=false}).catch(function(){note.textContent=t('procurement.presentFailed')})
+    approve.addEventListener('click',function(){if(busy||conv!==active)return;busy=true;approve.disabled=true;call('approve',requestId).then(function(r){render(200,r,conv)}).catch(function(){note.textContent=t('procurement.presentFailed')})})
+    return turn
+  }
+
   function render (status, res, conv) {
     res = res || {}
     if (status === 403) return addError(t('err.demoDisabled'), conv)
@@ -2318,6 +2329,7 @@
     if (status >= 500 || (res.error && !res.blocked)) {
       return addError(errorLine(res), conv)
     }
+    if (res.procurementProposal || res.procurementStatus) return renderProcurement(res,conv)
     if (res.capabilityGapRunId) {
       var gapTurn = addBot(res.reply, conv); renderCapabilityGap(gapTurn,res.capabilityGapRunId,res.capabilityGapResolution,conv); return gapTurn
     }

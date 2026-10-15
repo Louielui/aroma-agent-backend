@@ -654,6 +654,7 @@ function describe (endpointKey, retrievedAt, bodyCount, shownCount, isSample, op
     // was admitted. Nothing a model produces can reach this.
     truncationAuthority: serverTruncated === null ? 'reader' : 'server',
     serverTruncated,
+    paginationUnsupported: opts.paginationUnsupported === true,
 
     // ⛔ NOT retrievedAt. When we read is not how current the data is, and nothing in the
     // response says the latter.
@@ -738,6 +739,7 @@ function createAromaSystemReadAdapter (options = {}) {
     }
 
     if (options.strictResponse === true && !(
+      body?.success !== false &&
       (Array.isArray(body) || Array.isArray(body && body.data) || Array.isArray(body && body.items)) &&
       (Array.isArray(body) ? body : (Array.isArray(body.data) ? body.data : body.items)).every(row => isPlainObject(row))
     )) return { readState: READ_STATE.failed('invalid response'), results: [makeUnavailable({ source: 'aroma_system', reason: 'invalid response', retrievedAt })] }
@@ -763,7 +765,8 @@ function createAromaSystemReadAdapter (options = {}) {
       returnedRows: rows.length,
       serverTruncated: serverTruncatedOf(body),
       sourceTotal: Number.isFinite(body && body.sourceTotal) ? body.sourceTotal : null,
-      dataAsOf: (body && typeof body.dataAsOf === 'string' && body.dataAsOf) ? body.dataAsOf : null
+      dataAsOf: (body && typeof body.dataAsOf === 'string' && body.dataAsOf) ? body.dataAsOf : null,
+      paginationUnsupported: !!(body && (body.nextCursor || body.nextPage || body.hasMore === true || body.pagination?.hasMore === true || body.pagination?.nextCursor))
     }
 
     // READ OK WITH NOTHING IN IT IS NOT A FAILURE. The two are different answers and are

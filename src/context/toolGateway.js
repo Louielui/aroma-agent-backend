@@ -2,7 +2,7 @@
 const { randomUUID } = require('node:crypto')
 const { snapshotFields, snapshotValue } = require('./contextResult.js')
 const OPS = Object.freeze(['search', 'list', 'get', 'readMetadata'])
-function createToolGateway ({ connector, resources, audit, clock = () => new Date().toISOString() }) {
+function createToolGateway ({ connector, resources, audit, clock = () => new Date().toISOString(), authorizeScheduled = null }) {
   const registry = new Map()
   for (const resource of resources) {
     if (registry.has(resource.id) || !resource.scope || !['public', 'company', 'private'].includes(resource.sensitivity)) throw Error('invalid_resource')
@@ -14,23 +14,28 @@ function createToolGateway ({ connector, resources, audit, clock = () => new Dat
   function describe () { return [...registry.values()].map(r => ({ id: r.id, source: r.source, scope: snapshotValue(r.scope), sensitivity: r.sensitivity, operations: Object.keys(r.operations) })) }
   function record (entry) { try { audit.append(entry) } catch (_) { throw Error('audit_unavailable') } }
   async function call (op, actor, resourceId, input = {}) {
-    if (!actor || actor.role !== 'owner') throw Error('permission_denied')
     const resource = registry.get(resourceId)
     if (!resource) throw Error('resource_not_connected')
+    const authorize = () => {
+      if (actor?.role === 'owner') return
+      if (actor?.role !== 'scheduled_task' || typeof authorizeScheduled !== 'function' || authorizeScheduled(actor,resourceId,op) !== true) throw Error('permission_denied')
+    }
+    authorize()
     const spec = resource.operations[op]
     if (!spec) throw Error('operation_not_supported')
     if (!input || typeof input !== 'object' || Array.isArray(input)) throw Error('invalid_request')
     const params = spec.params(input)
     const runId = randomUUID(), startedAt = clock()
     const layer = resource.layer || 'truth'
-    const event = { runId, at: startedAt, actor: 'owner', agent: 'context', tool: resource.id + '.' + op, source: resource.source, layer }
+    const event = { runId, at: startedAt, actor: actor.role, ...(actor.role === 'scheduled_task' ? {taskId:actor.taskId,grantId:actor.grantId} : {}), agent: 'context', tool: resource.id + '.' + op, source: resource.source, layer }
     record({ ...event, sequence: 1, result: 'started' })
     const base = { version: 1, source: resource.source, sourceId: snapshotValue(resource.scope), resource: resource.id, operation: op, layer,
       retrievedAt: startedAt, originalDate: null, link: resource.link || null, sensitivity: resource.sensitivity,
-      access: { role: 'owner', scope: snapshotValue(resource.scope) }, contentPolicy: 'data_only', freshness: { state: 'retrieved', sourceUpdatedAt: null } }
+      access: { role: actor.role, scope: snapshotValue(resource.scope) }, contentPolicy: 'data_only', freshness: { state: 'retrieved', sourceUpdatedAt: null } }
     let result
     try {
       const value = await connector.read(resource.source, spec.method, params)
+      authorize()
       if (!value || value.trust === 'unavailable' || !Array.isArray(value.results) || value.results.some(row => !row || row.source !== resource.source || row.trust !== 'live' || typeof row.sourceId !== 'string' || !row.sourceId || (resource.validateRow && !resource.validateRow(row)))) throw Error('source_unavailable')
       const content = value.results.map(row => ({ source: row.source, sourceId: row.sourceId, title: row.title,
         retrievedAt: value.asOf || startedAt, originalDate: row.originalDate || null, content: row.content,
@@ -45,7 +50,8 @@ function createToolGateway ({ connector, resources, audit, clock = () => new Dat
           revision: evidence.revision || null, excluded: Number.isInteger(evidence.excludedCount) && evidence.excludedCount >= 0 ? evidence.excludedCount : null,
           queryScope: snapshotValue(evidence.queryScope || null), returnedRows: evidence.returnedRows ?? null,
             serverTruncated: evidence.serverTruncated ?? null, dataAsOf: evidence.dataAsOf ?? null, selection: evidence.selection || null,
-            provenance: snapshotValue(evidence.provenance || null), rankingCompleteWithinScope: evidence.rankingCompleteWithinScope ?? null }, error: null }
+            provenance: snapshotValue(evidence.provenance || null), rankingCompleteWithinScope: evidence.rankingCompleteWithinScope ?? null,
+            paginationUnsupported: evidence.paginationUnsupported === true }, error: null }
     } catch (_) {
       result = { ...base, state: 'unavailable', trust: 'unavailable', freshness: { state: 'unknown', sourceUpdatedAt: null }, count: null,
         content: null, coverage: { scope: snapshotValue(resource.scope), complete: null, truncated: null, sourceTotal: null, revision: null }, error: 'source_unavailable' }

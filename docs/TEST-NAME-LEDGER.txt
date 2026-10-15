@@ -7570,3 +7570,54 @@ a failed goal-history append stays visible to the Owner instead of claiming dura
 concurrent button evidence survives in-flight status and refused prepare replies without replaying the action
 a prepared proposal retains its usable conversation context when goal refresh fails
 numeric recurring-intent input is bounded and cannot block the host event loop
+
+Business Scheduler preserves the real daily procurement request without admitting arbitrary work
+Business Scheduler uses Winnipeg calendar days across both DST transitions
+Business Scheduler groups every retrieved item and never promotes missing coverage or stale stock to COMPLETE
+Business Scheduler approval, exact delegated identity and daily deduplication form one evidence chain
+Business Scheduler rejects stale task and tool scopes instead of inheriting new authority
+Business Scheduler proposal remains valid while the clock advances before approval
+Business Scheduler disables on revoke and discards a read completed after revocation
+Business Scheduler refuses scope or definition drift before source access
+Business Scheduler requires exact actor, conversation and displayed proposal hash
+Business Scheduler expired proposals and restarted approval sessions cannot execute
+Business Scheduler duplicate concurrent delivery performs exactly one daily read sequence
+Business Scheduler partial API failure and numeric zero are not a complete empty purchasing report
+Business Scheduler missing, future and stale source timestamps remain PARTIAL
+Business Scheduler delayed runs do not claim on-time execution even with an earlier time event
+Business Scheduler no run is admitted before the Winnipeg morning slot
+Business Scheduler partial run persists missing mappings without inventing supplier identities
+Business Scheduler status keeps the latest attempt separate from the last complete success
+Business Scheduler Windows adapter accepts no command, path or arbitrary operation
+Business Scheduler source gateway preserves scheduled identity and rechecks revocation after a read
+Business Scheduler source adapter preserves all 100 capped rows and every uncapped supplier
+Business Scheduler unsupported source pagination is disclosed instead of followed or hidden
+Business Scheduler rejects mixed times, malformed approval ids and injected source instructions
+Business Scheduler real conversation persistence preserves the whole goal through approval, pause and resume
+Business Scheduler dialogue approval is not inferred from another conversation or changed topic
+Business Scheduler missing activation is disclosed with the original Owner goal, without any scheduling or read
+Business Scheduler pause followed by resume cannot revive a cancelled in-flight read
+Business Scheduler registration interrupted before grant persistence requires a fresh bounded recovery and stays paused
+Business Scheduler restart retains daily execution identity and never repeats a persisted run
+Business Scheduler durable recovery refuses live lock holders and checks orphan bytes
+Business Scheduler backend timer route is service-authenticated, parameterless and rejects browser-origin approval forgery
+Business Scheduler production app connects the fixed conversation handler behind Owner authentication
+Business Scheduler bridge routes delegated triggers separately from Owner management and model traffic
+Business Scheduler authorization can be revoked even when Windows is unavailable and can never be resumed through pause
+Business Scheduler full ToolGateway adapter path retains all rows and exact scheduled authorization in durable source audit
+Business Scheduler explicitly approved orphan recovery closes interrupted evidence and retains daily duplicate protection
+Business Scheduler failed source envelopes and discarded rows cannot masquerade as complete reads
+Business Scheduler rendered approval stays inert until presentation and double click submits once
+Business Scheduler unsupported times and zones never select the fixed 08:00 workflow silently
+Business Scheduler contradictory source counts and ambiguous supplier mappings remain unresolved
+Business Scheduler transient conversation and receipt reads release the dialogue lock for a safe retry
+Business Scheduler minute and fractional-hour requests never become fixed 08:00 proposals
+Business Scheduler pending registration is occupied until the Windows approval operation finishes
+Business Scheduler meridiem alternative hour units and foreign zones cannot authorize fixed morning work
+Business Scheduler failed lock initialization leaves no published lock and cannot strand recovery
+Business Scheduler process death before atomic lock publication cannot leave an empty execution lock
+Business Scheduler explicit spaced hours bare times and alternate cadences stay outside the fixed workflow
+Business Scheduler admission holds occupancy through Windows inspection and releases it on inspection failure
+Business Scheduler Owner can revoke the existing task after deleting its creating conversation
+Business Scheduler cross-conversation reduction cannot resume or change the original task scope
+Business Scheduler reducing from another Owner goal cannot borrow or overwrite that goal

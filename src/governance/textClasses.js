@@ -75,6 +75,8 @@ const CLASS = Object.freeze({
  * the test checks COVERAGE (is every such file listed), never the number.
  */
 const FILE_CLASS = Object.freeze({
+  'actions/procurementContract.js': CLASS.MATCHING, // Fixed Owner intent guards; never translated.
+  'actions/procurementChat.js': CLASS.INTERFACE, // Owner result/proposal presentation; exact intent guards stay in the contract.
   'intake/goal/ownerGoalView.js': CLASS.INTERFACE,
   'intake/goal/ownerGoal.js': CLASS.MATCHING, // Exact Owner scope matching; these terms must not be translated.
   'capabilities/gapContract.js': CLASS.INTERFACE,

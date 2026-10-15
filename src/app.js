@@ -1280,6 +1280,9 @@ function createApp (options = {}) {
     receipts: require('./investigation/receipts').createReceipts(), conversations: capturedConversationStore
   })
   app.use(require('./actions/chatRoutes').createChatRouter({chat:schedulerChat}))
+  const procurementChat=opts.procurementChat||require('./actions/procurementChat').createChat({request:b=>require('./adapters/CodexSubscriptionAdapter').localRequest('/scheduler-action',b,process.env,AbortSignal.timeout(60000)),conversations:capturedConversationStore,tasks:store})
+  app.use('/api/v1/procurement', (req,res,next)=>req.path==='/tick'?next():requireOwner(req,res,next))
+  app.use(require('./actions/procurementRoutes').createRouter({chat:procurementChat,serviceGuard:requireServiceToken}))
   app.use('/api/v1/model-center', requireOwner)
   app.use(require('./modelCenter/routes').createModelCenterRouter({ center: modelCenter, catalogue: brainCatalogue }))
   const sevenShiftsReport = opts.sevenShiftsReport || require('./context/sevenShiftsReport').createSevenShiftsReport()
@@ -1317,6 +1320,7 @@ function createApp (options = {}) {
     capabilityGaps,
     sevenShiftsReport,
     schedulerChat,
+    procurementChat,
     modelCenter,
     liveContext,
     taskPlanner,

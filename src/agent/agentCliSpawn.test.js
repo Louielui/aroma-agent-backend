@@ -256,10 +256,17 @@ test('ANTHROPIC_API_KEY is deliberately NOT in the allowlist (subscription, not 
   for (const k of ['USERPROFILE', 'HOMEDRIVE', 'HOMEPATH', 'HOME']) assert.ok(CHILD_ENV_ALLOWLIST.includes(k))
 })
 
-test('the OAuth credentials file the agent will use is reachable via the allowlisted vars', () => {
-  const child = buildChildEnv(process.env)
+test('the OAuth credentials file the agent will use is reachable via the allowlisted vars', t => {
+  // Offline environment/path verification must not read the Owner's mutable credentials.
+  const temp=require('node:os').tmpdir(),dir=fs.mkdtempSync(path.join(temp,'agent-oauth-env-'))
+  t.after(()=>{assert.equal(path.dirname(fs.realpathSync(dir)).toLowerCase(),fs.realpathSync(temp).toLowerCase());fs.rmSync(dir,{recursive:true,force:true})})
+  fs.mkdirSync(path.join(dir,'.claude'))
+  fs.writeFileSync(path.join(dir,'.claude','.credentials.json'),JSON.stringify({claudeAiOauth:{refreshToken:'synthetic-offline-refresh-token'}}))
+  const child = buildChildEnv({USERPROFILE:dir,ANTHROPIC_API_KEY:'synthetic-must-not-inherit'})
   const home = child.USERPROFILE || child.HOME || ((child.HOMEDRIVE || '') + (child.HOMEPATH || ''))
   assert.ok(home, 'the child has a home directory')
+  assert.equal(home,dir,'the child uses exactly the configured profile')
+  assert.ok(!('ANTHROPIC_API_KEY' in child),'subscription authentication never inherits an API billing key')
   const creds = path.join(home, '.claude', '.credentials.json')
   assert.ok(fs.existsSync(creds), 'the OAuth credentials file exists at the path the child can reach')
   // shape only — never read or assert the token values
