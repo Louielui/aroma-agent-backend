@@ -2316,8 +2316,8 @@
     if(!p)return turn
     var panel=el('section','scheduler-chat'),note=el('p','meta'),approve=el('button','',t('procurement.approve')),busy=false,requestId=crypto.randomUUID()
     approve.type='button';approve.disabled=true;panel.appendChild(note);panel.appendChild(approve);turn.body.appendChild(panel)
-    function call(op,id){return fetch('/api/v1/demo/procurement-actions',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({op:op,id:p.id,hash:p.hash,conversationId:conv.id,requestId:id})}).then(function(r){if(!r.ok)throw Error('approval_unavailable');return r.json()})}
-    call('present',crypto.randomUUID()).then(function(r){if(!r.presented)throw Error('presentation_required');if(panel.isConnected&&conv===active)approve.disabled=false}).catch(function(){note.textContent=t('procurement.presentFailed')})
+    function call(op,id){return fetch('/api/v1/demo/procurement-actions',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({op:op,id:p.id,hash:p.hash,conversationId:conv.cid,requestId:id})}).then(function(r){if(!r.ok)throw Error('approval_unavailable');return r.json()})}
+    call('present',crypto.randomUUID()).then(function(r){if(r.presented!==true)throw Error('presentation_required');if(panel.isConnected&&conv===active)approve.disabled=false}).catch(function(){note.textContent=t('procurement.presentFailed')})
     approve.addEventListener('click',function(){if(busy||conv!==active)return;busy=true;approve.disabled=true;call('approve',requestId).then(function(r){render(200,r,conv)}).catch(function(){note.textContent=t('procurement.presentFailed')})})
     return turn
   }
