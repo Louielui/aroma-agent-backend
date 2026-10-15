@@ -424,6 +424,7 @@
    */
   function renderEmptyScreen (c) {
     if (!mainEl || isListed(c) || c.history.length > 0) return
+    if (c.thread.querySelector('.empty-greeting')) return
     mainEl.classList.add('empty')
     var box = el('div', 'empty-greeting')
     c.thread.appendChild(box)

@@ -7530,3 +7530,4 @@ main Update discards expired foreign-scope and command-shaped history handoffs w
 main Update preserves the home view and refuses prepared attachments without dropping them
 main Update never moves a restored draft to a missing authorized conversation
 main Update refuses active reply and open confirmation controls instead of losing their state
+main Update restores a fresh chat draft with one greeting and removes it on the first explicit send
