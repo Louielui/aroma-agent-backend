@@ -7524,3 +7524,11 @@ a failed startup clear cannot revive stale tab bindings when Chrome later recrea
 a manifest change invalidates panel-only reload even when all worker scripts are unchanged
 managed publication rejects optional hosts and unexpected manifest capabilities
 legacy topics recover separately when each tab receives its own activeTab grant
+main Update loads new served assets while preserving exact conversation and literal unsent draft without replay
+main Update leaves current assets and draft intact on unavailable version and failed history persistence
+main Update discards expired foreign-scope and command-shaped history handoffs without sending
+main Update preserves the home view and refuses prepared attachments without dropping them
+main Update never moves a restored draft to a missing authorized conversation
+main Update refuses active reply and open confirmation controls instead of losing their state
+main Update restores a fresh chat draft with one greeting and removes it on the first explicit send
+main Update retains unsaved later turns in stored chats after failed persistence or transport

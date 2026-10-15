@@ -122,6 +122,7 @@ const FILE_CLASS = Object.freeze({
   'core/projectWork/view.html': CLASS.INTERFACE, // Bilingual screenshot language captions, not model instructions
   // ── INTERFACE ──────────────────────────────────────────────────────────────
   'demo/assets/app.js': CLASS.INTERFACE,              // 139 — the screen itself
+  'demo/assets/sidebar.js': CLASS.INTERFACE,          // main-header update notices
   'core/operating/view.js': CLASS.INTERFACE,           // Owner-facing operations briefing labels
   'context/liveContextView.js': CLASS.INTERFACE,
   'context/driveContextView.js': CLASS.INTERFACE,

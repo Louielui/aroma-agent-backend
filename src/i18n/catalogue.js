@@ -3639,6 +3639,16 @@ const CATALOGUE = Object.freeze({
   'browserOperator.purpose': { zh: '依目前分頁的查閱任務導覽員工清單。', en: 'Navigate the employee list for the current-tab read goal.' },
   'browserOperator.current': { zh: '本機滑鼠、點擊、文字輸入、Enter、捲動與停止已通過真人驗收。7shifts 已實測兩次原生導覽點擊並根據新畫面回答；驗收時頁面標示 28 人，已核對渲染名單 15 人，未讀完整名單。分頁話題分開保留。', en: 'Real fixture mouse movement, clicks, typing, Enter, scrolling and Stop are accepted. Live 7shifts completed two native navigation clicks and answered from a fresh observation. At acceptance the page label was 28 and 15 rendered names were verified; the full roster was not read. Tab topics retain separate answers.' },
   'browserOperator.limits': { zh: '只接受指定公司的員工首頁及清單；每次截圖前重新核對來源，點擊前核對實際連結網址。畫面及已渲染文字會交給所選模型，沒有欄位級隱藏。未開放排班頁、員工修改、其他網站或一般桌面操作；不能恢復未完成的原生任務。', en: 'Only the exact Owner company employee landing and list are admitted. Recheck source before capture and actual link URI before clicking. Visible frames and rendered text go to the selected model without field-level redaction. No schedule pages, employee edits, other sites or general desktop control; unfinished native jobs cannot resume.' },
+  'client.update': { zh: '更新', en: 'Update' },
+  'client.updateHint': { zh: '載入已部署的新版本，保留對話和草稿', en: 'Load the deployed version and retain this conversation and draft' },
+  'client.updating': { zh: '正在檢查更新…', en: 'Checking for updates…' },
+  'client.updated': { zh: '已載入目前版本，工作畫面已保留。', en: 'Current version loaded; work view retained.' },
+  'client.updateBusy': { zh: '請先完成目前工作、附件或確認步驟，再更新。', en: 'Finish the current work, attachments or confirmation before updating.' },
+  'client.updateUnsaved': { zh: '有訊息尚未確認保存，暫時不會重載；請先保留這些內容。', en: 'Some messages are not confirmed saved. Retain their contents before reloading.' },
+  'client.updateUnavailable': { zh: '暫時未能更新；目前對話和草稿仍保留，稍後可再試。', en: 'Update unavailable; your current conversation and draft remain. Try again later.' },
+  'client.restoreUnavailable': { zh: '未能恢復原對話；草稿已保留。請先選擇對話再傳送。', en: 'Original conversation unavailable; draft retained. Select a conversation before sending.' },
+  'client.updateCurrent': { zh: '主系統頂部提供更新按鈕，沿用已授權版本及對話讀取；一分鐘內的單次更新可保留文字草稿和同一對話，不會自動傳送。', en: 'The main header offers Update using authorized version and conversation reads. A one-minute single-entry handoff retains the text draft and exact conversation without auto-send.' },
+  'client.updateLimits': { zh: '只載入已部署的主系統；不合併、部署或重啟服務。處理中的工作、附件、確認控制項或無法核對的原對話會阻止更新或傳送。', en: 'Loads only the deployed main system; no merge, deployment or service restart. Active work, attachments, confirmation controls or an unavailable original conversation block update or sending.' },
   'punct.colon': { zh: '：', en: ': ' }
 })
 
