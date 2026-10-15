@@ -120,7 +120,7 @@ function createRuntime ({repository,dependencies,restartImpl=null,readinessImpl=
     // deployments publish into it after runtime verification, never from chat.
     if(verified&&path.resolve(root).toLowerCase()===path.resolve('C:/Aroma/aroma-agent-backend').toLowerCase()&&fs.existsSync(path.join(process.env.USERPROFILE,'.imagine/browser-client/current.json'))){
       const script='scripts/browser/install-read-host.ps1',bytes=repository.runtimeGit(['show',expected+':'+script],{buffer:true})
-      if(digest(fs.readFileSync(path.join(root,script)))!==digest(bytes))return{verified:false,reason:'client_installer_source_changed'}
+      if(!sameInstallerSource(fs.readFileSync(path.join(root,script)),bytes))return{verified:false,reason:'client_installer_source_changed'}
       if(!bytes.toString('utf8').includes('[switch]$PublishClient'))return{verified:false,reason:'legacy_client_requires_explicit_restore',bootCommit:backend.bootCommit,bridgeCommit:bridge.bootCommit}
       const executable=path.join(process.env.SystemRoot||'C:/Windows','System32/WindowsPowerShell/v1.0/powershell.exe'),result=cp.spawnSync(executable,['-NoProfile','-NonInteractive','-ExecutionPolicy','RemoteSigned','-File',path.join(root,script),'-PublishClient'],{windowsHide:true,shell:false,encoding:'utf8',timeout:90000})
       if(result.status!==0)return{verified:false,reason:'client_publication_failed',bootCommit:backend.bootCommit,bridgeCommit:bridge.bootCommit}
@@ -130,4 +130,7 @@ function createRuntime ({repository,dependencies,restartImpl=null,readinessImpl=
   }
   return{idle,restart,deploy,verify,health:()=>health('http://127.0.0.1:8090/health',fetchImpl)}
 }
-module.exports={overlayPlan,applyCheckout,stageReloadControl,health,createRuntime}
+// Git checkout may expand CRLF. Preserve every other byte, including invalid
+// UTF-8, BOMs and trailing newlines; only an existing CRLF pair may become LF.
+function sameInstallerSource(actual,expected){const canonical=b=>Buffer.from(Buffer.from(b).toString('latin1').replace(/\r\n/g,'\n'),'latin1');return canonical(actual).equals(canonical(expected))}
+module.exports={overlayPlan,applyCheckout,stageReloadControl,health,createRuntime,sameInstallerSource}

@@ -7532,3 +7532,4 @@ main Update never moves a restored draft to a missing authorized conversation
 main Update refuses active reply and open confirmation controls instead of losing their state
 main Update restores a fresh chat draft with one greeting and removes it on the first explicit send
 main Update retains unsaved later turns in stored chats after failed persistence or transport
+managed installer source pin accepts only CRLF equivalence and rejects all other byte changes
