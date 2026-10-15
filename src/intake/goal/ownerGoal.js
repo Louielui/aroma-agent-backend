@@ -123,7 +123,7 @@ function commandText(text){
  let value=text.trim()
  // Bounded lexical qualifiers affect recognition only. The contract always
  // retains the exact Owner text; stripping a prefix never grants authority.
- const prefix=/^(?:(?:could|would)\s+you\s+|please\s+|help me\s+|(?:just|only|also|simply|next|finally)\s+|(?:請你?|幫我|麻煩你?|我要|我想要?|你(?:可以)?|再|最後|順便|並|只|之後|然後)\s*)/iu
+ const prefix=/^(?:(?:could|would)\s+you\s+|please\s+|help me\s+|(?:just|only|also|simply|next|finally)\s+|(?:請你?|请你?|幫幫我|幫手|幫我|同我|麻煩你?|麻烦你?|我要|我想要?|你(?:可以)?|再|最後|順便|並|只|之後|然後)\s*)/iu
  for(let i=0;i<4;i++){const next=value.replace(prefix,'');if(next===value)break;value=next}
  return value
 }
@@ -136,7 +136,9 @@ function shouldTrack(message){
  // directive, not a question that may erase it ("tells me which items").
  if(recurring(intent)&&creation.test(command)&&!/[?？]/u.test(intent))return true
  if(['question','capability_question','investigation_request','arrangement_request','general_knowledge'].includes(router.routeLane(intent).reason))return false
- return router.isBusinessActionRequest(intent)
+ // The router's business vocabulary can occur inside an analytic request.
+ // Require the request's head to be the business effect, not a mentioned noun.
+ return router.isBusinessActionRequest(intent)&&/^(?:落單|落单|下單|下单|出單|出单|開張|开张|開一張|开一张|開個|开个|寄|派送|送出|發出|发出|買|买|採購|采购|訂購|订购)/u.test(command)
 }
 function cartRequest(clause){
  const command=commandText(clause)
@@ -154,7 +156,7 @@ function isTaskRequest(message){
   if(/^(?:add\s+up\b|(?:create|make|build|generate|prepare|run)\s+(?:(?:a|an|the|new|daily|weekly|monthly)\s+)*(?:summary|report|analysis|comparison|overview|breakdown|table|chart|list|description)\b)|^(?:新增|建立|產生|製作|整理)(?:一[個份張]|每日|每天|每週|每月)*(?:摘要|報告|分析|比較|概覽|明細|表格|圖表|清單)/iu.test(command))return false
   if(shouldTrack(s))return true
   if(router.isReadRequest(s)||['question','capability_question','investigation_request','arrangement_request','general_knowledge'].includes(router.routeLane(s).reason))return false
-  const scheduler=/^(?:pause|resume|enable|disable|stop|cancel|delete|restart|run)\s+(?:(?:both|all|the|that|this|these|previous|two)\s+)*(?:(?:scheduled?|background|automatic)\s+(?:tasks?|jobs?)|scheduler|Windows service|backend|bridge|AromaXiangXiang[\w-]*|ActionGatewayAcceptance|gateway-acceptance|errand-recall)\b|^(?:暫停|停用|恢復|啟用|停止|取消|刪除|執行|重新啟動)(?:這個|那個|所有|全部|兩個)?(?:排程|背景工作|自動工作|服務|後端|橋接器|AromaXiangXiang|ActionGatewayAcceptance)/iu.test(command)
+  const scheduler=/^(?:pause|resume|enable|disable|stop|cancel|delete|restart|run)\s+(?:(?:both|all|the|that|this|these|previous|two)\s+)*(?:(?:scheduled?|background|automatic)\s+(?:tasks?|jobs?)|scheduler|Windows service|backend|bridge|AromaXiangXiang[\w-]*|ActionGatewayAcceptance|gateway-acceptance|errand-recall)\b|^(?:暫停|停用|恢復|啟用|停止|取消|刪除|執行|重新啟動)(?:這個|那個|所有|全部|兩個)?(?:排程|背景工作|自動工作|服務|後端|橋接器|AromaXiangXiang[\w-]*|ActionGatewayAcceptance)(?:排程|任務|工作)?(?:吧|一下)?[。.!！]?$/iu.test(command)
   return scheduler
  })
 }

@@ -24,7 +24,10 @@ Admission reuses existing routing and bounded business-action grammar per clause
 A question in one information step cannot erase another explicit action clause.
 An explicit schedule object may include relative information such as which items
 to order. Analytic objects and ordinary status/impact questions retain the
-informational path. Concrete cart insertion must end at the cart target or a
+informational path. The legacy business branch additionally requires a business
+effect at the command head; procurement nouns inside analysis are insufficient.
+The Chinese scheduler fallback requires a complete imperative, excluding
+noun-phrase continuations about benefits, steps or what happens afterwards. Concrete cart insertion must end at the cart target or a
 closed no-checkout qualifier; explanations and hypotheticals remain information.
 
 Bounded polite prefixes and qualifiers, including please/just/also and Chinese
