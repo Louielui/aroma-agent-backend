@@ -7,7 +7,7 @@ const KINDS=['read','action','recurring','answer','unknown']
 const schema={type:'array',items:{type:'object',additionalProperties:false,required:['ownerQuote','capability','kind'],properties:{ownerQuote:{type:'string'},capability:{anyOf:[{type:'string',enum:[...require('../../governance/selfCapability').CAPABILITY_NAMES,...require('../../actions/understanding').SCHEMA.properties.capability.enum.filter(v=>v!=='none')]},{type:'null'}]},kind:{type:'string',enum:KINDS}}}}
 function scope(){return hash({version:1,capabilities:require('../../governance/selfCapability').REGISTRY,actions:require('../../actions/understanding').SCHEMA.properties.capability.enum,targets:require('../../actions/contract').TARGETS})}
 function capability(id){const own=require('../../governance/selfCapability').capabilityEntry(id);if(own)return own;return require('../../actions/understanding').SCHEMA.properties.capability.enum.includes(id)&&id!=='none'?{capability:id,implementation:'implemented',kind:'execution'}:null}
-const clauses=s=>s.split(/\n+|[。!！;；，]+|,(?!\d{3}(?:\D|$))|(?<!\d)\.(?!\d)|\s+(?:and(?: then)?|then)\s+|(?=之後|然後|並且|以及)/iu).map(v=>v.trim()).filter(Boolean)
+const clauses=s=>s.split(/\n+|[。!！;；，]+|,(?!\d{3}(?:\D|$))|(?<!\d)\.(?!\d)|\s+(?:and(?: then)?|then)\s+|(?=(?:之後|然後|並且|以及)(?:把|請|幫我|麻煩|新增|建立|設定|安排|暫停|停用|恢復|啟用|停止|取消|刪除|放進|放入|加入|加到))/iu).map(v=>v.trim()).filter(Boolean)
 const constraint=s=>/^(?:不需要|不要|不可|禁止|唔好|不准|do not\b|don't\b|never\b|without\b)/iu.test(s)
 // Only an entire closed prohibition can be excluded from mandatory outcomes.
 // Unknown/compound negatives remain mandatory as well as retained constraints.
@@ -121,30 +121,31 @@ function attachResult(result,goal,{readReply='',hostReply=''}={}){if(!result||ty
 function projectTask(task){return validGoal(task?.ownerGoal)?{...task,goalStatus:task.ownerGoal.status}:task}
 function shouldTrack(message){
  const text=String(message).trim(),intent=text.replace(/^(?:don't forget to|do not forget to|不要忘記|別忘記|唔好忘記)\s*/iu,''),router=require('../laneRouter')
- if(pureConstraint(text)||['question','capability_question','investigation_request','arrangement_request','general_knowledge'].includes(router.routeLane(intent).reason))return false
+ if(pureConstraint(text)||/[嗎呢咩麼么][。.!！?？]?$/u.test(text))return false
  const command=intent.replace(/^(?:(?:please|help me)\s+|(?:請|幫我|麻煩你?|我要|我想要?)\s*)/iu,'')
  const creation=/^(?:schedule\b|(?:create|add|set up)\s+(?:(?:a|an|the|new|daily|weekly|monthly|recurring|automatic|morning|purchasing|inventory|replenishment)\s+)*(?:schedule|scheduled task|background job|task|job|workflow|routine)\b)|^(?:新增|建立|設定|安排)(?:一[個項]|每天|每日|每週|每月|定期|循環|自動|早上|採購|訂貨|庫存|補貨|[0-9０-９]+(?:[:：][0-9０-９]+)?(?:點|時|分)?)*(?:排程|schedule\b|任務|工作|流程)/iu
- return router.isBusinessActionRequest(intent)||recurring(intent)&&creation.test(command)
+ // Relative information requested by a concrete schedule is part of that
+ // directive, not a question that may erase it ("tells me which items").
+ if(recurring(intent)&&creation.test(command)&&!/[?？]/u.test(intent))return true
+ if(['question','capability_question','investigation_request','arrangement_request','general_knowledge'].includes(router.routeLane(intent).reason))return false
+ return router.isBusinessActionRequest(intent)
 }
 function cartRequest(clause){
  const command=clause.trim().replace(/^(?:(?:could|would)\s+you\s+(?:please\s+)?|please\s+|help me\s+|(?:請|幫我|麻煩你?)\s*)/iu,'').replace(/^(?:之後|然後)/u,'')
- return /^(?:add|put|place|move)\b.+\b(?:to|into|in)\s+(?:(?:the|my|our)\s+)?(?:Costco\s+)?(?:shopping\s+)?cart\b|^(?:把.+)?(?:放進|放入|加入|加到).*(?:購物車)/iu.test(command)
+ if(/什麼|甚麼|怎麼|怎樣|如何|如果|\b(?:what|why|how|if)\b/iu.test(command))return false
+ return /^(?:add|put|place|move)\b.+\b(?:to|into|in)\s+(?:(?:the|my|our)\s+)?(?:Costco\s+)?(?:shopping\s+)?cart(?:\s+without\s+(?:checkout|checking out))?[。.!！?？]?$|^(?:把.+)?(?:放進|放入|加入|加到).*(?:購物車)[。.!！?？]?$/iu.test(command)
 }
 function isTaskRequest(message){
- const text=String(message).trim(),router=require('../laneRouter'),cart=clauses(text).some(cartRequest)
- if(/[嗎呢咩麼么][。.!！?？]?$/u.test(text))return false
- // Only a concrete cart-insertion request can bypass the ordinary question gate;
- // its reporting metadata grants no browser execution or cart permission.
- if(!cart&&['question','capability_question','investigation_request','arrangement_request','general_knowledge'].includes(router.routeLane(text).reason))return false
- const primaryTask=/^(?:(?:please|help me)\s+|(?:請|幫我|麻煩你?)\s*)?(?:pause|resume|enable|disable|stop|cancel|delete|create|schedule|set up|run|restart)\b|^(?:請|幫我|麻煩你?)?(?:暫停|停用|恢復|啟用|停止|取消|刪除|新增|建立|設定)/iu.test(text)
- if(router.isReadRequest(text)&&!primaryTask&&!cart)return false
- if(cart)return true
- return clauses(text).some(s=>{
+ const router=require('../laneRouter')
+ return clauses(String(message).trim()).some(s=>{
+  if(/[嗎呢咩麼么][。.!！?？]?$/u.test(s))return false
+  if(cartRequest(s))return true
   const command=s.replace(/^(?:(?:please|help me)\s+|(?:請|幫我|麻煩你?)\s*)/iu,'')
   // An analytic object is not an external business effect. Examine clauses
   // independently so a real attached action still retains the full objective.
   if(/^(?:add\s+up\b|(?:create|make|build|generate|prepare|run)\s+(?:(?:a|an|the|new|daily|weekly|monthly)\s+)*(?:summary|report|analysis|comparison|overview|breakdown|table|chart|list|description)\b)|^(?:新增|建立|產生|製作|整理)(?:一[個份張]|每日|每天|每週|每月)*(?:摘要|報告|分析|比較|概覽|明細|表格|圖表|清單)/iu.test(command))return false
   if(shouldTrack(s))return true
+  if(router.isReadRequest(s)||['question','capability_question','investigation_request','arrangement_request','general_knowledge'].includes(router.routeLane(s).reason))return false
   const scheduler=/^(?:pause|resume|enable|disable|stop|cancel|delete|restart|run)\s+(?:(?:both|all|the|that|this|these|previous|two)\s+)*(?:(?:scheduled?|background|automatic)\s+(?:tasks?|jobs?)|scheduler|Windows service|backend|bridge|AromaXiangXiang[\w-]*|ActionGatewayAcceptance|gateway-acceptance|errand-recall)\b|^(?:暫停|停用|恢復|啟用|停止|取消|刪除|執行|重新啟動)(?:這個|那個|所有|全部|兩個)?(?:排程|背景工作|自動工作|服務|後端|橋接器|AromaXiangXiang|ActionGatewayAcceptance)/iu.test(command)
   return scheduler
  })

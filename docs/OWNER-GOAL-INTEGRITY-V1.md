@@ -155,3 +155,12 @@ After a reply exists, strict pending-goal lookup errors preserve the canonical
 answer and show the existing tracking warning, including in a subsequently saved
 transcript. Corrupt history is never overwritten. A failed status-history append
 also shows that warning. These fail-open replies confer no execution authority.
+
+Admission is evaluated per clause. An interrogative in a requested information
+step cannot erase an independent explicit schedule/action directive. A concrete
+schedule object may include relative information (such as which items to order).
+Cart insertion must end at its cart target or a closed no-checkout qualifier;
+same-clause explanatory/hypothetical questions remain informational. Chinese
+transition words split outcomes only before an action/object-fronted directive,
+so a phrase such as cart insertion followed by a question about what happens
+afterwards is not mistaken for a separate imperative.
