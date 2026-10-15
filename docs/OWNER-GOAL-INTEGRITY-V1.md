@@ -20,7 +20,10 @@ one unresolved full objective instead of truncating the request. Chinese
 transition words split only before an action prefix, so an after-insertion
 question is not mistaken for an independent cart command.
 
-Admission reuses existing routing and bounded business-action grammar per clause.
+Goal admission uses bounded business-action grammar per clause beside existing
+intake routing. Question syntax uses word boundaries; whole-team wording and
+stock-condition when clauses remain directives. Closed scheduler imperatives
+are checked directly rather than filtered through a broad substring read test.
 A question in one information step cannot erase another explicit action clause.
 An explicit schedule object may include relative information such as which items
 to order. Creation how-to and permission questions still follow the ordinary
