@@ -158,6 +158,11 @@ existing workflow occupancy signal. The first independent review reported a P2
 dialogue-lock leak on failed canonical reads and a P3 fractional-hour admission
 gap. Both were repaired because recovery/status availability and faithful fixed
 time selection are explicit acceptance criteria. Regression tests cover each.
+An existing OAuth-path unit test also read the Owner's mutable credential file,
+making offline results depend on live login state. It now checks the same child
+environment and credential-path behavior against a temporary synthetic profile;
+no Owner credential is changed or claimed valid by that test. Actual Claude
+subscription review authentication is measured separately by the review receipt.
 
 Deferred P2: source contract lacks freshness evidence and cannot retrieve more
 than its server cap. This blocks claiming a COMPLETE live list, not reporting
