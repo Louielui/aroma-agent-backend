@@ -5,9 +5,11 @@ test('whole-goal evidence follows the real existing Action Gateway displayed app
  let writes=0;const rows=new Map(),requests=new Map(),enabled=new Map(TARGETS.map(t=>[t.id,false])),memory=map=>({get:id=>structuredClone(map.get(id)),save:r=>map.set(r.id,structuredClone(r)),list:()=>[...map.values()].map(v=>structuredClone(v)),lock:()=>()=>{}})
  const dir=fs.mkdtempSync(path.join(os.tmpdir(),'owner-goal-gateway-')),conversations=require('../../store/conversationStore').createConversationStore({dir:path.join(dir,'conversations')}),receipts=require('../../investigation/receipts').createReceipts({dir:path.join(dir,'receipts')})
  const gateway=createGateway({store:memory(rows),scheduler:{read:async id=>({...TARGETS.find(t=>t.id===id),targetId:id,enabled:enabled.get(id),runtime:enabled.get(id)?'Ready':'Disabled',definitionHash:'a'.repeat(64),at:new Date().toISOString()}),apply:async id=>{writes++;enabled.set(id,!enabled.get(id))}}})
- const chat=createChatGateway({request:b=>gateway.handle({id:'owner',role:'owner'},b),receipts,conversations,continuationStore:memory(requests)}),cid=randomUUID(),start=message=>chat.start({message,conversationId:cid,requestId:randomUUID()})
+ let semanticIntent='clarify'
+ const chat=createChatGateway({request:b=>gateway.handle({id:'owner',role:'owner'},b),receipts,conversations,continuationStore:memory(requests),providerFor:({model})=>({complete:async()=>({model,billing:require('../../subscription/chatModels').billingFor(model),text:JSON.stringify({intent:semanticIntent,targetId:'none',capability:'none',targetQuote:'',referenceQuote:''})})})}),cid=randomUUID(),start=message=>chat.start({message,conversationId:cid,requestId:randomUUID()})
  const prepared=await start('Resume ActionGatewayAcceptance');assert.equal(writes,0);assert.equal(prepared.ownerGoal.status,'GOAL_PENDING')
  const first=[...rows.values()].at(-1);assert.equal(first.state,'awaiting_approval')
+ for(const message of ['ok','好','Tell me what you need']){const clarification=await start(message);assert.equal(clarification.ownerGoal.goalId,prepared.ownerGoal.goalId);assert.deepEqual(clarification.ownerGoal.outcomes[0].executionBinding,prepared.ownerGoal.outcomes[0].executionBinding);assert.equal(writes,0)}
  const prematureRestore=await start('Restore the previous schedule');assert.equal(prematureRestore.ownerGoal.goalId,prepared.ownerGoal.goalId);assert.deepEqual(prematureRestore.ownerGoal.outcomes[0].executionBinding,prepared.ownerGoal.outcomes[0].executionBinding);assert.equal(writes,0)
  const undisplayed=await start('I confirm the previous resume proposal');assert.equal(writes,0);assert.notEqual(undisplayed.ownerGoal.status,'GOAL_COMPLETED')
  await chat.handle({op:'present',conversationId:cid,investigationId:first.context.investigationId,id:first.id,hash:first.hash})
@@ -20,6 +22,7 @@ test('whole-goal evidence follows the real existing Action Gateway displayed app
  const second=[...rows.values()].at(-1);assert.notEqual(second.hash,first.hash)
  await chat.handle({op:'present',conversationId:cid,investigationId:second.context.investigationId,id:second.id,hash:second.hash})
  const restored=await start('I confirm the previous pause proposal');assert.equal(writes,2);assert.equal(restored.ownerGoal.status,'GOAL_COMPLETED')
+ semanticIntent='restore';const freeRestore=await start('put it back');assert.equal(freeRestore.ownerGoal.goalId,restored.ownerGoal.goalId);assert.deepEqual(freeRestore.ownerGoal.outcomes[0].completionEvidence,restored.ownerGoal.outcomes[0].completionEvidence);assert.equal(writes,2);assert.equal([...rows.values()].at(-1).restoreOf,second.id)
 })
 test('a verified scheduler effect cannot complete an attached cart step or ambiguous compound objective',()=>{
  for(const objective of ['Resume ActionGatewayAcceptance and add Costco items to the cart','Resume ActionGatewayAcceptance; 不要下單，只放進購物車','Resume ActionGatewayAcceptance with Costco cart items added']){

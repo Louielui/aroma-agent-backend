@@ -25,6 +25,8 @@ rows and source limitations remain visible through the existing deterministic
 read formatter, with the draft action narrative excluded. The canonical reply is
 also the archive reply; ancillary model judgment, offer and next-step fields
 cannot retain contradictory completion claims.
+Host-originated clarification questions are carried separately and stay visible
+beside the incomplete goal status. Arbitrary model action prose is not restored.
 
 Investigation `completed` still means that its request handler finished. Its
 separate `goalStatus` is never derived from that state. `GOAL_COMPLETED` requires
@@ -43,7 +45,13 @@ no goal metadata are not upgraded or granted new permissions. The generic proof
 helper requires a trusted host receipt verifier; it is not exposed to clients or
 models and must not be passed model-provided evidence.
 Premature restore requests preserve the original binding. A new inverse goal is
-created only for an actual host-created inverse. Scheduler completion evidence
+created only for an actual host-created inverse whose new goal binding succeeds.
+Acknowledgements, ambiguous/multiple/no-run continuations and semantic clarification
+turns retain the prior goal unchanged; they supply no execution evidence. A
+closed acknowledgement in the ordinary intake route likewise keeps the saved
+goal, without a new model call, source read, task execution or approval. A
+free-form inverse that cannot be exactly bound preserves the original goal rather
+than replacing it with an unbound goal. Scheduler completion evidence
 binds only one exact supported target/effect clause or the existing closed inverse
 continuation. Other mandatory clauses stay incomplete, yielding partial progress;
 ambiguous free-form compound wording remains unverified even when a narrower

@@ -114,9 +114,11 @@ function createChatGateway({request,receipts,conversations,providerFor,semanticT
     }
    }
    // A durable request receipt precedes dispatch. A lost response is never retried.
-   if(goals.validGoal(priorGoal)&&observedRun){
-    const actualInverse=parsed.kind==='restore'&&observedRun.restoreOf&&priorGoal.outcomes.some(o=>o.executionBinding?.receiptId===observedRun.restoreOf)
-    result.ownerGoal=actualInverse?goals.bindGatewayGoal(goals.createGoal({objective:message,requestId}),observedRun,priorGoal):goals.applyGatewayEvidence(priorGoal,observedRun)
+   if(goals.validGoal(priorGoal)){
+    const actualInverse=parsed.kind==='restore'&&observedRun?.restoreOf&&priorGoal.outcomes.some(o=>o.executionBinding?.receiptId===observedRun.restoreOf)
+    const inverseGoal=actualInverse?goals.bindGatewayGoal(goals.createGoal({objective:message,requestId}),observedRun,priorGoal):null
+    const inverseBound=inverseGoal?.outcomes.some(o=>o.executionBinding?.receiptId===observedRun.id)
+    result.ownerGoal=inverseBound?inverseGoal:observedRun?goals.applyGatewayEvidence(priorGoal,observedRun):structuredClone(priorGoal)
     result.reply+='\n\n'+require('../intake/goal/ownerGoalView').renderGoal(result.ownerGoal)
    }
    receipt.state='completed';receipt.response=result;receipt.timeline.push({phase:'completed',at:new Date(now()).toISOString()});continuationStore.save(receipt)
@@ -192,7 +194,9 @@ function createChatGateway({request,receipts,conversations,providerFor,semanticT
    let result=null
    const clarify=key=>{
     const v={mode:'ask',lane:'chat',servedBy:null,reply:key==='unsupported'?t('actions.semanticUnsupported'):key==='approval'?t('actions.semanticApproval'):t('actions.semanticClarify'),...(context?{investigationRunId:context.investigationId}:{})}
-    conversations.appendTurn({id:conversationId,userText:message,replyText:v.reply,investigationRunId:v.investigationRunId});return v
+    const goal=before?.messages?.at(-1)?.ownerGoal,goals=require('../intake/goal/ownerGoal')
+    if(goals.validGoal(goal)){v.ownerGoal=structuredClone(goal);v.reply+='\n\n'+require('../intake/goal/ownerGoalView').renderGoal(goal)}
+    conversations.appendTurn({id:conversationId,userText:message,replyText:v.reply,investigationRunId:v.investigationRunId,...(v.ownerGoal?{ownerGoal:v.ownerGoal,ownerGoalReference:goal.goalId}:{})});return v
    }
    if(decision.intent==='approval')result=clarify('approval')
    else if(decision.intent==='unsupported')result=clarify('unsupported')

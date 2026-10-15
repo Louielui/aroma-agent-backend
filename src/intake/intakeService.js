@@ -388,13 +388,13 @@ async function processIntake (message, adapter, history = [], opts = {}) {
   try {
     const goals=require('./goal/ownerGoal')
     let ownerGoal=opts.interactionMode==='chat'&&goals.shouldTrack(message)?goals.createGoal({objective:message,requestId}):null
-    let ownerReadReply=''
+    let ownerReadReply='',ownerHostReply=''
     const pipelineOpts={...opts,onOwnerUnderstanding:understanding=>{
       const outcomes=understanding?.ownerOutcomes
       if(ownerGoal&&Array.isArray(outcomes)&&outcomes.length){ownerGoal=goals.refineGoal(ownerGoal,outcomes);pipelineOpts.ownerGoal=ownerGoal}
-    },onOwnerRead:observations=>{if(ownerGoal){ownerGoal=goals.observeReads(ownerGoal,observations);pipelineOpts.ownerGoal=ownerGoal}},onOwnerReadView:reply=>{ownerReadReply=reply},ownerGoal}
+    },onOwnerRead:observations=>{if(ownerGoal){ownerGoal=goals.observeReads(ownerGoal,observations);pipelineOpts.ownerGoal=ownerGoal}},onOwnerReadView:reply=>{ownerReadReply=reply},onOwnerClarification:reply=>{ownerHostReply=reply},ownerGoal}
     const result=await require('../investigation/invocationContext').withInvocationContext(requestId,()=>runIntakePipeline(message, adapter, history, pipelineOpts, requestId))
-    return ownerGoal&&result?(result.blocked?{...result,ownerGoal}:goals.attachResult(result,ownerGoal,{readReply:ownerReadReply})):result
+    return ownerGoal&&result?(result.blocked?{...result,ownerGoal}:goals.attachResult(result,ownerGoal,{readReply:ownerReadReply,hostReply:ownerHostReply})):result
   } catch (err) {
     // Slice B: every error leaving intake carries the correlationId (== requestId).
     // IntakeUpstreamError sets it in its constructor; DistillParseError and any
@@ -3517,6 +3517,7 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
     // THE OWNER-FACING SHAPE, applied last so it wraps the reply the guard approved.
     // With nothing retrieved it is a no-op and the reply passes through untouched.
     opts.onOwnerRead?.({perSource:Array.from(turnPerSource.values()),evidenceSets:Array.from(turnEvidence.values())})
+    if(opts.ownerGoal&&(gateAuthoredAsk||semanticClarifyTerminal))opts.onOwnerClarification?.(guarded.reply)
     const view = buildReadResultReply({
       ownerGoalReporting:!!opts.ownerGoal,
       reply: guarded.reply,
@@ -3574,6 +3575,7 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
   if (demo && distilled.mode === 'commit' && (!Array.isArray(distilled.tasks) || distilled.tasks.length !== 1)) {
     await recordProviderUsage(llmResult) // idempotent: already recorded pre-parse
     const clarificationReason = recordClarification(tel, (Array.isArray(distilled.tasks) && distilled.tasks.length > 1) ? 'multiple_tasks_narrow_to_one' : 'no_actionable_task')
+    opts.onOwnerClarification?.(buildGroundedReply({type:'clarification',clarificationReason}))
     return {
       blocked: false, mode: 'commit', intent: distilled.intent, demoOutcome: 'clarification',
       // Change B: ground the reply — narrowing created NO proposal; never echo the
@@ -3672,6 +3674,7 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
       route: (routeDecision && routeDecision.route) ? routeDecision.route : null
     })
     opts.onOwnerRead?.({perSource:Array.from(turnPerSource.values()),evidenceSets:Array.from(turnEvidence.values())})
+    if(opts.ownerGoal&&(gateAuthoredAsk||semanticClarifyTerminal))opts.onOwnerClarification?.(guarded.reply)
     const view = buildReadResultReply({
       ownerGoalReporting:!!opts.ownerGoal,
       reply: guarded.reply,

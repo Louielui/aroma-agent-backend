@@ -715,8 +715,9 @@ function createDemoRouter ({ getAdapterFn = getAdapterForLane, processIntakeFn =
           return res.status(['worker_busy', 'request_conflict', 'conversation_changed'].includes(e.message) ? 409 : 503).json({ error: { message: t('taskPlan.error'), retryable: false } })
         }
       }
-      // A saved whole-goal status is read back, never re-executed or upgraded.
-      if(planningLane&&require('../actions/chat').parseContinuation(message)?.kind==='status'){
+      // Status and closed acknowledgements retain the saved whole goal;
+      // neither re-executes it nor grants approval. Specialized handlers ran first.
+      if(planningLane&&['status','ambiguous'].includes(require('../actions/chat').parseContinuation(message)?.kind)){
         const goal=conversationStore.get?.(req.body.conversationId)?.messages?.at(-1)?.ownerGoal
         if(require('../intake/goal/ownerGoal').validGoal(goal)){
           if(!require('../core/operating/chatRequest').sameOrigin(req))return res.status(403).json({error:'same_origin_required'})

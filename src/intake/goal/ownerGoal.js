@@ -105,7 +105,7 @@ function validGoalInner(g){
  return g.status===deriveStatus(g)
 }
 function createQuotes(objective){const required=clauses(objective).filter(s=>!pureConstraint(s));return required.length&&required.length<=16?required:[objective]}
-function attachResult(result,goal,{readReply=''}={}){if(!result||typeof result.reply!=='string'||!validGoal(goal))return result;const reply=[readReply,require('./ownerGoalView').renderGoal(goal)].filter(Boolean).join('\n\n');return {...result,ownerGoal:structuredClone(goal),reply,replyForArchive:reply,judgment:'',reasons:[],offer:'',next_step:''}}
+function attachResult(result,goal,{readReply='',hostReply=''}={}){if(!result||typeof result.reply!=='string'||!validGoal(goal))return result;const reply=[hostReply,readReply,require('./ownerGoalView').renderGoal(goal)].filter(Boolean).join('\n\n');return {...result,ownerGoal:structuredClone(goal),reply,replyForArchive:reply,judgment:'',reasons:[],offer:'',next_step:''}}
 function projectTask(task){return validGoal(task?.ownerGoal)?{...task,goalStatus:task.ownerGoal.status}:task}
 function shouldTrack(message){const text=String(message).trim(),intent=text.replace(/^(?:don't forget to|do not forget to|不要忘記|別忘記|唔好忘記)\s*/iu,'');return !pureConstraint(text)&&(require('../laneRouter').isBusinessActionRequest(intent)||recurring(intent)&&/新增|建立|設定|^(?:please\s+)?(?:create|add|schedule|set up)\b/iu.test(intent))}
 module.exports={schema,createGoal,refineGoal,applyEvidence,observeReads,bindGatewayGoal,applyGatewayEvidence,validGoal,attachResult,projectTask,shouldTrack,clauses}

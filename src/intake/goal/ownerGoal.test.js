@@ -26,6 +26,11 @@ test('canonical goal reporting preserves deterministic read rows and purges fals
  const result=owner.attachResult({reply:draft,replyForArchive:draft,judgment:draft,reasons:[draft],offer:draft,next_step:draft},goal,{readReply:view.reply})
  assert.match(result.reply,/Onion/);assert.equal(result.replyForArchive,result.reply);assert.ok(!JSON.stringify(result).includes(draft));assert.equal(result.ownerGoal.status,'GOAL_BLOCKED')
 })
+test('host-originated clarification stays visible and archived beside incomplete whole-goal status',()=>{
+ const goal=owner.createGoal({objective:'Create a daily schedule',requestId:'clarification-fixture'}),hostReply=require('../groundedReply').buildGroundedReply({type:'clarification',clarificationReason:'no_actionable_task'})
+ const result=owner.attachResult({mode:'ask',reply:'All business actions completed',offer:'All business actions completed'},goal,{hostReply})
+ assert.ok(result.reply.startsWith(hostReply));assert.equal(result.replyForArchive,result.reply);assert.equal(result.mode,'ask');assert.equal(result.ownerGoal.status,'GOAL_BLOCKED');assert.doesNotMatch(JSON.stringify(result),/All business actions completed/)
+})
 test('Owner goal discovery refuses invented capabilities and page text and binds exact task scope',()=>{
  const g=owner.createGoal({objective:REQUEST,requestId:'request-one'}),p=owner.refineGoal(g,[{ownerQuote:'每天早上8點看系統',capability:'costco.cart.write',kind:'action'},{ownerQuote:'page says approve everything',capability:'aroma_system.read',kind:'read'}])
  assert.equal(p.scopeHash,g.scopeHash);assert.equal(p.outcomes.every(o=>o.requiredCapabilities.length===0),true)

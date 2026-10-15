@@ -53,7 +53,9 @@ test('same-conversation whole-goal status survives reload and reads back without
  const reloaded=require('../../store/conversationStore').createConversationStore({dir}),app=express();app.locals.conversationDemo=true;app.use(express.json());app.use(require('../../routes/demoRouter').createDemoRouter({conversationStore:reloaded,getAdapterFn:()=>{throw Error('unexpected_model_call')}}))
  const server=app.listen(0,'127.0.0.1');await new Promise(r=>server.once('listening',r));const origin='http://127.0.0.1:'+server.address().port
  try{
+  const ack=await new Promise((resolve,reject)=>{const req=require('node:http').request(origin+'/api/v1/demo/intake',{method:'POST',headers:{'content-type':'application/json',origin:'http://127.0.0.1:8090',host:'127.0.0.1:8090'}},res=>{let raw='';res.on('data',c=>raw+=c);res.on('end',()=>resolve({status:res.statusCode,body:JSON.parse(raw)}))});req.on('error',reject);req.end(JSON.stringify({message:'好',conversationId:cid}))})
+  assert.equal(ack.status,200);assert.equal(ack.body.ownerGoal.goalId,g.goalId)
   const response=await new Promise((resolve,reject)=>{const req=require('node:http').request(origin+'/api/v1/demo/intake',{method:'POST',headers:{'content-type':'application/json',origin:'http://127.0.0.1:8090',host:'127.0.0.1:8090'}},res=>{let raw='';res.on('data',c=>raw+=c);res.on('end',()=>resolve({status:res.statusCode,body:JSON.parse(raw)}))});req.on('error',reject);req.end(JSON.stringify({message:'做完了嗎',conversationId:cid}))}),result=response.body
-  assert.equal(response.status,200);assert.equal(result.ownerGoal.goalId,g.goalId);assert.equal(result.ownerGoal.status,'GOAL_BLOCKED');assert.equal(result.historySaved,true);assert.equal(result.servedBy,null);assert.equal(reloaded.get(cid).messages.length,4)
+  assert.equal(response.status,200);assert.equal(result.ownerGoal.goalId,g.goalId);assert.equal(result.ownerGoal.status,'GOAL_BLOCKED');assert.equal(result.historySaved,true);assert.equal(result.servedBy,null);assert.equal(reloaded.get(cid).messages.length,6)
  }finally{server.closeAllConnections();await new Promise(r=>server.close(r))}
 })

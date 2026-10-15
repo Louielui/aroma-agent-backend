@@ -7551,3 +7551,4 @@ negative compound clauses and reminders never erase a positive mandatory outcome
 canonical goal reporting preserves deterministic read rows and purges false completion from every narrative field
 a verified scheduler effect cannot complete an attached cart step or ambiguous compound objective
 ordinary informational intake cannot acquire an action goal from invented decomposer mappings
+host-originated clarification stays visible and archived beside incomplete whole-goal status
