@@ -124,5 +124,5 @@ test('scheduler refusal clarification unsupported and mixed-approval requests co
  }
  for(const text of ['What happens if I pause both scheduled tasks?','What is inventory?','Add an emoji to this message','I would like to approve it','List the paused scheduled tasks'])assert.equal(goals.isTaskRequest(text),false)
  assert.equal(goals.isTaskRequest('Pause both scheduled tasks and list Costco items'),true)
- for(const text of ['Create a daily purchasing schedule','建立每天早上8點訂貨排程','Create a detailed summary of scheduled tasks and add Costco items to the cart'])assert.equal(goals.isTaskRequest(text),true)
+ for(const text of ['Create a daily purchasing schedule','建立每天早上8點訂貨排程','幫我新增一個schedule吧','暫停排程吧','Create a detailed summary of scheduled tasks and add Costco items to the cart'])assert.equal(goals.isTaskRequest(text),true)
 })

@@ -16,11 +16,11 @@ test('ordinary informational intake cannot acquire an action goal from invented 
    if(opts.responseFormat?.name==='goal_plan'){decomposed++;return {text:JSON.stringify({question_restated:message,executive_frame:{taskType:'act',decisionNeeded:false,successDefinition:'Read records',answerPosture:'evidence_first'},requested_capability:null,facts:[],joins:[],owner_outcomes:[{ownerQuote:message,capability:'aroma_system.read',kind:'read'}]})}}
    return {text:JSON.stringify({intent:'query',mode:'chat',reply:'Inventory describes the goods held for use.',tasks:[],decision:null}),model:'offline-fixture',usage:{inputTokens:1,outputTokens:1},latencyMs:1}
   }}
-  for(message of ['What is inventory?','每天的訂貨單是怎麼建立的？','請問系統每天的設定是什麼','背景工作停了嗎','Why did the scheduled tasks stop running','Add up the Costco receipts for September','Create a summary of the Costco orders','Run a report on the scheduled tasks','Create a spreadsheet of the scheduled tasks','Create a detailed summary of the scheduled tasks','What happens if I put the items in the cart?','Could you explain the Costco shopping cart?']){
+  for(message of ['What is inventory?','每天的訂貨單是怎麼建立的？','請問系統每天的設定是什麼','背景工作停了嗎','Why did the scheduled tasks stop running','Add up the Costco receipts for September','Create a summary of the Costco orders','Run a report on the scheduled tasks','Create a spreadsheet of the scheduled tasks','Create a detailed summary of the scheduled tasks','What happens if I put the items in the cart?','Could you explain the Costco shopping cart?','暫停排程會有影響嗎','停用排程後訂單還會自動送嗎']){
    const result=await require('../intakeService').processIntake(message,adapter,[],{demo:true,interactionMode:'chat',requestId:randomUUID(),providerHint:'claude',readContextDeps:{sources:[]}})
    assert.equal(result.ownerGoal,undefined);assert.match(result.reply,/Inventory describes/)
   }
-  assert.equal(decomposed,12)
+  assert.equal(decomposed,14)
  }finally{for(const[k,v]of Object.entries(prior))if(v===undefined)delete process.env[k];else process.env[k]=v}
 })
 test('real intake preserves the failed procurement goal despite a data-only model answer and performs no business action',async()=>{
@@ -86,13 +86,16 @@ test('ordinary acknowledgements accept the immediate unrelated offer rather than
  }finally{server.closeAllConnections();await new Promise(r=>server.close(r))}
 })
 test('a failed goal-history append stays visible to the Owner instead of claiming durable task tracking',async()=>{
- const express=require('express'),message='Create a daily purchasing schedule',goal=goals.createGoal({objective:message,requestId:randomUUID()}),app=express();app.locals.conversationDemo=true;app.use(express.json())
- app.use(require('../../routes/demoRouter').createDemoRouter({conversationStore:{get:()=>null,list:()=>[],appendTurn:()=>{throw Error('ENOSPC')}},getAdapterFn:()=>({providerName:'spy'}),processIntakeFn:async()=>goals.attachResult({mode:'chat',reply:''},goal)}))
+ for(const failure of ['append','lookup','corrupt','statusAppend']){
+ const express=require('express'),message='Create a daily purchasing schedule',goal=goals.createGoal({objective:message,requestId:randomUUID()}),app=express();app.locals.conversationDemo=true;app.use(express.json());let answered=false,savedReply
+ const conversationStore={get:()=>{if(failure==='statusAppend')return {messages:[{role:'assistant',ownerGoal:goal}],ownerGoals:[goal],activeOwnerGoalId:goal.goalId};if(answered&&failure==='lookup'){answered=false;throw Error('EBUSY')}if(answered&&failure==='corrupt')return {messages:[],ownerGoals:[{invalid:true}]};return null},list:()=>[],appendTurn:args=>{if(failure!=='lookup')throw Error('ENOSPC');savedReply=args.replyText}}
+ app.use(require('../../routes/demoRouter').createDemoRouter({conversationStore,getAdapterFn:()=>({providerName:'spy'}),processIntakeFn:async()=>{answered=true;return goals.attachResult({mode:'chat',reply:''},goal)}}))
  const server=app.listen(0,'127.0.0.1');await new Promise(r=>server.once('listening',r));const origin='http://127.0.0.1:'+server.address().port
  try{
-  const response=await new Promise((resolve,reject)=>{const req=require('node:http').request(origin+'/api/v1/demo/intake',{method:'POST',headers:{'content-type':'application/json',origin:'http://127.0.0.1:8090',host:'127.0.0.1:8090'}},res=>{let raw='';res.on('data',c=>raw+=c);res.on('end',()=>resolve({status:res.statusCode,body:JSON.parse(raw)}))});req.on('error',reject);req.end(JSON.stringify({message,conversationId:randomUUID()}))})
-  assert.equal(response.status,200);assert.equal(response.body.historySaved,false);assert.equal(response.body.ownerGoalTrackingUnavailable,true);assert.equal(response.body.ownerGoal.originalObjective,message);assert.equal(response.body.ownerGoal.status,'GOAL_BLOCKED');assert.match(response.body.reply,/未能保存|could not be saved/);assert.equal(response.body.replyForArchive,response.body.reply)
+  const response=await new Promise((resolve,reject)=>{const req=require('node:http').request(origin+'/api/v1/demo/intake',{method:'POST',headers:{'content-type':'application/json',origin:'http://127.0.0.1:8090',host:'127.0.0.1:8090'}},res=>{let raw='';res.on('data',c=>raw+=c);res.on('end',()=>resolve({status:res.statusCode,body:JSON.parse(raw)}))});req.on('error',reject);req.end(JSON.stringify({message:failure==='statusAppend'?'做完了嗎':message,conversationId:randomUUID()}))})
+  assert.equal(response.status,200);assert.equal(response.body.historySaved,failure==='lookup');assert.equal(response.body.ownerGoalTrackingUnavailable,true);assert.equal(response.body.ownerGoal.originalObjective,message);assert.equal(response.body.ownerGoal.status,'GOAL_BLOCKED');assert.match(response.body.reply,/未能保存|could not be saved/);assert.equal(response.body.replyForArchive,response.body.reply);if(failure==='lookup')assert.match(savedReply,/未能保存|could not be saved/)
  }finally{server.closeAllConnections();await new Promise(r=>server.close(r))}
+ }
 })
 test('same-conversation whole-goal status survives reload and reads back without a model call or action',async()=>{
  const express=require('express'),dir=fs.mkdtempSync(path.join(os.tmpdir(),'owner-goal-http-')),conversations=require('../../store/conversationStore').createConversationStore({dataDir:dir}),cid=randomUUID(),g=goals.createGoal({objective:REQUEST,requestId:randomUUID()})

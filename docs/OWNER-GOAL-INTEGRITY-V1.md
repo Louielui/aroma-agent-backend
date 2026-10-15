@@ -148,3 +148,10 @@ and English could/would-you requests. This is reporting admission only, never
 a browser action or permission grant. Explanations and hypothetical questions
 remain informational. Standalone and follow-up cart clauses retain their exact
 objective even without an attached recurring-schedule request.
+
+Sentence-final Chinese question particles exclude status/impact questions from
+action-goal admission; the imperative particle 吧 alone remains a request.
+After a reply exists, strict pending-goal lookup errors preserve the canonical
+answer and show the existing tracking warning, including in a subsequently saved
+transcript. Corrupt history is never overwritten. A failed status-history append
+also shows that warning. These fail-open replies confer no execution authority.

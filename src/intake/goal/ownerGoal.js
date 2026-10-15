@@ -132,6 +132,7 @@ function cartRequest(clause){
 }
 function isTaskRequest(message){
  const text=String(message).trim(),router=require('../laneRouter'),cart=clauses(text).some(cartRequest)
+ if(/[嗎呢咩麼么][。.!！?？]?$/u.test(text))return false
  // Only a concrete cart-insertion request can bypass the ordinary question gate;
  // its reporting metadata grants no browser execution or cart permission.
  if(!cart&&['question','capability_question','investigation_request','arrangement_request','general_knowledge'].includes(router.routeLane(text).reason))return false

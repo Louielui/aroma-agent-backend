@@ -727,7 +727,8 @@ function createDemoRouter ({ getAdapterFn = getAdapterForLane, processIntakeFn =
           const contract=require('../intake/goal/ownerGoal'),answer=contract.withOutstanding(contract.attachResult({lane:'chat',mode:'chat',reply:'',servedBy:null,tasks:[]},goal),saved)
           let historySaved=false
           try{conversationStore.appendTurn({id:req.body.conversationId,userText:message,replyText:answer.reply,ownerGoal:goal});historySaved=true}catch{}
-          return res.set('Cache-Control','no-store').json({...answer,historySaved})
+          const warning=historySaved?'':'\n\n'+t('ownerGoal.trackingUnavailable')
+          return res.set('Cache-Control','no-store').json({...answer,historySaved,...(!historySaved?{ownerGoalTrackingUnavailable:true}:{}),reply:answer.reply+warning,replyForArchive:(answer.replyForArchive||answer.reply)+warning})
         }
       }
       const mailRequest = !generalRequest && !contextCard && !req.body.attachSection && (!req.body.interactionMode || req.body.interactionMode === 'chat')
@@ -1255,7 +1256,15 @@ function createDemoRouter ({ getAdapterFn = getAdapterForLane, processIntakeFn =
         const offer = offerDecision.offer
         const withOffer0 = offer ? Object.assign({}, withInference, { workRequestOffer: offer }) : withInference
         const offered = settingsOffer ? Object.assign({}, withOffer0, { settingsOffer }) : withOffer0
-        const withOffer = offered.ownerGoal ? require('../intake/goal/ownerGoal').withOutstanding(offered,conversationStore.get?.(req.body.conversationId)) : offered
+        let withOffer=offered,goalHistoryUnavailable=false
+        if(offered.ownerGoal){
+          try{withOffer=require('../intake/goal/ownerGoal').withOutstanding(offered,conversationStore.get?.(req.body.conversationId))}
+          catch{
+            goalHistoryUnavailable=true
+            const warning='\n\n'+t('ownerGoal.trackingUnavailable')
+            withOffer={...offered,ownerGoalTrackingUnavailable:true,reply:offered.reply+warning,replyForArchive:(offered.replyForArchive||offered.reply)+warning}
+          }
+        }
         /**
          * ⛔ THE REQUEST HE CLEARLY MADE, WITH ONE THING MISSING (P1-C1b1).
          *
@@ -1382,8 +1391,8 @@ function createDemoRouter ({ getAdapterFn = getAdapterForLane, processIntakeFn =
         }
 
         if(withClarification.ownerGoal){
-          const warning=publicHistorySaved?'':'\n\n'+t('ownerGoal.trackingUnavailable')
-          return res.status(200).json({...withClarification,historySaved:publicHistorySaved,...(!publicHistorySaved?{ownerGoalTrackingUnavailable:true}:{}),reply:withClarification.reply+warning,replyForArchive:(withClarification.replyForArchive||withClarification.reply)+warning})
+          const warning=publicHistorySaved||goalHistoryUnavailable?'':'\n\n'+t('ownerGoal.trackingUnavailable')
+          return res.status(200).json({...withClarification,historySaved:publicHistorySaved,...(!publicHistorySaved||goalHistoryUnavailable?{ownerGoalTrackingUnavailable:true}:{}),reply:withClarification.reply+warning,replyForArchive:(withClarification.replyForArchive||withClarification.reply)+warning})
         }
         return res.status(200).json(withClarification.publicAnswerReceipt ? {...withClarification,historySaved:publicHistorySaved} : withClarification)
       } catch (err) {
