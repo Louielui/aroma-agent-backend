@@ -15,7 +15,7 @@ test('Administrative retrieval constructs OAuth from a fixture grant without any
   const grant = auth.loadAdminMailReadOnlyGrant()
   assert.equal(grant.email, 'adm@example.test'); assert.equal(grant.client.credentials.refresh_token, 'fixture-refresh'); assert.equal(credentialReads, 2); assert.equal(writes, 0)
 })
-test('Only fixed me profile/list/message/thread reads escape the Gmail SDK closure; neither watch nor send is reachable', async () => {
+test('Only fixed me profile/list/get reads escape the Gmail SDK closure; neither watch nor send is reachable', async () => {
   const calls = [], oauth = { transporter: { defaults: {} }, getAccessToken: async () => ({ token: 'fixture-secret' }), getTokenInfo: async () => ({ scopes: ['https://www.googleapis.com/auth/gmail.readonly'] }) }
   const client = { users: { getProfile: async (args, opts) => { calls.push({ args, opts }); return { data: { emailAddress: 'chef@example.test' } } }, messages: {
     list: async (args, opts) => { calls.push({ args, opts }); return { data: { messages: [] } } }, get: async (args, opts) => { calls.push({ args, opts }); return { data: { id: args.id } } }, send: () => assert.fail('send must not run') }, threads:{get:async(args,opts)=>{calls.push({args,opts});return {data:{id:args.id,messages:[]}}}} } }
