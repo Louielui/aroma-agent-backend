@@ -7613,3 +7613,6 @@ Business Scheduler contradictory source counts and ambiguous supplier mappings r
 Business Scheduler transient conversation and receipt reads release the dialogue lock for a safe retry
 Business Scheduler minute and fractional-hour requests never become fixed 08:00 proposals
 Business Scheduler pending registration is occupied until the Windows approval operation finishes
+Business Scheduler meridiem alternative hour units and foreign zones cannot authorize fixed morning work
+Business Scheduler failed lock initialization leaves no published lock and cannot strand recovery
+Business Scheduler process death before atomic lock publication cannot leave an empty execution lock

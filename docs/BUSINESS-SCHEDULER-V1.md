@@ -163,6 +163,14 @@ making offline results depend on live login state. It now checks the same child
 environment and credential-path behavior against a temporary synthetic profile;
 no Owner credential is changed or claimed valid by that test. Actual Claude
 subscription review authentication is measured separately by the review receipt.
+The subsequent exact-commit review reported two P3 boundary gaps, also repaired
+for explicit acceptance criteria: alternate hour/meridiem/foreign-zone requests
+are refused rather than mapped to 08:00, and lock identities are fully written
+and flushed before exclusive atomic publication. A killed initializer cannot
+publish an empty lock. This uses local filesystem hard links within the same
+store directory; unsupported filesystems fail closed rather than falling back
+to a non-atomic lock. Existing malformed legacy locks still require inspection;
+V1 does not delete a lock whose live holder cannot be established safely.
 
 Deferred P2: source contract lacks freshness evidence and cannot retrieve more
 than its server cap. This blocks claiming a COMPLETE live list, not reporting

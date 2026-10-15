@@ -9,6 +9,13 @@ function intent(message){
  const s=message.trim();const approval=s.match(/^(?:確認|批准)(建立|新增|暫停|恢復|撤銷|修復)每日採購排程[。.!！]?$/u);if(approval)return{operation:'approve',approveOperation:{建立:'create',新增:'create',暫停:'pause',恢復:'resume',撤銷:'revoke',修復:'recover'}[approval[1]]}
  if(/^(?:查看|查詢|看看|列出|status of|show)(?:每日採購排程| daily procurement (?:report|schedule))\s*[。.!！]?$/iu.test(s))return{operation:'status'}
  const op=s.match(/^(?:請|幫我)?(暫停|恢復|撤銷|修復)每日採購排程[。.!！]?$/u);if(op)return{operation:{暫停:'pause',恢復:'resume',撤銷:'revoke',修復:'recover'}[op[1]]}
+ // V1 has no alternate hour notation or zone aliases. Unknown explicit temporal
+ // qualifiers stay with ordinary goal clarification, never a different fixed time.
+ if(/(?:[0-9０-９一二三四五六七八九十]\s*[時时]|\bo['’]clock\b|[0-9]\s*p\.?m\.?\b|[+-][0-9]{2}:?[0-9]{2}|\b(?:evening|afternoon|noon|night)\b)/iu.test(s))return null
+ const zones=s.match(/\b[A-Za-z_]+(?:\/[A-Za-z_]+){1,2}\b/g)||[]
+ if(zones.some(z=>z!=='America/Winnipeg'))return null
+ const qualifiers=[...s.matchAll(/[0-9]{1,2}:[0-9]{2}\s*([A-Z]{2,8})\b/g)].map(m=>m[1]),tail=s.match(/[0-9]{1,2}:[0-9]{2}\s+([A-Za-z].*)$/),prefix=s.match(/\b([A-Za-z]{2,8})\s+[0-9]{1,2}:[0-9]{2}/)
+ if(qualifiers.some(v=>!['AM','AND','FOR','API','SKU','PAR'].includes(v))||tail&&!/^(?:America\/Winnipeg\b|am\b|please\b|daily\b|and\b|for\b)/iu.test(tail[1])||prefix&&!['at','for','from','morning','daily'].includes(prefix[1].toLowerCase()))return null
  const times=s.match(/(?:[0-9０-９]{1,2}[:：][0-9０-９]{2}|[0-9０-９一二三四五六七八九十]{1,2}點|[0-9]{1,2}\s*[ap]m)/giu)||[]
  if(/(?:每週|每月|weekly|monthly|下午|晚上|點\s*(?:半|[0-9０-９一二三四五六七八九十]+(?:分|刻)?)|[0-9]{1,2}\.[0-9]{2}|America\/(?!Winnipeg\b)[A-Za-z_]+|\b(?:UTC|GMT|EST|EDT|PST|PDT)\b)/iu.test(s)||times.some(v=>!['08:00','8:00','8點','８點','八點','8am','08am'].includes(v.replace(/\s/g,'').toLowerCase())))return null
  const start=/^(?:請|幫我)?(?:新增|建立|設定)(?:一個)?(?:每日|每天|採購|訂貨|schedule|排程)/iu.test(s)||/^(?:please )?(?:create|add|set up) (?:a )?daily procurement (?:report|schedule)/iu.test(s)

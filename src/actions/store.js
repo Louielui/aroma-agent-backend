@@ -11,8 +11,11 @@ function createStore ({ dir = path.join(require('../store/dataDir').resolveDataD
   }
   const list = () => {try{return fs.readdirSync(dir).filter(n=>ID.test(n.slice(0,-5))&&n.endsWith('.json')).map(n=>get(n.slice(0,-5)))}catch(e){if(e.code==='ENOENT')return [];throw Error('audit_unavailable')}}
   function lock (targetId) {
-    if(![require('./procurementContract').TARGET,require('./procurementContract').CONTROL].includes(targetId))target(targetId);fs.mkdirSync(dir,{recursive:true}); const p=path.join(dir,targetId+'.lock');let fd
-    try{fd=fs.openSync(p,'wx',0o600);fs.writeFileSync(fd,JSON.stringify({pid:process.pid,at:new Date().toISOString()}));fs.fsyncSync(fd)}catch(_){if(fd!=null)fs.closeSync(fd);throw Error('target_locked')}
+    if(![require('./procurementContract').TARGET,require('./procurementContract').CONTROL].includes(targetId))target(targetId);fs.mkdirSync(dir,{recursive:true}); const p=path.join(dir,targetId+'.lock'),tmp=p+'.'+randomUUID()+'.tmp';let fd
+    // Publish only a complete, flushed identity. Exclusive hard-link creation cannot
+    // replace another holder; a crash before publication leaves only an inert temp.
+    try{fd=fs.openSync(tmp,'wx',0o600);fs.writeFileSync(fd,JSON.stringify({pid:process.pid,at:new Date().toISOString()}));fs.fsyncSync(fd);fs.linkSync(tmp,p)}catch(_){if(fd!=null)fs.closeSync(fd);try{fs.unlinkSync(tmp)}catch(_){}throw Error('target_locked')}
+    try{fs.unlinkSync(tmp)}catch(_){}
     // A crash leaves the lock in place. No unattended retry or stale-lock deletion.
     return () => {fs.closeSync(fd);fs.unlinkSync(p)}
   }
