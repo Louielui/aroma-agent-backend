@@ -13,17 +13,18 @@ function site(url){
 }
 function validateSource(s,now){
  const keys=['url','tabId','windowId','documentId','frameId','capturedAt','contentHash','truncated']
- if(!s||(!exact(s,keys)&&!exact(s,[...keys,'coverage']))||(s.coverage!==undefined&&!['main_frame_visible_text','selection_text'].includes(s.coverage))||typeof s.url!=='string'||s.url.length>2048||!Number.isSafeInteger(s.tabId)||s.tabId<0||!Number.isSafeInteger(s.windowId)||s.windowId<0||typeof s.documentId!=='string'||!s.documentId||s.documentId.length>128||s.frameId!==0||! /^[a-f0-9]{64}$/.test(s.contentHash)||typeof s.truncated!=='boolean')throw Error('invalid_source')
+ if(!s||(!exact(s,keys)&&!exact(s,[...keys,'coverage'])&&!exact(s,[...keys,'gmail'])&&!exact(s,[...keys,'coverage','gmail']))||(s.coverage!==undefined&&!['main_frame_visible_text','selection_text'].includes(s.coverage))||typeof s.url!=='string'||s.url.length>2048||!Number.isSafeInteger(s.tabId)||s.tabId<0||!Number.isSafeInteger(s.windowId)||s.windowId<0||typeof s.documentId!=='string'||!s.documentId||s.documentId.length>128||s.frameId!==0||! /^[a-f0-9]{64}$/.test(s.contentHash)||typeof s.truncated!=='boolean')throw Error('invalid_source')
  const origin=site(s.url),time=Date.parse(s.capturedAt)
  if(!Number.isFinite(time)||now-time>30000||time-now>5000)throw Error('capture_stale')
- return {origin,tabId:s.tabId,windowId:s.windowId,documentId:s.documentId,frameId:0,contentHash:s.contentHash,truncated:s.truncated,capturedAt:s.capturedAt,urlHash:digest(s.url),coverage:s.coverage||'main_frame_visible_text'}
+ if(Object.hasOwn(s,'gmail')&&(origin!=='https://mail.google.com'||!/^https:\/\/mail\.google\.com\/mail\/u\/\d+\/$/.test(s.url)||!require('../context/gmailReplyContract').validLocator(s.gmail)))throw Error('invalid_source')
+ return {origin,tabId:s.tabId,windowId:s.windowId,documentId:s.documentId,frameId:0,contentHash:s.contentHash,truncated:s.truncated,capturedAt:s.capturedAt,urlHash:digest(s.url),coverage:s.coverage||'main_frame_visible_text',...(s.gmail?{gmail:structuredClone(s.gmail)}:{})}
 }
 function validate(b){
  const shapes={prepare:['op','requestId','question','source'],read:['op','id','consent','source','text'],get:['op','id'],cancel:['op','id']}
  const taskShape=b?.op==='prepare'?['op','requestId','question']:b?.op==='read'?['op','id','consent']:null
  const task=taskShape&&(exact(b,taskShape)||(b.op==='prepare'&&exact(b,[...taskShape,'parentId'])&&ID.test(b.parentId)))
- const taskPage=b?.op==='prepare'&&[1,2].includes(b.taskVersion)&&(exact(b,[...shapes.prepare,'taskVersion'])||(exact(b,[...shapes.prepare,'taskVersion','parentId'])&&ID.test(b.parentId)))
- const contextTask=b?.op==='prepare'&&b.taskVersion===2&&['unavailable','excluded'].includes(b.contextAvailability)&&(exact(b,[...taskShape,'taskVersion','contextAvailability'])||(exact(b,[...taskShape,'taskVersion','contextAvailability','parentId'])&&ID.test(b.parentId)))
+ const taskPage=b?.op==='prepare'&&[1,2,3].includes(b.taskVersion)&&(exact(b,[...shapes.prepare,'taskVersion'])||(exact(b,[...shapes.prepare,'taskVersion','parentId'])&&ID.test(b.parentId)))
+ const contextTask=b?.op==='prepare'&&[2,3].includes(b.taskVersion)&&['unavailable','excluded'].includes(b.contextAvailability)&&(exact(b,[...taskShape,'taskVersion','contextAvailability'])||(exact(b,[...taskShape,'taskVersion','contextAvailability','parentId'])&&ID.test(b.parentId)))
  if(!b||!Object.hasOwn(shapes,b.op)||(!task&&!taskPage&&!contextTask&&!exact(b,shapes[b.op])&&!(b.op==='prepare'&&exact(b,[...shapes.prepare,'parentId'])&&ID.test(b.parentId)))||!ID.test(b.op==='prepare'?b.requestId:b.id))throw Error('invalid_request')
  if(b.op==='prepare'&&(typeof b.question!=='string'||!b.question.trim()||b.question.length>MAX_QUESTION))throw Error('invalid_request')
  if(b.op==='read'&&(typeof b.consent!=='boolean'||(!task&&(typeof b.text!=='string'||!b.text.trim()||b.text.length>MAX_TEXT))))throw Error('invalid_request')
