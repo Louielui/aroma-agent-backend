@@ -39,6 +39,9 @@ Bounded polite prefixes and qualifiers, including please/just/also and Chinese
 object-fronted forms, affect recognition only. Exact Owner text is never rewritten
 in the contract. The same normalization recognizes one exact supported scheduler
 effect for reporting evidence; it does not bypass proposal creation or approval.
+Recurring time tokens use bounded digits and mandatory units or colon separators.
+Long numeric runs are checked in isolated subprocesses with hard timeouts to
+prevent an ambiguous numeric repetition from blocking the host event loop.
 This is not a universal semantic intent recognizer. Ambiguous or unsupported
 language may require clarification.
 

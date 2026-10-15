@@ -7569,3 +7569,4 @@ scheduler refusal clarification unsupported and mixed-approval requests conserve
 a failed goal-history append stays visible to the Owner instead of claiming durable task tracking
 concurrent button evidence survives in-flight status and refused prepare replies without replaying the action
 a prepared proposal retains its usable conversation context when goal refresh fails
+numeric recurring-intent input is bounded and cannot block the host event loop

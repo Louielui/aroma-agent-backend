@@ -131,7 +131,7 @@ function shouldTrack(message){
  const text=String(message).trim(),intent=text.replace(/^(?:don't forget to|do not forget to|不要忘記|別忘記|唔好忘記)\s*/iu,''),router=require('../laneRouter')
  if(pureConstraint(text)||/[嗎呢咩麼么][。.!！?？]?$/u.test(text))return false
  const command=commandText(intent)
- const creation=/^(?:schedule\b|(?:create|add|set up)\s+(?:(?:a|an|the|new|daily|weekly|monthly|recurring|automatic|morning|purchasing|inventory|replenishment)\s+)*(?:schedule|scheduled task|background job|task|job|workflow|routine)\b)|^(?:新增|建立|設定|安排)(?:一[個項]|每天|每日|每週|每月|定期|循環|自動|早上|採購|訂貨|庫存|補貨|[0-9０-９]+(?:[:：][0-9０-９]+)?(?:點|時|分)?)*(?:排程|schedule\b|任務|工作|流程)/iu
+ const creation=/^(?:schedule\b|(?:create|add|set up)\s+(?:(?:a|an|the|new|daily|weekly|monthly|recurring|automatic|morning|purchasing|inventory|replenishment)\s+)*(?:schedule|scheduled task|background job|task|job|workflow|routine)\b)|^(?:新增|建立|設定|安排)(?:一[個項]|每天|每日|每週|每月|定期|循環|自動|早上|採購|訂貨|庫存|補貨|(?:[0-9０-９]{1,2}[:：][0-9０-９]{2}(?:點|時|分)?|[0-9０-９]{1,2}(?:點|時|分)))*(?:排程|schedule\b|任務|工作|流程)/iu
  // Relative information requested by a concrete schedule is part of that
  // directive, not a question that may erase it ("tells me which items").
  const chineseQuestion=/怎麼|怎樣|如何|什麼|甚麼|要點|咩|乜|點樣|點做|有冇|有無|有沒有|是否|能否|可否|幾(?:多|耐|時)/u.test(command)

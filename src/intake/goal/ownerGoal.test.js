@@ -2,6 +2,9 @@
 const test=require('node:test'),assert=require('node:assert/strict')
 const REQUEST='幫我新增一個schedule. 每天早上8點看系統,\n把每個供應商要下的貨品列出來\n之後把costco要下的訂單物品放進購物車. 不需要下單.'
 const owner=require('./ownerGoal')
+if(process.argv[2]==='--intent-probe'){
+ process.stdout.write(JSON.stringify(owner.isTaskRequest(process.argv[3])))
+}else{
 test('Owner procurement goal retains every original outcome recurrence and no-checkout constraint without new actions',()=>{
  const g=owner.createGoal({objective:REQUEST,requestId:'request-one'})
  assert.equal(g.originalObjective,REQUEST);assert.equal(g.recurring,true);assert.ok(g.outcomes.some(o=>o.ownerQuote.includes('8點')))
@@ -64,3 +67,16 @@ test('legacy task projections remain unchanged and goal reports never turn a rea
  assert.deepEqual(result.tasks,[]);assert.equal(result.ownerGoal.outcomes.every(o=>o.completionEvidence.length===0),true)
  assert.equal(owner.validGoal({...g,status:'GOAL_COMPLETED'}),false)
 })
+
+
+test('numeric recurring-intent input is bounded and cannot block the host event loop',{timeout:8000},async()=>{
+ const {execFile}=require('node:child_process')
+ for(const prefix of ['設定每天','建立每日','安排每週']){
+  const message=prefix+'8'.repeat(80)+'!'
+  const result=await new Promise((resolve,reject)=>execFile(process.execPath,[__filename,'--intent-probe',message],{timeout:1500,windowsHide:true},(error,stdout)=>error?reject(error):resolve(JSON.parse(stdout))))
+  assert.equal(result,false)
+ }
+ assert.equal(owner.isTaskRequest('建立每天早上8點訂貨排程'),true)
+ assert.equal(owner.isTaskRequest('設定每天08:00排程'),true)
+})
+}
