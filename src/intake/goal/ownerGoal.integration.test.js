@@ -16,11 +16,11 @@ test('ordinary informational intake cannot acquire an action goal from invented 
    if(opts.responseFormat?.name==='goal_plan'){decomposed++;return {text:JSON.stringify({question_restated:message,executive_frame:{taskType:'act',decisionNeeded:false,successDefinition:'Read records',answerPosture:'evidence_first'},requested_capability:null,facts:[],joins:[],owner_outcomes:[{ownerQuote:message,capability:'aroma_system.read',kind:'read'}]})}}
    return {text:JSON.stringify({intent:'query',mode:'chat',reply:'Inventory describes the goods held for use.',tasks:[],decision:null}),model:'offline-fixture',usage:{inputTokens:1,outputTokens:1},latencyMs:1}
   }}
-  for(message of ['What is inventory?','每天的訂貨單是怎麼建立的？','請問系統每天的設定是什麼','背景工作停了嗎','Why did the scheduled tasks stop running','Add up the Costco receipts for September','Create a summary of the Costco orders','Run a report on the scheduled tasks','Create a spreadsheet of the scheduled tasks','Create a detailed summary of the scheduled tasks']){
+  for(message of ['What is inventory?','每天的訂貨單是怎麼建立的？','請問系統每天的設定是什麼','背景工作停了嗎','Why did the scheduled tasks stop running','Add up the Costco receipts for September','Create a summary of the Costco orders','Run a report on the scheduled tasks','Create a spreadsheet of the scheduled tasks','Create a detailed summary of the scheduled tasks','What happens if I put the items in the cart?','Could you explain the Costco shopping cart?']){
    const result=await require('../intakeService').processIntake(message,adapter,[],{demo:true,interactionMode:'chat',requestId:randomUUID(),providerHint:'claude',readContextDeps:{sources:[]}})
    assert.equal(result.ownerGoal,undefined);assert.match(result.reply,/Inventory describes/)
   }
-  assert.equal(decomposed,10)
+  assert.equal(decomposed,12)
  }finally{for(const[k,v]of Object.entries(prior))if(v===undefined)delete process.env[k];else process.env[k]=v}
 })
 test('real intake preserves the failed procurement goal despite a data-only model answer and performs no business action',async()=>{
@@ -28,9 +28,12 @@ test('real intake preserves the failed procurement goal despite a data-only mode
  Object.assign(process.env,{CHAT_BACKEND:'off',READ_ACCESS:'off',A4_KNOWLEDGE_ROUTING:'off',GOAL_DECOMPOSER:'off',MULTI_AI_ROUTER:'off'})
  try{
   let calls=0;const adapter={providerName:'claude',complete:async()=>{calls++;return {text:JSON.stringify({intent:'task',mode:'recommend',reply:'所有排程及購物車操作已完成。',tasks:[],decision:null}),model:'offline-fixture',usage:{inputTokens:1,outputTokens:1},latencyMs:1}}}
-  const result=await require('../intakeService').processIntake(REQUEST,adapter,[],{demo:true,interactionMode:'chat',requestId:randomUUID(),providerHint:'claude'})
-  assert.ok(calls>0);assert.equal(result.ownerGoal.originalObjective,REQUEST);assert.equal(result.ownerGoal.recurring,true);assert.notEqual(result.ownerGoal.status,'GOAL_COMPLETED');assert.match(result.reply,/8點/);assert.match(result.reply,/購物車/);assert.match(result.reply,/不需要下單/);assert.deepEqual(result.tasks,[])
-  assert.ok(!result.reply.includes('所有排程及購物車操作已完成'))
+  for(const message of [REQUEST,'幫我把Costco要下的訂單物品放進購物車','請把Costco貨品加入購物車','之後把Costco貨品放入購物車','Could you put the items in the cart','Would you please add the items to my shopping cart']){
+   const result=await require('../intakeService').processIntake(message,adapter,[],{demo:true,interactionMode:'chat',requestId:randomUUID(),providerHint:'claude'})
+   assert.ok(calls>0);assert.equal(result.ownerGoal.originalObjective,message);assert.equal(result.ownerGoal.recurring,message===REQUEST);assert.notEqual(result.ownerGoal.status,'GOAL_COMPLETED');assert.match(result.reply,/購物車|cart/);assert.deepEqual(result.tasks,[])
+   if(message===REQUEST){assert.match(result.reply,/8點/);assert.match(result.reply,/不需要下單/)}
+   assert.ok(!result.reply.includes('所有排程及購物車操作已完成'))
+  }
  }finally{for(const [k,v]of Object.entries(prior))if(v===undefined)delete process.env[k];else process.env[k]=v}
 })
 test('existing conversation and investigation stores retain incomplete goals separately from completed read-only receipts',()=>{

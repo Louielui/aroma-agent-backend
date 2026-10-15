@@ -126,11 +126,18 @@ function shouldTrack(message){
  const creation=/^(?:schedule\b|(?:create|add|set up)\s+(?:(?:a|an|the|new|daily|weekly|monthly|recurring|automatic|morning|purchasing|inventory|replenishment)\s+)*(?:schedule|scheduled task|background job|task|job|workflow|routine)\b)|^(?:新增|建立|設定|安排)(?:一[個項]|每天|每日|每週|每月|定期|循環|自動|早上|採購|訂貨|庫存|補貨|[0-9０-９]+(?:[:：][0-9０-９]+)?(?:點|時|分)?)*(?:排程|schedule\b|任務|工作|流程)/iu
  return router.isBusinessActionRequest(intent)||recurring(intent)&&creation.test(command)
 }
+function cartRequest(clause){
+ const command=clause.trim().replace(/^(?:(?:could|would)\s+you\s+(?:please\s+)?|please\s+|help me\s+|(?:請|幫我|麻煩你?)\s*)/iu,'').replace(/^(?:之後|然後)/u,'')
+ return /^(?:add|put|place|move)\b.+\b(?:to|into|in)\s+(?:(?:the|my|our)\s+)?(?:Costco\s+)?(?:shopping\s+)?cart\b|^(?:把.+)?(?:放進|放入|加入|加到).*(?:購物車)/iu.test(command)
+}
 function isTaskRequest(message){
- const text=String(message).trim(),router=require('../laneRouter')
- if(['question','capability_question','investigation_request','arrangement_request','general_knowledge'].includes(router.routeLane(text).reason))return false
+ const text=String(message).trim(),router=require('../laneRouter'),cart=clauses(text).some(cartRequest)
+ // Only a concrete cart-insertion request can bypass the ordinary question gate;
+ // its reporting metadata grants no browser execution or cart permission.
+ if(!cart&&['question','capability_question','investigation_request','arrangement_request','general_knowledge'].includes(router.routeLane(text).reason))return false
  const primaryTask=/^(?:(?:please|help me)\s+|(?:請|幫我|麻煩你?)\s*)?(?:pause|resume|enable|disable|stop|cancel|delete|create|schedule|set up|run|restart)\b|^(?:請|幫我|麻煩你?)?(?:暫停|停用|恢復|啟用|停止|取消|刪除|新增|建立|設定)/iu.test(text)
- if(router.isReadRequest(text)&&!primaryTask)return false
+ if(router.isReadRequest(text)&&!primaryTask&&!cart)return false
+ if(cart)return true
  return clauses(text).some(s=>{
   const command=s.replace(/^(?:(?:please|help me)\s+|(?:請|幫我|麻煩你?)\s*)/iu,'')
   // An analytic object is not an external business effect. Examine clauses
@@ -138,8 +145,7 @@ function isTaskRequest(message){
   if(/^(?:add\s+up\b|(?:create|make|build|generate|prepare|run)\s+(?:(?:a|an|the|new|daily|weekly|monthly)\s+)*(?:summary|report|analysis|comparison|overview|breakdown|table|chart|list|description)\b)|^(?:新增|建立|產生|製作|整理)(?:一[個份張]|每日|每天|每週|每月)*(?:摘要|報告|分析|比較|概覽|明細|表格|圖表|清單)/iu.test(command))return false
   if(shouldTrack(s))return true
   const scheduler=/^(?:pause|resume|enable|disable|stop|cancel|delete|restart|run)\s+(?:(?:both|all|the|that|this|these|previous|two)\s+)*(?:(?:scheduled?|background|automatic)\s+(?:tasks?|jobs?)|scheduler|Windows service|backend|bridge|AromaXiangXiang[\w-]*|ActionGatewayAcceptance|gateway-acceptance|errand-recall)\b|^(?:暫停|停用|恢復|啟用|停止|取消|刪除|執行|重新啟動)(?:這個|那個|所有|全部|兩個)?(?:排程|背景工作|自動工作|服務|後端|橋接器|AromaXiangXiang|ActionGatewayAcceptance)/iu.test(command)
-  const cart=/^(?:add|put|place|move)\b.+\b(?:to|into|in)\s+(?:the\s+)?(?:Costco\s+)?(?:shopping\s+)?cart\b|^(?:放進|加入).*(?:購物車)/iu.test(command)
-  return scheduler||cart
+  return scheduler
  })
 }
 // Conversation-owned reporting records only. Each request retains its own scope

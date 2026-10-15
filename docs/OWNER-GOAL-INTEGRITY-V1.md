@@ -142,3 +142,9 @@ creation verb and bounded scheduling modifiers. Mentioning scheduled tasks insid
 a spreadsheet or a detailed-summary request is not enough. This closes the
 legacy recurring predicate as well as the scheduler fallback; both positive
 business instructions and informational paraphrases have intake regressions.
+
+Concrete cart-insertion requests also cover the Chinese object-fronted 把 form
+and English could/would-you requests. This is reporting admission only, never
+a browser action or permission grant. Explanations and hypothetical questions
+remain informational. Standalone and follow-up cart clauses retain their exact
+objective even without an attached recurring-schedule request.
