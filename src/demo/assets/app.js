@@ -424,8 +424,8 @@
    */
   function renderEmptyScreen (c) {
     if (!mainEl || isListed(c) || c.history.length > 0) return
-    if (c.thread.querySelector('.empty-greeting')) return
     mainEl.classList.add('empty')
+    if (c.thread.querySelector('.empty-greeting')) return
     var box = el('div', 'empty-greeting')
     c.thread.appendChild(box)
     /**
@@ -1162,6 +1162,7 @@
           }
         }
         c.loaded = true
+        c.unsaved = false
         if (c === active) scroll()
       })
       .catch(function () {
@@ -2191,6 +2192,7 @@
     }
     var conv = active
     clearEmptyScreen(conv)   // captured BEFORE anything renders: a click must not steal this turn
+    var unsavedBefore = conv.unsaved === true; conv.unsaved = true
     drawImages(addUser(text, conv), pictures)
     conv.pendingImages = []
     imageNotice('')
@@ -2269,6 +2271,7 @@
       // repaint what the Owner is already looking at.
       // updatedAt is set here too, so a live conversation sorts and groups beside the
       // stored ones instead of falling into 更早 with no time at all.
+      if (o.status === 200 && o.body.historySaved === true) conv.unsaved = unsavedBefore
       if (o.status === 200 && o.body.historySaved !== false) { conv.stored = true; conv.loaded = true; conv.updatedAt = new Date().toISOString() }
       renderConvList() // the conversation has content now, so it enters the list
     }).catch(function () {

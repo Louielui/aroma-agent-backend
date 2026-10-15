@@ -26,7 +26,9 @@ it does not authorize or restart execution.
 
 Active replies, model-selection saves, unresolved local replies, prepared images,
 open dialogs, operation/confirmation controls and open department tools block
-update. Attached report modes must be finished first. Home and plain empty chat
+update. Local turns are marked unsaved until the server explicitly acknowledges
+their persistence. A later saved turn cannot erase an earlier unsaved-turn marker;
+the Owner is told why reload is blocked. Attached report modes must be finished first. Home and plain empty chat
 are supported. Other standalone tool pages keep their existing controls. The
 first installation requires one ordinary main-page refresh; later deployments
 can be loaded with the header button without closing Chrome or its installed app.

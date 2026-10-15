@@ -3644,6 +3644,7 @@ const CATALOGUE = Object.freeze({
   'client.updating': { zh: '正在檢查更新…', en: 'Checking for updates…' },
   'client.updated': { zh: '已載入目前版本，工作畫面已保留。', en: 'Current version loaded; work view retained.' },
   'client.updateBusy': { zh: '請先完成目前工作、附件或確認步驟，再更新。', en: 'Finish the current work, attachments or confirmation before updating.' },
+  'client.updateUnsaved': { zh: '有訊息尚未確認保存，暫時不會重載；請先保留這些內容。', en: 'Some messages are not confirmed saved. Retain their contents before reloading.' },
   'client.updateUnavailable': { zh: '暫時未能更新；目前對話和草稿仍保留，稍後可再試。', en: 'Update unavailable; your current conversation and draft remain. Try again later.' },
   'client.restoreUnavailable': { zh: '未能恢復原對話；草稿已保留。請先選擇對話再傳送。', en: 'Original conversation unavailable; draft retained. Select a conversation before sending.' },
   'client.updateCurrent': { zh: '主系統頂部提供更新按鈕，沿用已授權版本及對話讀取；一分鐘內的單次更新可保留文字草稿和同一對話，不會自動傳送。', en: 'The main header offers Update using authorized version and conversation reads. A one-minute single-entry handoff retains the text draft and exact conversation without auto-send.' },
