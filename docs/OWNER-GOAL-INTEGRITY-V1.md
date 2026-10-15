@@ -120,3 +120,10 @@ positive clauses after negation and scheduling reminders stay mandatory. The
 original objective is retained byte-for-byte. Existing intent admission gates
 still apply; this is not a universal new business intent recognizer.
 No live source or deployment acceptance is claimed by offline tests.
+
+Scheduler surface words alone cannot admit a new action goal: ordinary status
+questions retain their existing investigation answer. Goal snapshots are re-read
+after asynchronous gateway calls, immediately before synchronous render/save, so
+a concurrent authenticated button receipt cannot be overwritten by an older
+pending snapshot. If that refresh fails, no stale goal turn is appended and the
+Owner receives the tracking-unavailable warning; execution is never replayed.

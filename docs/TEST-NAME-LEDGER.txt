@@ -7567,3 +7567,4 @@ existing button approval records exact-scope goal evidence without replacing ano
 ordinary acknowledgements accept the immediate unrelated offer rather than a persistent or completed goal cursor
 scheduler refusal clarification unsupported and mixed-approval requests conserve every current outcome without granting authority
 a failed goal-history append stays visible to the Owner instead of claiming durable task tracking
+concurrent button evidence survives in-flight status and refused prepare replies without replaying the action

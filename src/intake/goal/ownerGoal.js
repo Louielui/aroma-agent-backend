@@ -129,8 +129,8 @@ function isTaskRequest(message){
  if(['question','capability_question','investigation_request','arrangement_request','general_knowledge'].includes(router.routeLane(text).reason))return false
  const primaryTask=/^(?:(?:please|help me)\s+|(?:請|幫我|麻煩你?)\s*)?(?:pause|resume|enable|disable|stop|cancel|delete|create|schedule|set up|run|restart)\b|^(?:請|幫我|麻煩你?)?(?:暫停|停用|恢復|啟用|停止|取消|刪除|新增|建立|設定)/iu.test(text)
  if(router.isReadRequest(text)&&!primaryTask)return false
- const domain=/costco|購物車|採購|訂貨|排程|scheduler|scheduled?\b|background (?:job|task)|Windows service|backend|bridge|AromaXiangXiang|ActionGatewayAcceptance/iu.test(text)
- return shouldTrack(text)||require('../../actions/understanding').surface(text)||domain&&clauses(text).some(s=>/^(?:(?:please|help me)\s+|(?:請|幫我|麻煩你?)\s*)?(?:pause|resume|enable|disable|stop|cancel|delete|add|create|schedule|set up|run|restart)\b|^(?:請|幫我|麻煩你?)?(?:暫停|停用|恢復|啟用|停止|取消|刪除|新增|建立|設定|放進|加入)/iu.test(s))
+ const domain=/costco|購物車|採購|訂貨|排程|背景工作|自動工作|scheduler|scheduled?\b|(?:background|automatic) (?:job|task)|Windows service|backend|bridge|AromaXiangXiang|ActionGatewayAcceptance/iu.test(text)
+ return shouldTrack(text)||domain&&clauses(text).some(s=>/^(?:(?:please|help me)\s+|(?:請|幫我|麻煩你?)\s*)?(?:pause|resume|enable|disable|stop|cancel|delete|add|create|schedule|set up|run|restart)\b|^(?:請|幫我|麻煩你?)?(?:暫停|停用|恢復|啟用|停止|取消|刪除|新增|建立|設定|放進|加入)/iu.test(s))
 }
 // Conversation-owned reporting records only. Each request retains its own scope
 // and evidence; indexing several goals never merges their execution authority.

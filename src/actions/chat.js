@@ -87,7 +87,8 @@ function createChatGateway({request,receipts,conversations,providerFor,semanticT
   continuationStore.save(receipt)
   const context=latestContext(conversationId)
   let result={mode:'chat',lane:'chat',servedBy:null,reply:t('actions.continuationNoContext')}
-  const goals=require('../intake/goal/ownerGoal'),priorConversation=conversations.get(conversationId),priorGoal=goals.currentGoal(priorConversation)
+  const goals=require('../intake/goal/ownerGoal')
+  let priorConversation=conversations.get(conversationId),priorGoal=goals.currentGoal(priorConversation)
   let observedRun=null
   function explain(key,run){result.reply=REPLIES[key]();if(run){observedRun=run;result.reply+='\n'+run.target.taskPath+run.target.taskName;if(run.state==='verified'&&run.after?.at)result.reply+='\n'+t('actions.checkedAt',{at:run.after.at});result.actionContinuation={id:run.id,state:run.state,readOnly:receipt.readOnly}}}
   try{
@@ -130,6 +131,13 @@ function createChatGateway({request,receipts,conversations,providerFor,semanticT
    }
    // A durable request receipt precedes dispatch. A lost response is never retried.
    Object.assign(result,syncGoalEvidence(conversationId,observedRun))
+   let saveConversation=true
+   try{
+    const fresh=conversations.get(conversationId),all=goals.goalsFor(fresh)
+    priorGoal=all.find(g=>g.goalId===priorGoal?.goalId)||priorGoal;priorConversation=fresh
+    const verified=priorGoal?.outcomes.find(o=>o.status==='COMPLETED_WITH_EVIDENCE'&&o.executionBinding?.receiptId===observedRun?.id)
+    if(verified&&observedRun?.state!=='verified'&&parsed.kind==='status')result.reply=t('actions.continuationVerified')
+   }catch{result.ownerGoalTrackingUnavailable=true;saveConversation=false}
    if(goals.isTaskRequest(message)&&!parseContinuation(message)){
     // Semantic status/duplicate-proposal routing must not erase a new compound
     // objective. Reading the earlier proposal grants this new goal no authority.
@@ -142,12 +150,10 @@ function createChatGateway({request,receipts,conversations,providerFor,semanticT
     result.ownerGoal=inverseBound?inverseGoal:observedRun?goals.applyGatewayEvidence(priorGoal,observedRun):structuredClone(priorGoal)
     result.reply+='\n\n'+require('../intake/goal/ownerGoalView').renderGoal(result.ownerGoal)
    }
-   let latestGoalState=priorConversation
-   try{const fresh=conversations.get(conversationId);goals.goalsFor(fresh);latestGoalState=fresh}catch{result.ownerGoalTrackingUnavailable=true}
-   result=goals.withOutstanding(result,latestGoalState)
+   result=goals.withOutstanding(result,priorConversation)
    if(result.ownerGoalTrackingUnavailable)result.reply+='\n\n'+t('ownerGoal.trackingUnavailable')
    receipt.state='completed';receipt.response=result;receipt.timeline.push({phase:'completed',at:new Date(now()).toISOString()});continuationStore.save(receipt)
-   conversations.appendTurn({id:conversationId,userText:message,replyText:result.reply,investigationRunId:result.investigationRunId,...(result.ownerGoal?{ownerGoal:result.ownerGoal,ownerGoalReference:priorGoal?.goalId}:{})})
+   if(saveConversation)conversations.appendTurn({id:conversationId,userText:message,replyText:result.reply,investigationRunId:result.investigationRunId,...(result.ownerGoal?{ownerGoal:result.ownerGoal,ownerGoalReference:priorGoal?.goalId}:{})})
    return result
   }catch(e){receipt.state='interrupted';continuationStore.save(receipt);throw e}
  }
@@ -171,7 +177,8 @@ function createChatGateway({request,receipts,conversations,providerFor,semanticT
   if(prior){if(prior.requestHash!==requestHash||prior.conversationId!==conversationId)throw Error('request_conflict');if(prior.state!=='completed')throw Error('investigation_unavailable');return {...prior.response,investigationRunId:requestId,replayed:true}}
   if(ongoing.has(conversationId))throw Error('request_conflict');ongoing.add(conversationId)
   try{
-   const priorConversation=conversations.get(conversationId),goals=require('../intake/goal/ownerGoal'),priorGoal=goals.currentGoal(priorConversation)
+   let priorConversation=conversations.get(conversationId)
+   const goals=require('../intake/goal/ownerGoal'),priorGoal=goals.currentGoal(priorConversation)
    receipts.begin(requestId,conversationId,requestHash)
    const i=(await call({op:'inspect'})).inspection
    const report={readOnly:true,focus:'background',goal:message,duplicateState:'UNKNOWN',sections:[{section:'schedules',state:i.observations.some(o=>o.state==='CONFIRMED')?'partial':'unavailable',sourceId:i.id,retrievedAt:new Date().toISOString(),records:i.observations.map(o=>({sourceId:o.target.id,state:o.state,taskName:o.target.taskName,...(o.snapshot?{enabled:o.snapshot.enabled,currentRunningState:o.snapshot.runtime,definitionHash:o.snapshot.definitionHash,at:o.snapshot.at}:{})}))}],persistenceState:'saved'}
@@ -186,10 +193,17 @@ function createChatGateway({request,receipts,conversations,providerFor,semanticT
     }
     catch(_){result.reply=t('actions.chatRefused')}
    }
+   let saveConversation=true
+   try{
+    const fresh=conversations.get(conversationId),all=goals.goalsFor(fresh),current=all.find(g=>g.goalId===result.ownerGoal?.goalId)
+    if(current)result.ownerGoal=structuredClone(current)
+    priorConversation=fresh
+   }catch{result.ownerGoalTrackingUnavailable=true;saveConversation=false}
    if(result.ownerGoal)result.reply+='\n\n'+require('../intake/goal/ownerGoalView').renderGoal(result.ownerGoal)
    result=goals.withOutstanding(result,priorConversation)
+   if(result.ownerGoalTrackingUnavailable)result.reply+='\n\n'+t('ownerGoal.trackingUnavailable')
    receipts.finish(requestId,result)
-   conversations.appendTurn({id:conversationId,userText:message,replyText:result.reply,investigationRunId:requestId,...(result.ownerGoal?{ownerGoal:result.ownerGoal,ownerGoalReference:priorGoal?.goalId}:{})})
+   if(saveConversation)conversations.appendTurn({id:conversationId,userText:message,replyText:result.reply,investigationRunId:requestId,...(result.ownerGoal?{ownerGoal:result.ownerGoal,ownerGoalReference:priorGoal?.goalId}:{})})
    return result
   }catch(e){try{receipts.finish(requestId,null,true)}catch(_){}throw e}finally{ongoing.delete(conversationId)}
  }
