@@ -8,9 +8,10 @@
  *     every node is built with createElement + textContent, so nothing a model or a
  *     read-lane document says can become markup
  *   - no external URL, CDN, font or image; same-origin fetch only
- *   - no browser-side persistence of any kind: no storage API is touched in this file.
+ *   - no browser storage or cookie API for conversation content is touched in this file.
  *     Since 2026-08-04 conversations DO survive a refresh, but they are held SERVER-side,
- *     behind the same owner session as this page — the browser itself still stores nothing
+ *     behind the same owner session as this page. Explicit client updates use one bounded,
+ *     short-lived history-entry handoff for the draft and conversation ID, consumed on restore.
  *   - the approval POST carries EXACTLY four fields; no Work Order field ever travels
  *     from the browser, and the collapsed technical section is presentation only
  *   - progress comes from the server's fixed phase vocabulary — raw agent output is
@@ -55,7 +56,7 @@
       item.appendChild(remove); imagePreview.appendChild(item)
     })
     imagePreview.classList.toggle('hidden', !pictures.length && !(active && active.imagePreparing))
-    send.disabled = pending || brainSaving || (SUBSCRIPTION_CHAT && CENTRAL_MODELS && !brainReady) || !!(active && active.imagePreparing) || (!msg.value.trim() && !pictures.length)
+    send.disabled = pending || brainSaving || (SUBSCRIPTION_CHAT && CENTRAL_MODELS && !brainReady) || !!(active && active.imagePreparing) || (!msg.value.trim() && !pictures.length) || !!(clientUpdates && clientUpdates.blocked())
     imageFiles.disabled = pending
   }
   function normalizeImage(file) {
@@ -185,6 +186,7 @@
   var pending = false
   var convs = []      // [{ id, title, history: [{role,text}], thread: HTMLElement }]
   var active = null
+  var clientUpdates = window.XiangxiangClientUpdates && window.XiangxiangClientUpdates.mount(document, t, { state: function () { return { pending: pending || brainSaving, convs: convs, active: active, attachedKind: attachedKind } }, refresh: function () { autoGrow(); refreshImages() }, find: findConv, load: loadConversation, select: selectConversation, home: showHome })
   var topicController = window.XiangxiangTopics && window.XiangxiangTopics.mount(document, t, function (text) { if (pending || msg.value.trim()) return false; msg.value = text; autoGrow(); refreshImages(); msg.focus(); return true })
 
   /* ── tiny DOM helpers ─────────────────────────────────────────────────── */
@@ -916,18 +918,7 @@
       .catch(function () { /* the bar is an addition; its absence is not a claim */ })
   }
 
-  /**
-   * ── THE STALE-TAB GUARD ───────────────────────────────────────────────────
-   * app.js and app.css are INLINED into this page at server require() time, so a tab loaded
-   * before a restart keeps running old client code against a new server — and looks
-   * completely normal doing it. That has cost three rounds: a reject button that "worked"
-   * and never called the server, a deterministic entrance that did not appear, and a
-   * backlog line that did not render.
-   *
-   * The page knows the fingerprint it was built from. It asks the server what is being
-   * served now, and if they differ it SAYS SO. Checked once on load — the answer only
-   * changes on a restart, so polling would be noise.
-   */
+  // The build fingerprint detects older inline assets; the header Update loads the deployed page.
   function checkStale () {
     // Substituted by demoHtml.js at build time. It lives HERE rather than in a second
     // script block in index.html, because the page is required to carry exactly ONE inline
@@ -958,6 +949,7 @@
   }
   function isListed (c) { return c.stored === true || c.history.length > 0 }
   function selectConversation (c) {
+    if (clientUpdates) clientUpdates.choose()
     if (topicController) topicController.selected(c.cid)
     // A conversation is the current destination, so 首頁 is not.
     markHome(false)
@@ -1103,8 +1095,8 @@
 
   function bootHistory () {
     (topicController ? topicController.load() : fetch('/api/v1/conversations', { credentials: 'same-origin' }).then(function (r) { return r.json() }))
-      .then(function (j) {
-        if (!j || !j.ok || !j.conversations) return
+      .then(async function (j) {
+        if (!j || !j.ok || !j.conversations) { if (clientUpdates && clientUpdates.recovering()) throw Error('history_unavailable'); return }
         for (var i = 0; i < j.conversations.length; i++) {
           var row = j.conversations[i]
           if (!row || !row.id || findConv(row.id)) continue
@@ -1113,12 +1105,13 @@
           convs.push(stubFor(row))
         }
         renderConvList()
-        if (topicController && j.workspace && j.workspace.lastConversationId) {
+        if (clientUpdates && clientUpdates.recovering()) await clientUpdates.restore()
+        else if (topicController && j.workspace && j.workspace.lastConversationId) {
           var last = findConv(j.workspace.lastConversationId)
           if (last) selectConversation(last)
         }
       })
-      .catch(function () { /* history is an addition; losing it must not break the page */ })
+      .catch(function () { if (clientUpdates) clientUpdates.failed() })
   }
 
   // `loaded` MEANS LOADED, and it used to mean "a fetch was started".
@@ -1134,7 +1127,7 @@
   function loadConversation (c) {
     if (c.loaded || c.inflight) return
     c.inflight = true
-    fetch('/api/v1/conversations/' + encodeURIComponent(c.cid), { credentials: 'same-origin' })
+    return fetch('/api/v1/conversations/' + encodeURIComponent(c.cid), { credentials: 'same-origin' })
       .then(function (r) { return r.json() })
       .then(function (j) {
         c.inflight = false
@@ -2151,7 +2144,7 @@
   }
 
   async function submit () {
-    if (pending || brainSaving) return
+    if (pending || brainSaving || (clientUpdates && clientUpdates.blocked())) return
     /**
      * ⛔ TWO THINGS BEFORE ANYTHING IS SENT, AND BOTH ARE HR-42.
      *
@@ -3652,6 +3645,7 @@
   send.disabled = true
   autoGrow()
   newConversation(false)
+  if (clientUpdates) clientUpdates.recover(active)
   // The sidebar reads its history from the server. Done after the page is already usable,
   // so a slow or failed fetch delays nothing and breaks nothing.
   /**
@@ -3667,6 +3661,8 @@
    * file, and a bilingual shell is not a reason to start.
    */
   var SHELL_TEXT = [
+    ['client-update', 'text', function () { return t('client.update') }],
+    ['client-update', 'both', function () { return t('client.updateHint') }],
     ['hr-label', 'text', function () { return t('department.hr') }],
     ['purchasing-label', 'text', function () { return t('department.purchasing') }],
     ['accounting-label', 'text', function () { return t('department.accounting') }],
