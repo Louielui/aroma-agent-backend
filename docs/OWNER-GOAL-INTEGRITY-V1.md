@@ -23,7 +23,9 @@ question is not mistaken for an independent cart command.
 Admission reuses existing routing and bounded business-action grammar per clause.
 A question in one information step cannot erase another explicit action clause.
 An explicit schedule object may include relative information such as which items
-to order. Analytic objects and ordinary status/impact questions retain the
+to order. Creation how-to and permission questions still follow the ordinary
+question path. Both language variants of the scheduler fallback require complete
+verb/target clauses, so scheduler reports or policy summaries are not actions. Analytic objects and ordinary status/impact questions retain the
 informational path. The legacy business branch additionally requires a business
 effect at the command head; procurement nouns inside analysis are insufficient.
 The Chinese scheduler fallback requires a complete imperative, excluding
