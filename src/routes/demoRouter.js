@@ -718,10 +718,11 @@ function createDemoRouter ({ getAdapterFn = getAdapterForLane, processIntakeFn =
       // Status and closed acknowledgements retain the saved whole goal;
       // neither re-executes it nor grants approval. Specialized handlers ran first.
       if(planningLane&&['status','ambiguous'].includes(require('../actions/chat').parseContinuation(message)?.kind)){
-        const goal=conversationStore.get?.(req.body.conversationId)?.messages?.at(-1)?.ownerGoal
+        let saved,goal
+        try{saved=conversationStore.get?.(req.body.conversationId);goal=require('../intake/goal/ownerGoal').currentGoal(saved)}catch{return res.status(503).json({error:'owner_goal_history_unavailable'})}
         if(require('../intake/goal/ownerGoal').validGoal(goal)){
           if(!require('../core/operating/chatRequest').sameOrigin(req))return res.status(403).json({error:'same_origin_required'})
-          const answer=require('../intake/goal/ownerGoal').attachResult({lane:'chat',mode:'chat',reply:'',servedBy:null,tasks:[]},goal)
+          const contract=require('../intake/goal/ownerGoal'),answer=contract.withOutstanding(contract.attachResult({lane:'chat',mode:'chat',reply:'',servedBy:null,tasks:[]},goal),saved)
           let historySaved=false
           try{conversationStore.appendTurn({id:req.body.conversationId,userText:message,replyText:answer.reply,ownerGoal:goal});historySaved=true}catch{}
           return res.set('Cache-Control','no-store').json({...answer,historySaved})
@@ -1251,7 +1252,8 @@ function createDemoRouter ({ getAdapterFn = getAdapterForLane, processIntakeFn =
         // from the same result, so the two cannot disagree.
         const offer = offerDecision.offer
         const withOffer0 = offer ? Object.assign({}, withInference, { workRequestOffer: offer }) : withInference
-        const withOffer = settingsOffer ? Object.assign({}, withOffer0, { settingsOffer }) : withOffer0
+        const offered = settingsOffer ? Object.assign({}, withOffer0, { settingsOffer }) : withOffer0
+        const withOffer = offered.ownerGoal ? require('../intake/goal/ownerGoal').withOutstanding(offered,conversationStore.get?.(req.body.conversationId)) : offered
         /**
          * ⛔ THE REQUEST HE CLEARLY MADE, WITH ONE THING MISSING (P1-C1b1).
          *

@@ -7558,3 +7558,8 @@ semantic prepare cannot replace a compound Owner goal with an unbound follow-up 
 
 a transient conversation read failure releases the existing gateway lock and permits a safe prepare retry
 restoring a verified child action retains every unresolved outcome of its compound Owner goal
+
+conversation goal index survives ordinary topics and preserves independently scoped unfinished requests
+malformed canonical goal history fails closed without overwriting or hiding unfinished records
+
+existing button approval records exact-scope goal evidence without replacing another active goal or replaying execution

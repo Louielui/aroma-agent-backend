@@ -35,7 +35,7 @@ test('real intake preserves the failed procurement goal despite a data-only mode
 })
 test('existing conversation and investigation stores retain incomplete goals separately from completed read-only receipts',()=>{
  const dir=fs.mkdtempSync(path.join(os.tmpdir(),'owner-goal-fixture-')),id=randomUUID(),g=goals.createGoal({objective:REQUEST,requestId:randomUUID()})
- const conversations=require('../../store/conversationStore').createConversationStore({dir:path.join(dir,'conversations')})
+ const conversations=require('../../store/conversationStore').createConversationStore({dataDir:dir})
  conversations.appendTurn({id,userText:REQUEST,replyText:'Incomplete',ownerGoal:g})
  assert.deepEqual(conversations.get(id).messages.at(-1).ownerGoal,g)
  const receipts=require('../../investigation/receipts').createReceipts({dir:path.join(dir,'receipts')}),rid=randomUUID()
@@ -50,15 +50,37 @@ test('existing Task Store keeps legacy state and stores a separate goal projecti
  const task=store.getTask(r.task_ids[0]);assert.equal(task.state,'todo');assert.equal(task.goalStatus,'GOAL_BLOCKED');assert.deepEqual(task.ownerGoal,g);assert.equal(store.listDispatches().length,before)
  const old=store.persistIntake({understanding:'Legacy fixture',tasks:[{title:'Legacy task'}]});assert.ok(!Object.hasOwn(store.getTask(old.task_ids[0]),'ownerGoal'))
 })
+test('conversation goal index survives ordinary topics and preserves independently scoped unfinished requests',()=>{
+ const dir=fs.mkdtempSync(path.join(os.tmpdir(),'owner-goal-index-')),store=require('../../store/conversationStore').createConversationStore({dataDir:dir}),cid=randomUUID(),first=goals.createGoal({objective:REQUEST,requestId:randomUUID()})
+ store.appendTurn({id:cid,userText:REQUEST,replyText:'Incomplete',ownerGoal:first})
+ store.appendTurn({id:cid,userText:'What is inventory?',replyText:'An informational answer',ownerGoal:null})
+ assert.equal(store.get(cid).messages.at(-1).ownerGoal,undefined);assert.equal(goals.currentGoal(store.get(cid)).goalId,first.goalId)
+ const objective='Read the approved record',next=goals.refineGoal(goals.createGoal({objective,requestId:randomUUID()}),[{ownerQuote:objective,capability:'aroma_system.read',kind:'read'}]),completed=goals.applyEvidence(next,[{goalId:next.goalId,scopeHash:next.scopeHash,outcomeId:'outcome-0',capability:'aroma_system.read',receiptId:'offline-verified-read',state:'verified',complete:true}],()=>true)
+ assert.equal(completed.status,'GOAL_COMPLETED');store.appendTurn({id:cid,userText:objective,replyText:'Verified current goal',ownerGoal:completed})
+ const reloaded=require('../../store/conversationStore').createConversationStore({dataDir:dir}),saved=reloaded.get(cid),view=goals.withOutstanding(goals.attachResult({reply:''},completed),saved)
+ assert.equal(saved.ownerGoals.length,2);assert.equal(goals.currentGoal(saved).goalId,completed.goalId);assert.deepEqual(saved.ownerGoals.find(g=>g.goalId===first.goalId),first);assert.equal(view.pendingOwnerGoals[0].goalId,first.goalId);assert.equal(view.hasUnresolvedOwnerGoals,true);assert.match(view.reply,/8點/);assert.match(view.reply,/購物車/);assert.equal(view.replyForArchive,view.reply)
+ assert.equal(goals.withOutstanding(goals.attachResult({reply:''},completed),{ownerGoals:[completed],activeOwnerGoalId:completed.goalId}).hasUnresolvedOwnerGoals,false)
+ assert.equal(goals.withOutstanding(goals.attachResult({reply:''},first),{ownerGoals:[first],activeOwnerGoalId:first.goalId}).hasUnresolvedOwnerGoals,true)
+ assert.throws(()=>reloaded.appendTurn({id:randomUUID(),userText:'做完了嗎',replyText:'x',ownerGoal:first,ownerGoalReference:first.goalId}),/invalid_owner_goal/)
+ reloaded.appendTurn({id:cid,userText:'做完了嗎',replyText:'Original goal',ownerGoal:first,ownerGoalReference:first.goalId});assert.equal(goals.currentGoal(reloaded.get(cid)).goalId,first.goalId);assert.equal(reloaded.get(cid).ownerGoals.length,2)
+})
+test('malformed canonical goal history fails closed without overwriting or hiding unfinished records',()=>{
+ const dir=fs.mkdtempSync(path.join(os.tmpdir(),'owner-goal-corrupt-')),store=require('../../store/conversationStore').createConversationStore({dataDir:dir}),cid=randomUUID(),goal=goals.createGoal({objective:REQUEST,requestId:randomUUID()})
+ store.appendTurn({id:cid,userText:REQUEST,replyText:'Incomplete',ownerGoal:goal})
+ const file=path.join(store.dir,cid+'.json'),record=JSON.parse(fs.readFileSync(file,'utf8'));record.ownerGoals.push({...goal,status:'GOAL_COMPLETED'});fs.writeFileSync(file,JSON.stringify(record));const before=fs.readFileSync(file)
+ assert.throws(()=>goals.currentGoal(store.get(cid)),/owner_goal_history_unavailable/);assert.throws(()=>store.appendTurn({id:cid,userText:'Another topic',replyText:'x'}),/owner_goal_history_unavailable/);assert.deepEqual(fs.readFileSync(file),before)
+})
 test('same-conversation whole-goal status survives reload and reads back without a model call or action',async()=>{
- const express=require('express'),dir=fs.mkdtempSync(path.join(os.tmpdir(),'owner-goal-http-')),conversations=require('../../store/conversationStore').createConversationStore({dir}),cid=randomUUID(),g=goals.createGoal({objective:REQUEST,requestId:randomUUID()})
+ const express=require('express'),dir=fs.mkdtempSync(path.join(os.tmpdir(),'owner-goal-http-')),conversations=require('../../store/conversationStore').createConversationStore({dataDir:dir}),cid=randomUUID(),g=goals.createGoal({objective:REQUEST,requestId:randomUUID()})
  conversations.appendTurn({id:cid,userText:REQUEST,replyText:'Incomplete',ownerGoal:g})
- const reloaded=require('../../store/conversationStore').createConversationStore({dir}),app=express();app.locals.conversationDemo=true;app.use(express.json());app.use(require('../../routes/demoRouter').createDemoRouter({conversationStore:reloaded,getAdapterFn:()=>{throw Error('unexpected_model_call')}}))
+ const reloaded=require('../../store/conversationStore').createConversationStore({dataDir:dir}),app=express();app.locals.conversationDemo=true;app.use(express.json());app.use(require('../../routes/demoRouter').createDemoRouter({conversationStore:reloaded,getAdapterFn:()=>{throw Error('unexpected_model_call')}}))
  const server=app.listen(0,'127.0.0.1');await new Promise(r=>server.once('listening',r));const origin='http://127.0.0.1:'+server.address().port
  try{
   const ack=await new Promise((resolve,reject)=>{const req=require('node:http').request(origin+'/api/v1/demo/intake',{method:'POST',headers:{'content-type':'application/json',origin:'http://127.0.0.1:8090',host:'127.0.0.1:8090'}},res=>{let raw='';res.on('data',c=>raw+=c);res.on('end',()=>resolve({status:res.statusCode,body:JSON.parse(raw)}))});req.on('error',reject);req.end(JSON.stringify({message:'好',conversationId:cid}))})
   assert.equal(ack.status,200);assert.equal(ack.body.ownerGoal.goalId,g.goalId)
+  reloaded.appendTurn({id:cid,userText:'What is inventory?',replyText:'Ordinary information, no new action'})
+  assert.equal(reloaded.get(cid).messages.at(-1).ownerGoal,undefined)
   const response=await new Promise((resolve,reject)=>{const req=require('node:http').request(origin+'/api/v1/demo/intake',{method:'POST',headers:{'content-type':'application/json',origin:'http://127.0.0.1:8090',host:'127.0.0.1:8090'}},res=>{let raw='';res.on('data',c=>raw+=c);res.on('end',()=>resolve({status:res.statusCode,body:JSON.parse(raw)}))});req.on('error',reject);req.end(JSON.stringify({message:'做完了嗎',conversationId:cid}))}),result=response.body
-  assert.equal(response.status,200);assert.equal(result.ownerGoal.goalId,g.goalId);assert.equal(result.ownerGoal.status,'GOAL_BLOCKED');assert.equal(result.historySaved,true);assert.equal(result.servedBy,null);assert.equal(reloaded.get(cid).messages.length,6)
+  assert.equal(response.status,200);assert.equal(result.ownerGoal.goalId,g.goalId);assert.equal(result.ownerGoal.status,'GOAL_BLOCKED');assert.equal(result.historySaved,true);assert.equal(result.servedBy,null);assert.equal(reloaded.get(cid).messages.length,8)
  }finally{server.closeAllConnections();await new Promise(r=>server.close(r))}
 })

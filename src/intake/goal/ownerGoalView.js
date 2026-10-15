@@ -7,4 +7,5 @@ function renderGoal(g){
  // neither claim execution nor erase an unresolved mandatory outcome.
  return ['### '+t('ownerGoal.heading'),state,...rows,...g.constraints.map(s=>t('ownerGoal.constraint',{text:s})),...(g.status==='GOAL_COMPLETED'?[]:[t('ownerGoal.investigationOnly')])].join('\n\n')
 }
-module.exports={renderGoal}
+function renderOutstanding(goals){return [t('ownerGoal.otherGoals'),...goals.map(g=>renderGoal(g))].join('\n\n')}
+module.exports={renderGoal,renderOutstanding}

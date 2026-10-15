@@ -52,7 +52,22 @@ function createChatGateway({request,receipts,conversations,providerFor,semanticT
    return call({op:'chat_prepare',inspectionId:i.id,targetId:b.targetId,action:b.action,context})
   }
   const body={...b,op:'chat_'+b.op,context};delete body.conversationId;delete body.investigationId
-  return call(body)
+  const result=await call(body)
+  if(result?.run?.state==='verified'){
+   // Consume the same authenticated host receipt for the existing button/RPC
+   // path. Reporting updates never restore approval context or execute a tool.
+   try{
+    const goals=require('../intake/goal/ownerGoal'),all=goals.goalsFor(conversations.get(b.conversationId)),updates=[]
+    for(const goal of all){
+     const next=goals.applyGatewayEvidence(goal,result.run)
+     if(JSON.stringify(next)===JSON.stringify(goal))continue
+     if(typeof conversations.updateOwnerGoal!=='function')throw Error('conversation_store_not_wired')
+     updates.push(conversations.updateOwnerGoal(b.conversationId,next))
+    }
+    if(updates.length)return {...result,ownerGoalUpdates:updates}
+   }catch{return {...result,ownerGoalTrackingUnavailable:true}}
+  }
+  return result
  }
  function latestContext(conversationId){
   if(!isValidId(conversationId))return null
@@ -71,8 +86,8 @@ function createChatGateway({request,receipts,conversations,providerFor,semanticT
   const receipt={id:requestId,conversationId,requestHash,state:'started',kind:parsed.kind,readOnly:parsed.kind!=='approve',timeline:[{phase:'received',at:new Date(now()).toISOString()}],createdAt:new Date(now()).toISOString()}
   continuationStore.save(receipt)
   const context=latestContext(conversationId)
-  const result={mode:'chat',lane:'chat',servedBy:null,reply:t('actions.continuationNoContext')}
-  const goals=require('../intake/goal/ownerGoal'),priorGoal=conversations.get(conversationId)?.messages?.at(-1)?.ownerGoal
+  let result={mode:'chat',lane:'chat',servedBy:null,reply:t('actions.continuationNoContext')}
+  const goals=require('../intake/goal/ownerGoal'),priorConversation=conversations.get(conversationId),priorGoal=goals.currentGoal(priorConversation)
   let observedRun=null
   function explain(key,run){result.reply=REPLIES[key]();if(run){observedRun=run;result.reply+='\n'+run.target.taskPath+run.target.taskName;if(run.state==='verified'&&run.after?.at)result.reply+='\n'+t('actions.checkedAt',{at:run.after.at});result.actionContinuation={id:run.id,state:run.state,readOnly:receipt.readOnly}}}
   try{
@@ -121,6 +136,7 @@ function createChatGateway({request,receipts,conversations,providerFor,semanticT
     result.ownerGoal=inverseBound?inverseGoal:observedRun?goals.applyGatewayEvidence(priorGoal,observedRun):structuredClone(priorGoal)
     result.reply+='\n\n'+require('../intake/goal/ownerGoalView').renderGoal(result.ownerGoal)
    }
+   result=goals.withOutstanding(result,priorConversation)
    receipt.state='completed';receipt.response=result;receipt.timeline.push({phase:'completed',at:new Date(now()).toISOString()});continuationStore.save(receipt)
    conversations.appendTurn({id:conversationId,userText:message,replyText:result.reply,investigationRunId:result.investigationRunId,...(result.ownerGoal?{ownerGoal:result.ownerGoal,ownerGoalReference:priorGoal.goalId}:{})})
    return result
@@ -140,27 +156,29 @@ function createChatGateway({request,receipts,conversations,providerFor,semanticT
   if(!parsed.candidate)return null
   return prepareTurn(input,parsed)
  }
- async function prepareTurn({message,conversationId,requestId},parsed){
+ async function prepareTurn({message,conversationId,requestId},parsed,{continuation=false}={}){
   if(continuationStore.get(requestId))throw Error('request_conflict')
   const requestHash=hash({message,conversationId}),prior=receipts.get(requestId)
   if(prior){if(prior.requestHash!==requestHash||prior.conversationId!==conversationId)throw Error('request_conflict');if(prior.state!=='completed')throw Error('investigation_unavailable');return {...prior.response,investigationRunId:requestId,replayed:true}}
   if(ongoing.has(conversationId))throw Error('request_conflict');ongoing.add(conversationId)
   try{
-   const priorGoal=conversations.get(conversationId)?.messages?.at(-1)?.ownerGoal,goals=require('../intake/goal/ownerGoal')
+   const priorConversation=conversations.get(conversationId),goals=require('../intake/goal/ownerGoal'),priorGoal=goals.currentGoal(priorConversation)
    receipts.begin(requestId,conversationId,requestHash)
    const i=(await call({op:'inspect'})).inspection
    const report={readOnly:true,focus:'background',goal:message,duplicateState:'UNKNOWN',sections:[{section:'schedules',state:i.observations.some(o=>o.state==='CONFIRMED')?'partial':'unavailable',sourceId:i.id,retrievedAt:new Date().toISOString(),records:i.observations.map(o=>({sourceId:o.target.id,state:o.state,taskName:o.target.taskName,...(o.snapshot?{enabled:o.snapshot.enabled,currentRunningState:o.snapshot.runtime,definitionHash:o.snapshot.definitionHash,at:o.snapshot.at}:{})}))}],persistenceState:'saved'}
-   const result={mode:'chat',lane:'chat',reply:parsed.action?t('actions.chatPrepared'):t('actions.unknown'),investigation:report,investigationRunId:requestId,servedBy:null}
-   if(goals.validGoal(priorGoal))result.ownerGoal=structuredClone(priorGoal)
+   let result={mode:'chat',lane:'chat',reply:parsed.action?t('actions.chatPrepared'):t('actions.unknown'),investigation:report,investigationRunId:requestId,servedBy:null}
+   if(parsed.action&&!continuation)result.ownerGoal=goals.createGoal({objective:message,requestId})
+   else if(goals.validGoal(priorGoal))result.ownerGoal=structuredClone(priorGoal)
    if(parsed.action){
     try{
      const prepared=(await call({op:'chat_prepare',inspectionId:i.id,targetId:parsed.targetId,action:parsed.action,context:{conversationId,investigationId:requestId}})).run
      const fresh=goals.bindGatewayGoal(goals.createGoal({objective:message,requestId}),prepared)
-     if(fresh.outcomes.some(o=>o.executionBinding?.receiptId===prepared.id)||!result.ownerGoal)result.ownerGoal=fresh
+     if(!continuation||!result.ownerGoal)result.ownerGoal=fresh
     }
     catch(_){result.reply=t('actions.chatRefused')}
    }
    if(result.ownerGoal)result.reply+='\n\n'+require('../intake/goal/ownerGoalView').renderGoal(result.ownerGoal)
+   result=goals.withOutstanding(result,priorConversation)
    receipts.finish(requestId,result)
    conversations.appendTurn({id:conversationId,userText:message,replyText:result.reply,investigationRunId:requestId,...(result.ownerGoal?{ownerGoal:result.ownerGoal,ownerGoalReference:priorGoal?.goalId}:{})})
    return result
@@ -196,9 +214,10 @@ function createChatGateway({request,receipts,conversations,providerFor,semanticT
    if(hash(conversations.get(conversationId)||null)!==hash(before||null))throw Error('conversation_changed')
    let result=null
    const clarify=key=>{
-    const v={mode:'ask',lane:'chat',servedBy:null,reply:key==='unsupported'?t('actions.semanticUnsupported'):key==='approval'?t('actions.semanticApproval'):t('actions.semanticClarify'),...(context?{investigationRunId:context.investigationId}:{})}
-    const goal=before?.messages?.at(-1)?.ownerGoal,goals=require('../intake/goal/ownerGoal')
+    let v={mode:'ask',lane:'chat',servedBy:null,reply:key==='unsupported'?t('actions.semanticUnsupported'):key==='approval'?t('actions.semanticApproval'):t('actions.semanticClarify'),...(context?{investigationRunId:context.investigationId}:{})}
+    const goals=require('../intake/goal/ownerGoal'),goal=goals.currentGoal(before)
     if(goals.validGoal(goal)){v.ownerGoal=structuredClone(goal);v.reply+='\n\n'+require('../intake/goal/ownerGoalView').renderGoal(goal)}
+    v=goals.withOutstanding(v,before)
     conversations.appendTurn({id:conversationId,userText:message,replyText:v.reply,investigationRunId:v.investigationRunId,...(v.ownerGoal?{ownerGoal:v.ownerGoal,ownerGoalReference:goal.goalId}:{})});return v
    }
    if(decision.intent==='approval')result=clarify('approval')
@@ -214,7 +233,7 @@ function createChatGateway({request,receipts,conversations,providerFor,semanticT
     else{
      // Reinspect and create a proposal only. Understanding can never consume approval.
      ongoing.delete(conversationId)
-     result=await prepareTurn(input,{candidate:true,targetId,action:decision.capability})
+     result=await prepareTurn(input,{candidate:true,targetId,action:decision.capability},{continuation:!!decision.referenceQuote&&!decision.targetQuote})
     }
    }
    receipt.state='completed';receipt.response=result;receipt.timeline.push({phase:'completed',at:new Date(now()).toISOString()});semanticStore.save(receipt)

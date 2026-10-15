@@ -124,4 +124,22 @@ function shouldTrack(message){
  if(pureConstraint(text)||['question','capability_question','investigation_request','arrangement_request','general_knowledge'].includes(router.routeLane(intent).reason))return false
  return router.isBusinessActionRequest(intent)||recurring(intent)&&/^(?:(?:請|幫我|麻煩你?|我要|我想要?)\s*)?(?:新增|建立|設定|安排)|^(?:please\s+)?(?:create|add|schedule|set up)\b/iu.test(intent)
 }
-module.exports={schema,createGoal,refineGoal,applyEvidence,observeReads,bindGatewayGoal,applyGatewayEvidence,validGoal,attachResult,projectTask,shouldTrack,clauses}
+// Conversation-owned reporting records only. Each request retains its own scope
+// and evidence; indexing several goals never merges their execution authority.
+function goalsFor(conversation){
+ if(conversation?.ownerGoals!==undefined&&(!Array.isArray(conversation.ownerGoals)||conversation.ownerGoals.some(g=>!validGoal(g))))throw Error('owner_goal_history_unavailable')
+ const found=new Map()
+ for(const m of conversation?.messages||[])if(m?.role==='assistant'&&validGoal(m.ownerGoal))found.set(m.ownerGoal.goalId,m.ownerGoal)
+ for(const g of conversation?.ownerGoals||[])if(validGoal(g))found.set(g.goalId,g)
+ return [...found.values()]
+}
+function currentGoal(conversation){const all=goalsFor(conversation),active=all.find(g=>g.goalId===conversation?.activeOwnerGoalId);if(conversation?.activeOwnerGoalId&&!active)throw Error('owner_goal_history_unavailable');return active||all.at(-1)||null}
+function withOutstanding(result,conversation){
+ if(!validGoal(result?.ownerGoal)||typeof result.reply!=='string')return result
+ const pending=goalsFor(conversation).filter(g=>g.goalId!==result.ownerGoal.goalId&&g.status!=='GOAL_COMPLETED')
+ const envelope={...result,pendingOwnerGoals:structuredClone(pending),hasUnresolvedOwnerGoals:pending.length>0||result.ownerGoal.status!=='GOAL_COMPLETED'}
+ if(!pending.length)return envelope
+ const extra=require('./ownerGoalView').renderOutstanding(pending)
+ return {...envelope,reply:result.reply+'\n\n'+extra,replyForArchive:(result.replyForArchive||result.reply)+'\n\n'+extra}
+}
+module.exports={schema,createGoal,refineGoal,applyEvidence,observeReads,bindGatewayGoal,applyGatewayEvidence,validGoal,attachResult,projectTask,shouldTrack,clauses,goalsFor,currentGoal,withOutstanding}

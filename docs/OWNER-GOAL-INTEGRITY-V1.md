@@ -60,9 +60,10 @@ turns retain the prior goal unchanged; they supply no execution evidence. A
 closed acknowledgement in the ordinary intake route likewise keeps the saved
 goal, without a new model call, source read, task execution or approval. A
 free-form inverse that cannot be exactly bound preserves the original goal rather
-than replacing it with an unbound goal. The prior goal is also preserved when a free-form prepare follow-up cannot get an
-exact new binding, including refused prepare attempts. A genuinely new exact
-request can establish a new goal. Every new proposal still needs its own display
+than replacing it with an unbound goal. The prior goal is also preserved for a
+semantic reference-only prepare continuation, including refused prepare attempts.
+A genuinely new request establishes its own goal even when unbound, without
+erasing other unresolved goals. Every new proposal still needs its own display
 and approval; goal continuity never inherits those permissions. Completion evidence
 binds only one exact supported target/effect clause or the existing closed inverse
 continuation. Other mandatory clauses stay incomplete, yielding partial progress;
@@ -73,11 +74,27 @@ Conversation reads made while preparing a proposal are inside the existing
 try/finally lock boundary. A transient store read error releases the in-process
 conversation lock and does not strand subsequent safe retries.
 
+The existing Conversation Store keeps an additive `ownerGoals` index and an
+`activeOwnerGoalId` reporting cursor. Ordinary informational turns do not erase
+it. Earlier unresolved goals remain stored and visible beside the current result,
+including when the current goal is complete. `hasUnresolvedOwnerGoals` is derived
+across those independent records. No capabilities, approvals, execution bindings,
+planning offers or action contexts are copied between independent goals. This
+index is reporting persistence, not a task executor or permission grant. Corrupt
+canonical records fail closed without being overwritten.
+The existing button/RPC approval and readback path also consumes verified host
+receipts. Its internal store refresh pins every immutable goal/scope/binding
+field, changes neither the active-goal cursor nor the Owner transcript, and never
+replays execution. Tracking-write failure is separate from the actual action
+result; a later authenticated readback can recover the metadata from that same
+receipt. No new RPC shape, source permission or approval authority is introduced.
+
 The existing Task Store accepts optional goal metadata only from its host intake
 payload. It retains legacy task state and adds a separate goal projection for
 new annotated tasks. Conversation and investigation records retain the same
-metadata. A same-conversation status question reads it back without a new model
-call, source read, action dispatch or permission renewal.
+metadata. A same-conversation status question reads it back across intervening
+ordinary messages without a new model call, source read, action dispatch or
+permission renewal.
 
 Answer plans have an attributed `ownerInstructions` channel for exact quotes of
 the current Owner message. Dates, times, quantities and constraints in that
