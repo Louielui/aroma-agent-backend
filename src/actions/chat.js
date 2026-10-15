@@ -115,7 +115,7 @@ function createChatGateway({request,receipts,conversations,providerFor,semanticT
    }
    // A durable request receipt precedes dispatch. A lost response is never retried.
    if(goals.validGoal(priorGoal)){
-    const actualInverse=parsed.kind==='restore'&&observedRun?.restoreOf&&priorGoal.outcomes.some(o=>o.executionBinding?.receiptId===observedRun.restoreOf)
+    const actualInverse=parsed.kind==='restore'&&priorGoal.status==='GOAL_COMPLETED'&&observedRun?.restoreOf&&priorGoal.outcomes.some(o=>o.executionBinding?.receiptId===observedRun.restoreOf)
     const inverseGoal=actualInverse?goals.bindGatewayGoal(goals.createGoal({objective:message,requestId}),observedRun,priorGoal):null
     const inverseBound=inverseGoal?.outcomes.some(o=>o.executionBinding?.receiptId===observedRun.id)
     result.ownerGoal=inverseBound?inverseGoal:observedRun?goals.applyGatewayEvidence(priorGoal,observedRun):structuredClone(priorGoal)
@@ -145,8 +145,8 @@ function createChatGateway({request,receipts,conversations,providerFor,semanticT
   const requestHash=hash({message,conversationId}),prior=receipts.get(requestId)
   if(prior){if(prior.requestHash!==requestHash||prior.conversationId!==conversationId)throw Error('request_conflict');if(prior.state!=='completed')throw Error('investigation_unavailable');return {...prior.response,investigationRunId:requestId,replayed:true}}
   if(ongoing.has(conversationId))throw Error('request_conflict');ongoing.add(conversationId)
-  const priorGoal=conversations.get(conversationId)?.messages?.at(-1)?.ownerGoal,goals=require('../intake/goal/ownerGoal')
   try{
+   const priorGoal=conversations.get(conversationId)?.messages?.at(-1)?.ownerGoal,goals=require('../intake/goal/ownerGoal')
    receipts.begin(requestId,conversationId,requestHash)
    const i=(await call({op:'inspect'})).inspection
    const report={readOnly:true,focus:'background',goal:message,duplicateState:'UNKNOWN',sections:[{section:'schedules',state:i.observations.some(o=>o.state==='CONFIRMED')?'partial':'unavailable',sourceId:i.id,retrievedAt:new Date().toISOString(),records:i.observations.map(o=>({sourceId:o.target.id,state:o.state,taskName:o.target.taskName,...(o.snapshot?{enabled:o.snapshot.enabled,currentRunningState:o.snapshot.runtime,definitionHash:o.snapshot.definitionHash,at:o.snapshot.at}:{})}))}],persistenceState:'saved'}

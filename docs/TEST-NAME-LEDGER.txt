@@ -7555,3 +7555,6 @@ host-originated clarification stays visible and archived beside incomplete whole
 
 host-owned proposal clarification and recommendation outcomes survive canonical goal reporting without proving business completion
 semantic prepare cannot replace a compound Owner goal with an unbound follow-up goal
+
+a transient conversation read failure releases the existing gateway lock and permits a safe prepare retry
+restoring a verified child action retains every unresolved outcome of its compound Owner goal

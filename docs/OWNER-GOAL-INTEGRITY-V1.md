@@ -51,7 +51,10 @@ no goal metadata are not upgraded or granted new permissions. The generic proof
 helper requires a trusted host receipt verifier; it is not exposed to clients or
 models and must not be passed model-provided evidence.
 Premature restore requests preserve the original binding. A new inverse goal is
-created only for an actual host-created inverse whose new goal binding succeeds.
+created only for an actual host-created inverse whose new goal binding succeeds
+and whose prior whole goal is already complete. Restoring one verified child of
+a partial compound goal retains that whole goal and every unresolved outcome;
+inverse execution cannot turn the remaining work into a completed goal.
 Acknowledgements, ambiguous/multiple/no-run continuations and semantic clarification
 turns retain the prior goal unchanged; they supply no execution evidence. A
 closed acknowledgement in the ordinary intake route likewise keeps the saved
@@ -66,6 +69,9 @@ continuation. Other mandatory clauses stay incomplete, yielding partial progress
 ambiguous free-form compound wording remains unverified even when a narrower
 scheduler effect succeeds. This restricts reporting only, not
 the existing gateway's execution or approval behavior.
+Conversation reads made while preparing a proposal are inside the existing
+try/finally lock boundary. A transient store read error releases the in-process
+conversation lock and does not strand subsequent safe retries.
 
 The existing Task Store accepts optional goal metadata only from its host intake
 payload. It retains legacy task state and adds a separate goal projection for
