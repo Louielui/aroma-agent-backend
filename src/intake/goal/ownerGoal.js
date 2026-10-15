@@ -78,7 +78,7 @@ function bindGatewayGoal(goal,run,parentGoal=null){
 function singleGatewayObjective(g,run,inverse){
  if(inverse)return require('../../actions/chat').parseContinuation(g.originalObjective)?.kind==='restore'
  const target=require('../../actions/contract').TARGETS.find(t=>t.id===run.target.id),escape=s=>s.replace(/[.*+?^${}()|[\]\\]/g,'\\$&'),name='(?:'+[target.id,target.taskName].map(escape).join('|')+')',verb=run.capability==='scheduler.resume'?'(?:resume|enable)':'(?:pause|disable)',zh=run.capability==='scheduler.resume'?'(?:恢復|啟用)':'(?:暫停|停用)'
- const text=g.originalObjective.trim().replace(/[。.!！]$/,'').trim()
+ const text=commandText(g.originalObjective).replace(/[。.!！]$/,'').trim()
  return new RegExp('^(?:please\\s+)?'+verb+'\\s+(?:the\\s+)?'+name+'(?:\\s+(?:job|task|schedule))?$','i').test(text)||new RegExp('^(?:請|幫我)?'+zh+'\\s*'+name+'(?:排程)?$','i').test(text)
 }
 function applyGatewayEvidence(goal,run){
@@ -119,10 +119,18 @@ function groundedOutcomeReply(result,goal){
 }
 function attachResult(result,goal,{readReply='',hostReply=''}={}){if(!result||typeof result.reply!=='string'||!validGoal(goal))return result;const reply=[...new Set([hostReply,groundedOutcomeReply(result,goal),readReply,require('./ownerGoalView').renderGoal(goal)].filter(Boolean))].join('\n\n');return {...result,ownerGoal:structuredClone(goal),reply,replyForArchive:reply,judgment:'',reasons:[],offer:'',next_step:''}}
 function projectTask(task){return validGoal(task?.ownerGoal)?{...task,goalStatus:task.ownerGoal.status}:task}
+function commandText(text){
+ let value=text.trim()
+ // Bounded lexical qualifiers affect recognition only. The contract always
+ // retains the exact Owner text; stripping a prefix never grants authority.
+ const prefix=/^(?:(?:could|would)\s+you\s+|please\s+|help me\s+|(?:just|only|also|simply|next|finally)\s+|(?:請你?|幫我|麻煩你?|我要|我想要?|你(?:可以)?|再|最後|順便|並|只|之後|然後)\s*)/iu
+ for(let i=0;i<4;i++){const next=value.replace(prefix,'');if(next===value)break;value=next}
+ return value
+}
 function shouldTrack(message){
  const text=String(message).trim(),intent=text.replace(/^(?:don't forget to|do not forget to|不要忘記|別忘記|唔好忘記)\s*/iu,''),router=require('../laneRouter')
  if(pureConstraint(text)||/[嗎呢咩麼么][。.!！?？]?$/u.test(text))return false
- const command=intent.replace(/^(?:(?:please|help me)\s+|(?:請|幫我|麻煩你?|我要|我想要?)\s*)/iu,'')
+ const command=commandText(intent)
  const creation=/^(?:schedule\b|(?:create|add|set up)\s+(?:(?:a|an|the|new|daily|weekly|monthly|recurring|automatic|morning|purchasing|inventory|replenishment)\s+)*(?:schedule|scheduled task|background job|task|job|workflow|routine)\b)|^(?:新增|建立|設定|安排)(?:一[個項]|每天|每日|每週|每月|定期|循環|自動|早上|採購|訂貨|庫存|補貨|[0-9０-９]+(?:[:：][0-9０-９]+)?(?:點|時|分)?)*(?:排程|schedule\b|任務|工作|流程)/iu
  // Relative information requested by a concrete schedule is part of that
  // directive, not a question that may erase it ("tells me which items").
@@ -131,8 +139,8 @@ function shouldTrack(message){
  return router.isBusinessActionRequest(intent)
 }
 function cartRequest(clause){
- const command=clause.trim().replace(/^(?:(?:could|would)\s+you\s+(?:please\s+)?|please\s+|help me\s+|(?:請|幫我|麻煩你?)\s*)/iu,'').replace(/^(?:之後|然後)/u,'')
- if(/什麼|甚麼|怎麼|怎樣|如何|如果|\b(?:what|why|how|if)\b/iu.test(command))return false
+ const command=commandText(clause)
+ if(/^add\s+up\b|什麼|甚麼|怎麼|怎樣|如何|如果|\b(?:what|why|how|if)\b/iu.test(command))return false
  return /^(?:add|put|place|move)\b.+\b(?:to|into|in)\s+(?:(?:the|my|our)\s+)?(?:Costco\s+)?(?:shopping\s+)?cart(?:\s+without\s+(?:checkout|checking out))?[。.!！?？]?$|^(?:把.+)?(?:放進|放入|加入|加到).*(?:購物車)[。.!！?？]?$/iu.test(command)
 }
 function isTaskRequest(message){
@@ -140,7 +148,7 @@ function isTaskRequest(message){
  return clauses(String(message).trim()).some(s=>{
   if(/[嗎呢咩麼么][。.!！?？]?$/u.test(s))return false
   if(cartRequest(s))return true
-  const command=s.replace(/^(?:(?:please|help me)\s+|(?:請|幫我|麻煩你?)\s*)/iu,'')
+  const command=commandText(s)
   // An analytic object is not an external business effect. Examine clauses
   // independently so a real attached action still retains the full objective.
   if(/^(?:add\s+up\b|(?:create|make|build|generate|prepare|run)\s+(?:(?:a|an|the|new|daily|weekly|monthly)\s+)*(?:summary|report|analysis|comparison|overview|breakdown|table|chart|list|description)\b)|^(?:新增|建立|產生|製作|整理)(?:一[個份張]|每日|每天|每週|每月)*(?:摘要|報告|分析|比較|概覽|明細|表格|圖表|清單)/iu.test(command))return false
