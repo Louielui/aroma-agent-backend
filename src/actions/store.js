@@ -11,11 +11,20 @@ function createStore ({ dir = path.join(require('../store/dataDir').resolveDataD
   }
   const list = () => {try{return fs.readdirSync(dir).filter(n=>ID.test(n.slice(0,-5))&&n.endsWith('.json')).map(n=>get(n.slice(0,-5)))}catch(e){if(e.code==='ENOENT')return [];throw Error('audit_unavailable')}}
   function lock (targetId) {
-    target(targetId);fs.mkdirSync(dir,{recursive:true}); const p=path.join(dir,targetId+'.lock');let fd
+    if(![require('./procurementContract').TARGET,require('./procurementContract').CONTROL].includes(targetId))target(targetId);fs.mkdirSync(dir,{recursive:true}); const p=path.join(dir,targetId+'.lock');let fd
     try{fd=fs.openSync(p,'wx',0o600);fs.writeFileSync(fd,JSON.stringify({pid:process.pid,at:new Date().toISOString()}));fs.fsyncSync(fd)}catch(_){if(fd!=null)fs.closeSync(fd);throw Error('target_locked')}
     // A crash leaves the lock in place. No unattended retry or stale-lock deletion.
     return () => {fs.closeSync(fd);fs.unlinkSync(p)}
   }
-  return {get,save,list,lock}
+  function lockState(targetId){
+    if(![require('./procurementContract').TARGET,require('./procurementContract').CONTROL].includes(targetId))throw Error('invalid_request')
+    let bytes;try{bytes=fs.readFileSync(path.join(dir,targetId+'.lock'))}catch(e){if(e.code==='ENOENT')return{exists:false};throw Error('audit_unavailable')}
+    let row;try{row=JSON.parse(bytes)}catch{throw Error('audit_unavailable')}
+    if(!Number.isSafeInteger(row.pid)||row.pid<=0)throw Error('audit_unavailable')
+    let alive=true;try{process.kill(row.pid,0)}catch(e){if(e.code==='ESRCH')alive=false;else throw Error('audit_unavailable')}
+    return{exists:true,pid:row.pid,alive,hash:require('node:crypto').createHash('sha256').update(bytes).digest('hex')}
+  }
+  function recoverLock(targetId,expectedHash){const before=lockState(targetId);if(!before.exists||before.alive||before.hash!==expectedHash||lockState(targetId).hash!==expectedHash)throw Error('recovery_unavailable');fs.unlinkSync(path.join(dir,targetId+'.lock'))}
+  return {get,save,list,lock,lockState,recoverLock}
 }
 module.exports = { createStore }

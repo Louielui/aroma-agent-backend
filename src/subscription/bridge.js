@@ -104,10 +104,10 @@ function createBridge ({ token, clientOptions, memoryClientOptions = clientOptio
       if (!res.destroyed) { res.writeHead(status, { 'content-type': 'application/json', 'cache-control': 'no-store' }); res.end(JSON.stringify(body)) }
     }
     if (!authenticated(req.headers.authorization, token) || req.headers.origin) { reply(401, { code: 'subscription_unavailable' }); req.resume(); return }
-    if (req.method !== 'POST' || !['/execution-health', '/complete', '/status', '/models', '/workers', '/website', '/v1/chat/completions', '/memory-store', '/code-diagnosis-source', '/task-plan-source', '/code-repair', '/project-work', '/project-adoption', '/project-tasks', '/execution-metadata', '/work-metadata', '/runtime-metadata', '/invocation-metadata','/work-outcome','/subscription-metadata','/scheduler-action', '/public-search'].includes(req.url)) { reply(404, { code: 'subscription_unavailable' }); req.resume(); return }
+    if (req.method !== 'POST' || !['/execution-health', '/complete', '/status', '/models', '/workers', '/website', '/v1/chat/completions', '/memory-store', '/code-diagnosis-source', '/task-plan-source', '/code-repair', '/project-work', '/project-adoption', '/project-tasks', '/execution-metadata', '/work-metadata', '/runtime-metadata', '/invocation-metadata','/work-outcome','/subscription-metadata','/scheduler-action', '/procurement-tick', '/public-search'].includes(req.url)) { reply(404, { code: 'subscription_unavailable' }); req.resume(); return }
     const isMemory = req.url === '/v1/chat/completions'
     const isStore = req.url === '/memory-store'||req.url==='/work-outcome'
-    const isCatalogue = req.url === '/public-search' || req.url === '/execution-health' || req.url === '/scheduler-action' || req.url === '/models' || req.url === '/execution-metadata' || req.url === '/work-metadata' || req.url === '/runtime-metadata' || req.url === '/invocation-metadata' || req.url === '/subscription-metadata'
+    const isCatalogue = req.url === '/public-search' || req.url === '/execution-health' || req.url === '/scheduler-action' || req.url === '/procurement-tick' || req.url === '/models' || req.url === '/execution-metadata' || req.url === '/work-metadata' || req.url === '/runtime-metadata' || req.url === '/invocation-metadata' || req.url === '/subscription-metadata'
     // Closed account metadata uses its own single-flight session. Reading it
     // neither acquires nor releases the execution lane or dispatches a turn.
     if (!isStore && !isCatalogue && ((isMemory ? memoryBusy : busy) || (!isMemory && req.url !== '/project-tasks' && projectTasks?.isActive()) || (!isMemory && req.url !== '/code-repair' && codeRepair?.isActive()) || (!isMemory && !['/project-work', '/project-adoption', '/project-tasks'].includes(req.url) && projectWork?.isActive()) || (!isMemory && req.url !== '/workers' && workerFlow?.isActive?.()) || (!isMemory && !['/project-adoption', '/project-work', '/project-tasks'].includes(req.url) && projectAdoption?.isActive()))) { reply(503, { code: 'subscription_unavailable' }); req.resume(); return }
@@ -131,8 +131,11 @@ function createBridge ({ token, clientOptions, memoryClientOptions = clientOptio
         if(busy || workerFlow?.isActive?.() || projectTasks?.isActive() || projectWork?.isActive() || projectAdoption?.isActive() || codeRepair?.isActive()) {reply(503,{code:'subscription_unavailable'});return}
         reply(200,await publicSearch(input))
       }else if(req.url==='/scheduler-action'){
-        if(!schedulerActions || !require('../actions/contract').validInput(input)){reply(400,{error:'invalid_request'});return}
-        try{reply(200,await schedulerActions.handle({id:'owner',role:'owner'},input))}catch(e){const allowed=['target_not_allowed','investigation_stale','task_not_idle','target_changed','already_in_requested_state','approval_unavailable','rollback_unavailable','target_locked','audit_unavailable'];reply(200,{error:allowed.includes(e.message)?e.message:'action_unavailable'})}
+        if(!schedulerActions || !(require('../actions/contract').validInput(input)||require('../actions/procurementContract').validInput(input)&&input.op!=='procurement_tick')){reply(400,{error:'invalid_request'});return}
+        try{reply(200,await schedulerActions.handle({id:'owner',role:'owner'},input))}catch(e){const allowed=['target_not_allowed','investigation_stale','task_not_idle','target_changed','already_in_requested_state','approval_unavailable','rollback_unavailable','target_locked','audit_unavailable','procurement_not_enabled','schedule_already_exists','schedule_context_mismatch','schedule_definition_changed','presentation_required','scheduled_authorization_unavailable'];reply(200,{error:allowed.includes(e.message)?e.message:'action_unavailable'})}
+      }else if(req.url==='/procurement-tick'){
+        if(!schedulerActions||!input||Array.isArray(input)||Object.keys(input).length){reply(400,{error:'invalid_request'});return}
+        try{reply(200,await schedulerActions.scheduledProcurement())}catch{reply(200,{error:'scheduled_procurement_unavailable'})}
       }else if(req.url==='/work-outcome'){
         const {validWorkTrace,validOutcome}=require('../investigation/workTrace')
         if(!input||Array.isArray(input)||Object.keys(input).sort().join(',')!=='outcome,workTrace'||!validWorkTrace(input.workTrace)||!validOutcome(input.outcome)){reply(400,{code:'subscription_invalid_output'});return}
@@ -153,7 +156,7 @@ function createBridge ({ token, clientOptions, memoryClientOptions = clientOptio
         if (!input || typeof input !== 'object' || Array.isArray(input) || Object.keys(input).length) { reply(400, { code: 'context_unavailable' }); return }
         const reader = req.url === '/work-metadata' ? workReader : executionReader
         if (!reader) { reply(503, { code: 'context_unavailable' }); return }
-        try { reply(200, await reader.read()) } catch (_) { reply(503, { code: 'context_unavailable' }) }
+        try { const metadata=await reader.read(); if(req.url==='/work-metadata'&&schedulerActions?.procurementActive&&Array.isArray(metadata.workflows))metadata.workflows.push({role:'daily_procurement',state:schedulerActions.procurementActive()?'occupied':'idle'}); reply(200,metadata) } catch (_) { reply(503, { code: 'context_unavailable' }) }
       } else if (req.url === '/project-tasks') {
         const shapes = { list: ['op'], get: ['op', 'id'], find: ['op', 'requestId'], start: ['op', 'bootCommit', 'requestId', 'goal', 'criteria', 'editable'], approve: ['op', 'id', 'hash', 'nonce'], prepare: ['op', 'id', 'requestId'], cancel: ['op', 'id'] }
         if (!projectTasks || !input || Array.isArray(input) || !Object.hasOwn(shapes, input.op) || Object.keys(input).sort().join(',') !== shapes[input.op].sort().join(',')) { reply(400, { error: 'invalid_request' }); return }

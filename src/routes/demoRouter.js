@@ -214,7 +214,7 @@ function buildWorkRequestResolution ({ req, message, offerDecision, conversation
   return null
 }
 
-function createDemoRouter ({ getAdapterFn = getAdapterForLane, processIntakeFn = processIntake, conversationStore = INERT_CONVERSATION_STORE, readBacklogFn = null, backlogTimeoutMs = 2500, errandStoreFn = null, operatingManager = null, memoryJournal = null, mailChat = null, liveContext = null, sevenShiftsReport = null, hrRechecks = null, developmentPlan = null, codeDiagnosis = null, codeRepair = null, chatWork = null, taskPlanner = null, taskDialogue = null, schedulerChat = null, capabilityGaps = null, publicCompletion = require('../topics/publicAnswerFollowups').createService(), imageAdapterFn = selection => {
+function createDemoRouter ({ getAdapterFn = getAdapterForLane, processIntakeFn = processIntake, conversationStore = INERT_CONVERSATION_STORE, readBacklogFn = null, backlogTimeoutMs = 2500, errandStoreFn = null, operatingManager = null, memoryJournal = null, mailChat = null, liveContext = null, sevenShiftsReport = null, hrRechecks = null, developmentPlan = null, codeDiagnosis = null, codeRepair = null, chatWork = null, taskPlanner = null, taskDialogue = null, schedulerChat = null, procurementChat = null, capabilityGaps = null, publicCompletion = require('../topics/publicAnswerFollowups').createService(), imageAdapterFn = selection => {
   if (process.env.CHAT_BACKEND !== 'codex-subscription') throw Error('image_chat_unavailable')
   return new (require('../adapters/CodexSubscriptionAdapter').CodexSubscriptionAdapter)(selection)
 }, modelCenter = null, planningRevision = require('../governance/bootCommit').BOOT_COMMIT, modelsFn = async () => new (require('../adapters/CodexSubscriptionAdapter').CodexSubscriptionAdapter)().models() } = {}) {
@@ -511,7 +511,7 @@ function createDemoRouter ({ getAdapterFn = getAdapterForLane, processIntakeFn =
   // race a topic-changing intake. The lock lasts until the handler settles.
   const intakeTurns=new Set()
   const serializedIntake=handler=>async(req,res)=>{
-    const id=req.body?.conversationId,locked=!!(schedulerChat || capabilityGaps || publicCompletion)&&isValidConversationId(id)
+    const id=req.body?.conversationId,locked=!!(schedulerChat || procurementChat || capabilityGaps || publicCompletion)&&isValidConversationId(id)
     if(locked&&intakeTurns.has(id))return res.status(409).json({error:{code:'conversation_busy',message:t('actions.continuationBusy'),retryable:true}})
     if(locked)intakeTurns.add(id)
     try{return await handler(req,res)}finally{if(locked)intakeTurns.delete(id)}
@@ -693,6 +693,15 @@ function createDemoRouter ({ getAdapterFn = getAdapterForLane, processIntakeFn =
         if (Object.keys(req.body).some(k => !allowed.includes(k))) return res.status(400).json({ error: 'invalid_request' })
         try { return res.set('Cache-Control','no-store').json(await capabilityGaps.confirm({id:'owner',role:'owner'}, message, req.body.conversationId)) }
         catch (_) { return res.status(409).json({ error: { message: t('gap.failed'), retryable: false } }) }
+      }
+      if (planningLane && procurementChat && procurementChat.candidate(message)) {
+        if (!require('../core/operating/chatRequest').sameOrigin(req)) return res.status(403).json({error:'same_origin_required'})
+        const allowed=['message','conversationId','workflowRequestId','websiteRequestId','history','providerHint','previousLane','chatLevel','chatModel','interactionMode']
+        if(Object.keys(req.body).some(k=>!allowed.includes(k)))return res.status(400).json({error:'invalid_request'})
+        try {
+          const answer=await procurementChat.start({message,conversationId:req.body.conversationId,requestId:req.body.websiteRequestId||req.body.workflowRequestId})
+          return res.set('Cache-Control','no-store').json(answer)
+        }catch(_){return res.status(409).json({error:{message:t('actions.failure'),retryable:false}})}
       }
       if (planningLane && schedulerChat && schedulerChat.candidate(message,req.body.conversationId,req.body.websiteRequestId || req.body.workflowRequestId)) {
         if (!require('../core/operating/chatRequest').sameOrigin(req)) return res.status(403).json({ error:'same_origin_required' })

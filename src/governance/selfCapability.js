@@ -55,6 +55,7 @@ const KIND = Object.freeze({
  * what this must never speak for.
  */
 const REGISTRY = Object.freeze([
+  Object.freeze({ capability: 'business_scheduler.daily_procurement', kind: KIND.EXECUTION, implementation: IMPLEMENTATION.IMPLEMENTED, label: 'Fixed daily procurement schedule; separate approval and scoped unattended reads; no purchasing or checkout' }),
   Object.freeze({ capability: 'aroma_system.read', kind: KIND.READ, implementation: IMPLEMENTATION.IMPLEMENTED, label: 'Aroma System 唯讀' }),
   Object.freeze({ capability: 'seven_shifts.read', kind: KIND.READ, implementation: IMPLEMENTATION.IMPLEMENTED, label: '7shifts 打卡資料唯讀（連線及權限另行核對）' }),
   Object.freeze({ capability: 'aroma_system.write', kind: KIND.WRITE, implementation: IMPLEMENTATION.NOT_IMPLEMENTED, label: '改 Aroma System 資料' }),

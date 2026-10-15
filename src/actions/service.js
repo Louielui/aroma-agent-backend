@@ -1,7 +1,7 @@
 'use strict'
 const { randomUUID } = require('node:crypto')
 const { TARGETS, hash, target, validInput } = require('./contract')
-function createGateway ({ store = require('./store').createStore(), scheduler = require('./windowsScheduler').createScheduler(), approvals = require('../agent/ownerApprovalStore').createOwnerApprovalStore(), now = () => Date.now() } = {}) {
+function createGateway ({ store = require('./store').createStore(), scheduler = require('./windowsScheduler').createScheduler(), approvals = require('../agent/ownerApprovalStore').createOwnerApprovalStore(), now = () => Date.now(), procurement = null } = {}) {
   const sessions=new Map(), tickets=new Map(), busy=new Set()
   const record = (r,phase,facts={}) => {r.timeline.push({at:new Date(now()).toISOString(),phase,actor:'owner',...facts});store.save(r)}
   const view = r => {if(!r)return null;const v=structuredClone(r);delete v.nonce;return v}
@@ -88,6 +88,7 @@ function createGateway ({ store = require('./store').createStore(), scheduler = 
   function chatView(r){const v=view(r);if(v?.state==='awaiting_approval'&&v.expiresAt>now()&&approvals.validSession(sessions.get(v.id))&&approvals.loadSealed(v.id).ok&&tickets.has(v.id))v.nonce=tickets.get(v.id);return v}
   async function handle (actor,b) {
     if(actor?.id!=='owner'||actor.role!=='owner')throw Error('owner_required')
+    if(typeof b?.op==='string'&&b.op.startsWith('procurement_')){if(!procurement)throw Error('procurement_not_enabled');return procurement.handle(actor,b)}
     if(!validInput(b))throw Error('invalid_request')
     if(b.op.startsWith('chat_')){
       const op=b.op.slice(5),context={conversationId:b.context.conversationId,investigationId:b.context.investigationId}
@@ -130,6 +131,6 @@ function createGateway ({ store = require('./store').createStore(), scheduler = 
     if(b.op==='approve')return {run:await approve(b)}
     return {run:await restore(b.id)}
   }
-  return {handle,isActive:()=>busy.size>0}
+  return {handle,procurementActive:()=>procurement?.isActive()===true,scheduledProcurement:()=>{if(!procurement)throw Error('procurement_not_enabled');return procurement.tick()},isActive:()=>busy.size>0||procurement?.isActive()===true}
 }
 module.exports = { createGateway }
