@@ -1,5 +1,5 @@
 'use strict'
-const {randomUUID}=require('node:crypto'),{STATE_ID,TARGET,CONTROL,DEFINITION,hash,validInput}=require('./procurementContract'),time=require('./procurementTime')
+const {randomUUID}=require('node:crypto'),{STATE_ID,TARGET,CONTROL,DEFINITION,REDUCING,hash,validInput}=require('./procurementContract'),time=require('./procurementTime')
 // One fixed workflow registered under the existing Action Gateway and approval store.
 function createProcurement({store,scheduler,gateway,approvals=require('../agent/ownerApprovalStore').createOwnerApprovalStore(),enabled=()=>false,now=Date.now}){
  const tickets=new Map(),running=new Set(),controls=new Set()
@@ -18,7 +18,7 @@ function createProcurement({store,scheduler,gateway,approvals=require('../agent/
   if(!enabled()&&['create','resume'].includes(b.operation))throw Error('procurement_not_enabled')
   const s=state(),before=await inspectFor(b.operation)
   if(b.operation==='create'){if(s||before.exists)throw Error('schedule_already_exists')}
-  else if(s? s.taskId!==b.taskId||s.goalId!==b.goalId||s.conversationId!==b.conversationId : b.operation!=='recover'||!interruptedRegistration(b))throw Error('schedule_context_mismatch')
+  else if(s? s.taskId!==b.taskId||s.goalId!==b.goalId||!REDUCING.includes(b.operation)&&s.conversationId!==b.conversationId : b.operation!=='recover'||!interruptedRegistration(b))throw Error('schedule_context_mismatch')
   if(b.operation!=='revoke'&&(before.exists&&!before.validDefinition||s&&before.definitionHash!==s.definitionHash))throw Error('schedule_definition_changed')
   if(b.operation==='resume'&&(s?.status!=='paused'||s.grant?.revokedAt)||b.operation==='pause'&&s?.status==='revoked')throw Error('scheduled_authorization_unavailable')
   if(b.operation==='recover'&&(running.size||s?.status==='active'&&!orphanedLock()||before.runtime==='Running'||!s&&before.enabled))throw Error('recovery_unavailable')

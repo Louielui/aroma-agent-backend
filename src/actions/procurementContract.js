@@ -4,6 +4,7 @@ const STATE_ID='f36e9277-fbde-4401-a641-70353f741001',TARGET='daily-procurement'
 const DEFINITION=Object.freeze({workflow:'daily_procurement_report',definitionVersion:1,toolScopeVersion:1,time:'08:00',timezone:'America/Winnipeg',taskName:'DailyProcurementReport',taskPath:'\\AromaXiangXiang\\',operations:Object.freeze(['aroma.order_planning.list','aroma.suppliers.list'])})
 const hash=x=>createHash('sha256').update(JSON.stringify(x)).digest('hex'),UUID=/^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/i,GOAL=/^[a-f0-9]{64}$/
 const TASK=/^task_[a-f0-9]{8}$/
+const REDUCING=Object.freeze(['pause','revoke','recover'])
 function intent(message){
  if(typeof message!=='string'||message.length>2000||/[「」“”"`]/u.test(message)||/^(?:不要|不需要|唔好|do not\b|don't\b|never\b)/iu.test(message)||/[?？]/u.test(message))return null
  const s=message.trim();const approval=s.match(/^(?:確認|批准)(建立|新增|暫停|恢復|撤銷|修復)每日採購排程[。.!！]?$/u);if(approval)return{operation:'approve',approveOperation:{建立:'create',新增:'create',暫停:'pause',恢復:'resume',撤銷:'revoke',修復:'recover'}[approval[1]]}
@@ -32,4 +33,4 @@ function validInput(b){
  if(b.op==='procurement_prepare')return ['create','pause','resume','revoke','recover'].includes(b.operation)&&TASK.test(b.taskId)&&UUID.test(b.conversationId)&&GOAL.test(b.goalId)
  return ['procurement_status','procurement_tick'].includes(b.op)||typeof b.id==='string'&&UUID.test(b.id)&&GOAL.test(b.hash)&&UUID.test(b.conversationId)&&(b.op!=='procurement_approve'||/^[a-f0-9]{48}$/.test(b.nonce||''))
 }
-module.exports={STATE_ID,TARGET,CONTROL,DEFINITION,hash,UUID,GOAL,TASK,intent,validInput}
+module.exports={STATE_ID,TARGET,CONTROL,DEFINITION,REDUCING,hash,UUID,GOAL,TASK,intent,validInput}

@@ -29,9 +29,11 @@ read-only schedule never completes the attached cart goal.
 Supported examples: `Create a daily procurement report at 08:00 America/Winnipeg`,
 the original Chinese request, `查看每日採購排程`, `暫停每日採購排程`,
 `恢復每日採購排程`, `撤銷每日採購排程`, `修復每日採購排程`.
-Management operates in the original conversation, retaining the original taskId
-and goalId. Status can be inspected from another conversation but cannot grant or
-transfer its authority. These are bounded intents, not a general scheduler.
+Create and resume remain bound to the original conversation. Any authenticated
+Owner conversation can propose pause, revoke or paused recovery, bound to the
+saved schedule's exact original taskId, goalId and versions. This only reduces
+authority and cannot transfer or reissue an active grant. Status can be inspected
+from another conversation. These are bounded intents, not a general scheduler.
 
 The normal result card displays the proposal and a disabled approval button.
 Only after the server verifies its presentation can an explicit button click or
@@ -178,6 +180,12 @@ cadences and explicit compact-hour forms have dedicated refusal regressions.
 This remains bounded intent admission for one fixed workflow, not a general
 temporal-language interpreter. The original objective and all its constraints
 remain intact, and approval always displays the fixed Winnipeg 08:00 scope.
+The following review found a P2 cancellation defect after deletion of the
+creating conversation. Owner-only reduction proposals now use the saved
+schedule's own task/goal scope from any conversation, display those references
+and require fresh approval. Create/resume keep the original conversation check.
+Tests revoke after actual conversation deletion, forbid foreign resume or goal
+scope changes, and preserve an unrelated goal in the reducing conversation.
 
 Deferred P2: source contract lacks freshness evidence and cannot retrieve more
 than its server cap. This blocks claiming a COMPLETE live list, not reporting

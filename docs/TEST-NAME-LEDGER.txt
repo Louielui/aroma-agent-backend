@@ -7618,3 +7618,6 @@ Business Scheduler failed lock initialization leaves no published lock and canno
 Business Scheduler process death before atomic lock publication cannot leave an empty execution lock
 Business Scheduler explicit spaced hours bare times and alternate cadences stay outside the fixed workflow
 Business Scheduler admission holds occupancy through Windows inspection and releases it on inspection failure
+Business Scheduler Owner can revoke the existing task after deleting its creating conversation
+Business Scheduler cross-conversation reduction cannot resume or change the original task scope
+Business Scheduler reducing from another Owner goal cannot borrow or overwrite that goal

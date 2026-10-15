@@ -3679,6 +3679,7 @@ const CATALOGUE = Object.freeze({
   'procurement.issues': { zh: '資料限制：{issues}', en: 'Data limitations: {issues}.' },
   'procurement.failure': { zh: '本次執行未完成：{reason}', en: 'Run incomplete: {reason}.' },
   'procurement.proposal': { zh: '待你批准：{operation} 每日採購排程；08:00 America/Winnipeg。只讀補貨及供應商資料，結果保存在香香。建立排程不代表每日工作已完成。', en: 'Approval required: {operation} the daily procurement schedule, 08:00 America/Winnipeg. Reads replenishment and suppliers; results stay in Imagine. Creating a schedule does not complete its daily work.' },
+  'procurement.reference': { zh: '原任務：{task}；目標：{goal}；定義版本 {definition}／工具範圍版本 {scope}。本方案只適用於此任務。', en: 'Original task: {task}; goal: {goal}; definition version {definition} / tool scope version {scope}. This proposal applies only to that task.' },
   'procurement.limits': { zh: '需要 Windows 已登入、電腦開機及 Backend 可用；漏跑可延遲補跑。資料缺漏會標示 PARTIAL／FAILED。沒有 Costco 操作、採購、下單、結帳、採購單建立、電郵或推送。', en: 'Requires Windows sign-in, a powered-on computer and available backend. Missed runs may execute late. Missing data is PARTIAL/FAILED. No Costco actions, purchases, checkout, purchase-order creation, email or push.' },
   'procurement.buttonApproval': { zh: '已在每日採購排程卡按下明確批准。', en: 'Explicit approval on the daily procurement proposal card.' },
   'procurement.approve': { zh: '批准此排程方案', en: 'Approve this schedule proposal' },
