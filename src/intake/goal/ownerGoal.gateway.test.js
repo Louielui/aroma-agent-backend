@@ -8,6 +8,7 @@ test('whole-goal evidence follows the real existing Action Gateway displayed app
  const chat=createChatGateway({request:b=>gateway.handle({id:'owner',role:'owner'},b),receipts,conversations,continuationStore:memory(requests)}),cid=randomUUID(),start=message=>chat.start({message,conversationId:cid,requestId:randomUUID()})
  const prepared=await start('Resume ActionGatewayAcceptance');assert.equal(writes,0);assert.equal(prepared.ownerGoal.status,'GOAL_PENDING')
  const first=[...rows.values()].at(-1);assert.equal(first.state,'awaiting_approval')
+ const prematureRestore=await start('Restore the previous schedule');assert.equal(prematureRestore.ownerGoal.goalId,prepared.ownerGoal.goalId);assert.deepEqual(prematureRestore.ownerGoal.outcomes[0].executionBinding,prepared.ownerGoal.outcomes[0].executionBinding);assert.equal(writes,0)
  const undisplayed=await start('I confirm the previous resume proposal');assert.equal(writes,0);assert.notEqual(undisplayed.ownerGoal.status,'GOAL_COMPLETED')
  await chat.handle({op:'present',conversationId:cid,investigationId:first.context.investigationId,id:first.id,hash:first.hash})
  const complete=await start('I confirm the previous resume proposal');assert.equal(writes,1);assert.equal(complete.ownerGoal.status,'GOAL_COMPLETED')
@@ -19,6 +20,14 @@ test('whole-goal evidence follows the real existing Action Gateway displayed app
  const second=[...rows.values()].at(-1);assert.notEqual(second.hash,first.hash)
  await chat.handle({op:'present',conversationId:cid,investigationId:second.context.investigationId,id:second.id,hash:second.hash})
  const restored=await start('I confirm the previous pause proposal');assert.equal(writes,2);assert.equal(restored.ownerGoal.status,'GOAL_COMPLETED')
+})
+test('a verified scheduler effect cannot complete an attached cart step or ambiguous compound objective',()=>{
+ for(const objective of ['Resume ActionGatewayAcceptance and add Costco items to the cart','Resume ActionGatewayAcceptance; 不要下單，只放進購物車','Resume ActionGatewayAcceptance with Costco cart items added']){
+  const goal=goals.createGoal({objective,requestId:'compound-fixture'}),run={id:'fixture-run',hash:'a'.repeat(64),state:'awaiting_approval',capability:'scheduler.resume',target:TARGETS[1],context:{investigationId:goal.requestId}}
+  const bound=goals.bindGatewayGoal(goal,run),done=goals.applyGatewayEvidence(bound,{...run,state:'verified',expected:{definitionHash:'b'.repeat(64)},after:{definitionHash:'b'.repeat(64),enabled:true,runtime:'Ready'},timeline:[{phase:'verified'}]})
+  assert.notEqual(done.status,'GOAL_COMPLETED');assert.equal(done.originalObjective,objective)
+  if(goal.outcomes.length>1){assert.equal(done.status,'GOAL_PARTIAL');assert.equal(done.outcomes[0].status,'COMPLETED_WITH_EVIDENCE');assert.ok(done.outcomes.slice(1).every(o=>o.status!=='COMPLETED_WITH_EVIDENCE'))}
+ }
 })
 test('read coverage and revocation stay distinct from verified whole-outcome completion',()=>{
  const g=goals.refineGoal(goals.createGoal({objective:'Read all records',requestId:'read-one'}),[{ownerQuote:'Read all records',capability:'aroma_system.read',kind:'read'}])

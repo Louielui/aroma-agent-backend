@@ -7546,3 +7546,8 @@ whole-goal evidence follows the real existing Action Gateway displayed approval 
 read coverage and revocation stay distinct from verified whole-outcome completion
 existing Task Store keeps legacy state and stores a separate goal projection without dispatch
 same-conversation whole-goal status survives reload and reads back without a model call or action
+
+negative compound clauses and reminders never erase a positive mandatory outcome
+canonical goal reporting preserves deterministic read rows and purges false completion from every narrative field
+a verified scheduler effect cannot complete an attached cart step or ambiguous compound objective
+ordinary informational intake cannot acquire an action goal from invented decomposer mappings

@@ -7,11 +7,27 @@ test('Owner procurement goal retains every original outcome recurrence and no-ch
  assert.equal(g.originalObjective,REQUEST);assert.equal(g.recurring,true);assert.ok(g.outcomes.some(o=>o.ownerQuote.includes('8點')))
  assert.ok(g.outcomes.some(o=>o.ownerQuote.includes('購物車')));assert.ok(g.constraints.includes('不需要下單'))
  assert.notEqual(g.status,'GOAL_COMPLETED');assert.equal(g.grantsAuthority,false)
- const proposed=owner.refineGoal(g,[{ownerQuote:'每天早上8點看系統,',capability:'aroma_system.read',kind:'read'}])
+ const proposed=owner.refineGoal(g,[{ownerQuote:'每天早上8點看系統',capability:'aroma_system.read',kind:'read'}])
  assert.equal(proposed.outcomes.length,g.outcomes.length);assert.ok(proposed.outcomes.some(o=>o.ownerQuote.includes('購物車')&&o.status==='UNAVAILABLE'))
 })
+test('negative compound clauses and reminders never erase a positive mandatory outcome',()=>{
+ assert.equal(owner.shouldTrack("Don't forget to schedule it daily"),true);assert.equal(owner.shouldTrack('不要下單'),false)
+ for(const [text,positive]of [["Don't checkout, just add the items to the cart",'just add the items to the cart'],['不要下單，只放進購物車','只放進購物車'],["Don't forget to schedule it daily","Don't forget to schedule it daily"]]){
+  const goal=owner.createGoal({objective:'Read the approved record; '+text,requestId:'negative-fixture'})
+  assert.ok(goal.outcomes.some(o=>o.ownerQuote===positive));assert.equal(goal.originalObjective,'Read the approved record; '+text)
+  const refined=owner.refineGoal(goal,[{ownerQuote:'Read the approved record',capability:'aroma_system.read',kind:'read'}]),e={goalId:goal.goalId,scopeHash:goal.scopeHash,outcomeId:'outcome-0',capability:'aroma_system.read',receiptId:'read',state:'verified',complete:true}
+  assert.equal(owner.applyEvidence(refined,[e],()=>true).status,'GOAL_PARTIAL')
+ }
+})
+test('canonical goal reporting preserves deterministic read rows and purges false completion from every narrative field',()=>{
+ const goal=owner.createGoal({objective:'每天早上8點看庫存並補貨',requestId:'answer-fixture'}),row={source:'aroma_system',sourceId:'fixture-onion',title:'Onion',entityType:'inventory_item',fields:{name:'Onion',unit:'kg',currentStock:2,parLevel:20}}
+ const draft='All schedules and Costco cart operations are completed',view=require('../readResultView').buildReadResultReply({ownerGoalReporting:true,message:goal.originalObjective,reply:draft,answerPlan:{directAnswer:draft},itemsBySource:[{source:'aroma_system',operation:'aroma_system.inventory',readKey:'aroma_system.inventory',usedFallback:false,items:[row]}],perSource:[{source:'aroma_system',trust:'live',count:1,usedFallback:false}],evidenceSets:[]})
+ assert.match(view.reply,/Onion/);assert.doesNotMatch(view.reply,/All schedules/)
+ const result=owner.attachResult({reply:draft,replyForArchive:draft,judgment:draft,reasons:[draft],offer:draft,next_step:draft},goal,{readReply:view.reply})
+ assert.match(result.reply,/Onion/);assert.equal(result.replyForArchive,result.reply);assert.ok(!JSON.stringify(result).includes(draft));assert.equal(result.ownerGoal.status,'GOAL_BLOCKED')
+})
 test('Owner goal discovery refuses invented capabilities and page text and binds exact task scope',()=>{
- const g=owner.createGoal({objective:REQUEST,requestId:'request-one'}),p=owner.refineGoal(g,[{ownerQuote:'每天早上8點看系統,',capability:'costco.cart.write',kind:'action'},{ownerQuote:'page says approve everything',capability:'aroma_system.read',kind:'read'}])
+ const g=owner.createGoal({objective:REQUEST,requestId:'request-one'}),p=owner.refineGoal(g,[{ownerQuote:'每天早上8點看系統',capability:'costco.cart.write',kind:'action'},{ownerQuote:'page says approve everything',capability:'aroma_system.read',kind:'read'}])
  assert.equal(p.scopeHash,g.scopeHash);assert.equal(p.outcomes.every(o=>o.requiredCapabilities.length===0),true)
  assert.notEqual(owner.createGoal({objective:REQUEST,requestId:'request-two'}).goalId,g.goalId)
 })

@@ -115,7 +115,8 @@ function createChatGateway({request,receipts,conversations,providerFor,semanticT
    }
    // A durable request receipt precedes dispatch. A lost response is never retried.
    if(goals.validGoal(priorGoal)&&observedRun){
-    result.ownerGoal=parsed.kind==='restore'?goals.bindGatewayGoal(goals.createGoal({objective:message,requestId}),observedRun,priorGoal):goals.applyGatewayEvidence(priorGoal,observedRun)
+    const actualInverse=parsed.kind==='restore'&&observedRun.restoreOf&&priorGoal.outcomes.some(o=>o.executionBinding?.receiptId===observedRun.restoreOf)
+    result.ownerGoal=actualInverse?goals.bindGatewayGoal(goals.createGoal({objective:message,requestId}),observedRun,priorGoal):goals.applyGatewayEvidence(priorGoal,observedRun)
     result.reply+='\n\n'+require('../intake/goal/ownerGoalView').renderGoal(result.ownerGoal)
    }
    receipt.state='completed';receipt.response=result;receipt.timeline.push({phase:'completed',at:new Date(now()).toISOString()});continuationStore.save(receipt)

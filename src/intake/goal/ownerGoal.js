@@ -7,13 +7,16 @@ const KINDS=['read','action','recurring','answer','unknown']
 const schema={type:'array',items:{type:'object',additionalProperties:false,required:['ownerQuote','capability','kind'],properties:{ownerQuote:{type:'string'},capability:{anyOf:[{type:'string',enum:[...require('../../governance/selfCapability').CAPABILITY_NAMES,...require('../../actions/understanding').SCHEMA.properties.capability.enum.filter(v=>v!=='none')]},{type:'null'}]},kind:{type:'string',enum:KINDS}}}}
 function scope(){return hash({version:1,capabilities:require('../../governance/selfCapability').REGISTRY,actions:require('../../actions/understanding').SCHEMA.properties.capability.enum,targets:require('../../actions/contract').TARGETS})}
 function capability(id){const own=require('../../governance/selfCapability').capabilityEntry(id);if(own)return own;return require('../../actions/understanding').SCHEMA.properties.capability.enum.includes(id)&&id!=='none'?{capability:id,implementation:'implemented',kind:'execution'}:null}
-const clauses=s=>s.split(/\n+|[。!！;；]+|(?<!\d)\.(?!\d)/u).map(v=>v.trim()).filter(Boolean)
+const clauses=s=>s.split(/\n+|[。!！;；，]+|,(?!\d{3}(?:\D|$))|(?<!\d)\.(?!\d)|\s+(?:and(?: then)?|then)\s+|(?=之後|然後|並且|以及)/iu).map(v=>v.trim()).filter(Boolean)
 const constraint=s=>/^(?:不需要|不要|不可|禁止|唔好|不准|do not\b|don't\b|never\b|without\b)/iu.test(s)
+// Only an entire closed prohibition can be excluded from mandatory outcomes.
+// Unknown/compound negatives remain mandatory as well as retained constraints.
+const pureConstraint=s=>/^(?:(?:不需要|不要|不可|禁止|唔好|不准)(?:下單|結帳|付款)|(?:do not|don't|never)\s+(?:checkout|check out|place (?:an?|the) order|pay))$/iu.test(s)
 const recurring=s=>/(?:每天|每日|每週|每周|每月|定期|daily|every\s+(?:day|morning|week|month)|recurring|schedule)/iu.test(s)
 function deriveStatus(g){const completed=g.outcomes.filter(o=>o.status==='COMPLETED_WITH_EVIDENCE').length;return completed===g.outcomes.length&&completed>0?'GOAL_COMPLETED':completed?'GOAL_PARTIAL':g.outcomes.some(o=>['UNAVAILABLE','BLOCKED'].includes(o.status))?'GOAL_BLOCKED':'GOAL_PENDING'}
 function createGoal({objective,requestId}){
  if(typeof objective!=='string'||!objective.trim()||objective.length>20000||typeof requestId!=='string'||!requestId||requestId.length>150)throw Error('invalid_owner_goal')
- const parts=clauses(objective),scopeHash=scope(),goalId=hash({requestId,objective,scopeHash}),constraints=parts.filter(constraint),required=parts.filter(s=>!constraint(s))
+ const parts=clauses(objective),scopeHash=scope(),goalId=hash({requestId,objective,scopeHash}),constraints=parts.filter(constraint),required=parts.filter(s=>!pureConstraint(s))
  // Excessively fragmented input remains one unresolved exact objective, never a truncated goal.
  const quotes=required.length&&required.length<=16?required:[objective]
  const g={version:1,goalId,requestId,originalObjective:objective,scopeVersion:1,scopeHash,grantsAuthority:false,recurring:recurring(objective),constraints,outcomes:quotes.map((ownerQuote,i)=>({id:'outcome-'+i,ownerQuote,mandatory:true,steps:[{id:'step-'+i,ownerQuote}],requiredCapabilities:[],authorizationRequirements:['unregistered_scope'],status:'UNAVAILABLE',completionEvidence:[],blockers:['capability_not_mapped'],limitations:[]})),status:'GOAL_BLOCKED'}
@@ -63,11 +66,20 @@ function observeReads(goal,observations){
 }
 function bindGatewayGoal(goal,run,parentGoal=null){
  if(!validGoal(goal))throw Error('invalid_owner_goal')
- const g=structuredClone(goal),o=g.outcomes[0]
+ const g=structuredClone(goal)
  const inverse=validGoal(parentGoal)&&parentGoal.outcomes.some(p=>p.executionBinding?.receiptId===run?.restoreOf&&p.executionBinding?.contextId===run?.context?.investigationId)
- if(g.outcomes.length!==1||run?.state!=='awaiting_approval'||(run.context?.investigationId!==g.requestId&&!inverse)||!require('../../actions/contract').TARGETS.some(t=>t.id===run.target?.id)||!['scheduler.pause','scheduler.resume'].includes(run.capability)||!/^[a-f0-9]{64}$/.test(run.hash||'')||typeof run.id!=='string')return g
+ if(run?.state!=='awaiting_approval'||(run.context?.investigationId!==g.requestId&&!inverse)||!require('../../actions/contract').TARGETS.some(t=>t.id===run.target?.id)||!['scheduler.pause','scheduler.resume'].includes(run.capability)||!/^[a-f0-9]{64}$/.test(run.hash||'')||typeof run.id!=='string'||inverse&&g.outcomes.length!==1)return g
+ const matches=g.outcomes.filter(o=>singleGatewayObjective({originalObjective:o.ownerQuote},run,inverse))
+ if(matches.length!==1)return g
+ const o=matches[0]
  o.requiredCapabilities=[run.capability];o.authorizationRequirements=['exact_task_action_approval'];o.status='AUTHORIZATION_REQUIRED';o.blockers=['execution_not_verified']
  o.steps[0].kind='action';o.executionBinding={receiptId:run.id,proposalHash:run.hash,targetId:run.target.id,contextId:run.context.investigationId};g.status=deriveStatus(g);return g
+}
+function singleGatewayObjective(g,run,inverse){
+ if(inverse)return require('../../actions/chat').parseContinuation(g.originalObjective)?.kind==='restore'
+ const target=require('../../actions/contract').TARGETS.find(t=>t.id===run.target.id),escape=s=>s.replace(/[.*+?^${}()|[\]\\]/g,'\\$&'),name='(?:'+[target.id,target.taskName].map(escape).join('|')+')',verb=run.capability==='scheduler.resume'?'(?:resume|enable)':'(?:pause|disable)',zh=run.capability==='scheduler.resume'?'(?:恢復|啟用)':'(?:暫停|停用)'
+ const text=g.originalObjective.trim().replace(/[。.!！]$/,'').trim()
+ return new RegExp('^(?:please\\s+)?'+verb+'\\s+(?:the\\s+)?'+name+'(?:\\s+(?:job|task|schedule))?$','i').test(text)||new RegExp('^(?:請|幫我)?'+zh+'\\s*'+name+'(?:排程)?$','i').test(text)
 }
 function applyGatewayEvidence(goal,run){
  if(!validGoal(goal))throw Error('invalid_owner_goal')
@@ -92,8 +104,8 @@ function validGoalInner(g){
  }
  return g.status===deriveStatus(g)
 }
-function createQuotes(objective){const required=clauses(objective).filter(s=>!constraint(s));return required.length&&required.length<=16?required:[objective]}
-function attachResult(result,goal){if(!result||typeof result.reply!=='string'||!validGoal(goal))return result;return {...result,ownerGoal:structuredClone(goal),reply:require('./ownerGoalView').renderGoal(goal,result.reply)}}
+function createQuotes(objective){const required=clauses(objective).filter(s=>!pureConstraint(s));return required.length&&required.length<=16?required:[objective]}
+function attachResult(result,goal,{readReply=''}={}){if(!result||typeof result.reply!=='string'||!validGoal(goal))return result;const reply=[readReply,require('./ownerGoalView').renderGoal(goal)].filter(Boolean).join('\n\n');return {...result,ownerGoal:structuredClone(goal),reply,replyForArchive:reply,judgment:'',reasons:[],offer:'',next_step:''}}
 function projectTask(task){return validGoal(task?.ownerGoal)?{...task,goalStatus:task.ownerGoal.status}:task}
-function shouldTrack(message){return !constraint(String(message).trim())&&(require('../laneRouter').isBusinessActionRequest(message)||recurring(message)&&/新增|建立|設定|^(?:please\s+)?(?:create|add|schedule|set up)\b/iu.test(message))}
+function shouldTrack(message){const text=String(message).trim(),intent=text.replace(/^(?:don't forget to|do not forget to|不要忘記|別忘記|唔好忘記)\s*/iu,'');return !pureConstraint(text)&&(require('../laneRouter').isBusinessActionRequest(intent)||recurring(intent)&&/新增|建立|設定|^(?:please\s+)?(?:create|add|schedule|set up)\b/iu.test(intent))}
 module.exports={schema,createGoal,refineGoal,applyEvidence,observeReads,bindGatewayGoal,applyGatewayEvidence,validGoal,attachResult,projectTask,shouldTrack,clauses}

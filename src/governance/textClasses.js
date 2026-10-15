@@ -76,6 +76,7 @@ const CLASS = Object.freeze({
  */
 const FILE_CLASS = Object.freeze({
   'intake/goal/ownerGoalView.js': CLASS.INTERFACE,
+  'intake/goal/ownerGoal.js': CLASS.MATCHING, // Exact Owner scope matching; these terms must not be translated.
   'capabilities/gapContract.js': CLASS.INTERFACE,
   'capabilities/gapService.js': CLASS.MATCHING,
   'subscription/publicAnswer.js': CLASS.MATCHING, // Bilingual output guards; translating patterns would change evidence admission.

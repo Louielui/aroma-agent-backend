@@ -19,7 +19,12 @@ single call. Legacy saved plans without these fields remain valid. Only current
 Owner text can supply a goal or an attributed Owner instruction. Source material,
 history and model prose cannot grant authority. Ordinary informational answers
 keep their existing behavior; action/recurring requests receive the host-composed
-whole-goal status instead of speculative action-completion prose.
+whole-goal status instead of speculative action-completion prose. A model mapping
+cannot promote an untracked informational question into an action goal. Retrieved
+rows and source limitations remain visible through the existing deterministic
+read formatter, with the draft action narrative excluded. The canonical reply is
+also the archive reply; ancillary model judgment, offer and next-step fields
+cannot retain contradictory completion claims.
 
 Investigation `completed` still means that its request handler finished. Its
 separate `goalStatus` is never derived from that state. `GOAL_COMPLETED` requires
@@ -37,6 +42,13 @@ and binding and still requires the existing separate approval. Old receipts with
 no goal metadata are not upgraded or granted new permissions. The generic proof
 helper requires a trusted host receipt verifier; it is not exposed to clients or
 models and must not be passed model-provided evidence.
+Premature restore requests preserve the original binding. A new inverse goal is
+created only for an actual host-created inverse. Scheduler completion evidence
+binds only one exact supported target/effect clause or the existing closed inverse
+continuation. Other mandatory clauses stay incomplete, yielding partial progress;
+ambiguous free-form compound wording remains unverified even when a narrower
+scheduler effect succeeds. This restricts reporting only, not
+the existing gateway's execution or approval behavior.
 
 The existing Task Store accepts optional goal metadata only from its host intake
 payload. It retains legacy task state and adds a separate goal projection for
@@ -55,4 +67,8 @@ business database writes and unattended permissions remain unavailable. Clause
 segmentation is conservative: ambiguous compound outcomes stay unverified rather
 than being inferred complete from one successful read. New business outcome
 verifiers require registered evidence contracts; arbitrary prose is insufficient.
+Only whole closed no-checkout/no-payment prohibitions are excluded as constraints;
+positive clauses after negation and scheduling reminders stay mandatory. The
+original objective is retained byte-for-byte. Existing intent admission gates
+still apply; this is not a universal new business intent recognizer.
 No live source or deployment acceptance is claimed by offline tests.

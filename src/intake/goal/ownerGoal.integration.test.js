@@ -5,9 +5,20 @@ test('existing Goal Decomposer carries whole Owner outcomes even when its read-f
  let calls=0
  const result=await require('./goalDecomposer').decomposeGoal({question:REQUEST,callModel:async({prompt,responseFormat})=>{
   calls++;assert.ok(prompt.includes(REQUEST));assert.ok(responseFormat.schema.required.includes('owner_outcomes'))
-  return {text:JSON.stringify({question_restated:'Prepare the recurring purchasing workflow',executive_frame:{taskType:'act',decisionNeeded:false,successDefinition:'All Owner outcomes verified',answerPosture:'evidence_first'},requested_capability:null,facts:[],joins:[],owner_outcomes:[{ownerQuote:'每天早上8點看系統,',capability:'aroma_system.read',kind:'read'}]})}
+  return {text:JSON.stringify({question_restated:'Prepare the recurring purchasing workflow',executive_frame:{taskType:'act',decisionNeeded:false,successDefinition:'All Owner outcomes verified',answerPosture:'evidence_first'},requested_capability:null,facts:[],joins:[],owner_outcomes:[{ownerQuote:'每天早上8點看系統',capability:'aroma_system.read',kind:'read'}]})}
  }})
- assert.equal(calls,1);assert.equal(result.ok,false);assert.equal(result.understanding.ownerOutcomes[0].ownerQuote,'每天早上8點看系統,')
+ assert.equal(calls,1);assert.equal(result.ok,false);assert.equal(result.understanding.ownerOutcomes[0].ownerQuote,'每天早上8點看系統')
+})
+test('ordinary informational intake cannot acquire an action goal from invented decomposer mappings',async()=>{
+ const vars={CHAT_BACKEND:'off',READ_ACCESS:'on',GOAL_DECOMPOSER:'on',MULTI_AI_ROUTER:'off',TURN_ROUTER:'off',A4_KNOWLEDGE_ROUTING:'off',DECISION_RECALL:'off',CONVERSATION_RECALL:'off'},prior=Object.fromEntries(Object.keys(vars).map(k=>[k,process.env[k]]));Object.assign(process.env,vars)
+ try{
+  let decomposed=0;const message='What is inventory?',adapter={providerName:'claude',complete:async(prompt,opts={})=>{
+   if(opts.responseFormat?.name==='goal_plan'){decomposed++;return {text:JSON.stringify({question_restated:message,executive_frame:{taskType:'act',decisionNeeded:false,successDefinition:'Read records',answerPosture:'evidence_first'},requested_capability:null,facts:[],joins:[],owner_outcomes:[{ownerQuote:message,capability:'aroma_system.read',kind:'read'}]})}}
+   return {text:JSON.stringify({intent:'query',mode:'chat',reply:'Inventory describes the goods held for use.',tasks:[],decision:null}),model:'offline-fixture',usage:{inputTokens:1,outputTokens:1},latencyMs:1}
+  }}
+  const result=await require('../intakeService').processIntake(message,adapter,[],{demo:true,interactionMode:'chat',requestId:randomUUID(),providerHint:'claude',readContextDeps:{sources:[]}})
+  assert.equal(decomposed,1);assert.equal(result.ownerGoal,undefined);assert.match(result.reply,/Inventory describes/)
+ }finally{for(const[k,v]of Object.entries(prior))if(v===undefined)delete process.env[k];else process.env[k]=v}
 })
 test('real intake preserves the failed procurement goal despite a data-only model answer and performs no business action',async()=>{
  const keys=['CHAT_BACKEND','READ_ACCESS','A4_KNOWLEDGE_ROUTING','GOAL_DECOMPOSER','MULTI_AI_ROUTER'],prior=Object.fromEntries(keys.map(k=>[k,process.env[k]]))

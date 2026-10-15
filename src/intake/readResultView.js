@@ -705,6 +705,9 @@ function renderValidatedPlan (input) {
  * retrieval path passes through byte-identical.
  */
 function buildReadResultReply (input = {}) {
+  // Tracked action goals may show retrieved rows and deterministic read limits,
+  // but no model action narrative. This reuses the existing evidence formatter.
+  if(input.ownerGoalReporting===true)input={...input,reply:'',answerPlan:null,correction:null}
   const out = buildReadResultReplyInner(input)
   const routed = enforceRouteEvidence({
     reply: out && typeof out.reply === 'string' ? out.reply : '',
@@ -819,7 +822,7 @@ function buildReadResultReplyInner (input = {}) {
   // live turns fell back to the template in complete silence — no line, no fallback, no
   // trace. A read turn that reaches here without a plan is now recorded with a reason,
   // because "the layer did not run" must be as visible as "the layer ran and failed".
-  if (Array.isArray(input.itemsBySource) && input.itemsBySource.some((g) => g && Array.isArray(g.items) && g.items.length > 0)) {
+  if (!input.ownerGoalReporting && Array.isArray(input.itemsBySource) && input.itemsBySource.some((g) => g && Array.isArray(g.items) && g.items.length > 0)) {
     const { logAnswerPlan } = require('./answerPlan')
     logAnswerPlan({
       outcome: 'fallback',

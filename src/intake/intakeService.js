@@ -388,12 +388,13 @@ async function processIntake (message, adapter, history = [], opts = {}) {
   try {
     const goals=require('./goal/ownerGoal')
     let ownerGoal=opts.interactionMode==='chat'&&goals.shouldTrack(message)?goals.createGoal({objective:message,requestId}):null
+    let ownerReadReply=''
     const pipelineOpts={...opts,onOwnerUnderstanding:understanding=>{
       const outcomes=understanding?.ownerOutcomes
-      if(opts.interactionMode==='chat'&&Array.isArray(outcomes)&&outcomes.length){ownerGoal=goals.refineGoal(ownerGoal||goals.createGoal({objective:message,requestId}),outcomes);pipelineOpts.ownerGoal=ownerGoal}
-    },onOwnerRead:observations=>{if(ownerGoal){ownerGoal=goals.observeReads(ownerGoal,observations);pipelineOpts.ownerGoal=ownerGoal}},ownerGoal}
+      if(ownerGoal&&Array.isArray(outcomes)&&outcomes.length){ownerGoal=goals.refineGoal(ownerGoal,outcomes);pipelineOpts.ownerGoal=ownerGoal}
+    },onOwnerRead:observations=>{if(ownerGoal){ownerGoal=goals.observeReads(ownerGoal,observations);pipelineOpts.ownerGoal=ownerGoal}},onOwnerReadView:reply=>{ownerReadReply=reply},ownerGoal}
     const result=await require('../investigation/invocationContext').withInvocationContext(requestId,()=>runIntakePipeline(message, adapter, history, pipelineOpts, requestId))
-    return ownerGoal&&!result?.blocked?goals.attachResult(result,ownerGoal):result
+    return ownerGoal&&result?(result.blocked?{...result,ownerGoal}:goals.attachResult(result,ownerGoal,{readReply:ownerReadReply})):result
   } catch (err) {
     // Slice B: every error leaving intake carries the correlationId (== requestId).
     // IntakeUpstreamError sets it in its constructor; DistillParseError and any
@@ -3517,6 +3518,7 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
     // With nothing retrieved it is a no-op and the reply passes through untouched.
     opts.onOwnerRead?.({perSource:Array.from(turnPerSource.values()),evidenceSets:Array.from(turnEvidence.values())})
     const view = buildReadResultReply({
+      ownerGoalReporting:!!opts.ownerGoal,
       reply: guarded.reply,
       correction: guarded.correction || null,
       // E2: the sources/kind the DRAFT judgment named, so a carried note stays as specific in
@@ -3538,6 +3540,7 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
       // source of business facts, and recall-is-not-evidence is unchanged by it.
       history
     })
+    if(opts.ownerGoal)opts.onOwnerReadView?.(view.reply)
     // ⛔ E2: ONE outcome decides both the screen and the count. `view.readClaim` was judged
     // against `view.reply` — the exact bytes he receives — so this can no longer report a
     // correction he never saw, nor stay silent about one he did.
@@ -3670,6 +3673,7 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
     })
     opts.onOwnerRead?.({perSource:Array.from(turnPerSource.values()),evidenceSets:Array.from(turnEvidence.values())})
     const view = buildReadResultReply({
+      ownerGoalReporting:!!opts.ownerGoal,
       reply: guarded.reply,
       historicalMemoryAnswer,
       correction: guarded.correction || null,
@@ -3692,6 +3696,7 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
       // source of business facts, and recall-is-not-evidence is unchanged by it.
       history
     })
+    if(opts.ownerGoal)opts.onOwnerReadView?.(view.reply)
     // ⛔ E2: same single outcome as the commit path — judged against the bytes he receives.
     leadWithJudgment(view, distilled, requestId, 'chat', operationalInvestigation)
     const operationalBrief = require('../investigation/operationalBrief').renderOperationalBrief(operationalInvestigation, { message })
