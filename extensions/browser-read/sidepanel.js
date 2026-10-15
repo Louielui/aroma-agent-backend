@@ -33,7 +33,11 @@ function workFromRecord(r){
   const phases={model_request_started:'正在等候模型回覆…',model_request_finished:'模型已回覆，正在處理結果…',read_task_started:'正在讀取已授權資料…',read_task_finished:'資料讀取已返回，正在整理回覆…'},phase=Object.hasOwn(phases,stage)?phases[stage]:'正在處理已送出的任務…'
   setWork('working',phase,start??workStart??Date.now())
  }else if(r.state==='awaiting_consent')setWork('waiting','尚未呼叫模型，請先確認範圍。',null)
- else if(r.state==='completed')setWork('completed',r.result?.taskEvidence?.complete===false?'回覆已保存；部分資料仍待確認。':'回覆已保存。',start,end)
+ else if(r.state==='completed'){
+  const email=r.result?.taskEvidence?.operation==='gmail.reply_preview',preview=r.result?.taskEvidence?.previewPrepared===true
+  setWork('completed',email?(preview?'預覽已保存在香香；未儲存 Gmail 草稿、未寄信。':'尚未製作回覆；請查看缺少資料或待確認事項。'):r.result?.taskEvidence?.complete===false?'回覆已保存；部分資料仍待確認。':'回覆已保存。',start,end)
+  if(email)el('work-title').textContent=preview?'回覆預覽已準備':'回覆仍待確認'
+ }
  else if(r.state==='cancelled')setWork('cancelled','不會自動重試；已送出的工作可能仍計入訂閱額度。',start,end)
  else if(r.state==='interrupted')setWork('interrupted','服務重啟中斷了這次工作，沒有自動接續。',start,end)
  else if(r.state==='failed')setWork('failed','本次未完成；可查看狀態說明，沒有自動重試。',start,end)
