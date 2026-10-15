@@ -122,7 +122,9 @@ function projectTask(task){return validGoal(task?.ownerGoal)?{...task,goalStatus
 function shouldTrack(message){
  const text=String(message).trim(),intent=text.replace(/^(?:don't forget to|do not forget to|不要忘記|別忘記|唔好忘記)\s*/iu,''),router=require('../laneRouter')
  if(pureConstraint(text)||['question','capability_question','investigation_request','arrangement_request','general_knowledge'].includes(router.routeLane(intent).reason))return false
- return router.isBusinessActionRequest(intent)||recurring(intent)&&/^(?:(?:請|幫我|麻煩你?|我要|我想要?)\s*)?(?:新增|建立|設定|安排)|^(?:please\s+)?(?:create|add|schedule|set up)\b/iu.test(intent)
+ const command=intent.replace(/^(?:(?:please|help me)\s+|(?:請|幫我|麻煩你?|我要|我想要?)\s*)/iu,'')
+ const creation=/^(?:schedule\b|(?:create|add|set up)\s+(?:(?:a|an|the|new|daily|weekly|monthly|recurring|automatic|morning|purchasing|inventory|replenishment)\s+)*(?:schedule|scheduled task|background job|task|job|workflow|routine)\b)|^(?:新增|建立|設定|安排)(?:一[個項]|每天|每日|每週|每月|定期|循環|自動|早上|採購|訂貨|庫存|補貨|[0-9０-９]+(?:[:：][0-9０-９]+)?(?:點|時|分)?)*(?:排程|schedule\b|任務|工作|流程)/iu
+ return router.isBusinessActionRequest(intent)||recurring(intent)&&creation.test(command)
 }
 function isTaskRequest(message){
  const text=String(message).trim(),router=require('../laneRouter')

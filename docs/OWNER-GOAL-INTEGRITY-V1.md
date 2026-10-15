@@ -136,3 +136,9 @@ If a goal refresh fails, the conversation turn still retains its proposal contex
 without stale goal metadata. The warning identifies unavailable goal tracking;
 existing approval remains usable. If the transcript itself cannot be saved, the
 proposal request is not marked completed or replayed as a successful preparation.
+
+Recurring creation admission requires a schedule/task/workflow object after the
+creation verb and bounded scheduling modifiers. Mentioning scheduled tasks inside
+a spreadsheet or a detailed-summary request is not enough. This closes the
+legacy recurring predicate as well as the scheduler fallback; both positive
+business instructions and informational paraphrases have intake regressions.
