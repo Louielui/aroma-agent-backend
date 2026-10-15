@@ -10,7 +10,7 @@ function intent(message){
  if(/^(?:查看|查詢|看看|列出|status of|show)(?:每日採購排程| daily procurement (?:report|schedule))\s*[。.!！]?$/iu.test(s))return{operation:'status'}
  const op=s.match(/^(?:請|幫我)?(暫停|恢復|撤銷|修復)每日採購排程[。.!！]?$/u);if(op)return{operation:{暫停:'pause',恢復:'resume',撤銷:'revoke',修復:'recover'}[op[1]]}
  const times=s.match(/(?:[0-9０-９]{1,2}[:：][0-9０-９]{2}|[0-9０-９一二三四五六七八九十]{1,2}點|[0-9]{1,2}\s*[ap]m)/giu)||[]
- if(/(?:每週|每月|weekly|monthly|下午|晚上|America\/(?!Winnipeg\b)[A-Za-z_]+|\b(?:UTC|GMT|EST|EDT|PST|PDT)\b)/iu.test(s)||times.some(v=>!['08:00','8:00','8點','８點','八點','8am','08am'].includes(v.replace(/\s/g,'').toLowerCase())))return null
+ if(/(?:每週|每月|weekly|monthly|下午|晚上|點\s*(?:半|[0-9０-９一二三四五六七八九十]+(?:分|刻)?)|[0-9]{1,2}\.[0-9]{2}|America\/(?!Winnipeg\b)[A-Za-z_]+|\b(?:UTC|GMT|EST|EDT|PST|PDT)\b)/iu.test(s)||times.some(v=>!['08:00','8:00','8點','８點','八點','8am','08am'].includes(v.replace(/\s/g,'').toLowerCase())))return null
  const start=/^(?:請|幫我)?(?:新增|建立|設定)(?:一個)?(?:每日|每天|採購|訂貨|schedule|排程)/iu.test(s)||/^(?:please )?(?:create|add|set up) (?:a )?daily procurement (?:report|schedule)/iu.test(s)
  return start&&/(?:採購|供應商|補貨|訂貨|procurement)/iu.test(s)&&/(?:每日|每天|daily)/iu.test(s)?{operation:'create'}:null
 }

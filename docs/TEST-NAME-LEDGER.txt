@@ -7610,3 +7610,6 @@ Business Scheduler failed source envelopes and discarded rows cannot masquerade 
 Business Scheduler rendered approval stays inert until presentation and double click submits once
 Business Scheduler unsupported times and zones never select the fixed 08:00 workflow silently
 Business Scheduler contradictory source counts and ambiguous supplier mappings remain unresolved
+Business Scheduler transient conversation and receipt reads release the dialogue lock for a safe retry
+Business Scheduler minute and fractional-hour requests never become fixed 08:00 proposals
+Business Scheduler pending registration is occupied until the Windows approval operation finishes

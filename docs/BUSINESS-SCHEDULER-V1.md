@@ -150,6 +150,15 @@ uncertain-registration and goal-loss findings must be fixed before acceptance.
 Regression tests exercise those boundaries with synthetic sources and fake OS
 schedulers; local ephemeral HTTP servers only test the real routing.
 
+First full-suite compatibility findings (text classification and the existing
+chat file package ceiling) were repaired without changing any registered file
+paths or tool operations. A measured P1 idle-reporting defect during approved
+Windows registration was repaired by including management operations in the
+existing workflow occupancy signal. The first independent review reported a P2
+dialogue-lock leak on failed canonical reads and a P3 fractional-hour admission
+gap. Both were repaired because recovery/status availability and faithful fixed
+time selection are explicit acceptance criteria. Regression tests cover each.
+
 Deferred P2: source contract lacks freshness evidence and cannot retrieve more
 than its server cap. This blocks claiming a COMPLETE live list, not reporting
 an honest PARTIAL list. Broader supplier/inventory semantics need a separately
