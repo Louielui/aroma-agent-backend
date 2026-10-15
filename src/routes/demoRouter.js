@@ -1381,6 +1381,10 @@ function createDemoRouter ({ getAdapterFn = getAdapterForLane, processIntakeFn =
           }
         }
 
+        if(withClarification.ownerGoal){
+          const warning=publicHistorySaved?'':'\n\n'+t('ownerGoal.trackingUnavailable')
+          return res.status(200).json({...withClarification,historySaved:publicHistorySaved,...(!publicHistorySaved?{ownerGoalTrackingUnavailable:true}:{}),reply:withClarification.reply+warning,replyForArchive:(withClarification.replyForArchive||withClarification.reply)+warning})
+        }
         return res.status(200).json(withClarification.publicAnswerReceipt ? {...withClarification,historySaved:publicHistorySaved} : withClarification)
       } catch (err) {
         // Reuse the existing safe-disclosure boundary. Never leak provider body/stack/key/prompt.

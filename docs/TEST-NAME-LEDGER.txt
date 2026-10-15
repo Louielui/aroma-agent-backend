@@ -7565,3 +7565,5 @@ malformed canonical goal history fails closed without overwriting or hiding unfi
 existing button approval records exact-scope goal evidence without replacing another active goal or replaying execution
 
 ordinary acknowledgements accept the immediate unrelated offer rather than a persistent or completed goal cursor
+scheduler refusal clarification unsupported and mixed-approval requests conserve every current outcome without granting authority
+a failed goal-history append stays visible to the Owner instead of claiming durable task tracking

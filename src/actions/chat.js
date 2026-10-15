@@ -34,6 +34,19 @@ function parseContinuation(message){
 function createChatGateway({request,receipts,conversations,providerFor,semanticTimeoutMs=60000,semanticStore=require('./store').createStore({dir:require('node:path').join(require('../store/dataDir').resolveDataDir(),'scheduler-understanding-receipts')}),continuationStore=require('./store').createStore({dir:require('node:path').join(require('../store/dataDir').resolveDataDir(),'scheduler-dialogue-receipts')}),now=()=>Date.now()}){
  const ongoing=new Set()
  const call=async b=>{const v=await request(b);if(v?.error)throw Error(v.error);return v}
+ function syncGoalEvidence(conversationId,run){
+  if(run?.state!=='verified'||run.context?.conversationId!==conversationId)return {}
+  try{
+   const goals=require('../intake/goal/ownerGoal'),all=goals.goalsFor(conversations.get(conversationId)),updates=[]
+   for(const goal of all){
+    const next=goals.applyGatewayEvidence(goal,run)
+    if(JSON.stringify(next)===JSON.stringify(goal))continue
+    if(typeof conversations.updateOwnerGoal!=='function')throw Error('conversation_store_not_wired')
+    updates.push(conversations.updateOwnerGoal(conversationId,next))
+   }
+   return updates.length?{ownerGoalUpdates:updates}:{}
+  }catch{return {ownerGoalTrackingUnavailable:true}}
+ }
  function contextOf(b){
   if(!isValidId(b.conversationId)||!ID.test(b.investigationId||''))throw Error('invalid_request')
   const r=receipts.get(b.investigationId),c=conversations.get(b.conversationId)
@@ -53,21 +66,8 @@ function createChatGateway({request,receipts,conversations,providerFor,semanticT
   }
   const body={...b,op:'chat_'+b.op,context};delete body.conversationId;delete body.investigationId
   const result=await call(body)
-  if(result?.run?.state==='verified'){
-   // Consume the same authenticated host receipt for the existing button/RPC
-   // path. Reporting updates never restore approval context or execute a tool.
-   try{
-    const goals=require('../intake/goal/ownerGoal'),all=goals.goalsFor(conversations.get(b.conversationId)),updates=[]
-    for(const goal of all){
-     const next=goals.applyGatewayEvidence(goal,result.run)
-     if(JSON.stringify(next)===JSON.stringify(goal))continue
-     if(typeof conversations.updateOwnerGoal!=='function')throw Error('conversation_store_not_wired')
-     updates.push(conversations.updateOwnerGoal(b.conversationId,next))
-    }
-    if(updates.length)return {...result,ownerGoalUpdates:updates}
-   }catch{return {...result,ownerGoalTrackingUnavailable:true}}
-  }
-  return result
+  const tracking=syncGoalEvidence(b.conversationId,result?.run)
+  return {...result,...tracking,...(tracking.ownerGoalTrackingUnavailable?{ownerGoalTrackingNote:t('ownerGoal.trackingUnavailable')}:{})}
  }
  function latestContext(conversationId){
   if(!isValidId(conversationId))return null
@@ -129,16 +129,25 @@ function createChatGateway({request,receipts,conversations,providerFor,semanticT
     }
    }
    // A durable request receipt precedes dispatch. A lost response is never retried.
-   if(goals.validGoal(priorGoal)){
+   Object.assign(result,syncGoalEvidence(conversationId,observedRun))
+   if(goals.isTaskRequest(message)&&!parseContinuation(message)){
+    // Semantic status/duplicate-proposal routing must not erase a new compound
+    // objective. Reading the earlier proposal grants this new goal no authority.
+    result.ownerGoal=goals.createGoal({objective:message,requestId})
+    result.reply+='\n\n'+require('../intake/goal/ownerGoalView').renderGoal(result.ownerGoal)
+   }else if(goals.validGoal(priorGoal)){
     const actualInverse=parsed.kind==='restore'&&priorGoal.status==='GOAL_COMPLETED'&&observedRun?.restoreOf&&priorGoal.outcomes.some(o=>o.executionBinding?.receiptId===observedRun.restoreOf)
     const inverseGoal=actualInverse?goals.bindGatewayGoal(goals.createGoal({objective:message,requestId}),observedRun,priorGoal):null
     const inverseBound=inverseGoal?.outcomes.some(o=>o.executionBinding?.receiptId===observedRun.id)
     result.ownerGoal=inverseBound?inverseGoal:observedRun?goals.applyGatewayEvidence(priorGoal,observedRun):structuredClone(priorGoal)
     result.reply+='\n\n'+require('../intake/goal/ownerGoalView').renderGoal(result.ownerGoal)
    }
-   result=goals.withOutstanding(result,priorConversation)
+   let latestGoalState=priorConversation
+   try{const fresh=conversations.get(conversationId);goals.goalsFor(fresh);latestGoalState=fresh}catch{result.ownerGoalTrackingUnavailable=true}
+   result=goals.withOutstanding(result,latestGoalState)
+   if(result.ownerGoalTrackingUnavailable)result.reply+='\n\n'+t('ownerGoal.trackingUnavailable')
    receipt.state='completed';receipt.response=result;receipt.timeline.push({phase:'completed',at:new Date(now()).toISOString()});continuationStore.save(receipt)
-   conversations.appendTurn({id:conversationId,userText:message,replyText:result.reply,investigationRunId:result.investigationRunId,...(result.ownerGoal?{ownerGoal:result.ownerGoal,ownerGoalReference:priorGoal.goalId}:{})})
+   conversations.appendTurn({id:conversationId,userText:message,replyText:result.reply,investigationRunId:result.investigationRunId,...(result.ownerGoal?{ownerGoal:result.ownerGoal,ownerGoalReference:priorGoal?.goalId}:{})})
    return result
   }catch(e){receipt.state='interrupted';continuationStore.save(receipt);throw e}
  }
@@ -167,7 +176,7 @@ function createChatGateway({request,receipts,conversations,providerFor,semanticT
    const i=(await call({op:'inspect'})).inspection
    const report={readOnly:true,focus:'background',goal:message,duplicateState:'UNKNOWN',sections:[{section:'schedules',state:i.observations.some(o=>o.state==='CONFIRMED')?'partial':'unavailable',sourceId:i.id,retrievedAt:new Date().toISOString(),records:i.observations.map(o=>({sourceId:o.target.id,state:o.state,taskName:o.target.taskName,...(o.snapshot?{enabled:o.snapshot.enabled,currentRunningState:o.snapshot.runtime,definitionHash:o.snapshot.definitionHash,at:o.snapshot.at}:{})}))}],persistenceState:'saved'}
    let result={mode:'chat',lane:'chat',reply:parsed.action?t('actions.chatPrepared'):t('actions.unknown'),investigation:report,investigationRunId:requestId,servedBy:null}
-   if(parsed.action)result.ownerGoal=goals.createGoal({objective:message,requestId})
+   if(parsed.action||goals.isTaskRequest(message))result.ownerGoal=goals.createGoal({objective:message,requestId})
    else if(goals.validGoal(priorGoal))result.ownerGoal=structuredClone(priorGoal)
    if(parsed.action){
     try{
@@ -215,10 +224,10 @@ function createChatGateway({request,receipts,conversations,providerFor,semanticT
    let result=null
    const clarify=key=>{
     let v={mode:'ask',lane:'chat',servedBy:null,reply:key==='unsupported'?t('actions.semanticUnsupported'):key==='approval'?t('actions.semanticApproval'):t('actions.semanticClarify'),...(context?{investigationRunId:context.investigationId}:{})}
-    const goals=require('../intake/goal/ownerGoal'),goal=goals.currentGoal(before)
+    const goals=require('../intake/goal/ownerGoal'),previousGoal=goals.currentGoal(before),goal=goals.isTaskRequest(message)?goals.createGoal({objective:message,requestId}):previousGoal
     if(goals.validGoal(goal)){v.ownerGoal=structuredClone(goal);v.reply+='\n\n'+require('../intake/goal/ownerGoalView').renderGoal(goal)}
     v=goals.withOutstanding(v,before)
-    conversations.appendTurn({id:conversationId,userText:message,replyText:v.reply,investigationRunId:v.investigationRunId,...(v.ownerGoal?{ownerGoal:v.ownerGoal,ownerGoalReference:goal.goalId}:{})});return v
+    conversations.appendTurn({id:conversationId,userText:message,replyText:v.reply,investigationRunId:v.investigationRunId,...(v.ownerGoal?{ownerGoal:v.ownerGoal,ownerGoalReference:previousGoal?.goalId}:{})});return v
    }
    if(decision.intent==='approval')result=clarify('approval')
    else if(decision.intent==='unsupported')result=clarify('unsupported')

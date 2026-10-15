@@ -387,7 +387,7 @@ async function processIntake (message, adapter, history = [], opts = {}) {
   const requestId = (typeof supplied === 'string' && UUID_RE.test(supplied)) ? supplied : uuidv4()
   try {
     const goals=require('./goal/ownerGoal')
-    let ownerGoal=opts.interactionMode==='chat'&&goals.shouldTrack(message)?goals.createGoal({objective:message,requestId}):null
+    let ownerGoal=opts.interactionMode==='chat'&&goals.isTaskRequest(message)?goals.createGoal({objective:message,requestId}):null
     let ownerReadReply='',ownerHostReply=''
     const pipelineOpts={...opts,onOwnerUnderstanding:understanding=>{
       const outcomes=understanding?.ownerOutcomes

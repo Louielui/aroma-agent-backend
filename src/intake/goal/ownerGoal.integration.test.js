@@ -82,6 +82,15 @@ test('ordinary acknowledgements accept the immediate unrelated offer rather than
   const status=await post('做完了嗎');assert.equal(status.status,200);assert.equal(calls,2);assert.equal(status.body.ownerGoal.goalId,completed.goalId);assert.equal(status.body.hasUnresolvedOwnerGoals,true);assert.ok(status.body.pendingOwnerGoals.some(g=>g.goalId===goal.goalId))
  }finally{server.closeAllConnections();await new Promise(r=>server.close(r))}
 })
+test('a failed goal-history append stays visible to the Owner instead of claiming durable task tracking',async()=>{
+ const express=require('express'),message='Create a daily purchasing schedule',goal=goals.createGoal({objective:message,requestId:randomUUID()}),app=express();app.locals.conversationDemo=true;app.use(express.json())
+ app.use(require('../../routes/demoRouter').createDemoRouter({conversationStore:{get:()=>null,list:()=>[],appendTurn:()=>{throw Error('ENOSPC')}},getAdapterFn:()=>({providerName:'spy'}),processIntakeFn:async()=>goals.attachResult({mode:'chat',reply:''},goal)}))
+ const server=app.listen(0,'127.0.0.1');await new Promise(r=>server.once('listening',r));const origin='http://127.0.0.1:'+server.address().port
+ try{
+  const response=await new Promise((resolve,reject)=>{const req=require('node:http').request(origin+'/api/v1/demo/intake',{method:'POST',headers:{'content-type':'application/json',origin:'http://127.0.0.1:8090',host:'127.0.0.1:8090'}},res=>{let raw='';res.on('data',c=>raw+=c);res.on('end',()=>resolve({status:res.statusCode,body:JSON.parse(raw)}))});req.on('error',reject);req.end(JSON.stringify({message,conversationId:randomUUID()}))})
+  assert.equal(response.status,200);assert.equal(response.body.historySaved,false);assert.equal(response.body.ownerGoalTrackingUnavailable,true);assert.equal(response.body.ownerGoal.originalObjective,message);assert.equal(response.body.ownerGoal.status,'GOAL_BLOCKED');assert.match(response.body.reply,/未能保存|could not be saved/);assert.equal(response.body.replyForArchive,response.body.reply)
+ }finally{server.closeAllConnections();await new Promise(r=>server.close(r))}
+})
 test('same-conversation whole-goal status survives reload and reads back without a model call or action',async()=>{
  const express=require('express'),dir=fs.mkdtempSync(path.join(os.tmpdir(),'owner-goal-http-')),conversations=require('../../store/conversationStore').createConversationStore({dataDir:dir}),cid=randomUUID(),g=goals.createGoal({objective:REQUEST,requestId:randomUUID()})
  conversations.appendTurn({id:cid,userText:REQUEST,replyText:'Incomplete',ownerGoal:g})

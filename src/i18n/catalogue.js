@@ -42,6 +42,7 @@ const CATALOGUE = Object.freeze({
   'ownerGoal.blocked': {zh:"讀取失敗或範圍不完整，尚未完成",en:"Read unavailable or coverage incomplete; not complete"},
   'ownerGoal.heading': {"zh":"原任務進度","en":"Original goal status"},
   'ownerGoal.otherGoals': {"zh":"### 其他尚未完成的目標","en":"### Other unfinished goals"},
+  'ownerGoal.trackingUnavailable': {"zh":"目標進度紀錄未能保存或核對；請勿把本次回覆當作已保存的任務。動作結果請以核實收據為準。","en":"Goal progress could not be saved or checked; this reply is not a saved task record. Use the verified receipt for the action result."},
   'ownerGoal.completed': {"zh":"所有必要結果已有核實證據。","en":"All mandatory outcomes have verified evidence."},
   'ownerGoal.partial': {"zh":"部分完成；原任務尚未全部完成。","en":"Partially complete; the original goal is not fully complete."},
   'ownerGoal.incomplete': {"zh":"原任務尚未完成。","en":"The original goal is incomplete."},

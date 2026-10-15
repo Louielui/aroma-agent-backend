@@ -124,6 +124,14 @@ function shouldTrack(message){
  if(pureConstraint(text)||['question','capability_question','investigation_request','arrangement_request','general_knowledge'].includes(router.routeLane(intent).reason))return false
  return router.isBusinessActionRequest(intent)||recurring(intent)&&/^(?:(?:請|幫我|麻煩你?|我要|我想要?)\s*)?(?:新增|建立|設定|安排)|^(?:please\s+)?(?:create|add|schedule|set up)\b/iu.test(intent)
 }
+function isTaskRequest(message){
+ const text=String(message).trim(),router=require('../laneRouter')
+ if(['question','capability_question','investigation_request','arrangement_request','general_knowledge'].includes(router.routeLane(text).reason))return false
+ const primaryTask=/^(?:(?:please|help me)\s+|(?:請|幫我|麻煩你?)\s*)?(?:pause|resume|enable|disable|stop|cancel|delete|create|schedule|set up|run|restart)\b|^(?:請|幫我|麻煩你?)?(?:暫停|停用|恢復|啟用|停止|取消|刪除|新增|建立|設定)/iu.test(text)
+ if(router.isReadRequest(text)&&!primaryTask)return false
+ const domain=/costco|購物車|採購|訂貨|排程|scheduler|scheduled?\b|background (?:job|task)|Windows service|backend|bridge|AromaXiangXiang|ActionGatewayAcceptance/iu.test(text)
+ return shouldTrack(text)||require('../../actions/understanding').surface(text)||domain&&clauses(text).some(s=>/^(?:(?:please|help me)\s+|(?:請|幫我|麻煩你?)\s*)?(?:pause|resume|enable|disable|stop|cancel|delete|add|create|schedule|set up|run|restart)\b|^(?:請|幫我|麻煩你?)?(?:暫停|停用|恢復|啟用|停止|取消|刪除|新增|建立|設定|放進|加入)/iu.test(s))
+}
 // Conversation-owned reporting records only. Each request retains its own scope
 // and evidence; indexing several goals never merges their execution authority.
 function goalsFor(conversation){
@@ -142,4 +150,4 @@ function withOutstanding(result,conversation){
  const extra=require('./ownerGoalView').renderOutstanding(pending)
  return {...envelope,reply:result.reply+'\n\n'+extra,replyForArchive:(result.replyForArchive||result.reply)+'\n\n'+extra}
 }
-module.exports={schema,createGoal,refineGoal,applyEvidence,observeReads,bindGatewayGoal,applyGatewayEvidence,validGoal,attachResult,projectTask,shouldTrack,clauses,goalsFor,currentGoal,withOutstanding}
+module.exports={schema,createGoal,refineGoal,applyEvidence,observeReads,bindGatewayGoal,applyGatewayEvidence,validGoal,attachResult,projectTask,shouldTrack,isTaskRequest,clauses,goalsFor,currentGoal,withOutstanding}

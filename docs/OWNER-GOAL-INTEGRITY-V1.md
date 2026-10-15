@@ -55,8 +55,10 @@ created only for an actual host-created inverse whose new goal binding succeeds
 and whose prior whole goal is already complete. Restoring one verified child of
 a partial compound goal retains that whole goal and every unresolved outcome;
 inverse execution cannot turn the remaining work into a completed goal.
-Acknowledgements, ambiguous/multiple/no-run continuations and semantic clarification
-turns retain the prior goal unchanged; they supply no execution evidence. A
+Pure acknowledgements and permission questions retain the prior goal unchanged;
+they supply no execution evidence. New compound business requests, even when
+ambiguous, unsupported, refused, conditional or awaiting clarification, establish
+their own unbound complete objective and retain all earlier independent goals. A
 closed acknowledgement in the ordinary intake route likewise keeps the saved
 goal, without a new model call, source read, task execution or approval. A
 free-form inverse that cannot be exactly bound preserves the original goal rather
@@ -86,9 +88,11 @@ canonical records fail closed without being overwritten.
 The existing button/RPC approval and readback path also consumes verified host
 receipts. Its internal store refresh pins every immutable goal/scope/binding
 field, changes neither the active-goal cursor nor the Owner transcript, and never
-replays execution. Tracking-write failure is separate from the actual action
-result; a later authenticated readback can recover the metadata from that same
-receipt. No new RPC shape, source permission or approval authority is introduced.
+replays execution. Typed confirmations and RPC readback synchronize every exact
+bound goal independently of the active reporting cursor. Tracking-write failure
+is separate from the actual action result and is visibly reported to the Owner;
+a later authenticated readback can recover metadata from that same receipt.
+A failed intake history append likewise cannot claim durable goal tracking. No new RPC shape, source permission or approval authority is introduced.
 
 The existing Task Store accepts optional goal metadata only from its host intake
 payload. It retains legacy task state and adds a separate goal projection for
