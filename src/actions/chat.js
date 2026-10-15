@@ -145,21 +145,24 @@ function createChatGateway({request,receipts,conversations,providerFor,semanticT
   const requestHash=hash({message,conversationId}),prior=receipts.get(requestId)
   if(prior){if(prior.requestHash!==requestHash||prior.conversationId!==conversationId)throw Error('request_conflict');if(prior.state!=='completed')throw Error('investigation_unavailable');return {...prior.response,investigationRunId:requestId,replayed:true}}
   if(ongoing.has(conversationId))throw Error('request_conflict');ongoing.add(conversationId)
+  const priorGoal=conversations.get(conversationId)?.messages?.at(-1)?.ownerGoal,goals=require('../intake/goal/ownerGoal')
   try{
    receipts.begin(requestId,conversationId,requestHash)
    const i=(await call({op:'inspect'})).inspection
    const report={readOnly:true,focus:'background',goal:message,duplicateState:'UNKNOWN',sections:[{section:'schedules',state:i.observations.some(o=>o.state==='CONFIRMED')?'partial':'unavailable',sourceId:i.id,retrievedAt:new Date().toISOString(),records:i.observations.map(o=>({sourceId:o.target.id,state:o.state,taskName:o.target.taskName,...(o.snapshot?{enabled:o.snapshot.enabled,currentRunningState:o.snapshot.runtime,definitionHash:o.snapshot.definitionHash,at:o.snapshot.at}:{})}))}],persistenceState:'saved'}
    const result={mode:'chat',lane:'chat',reply:parsed.action?t('actions.chatPrepared'):t('actions.unknown'),investigation:report,investigationRunId:requestId,servedBy:null}
+   if(goals.validGoal(priorGoal))result.ownerGoal=structuredClone(priorGoal)
    if(parsed.action){
     try{
      const prepared=(await call({op:'chat_prepare',inspectionId:i.id,targetId:parsed.targetId,action:parsed.action,context:{conversationId,investigationId:requestId}})).run
-     const goals=require('../intake/goal/ownerGoal');result.ownerGoal=goals.bindGatewayGoal(goals.createGoal({objective:message,requestId}),prepared)
-     result.reply+='\n\n'+require('../intake/goal/ownerGoalView').renderGoal(result.ownerGoal)
+     const fresh=goals.bindGatewayGoal(goals.createGoal({objective:message,requestId}),prepared)
+     if(fresh.outcomes.some(o=>o.executionBinding?.receiptId===prepared.id)||!result.ownerGoal)result.ownerGoal=fresh
     }
     catch(_){result.reply=t('actions.chatRefused')}
    }
+   if(result.ownerGoal)result.reply+='\n\n'+require('../intake/goal/ownerGoalView').renderGoal(result.ownerGoal)
    receipts.finish(requestId,result)
-   conversations.appendTurn({id:conversationId,userText:message,replyText:result.reply,investigationRunId:requestId,...(result.ownerGoal?{ownerGoal:result.ownerGoal}:{})})
+   conversations.appendTurn({id:conversationId,userText:message,replyText:result.reply,investigationRunId:requestId,...(result.ownerGoal?{ownerGoal:result.ownerGoal,ownerGoalReference:priorGoal?.goalId}:{})})
    return result
   }catch(e){try{receipts.finish(requestId,null,true)}catch(_){}throw e}finally{ongoing.delete(conversationId)}
  }

@@ -105,7 +105,23 @@ function validGoalInner(g){
  return g.status===deriveStatus(g)
 }
 function createQuotes(objective){const required=clauses(objective).filter(s=>!pureConstraint(s));return required.length&&required.length<=16?required:[objective]}
-function attachResult(result,goal,{readReply='',hostReply=''}={}){if(!result||typeof result.reply!=='string'||!validGoal(goal))return result;const reply=[hostReply,readReply,require('./ownerGoalView').renderGoal(goal)].filter(Boolean).join('\n\n');return {...result,ownerGoal:structuredClone(goal),reply,replyForArchive:reply,judgment:'',reasons:[],offer:'',next_step:''}}
+function groundedOutcomeReply(result,goal){
+ const build=require('../groundedReply').buildGroundedReply
+ // These discriminants are produced by the host's persisted outcome branches,
+ // never inferred from model mode/reply/offer or treated as execution evidence.
+ if(result.demoOutcome==='execution_proposal'&&Array.isArray(result.proposals)){
+  const proposal=result.proposals.length===1&&result.proposals[0]?.id?result.proposals[0]:null
+  return build({type:'execution_proposal',proposalCreated:!!proposal,proposalId:proposal?.id,promoteError:result.promoteErrors?.[0]})
+ }
+ if(result.demoOutcome==='clarification'&&['no_actionable_task','multiple_tasks_narrow_to_one','not_a_commit_intent'].includes(result.clarificationReason))return build({type:'clarification',clarificationReason:result.clarificationReason})
+ if(result.investigation?.readOnly===true)return require('../../investigation/decisionAdviceView').renderDecisionAdvice(result.investigation.decisionAdvice,{message:goal.originalObjective})?.text||''
+ return ''
+}
+function attachResult(result,goal,{readReply='',hostReply=''}={}){if(!result||typeof result.reply!=='string'||!validGoal(goal))return result;const reply=[...new Set([hostReply,groundedOutcomeReply(result,goal),readReply,require('./ownerGoalView').renderGoal(goal)].filter(Boolean))].join('\n\n');return {...result,ownerGoal:structuredClone(goal),reply,replyForArchive:reply,judgment:'',reasons:[],offer:'',next_step:''}}
 function projectTask(task){return validGoal(task?.ownerGoal)?{...task,goalStatus:task.ownerGoal.status}:task}
-function shouldTrack(message){const text=String(message).trim(),intent=text.replace(/^(?:don't forget to|do not forget to|不要忘記|別忘記|唔好忘記)\s*/iu,'');return !pureConstraint(text)&&(require('../laneRouter').isBusinessActionRequest(intent)||recurring(intent)&&/新增|建立|設定|^(?:please\s+)?(?:create|add|schedule|set up)\b/iu.test(intent))}
+function shouldTrack(message){
+ const text=String(message).trim(),intent=text.replace(/^(?:don't forget to|do not forget to|不要忘記|別忘記|唔好忘記)\s*/iu,''),router=require('../laneRouter')
+ if(pureConstraint(text)||['question','capability_question','investigation_request','arrangement_request','general_knowledge'].includes(router.routeLane(intent).reason))return false
+ return router.isBusinessActionRequest(intent)||recurring(intent)&&/^(?:(?:請|幫我|麻煩你?|我要|我想要?)\s*)?(?:新增|建立|設定|安排)|^(?:please\s+)?(?:create|add|schedule|set up)\b/iu.test(intent)
+}
 module.exports={schema,createGoal,refineGoal,applyEvidence,observeReads,bindGatewayGoal,applyGatewayEvidence,validGoal,attachResult,projectTask,shouldTrack,clauses}

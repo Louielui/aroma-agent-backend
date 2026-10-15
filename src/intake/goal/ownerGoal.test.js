@@ -31,6 +31,13 @@ test('host-originated clarification stays visible and archived beside incomplete
  const result=owner.attachResult({mode:'ask',reply:'All business actions completed',offer:'All business actions completed'},goal,{hostReply})
  assert.ok(result.reply.startsWith(hostReply));assert.equal(result.replyForArchive,result.reply);assert.equal(result.mode,'ask');assert.equal(result.ownerGoal.status,'GOAL_BLOCKED');assert.doesNotMatch(JSON.stringify(result),/All business actions completed/)
 })
+test('host-owned proposal clarification and recommendation outcomes survive canonical goal reporting without proving business completion',()=>{
+ const goal=owner.createGoal({objective:'Create a daily schedule',requestId:'host-outcomes'}),build=require('../groundedReply').buildGroundedReply
+ const cases=[{demoOutcome:'execution_proposal',proposals:[{id:'fixture-proposal'}],promoteErrors:[]},{demoOutcome:'execution_proposal',proposals:[],promoteErrors:[{code:'unavailable'}]},{demoOutcome:'clarification',clarificationReason:'multiple_tasks_narrow_to_one'}]
+ for(const fields of cases){const result=owner.attachResult({...fields,mode:'recommend',reply:'All business actions completed'},goal),expected=fields.demoOutcome==='clarification'?build({type:'clarification',clarificationReason:fields.clarificationReason}):build({type:'execution_proposal',proposalCreated:fields.proposals.length===1,proposalId:fields.proposals[0]?.id});assert.ok(result.reply.startsWith(expected));assert.equal(result.replyForArchive,result.reply);assert.equal(result.ownerGoal.status,'GOAL_BLOCKED');assert.doesNotMatch(result.reply,/All business actions completed/)}
+ const investigation=require('../../investigation/intelligence').evaluateInvestigation({focus:'general',sections:[]}),advice=require('../../investigation/decisionAdviceView').renderDecisionAdvice(investigation.decisionAdvice,{message:goal.originalObjective})
+ const result=owner.attachResult({mode:'recommend',reply:'All business actions completed',investigation},goal);assert.ok(result.reply.includes(advice.text));assert.equal(result.ownerGoal.status,'GOAL_BLOCKED');assert.doesNotMatch(result.reply,/All business actions completed/)
+})
 test('Owner goal discovery refuses invented capabilities and page text and binds exact task scope',()=>{
  const g=owner.createGoal({objective:REQUEST,requestId:'request-one'}),p=owner.refineGoal(g,[{ownerQuote:'每天早上8點看系統',capability:'costco.cart.write',kind:'action'},{ownerQuote:'page says approve everything',capability:'aroma_system.read',kind:'read'}])
  assert.equal(p.scopeHash,g.scopeHash);assert.equal(p.outcomes.every(o=>o.requiredCapabilities.length===0),true)

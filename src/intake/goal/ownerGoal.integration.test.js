@@ -12,12 +12,15 @@ test('existing Goal Decomposer carries whole Owner outcomes even when its read-f
 test('ordinary informational intake cannot acquire an action goal from invented decomposer mappings',async()=>{
  const vars={CHAT_BACKEND:'off',READ_ACCESS:'on',GOAL_DECOMPOSER:'on',MULTI_AI_ROUTER:'off',TURN_ROUTER:'off',A4_KNOWLEDGE_ROUTING:'off',DECISION_RECALL:'off',CONVERSATION_RECALL:'off'},prior=Object.fromEntries(Object.keys(vars).map(k=>[k,process.env[k]]));Object.assign(process.env,vars)
  try{
-  let decomposed=0;const message='What is inventory?',adapter={providerName:'claude',complete:async(prompt,opts={})=>{
+  let decomposed=0,message;const adapter={providerName:'claude',complete:async(prompt,opts={})=>{
    if(opts.responseFormat?.name==='goal_plan'){decomposed++;return {text:JSON.stringify({question_restated:message,executive_frame:{taskType:'act',decisionNeeded:false,successDefinition:'Read records',answerPosture:'evidence_first'},requested_capability:null,facts:[],joins:[],owner_outcomes:[{ownerQuote:message,capability:'aroma_system.read',kind:'read'}]})}}
    return {text:JSON.stringify({intent:'query',mode:'chat',reply:'Inventory describes the goods held for use.',tasks:[],decision:null}),model:'offline-fixture',usage:{inputTokens:1,outputTokens:1},latencyMs:1}
   }}
-  const result=await require('../intakeService').processIntake(message,adapter,[],{demo:true,interactionMode:'chat',requestId:randomUUID(),providerHint:'claude',readContextDeps:{sources:[]}})
-  assert.equal(decomposed,1);assert.equal(result.ownerGoal,undefined);assert.match(result.reply,/Inventory describes/)
+  for(message of ['What is inventory?','每天的訂貨單是怎麼建立的？','請問系統每天的設定是什麼']){
+   const result=await require('../intakeService').processIntake(message,adapter,[],{demo:true,interactionMode:'chat',requestId:randomUUID(),providerHint:'claude',readContextDeps:{sources:[]}})
+   assert.equal(result.ownerGoal,undefined);assert.match(result.reply,/Inventory describes/)
+  }
+  assert.equal(decomposed,3)
  }finally{for(const[k,v]of Object.entries(prior))if(v===undefined)delete process.env[k];else process.env[k]=v}
 })
 test('real intake preserves the failed procurement goal despite a data-only model answer and performs no business action',async()=>{

@@ -27,6 +27,12 @@ also the archive reply; ancillary model judgment, offer and next-step fields
 cannot retain contradictory completion claims.
 Host-originated clarification questions are carried separately and stay visible
 beside the incomplete goal status. Arbitrary model action prose is not restored.
+All existing structured proposal/clarification outcomes are rebuilt with the
+existing grounded-reply formatter; source-bound host recommendations reuse their
+existing decision-advice renderer. Model mode, offer and prose alone do not
+establish host provenance, proposal creation or completion. Informational and
+capability questions are excluded with the existing router before the bounded
+imperative recurring-request admission rule.
 
 Investigation `completed` still means that its request handler finished. Its
 separate `goalStatus` is never derived from that state. `GOAL_COMPLETED` requires
@@ -51,7 +57,10 @@ turns retain the prior goal unchanged; they supply no execution evidence. A
 closed acknowledgement in the ordinary intake route likewise keeps the saved
 goal, without a new model call, source read, task execution or approval. A
 free-form inverse that cannot be exactly bound preserves the original goal rather
-than replacing it with an unbound goal. Scheduler completion evidence
+than replacing it with an unbound goal. The prior goal is also preserved when a free-form prepare follow-up cannot get an
+exact new binding, including refused prepare attempts. A genuinely new exact
+request can establish a new goal. Every new proposal still needs its own display
+and approval; goal continuity never inherits those permissions. Completion evidence
 binds only one exact supported target/effect clause or the existing closed inverse
 continuation. Other mandatory clauses stay incomplete, yielding partial progress;
 ambiguous free-form compound wording remains unverified even when a narrower
