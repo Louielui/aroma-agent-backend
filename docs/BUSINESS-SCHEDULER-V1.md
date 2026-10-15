@@ -171,6 +171,13 @@ publish an empty lock. This uses local filesystem hard links within the same
 store directory; unsupported filesystems fail closed rather than falling back
 to a non-atomic lock. Existing malformed legacy locks still require inspection;
 V1 does not delete a lock whose live holder cannot be established safely.
+The next review also found a pre-read admission window missing from occupancy;
+the run is now marked occupied immediately after its execution lock is acquired,
+including during Windows inspection and error handling. Spaced hours, alternate
+cadences and explicit compact-hour forms have dedicated refusal regressions.
+This remains bounded intent admission for one fixed workflow, not a general
+temporal-language interpreter. The original objective and all its constraints
+remain intact, and approval always displays the fixed Winnipeg 08:00 scope.
 
 Deferred P2: source contract lacks freshness evidence and cannot retrieve more
 than its server cap. This blocks claiming a COMPLETE live list, not reporting
