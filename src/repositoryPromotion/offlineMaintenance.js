@@ -168,9 +168,14 @@ function createMaintenance ({ root, ownerPassword, serviceCredentials, jobs, pro
     authorize(request)
     if (fs.existsSync(journal)) throw Error('existing_maintenance_record')
     if (sourceIdentity().commit !== source.initial || !jobs.includes(database.job)) throw Error('baseline_identity_changed')
+    // An auxiliary complete authorization file, not a live whole-store baseline:
+    // admitted tasks may still be writing other files until drain completes.
+    const authorizationPath = path.join(protectedRoot, 'company-access.json')
+    const authorization = fs.existsSync(authorizationPath) ? regular(authorizationPath) : null
+    if (authorization && !retention.verify(authorization, authorization).pass) throw Error('authorization_reference_invalid')
     const state = gate.prepare(request)
     record({ configuration, run: state.run, baseline: null, logicalHash: null, recovered: false, pending: 'prepare' })
-    const initial = sealed.seal({ groups: { protected: protectedRoot }, logical: null, binding: { configuration, run: state.run, stage: 'prepared' } })
+    const initial = sealed.seal({ groups: {}, logical: { authorization: authorization ? authorization.toString('base64') : null }, binding: { configuration, run: state.run, stage: 'prepared' } })
     const evidence = readRecord(); evidence.initial = initial; record(evidence)
     return state
   }
@@ -181,12 +186,12 @@ function createMaintenance ({ root, ownerPassword, serviceCredentials, jobs, pro
     taskIdle()
     isolated(true)
     const initial = sealed.read(evidence.initial, { configuration, run: state.run, stage: 'prepared' })
-    const authorization = 'company-access.json', before = initial.groups.protected.files[authorization]
+    const authorization = 'company-access.json', before = initial.logical.authorization
     const present = fs.existsSync(path.join(protectedRoot, authorization))
     if (Boolean(before) !== present) throw Error('authorization_membership_changed')
     if (before) {
       if (digest(regular(retentionPath)) !== retentionPin) throw Error('preservation_verifier_changed')
-      const proof = retention.verify(Buffer.from(before.bytes, 'base64'), regular(path.join(protectedRoot, authorization)))
+      const proof = retention.verify(Buffer.from(before, 'base64'), regular(path.join(protectedRoot, authorization)))
       if (!proof.pass) throw Error('pre_isolation_authorization_unexplained')
       evidence.preIsolationAuthorization = { immutable: proof.nonAudit.immutableObservedSha256, appended: proof.audit.appendedCount, ownerActorIsHumanApproval: false }
     }
