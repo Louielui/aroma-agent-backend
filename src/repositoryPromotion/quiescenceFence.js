@@ -4,7 +4,26 @@ const fs=require('node:fs'),cp=require('node:child_process'),http=require('node:
 const HEADER='x-aroma-quiescence-lease'
 function installFence(runtime,{serviceToken=()=>null,controlDirectory,internalOrigins=['http://127.0.0.1:8090','http://127.0.0.1:8091']}){
  const restores=[],rawFs={...fs},fdPaths=new Map(),timerScopes=new Map()
- const patch=(object,key,value)=>{const old=object[key];restores.push(()=>{object[key]=old});object[key]=value}
+ const custom=require('node:util').promisify.custom
+ const patch=(object,key,value)=>{
+  const old=object[key]
+  // Preserve Node's API descriptors, including multi-result promisification.
+  // Merely copying the original custom function would bypass admission: execute
+  // that native implementation inside a lease and retain its actual child too.
+  for(const property of Reflect.ownKeys(old)){
+   const descriptor=Object.getOwnPropertyDescriptor(old,property)
+   if(property===custom&&typeof old[property]==='function'){
+    const nativeCustom=old[property]
+    const promisified=function(...args){return runtime.call(()=>{
+     const result=Reflect.apply(nativeCustom,this,args)
+     if(result?.child){const release=runtime.hold();result.child.once('close',()=>queueMicrotask(release))}
+     return result
+    },{kind:'promisified'})}
+    Object.defineProperty(value,property,{value:promisified,configurable:descriptor.configurable,enumerable:descriptor.enumerable,writable:false})
+   }else Object.defineProperty(value,property,descriptor)
+  }
+  restores.push(()=>{object[key]=old});object[key]=value
+ }
  function protectedControl(args,ancestors=false){
   const path=require('node:path'),root=path.resolve(controlDirectory).toLowerCase()
   for(let a of args){
@@ -93,11 +112,12 @@ function installFence(runtime,{serviceToken=()=>null,controlDirectory,internalOr
  const setIntervalRaw=globalThis.setInterval,clearIntervalRaw=globalThis.clearInterval
  const scheduledError=error=>{if(!/^(deployment_(?:draining|frozen)|gate_(?:busy|integrity_unconfirmed)|runtime_closed)$/.test(error.message))queueMicrotask(()=>{throw error})}
  patch(globalThis,'setInterval',(callback,delay,...args)=>{
+  if(typeof callback!=='function')return setIntervalRaw(callback,delay,...args)
   const owner=runtime.current(),foreground=owner&&owner.kind!=='startup'
   const release=foreground?runtime.hold(owner):null
-  const timer=setIntervalRaw(()=>{
-   if(foreground){runtime.enter(owner,()=>callback(...args));return}
-   runtime.run(()=>callback(...args),{kind:'scheduled',forceRoot:true}).catch(scheduledError)
+  const timer=setIntervalRaw(function(){
+   if(foreground){runtime.enter(owner,()=>Reflect.apply(callback,this,args));return}
+   runtime.run(()=>Reflect.apply(callback,this,args),{kind:'scheduled',forceRoot:true}).catch(scheduledError)
   },delay)
   if(release)timerScopes.set(timer,release)
   return timer
@@ -105,16 +125,17 @@ function installFence(runtime,{serviceToken=()=>null,controlDirectory,internalOr
  patch(globalThis,'clearInterval',timer=>{const release=timerScopes.get(timer);if(release){timerScopes.delete(timer);release()}return clearIntervalRaw(timer)})
  const setTimeoutRaw=globalThis.setTimeout,clearTimeoutRaw=globalThis.clearTimeout
  patch(globalThis,'setTimeout',(callback,delay,...args)=>{
+  if(typeof callback!=='function')return setTimeoutRaw(callback,delay,...args)
   const owner=runtime.current(),retain=Boolean(owner)
   const release=retain?runtime.hold(owner):null
-  const timer=setTimeoutRaw(()=>{
+  const timer=setTimeoutRaw(function(){
    timerScopes.delete(timer)
    try{
     // A finished periodic callback scheduling its next iteration is new work.
     // Promises still pending under the old scope keep ordinary timeout/retry
     // callbacks attached to that already admitted operation.
-    if(retain&&(!['startup','scheduled'].includes(owner.kind)||!owner.done||owner.promises>0))runtime.enter(owner,()=>callback(...args))
-    else runtime.run(()=>callback(...args),{kind:'scheduled',forceRoot:true}).catch(scheduledError)
+    if(retain&&(!['startup','scheduled'].includes(owner.kind)||!owner.done||owner.promises>0))runtime.enter(owner,()=>Reflect.apply(callback,this,args))
+    else runtime.run(()=>Reflect.apply(callback,this,args),{kind:'scheduled',forceRoot:true}).catch(scheduledError)
    }finally{release?.()}
   },delay)
   if(release)timerScopes.set(timer,release)
@@ -152,9 +173,22 @@ function installFence(runtime,{serviceToken=()=>null,controlDirectory,internalOr
  for(const module of [http,https])for(const name of ['request','get']){
   const original=module[name]
   patch(module,name,(...args)=>runtime.call(()=>{
-   const first=args[0],isUrl=typeof first==='string'||first instanceof URL,opts={...(isUrl?(typeof args[1]==='object'?args[1]:{}):first)}
-   const url=isUrl?new URL(first):new URL((module===https?'https:':'http:')+'//'+(opts.hostname||opts.host||'localhost')+':'+(opts.port||(module===https?443:80)))
-   opts.headers=Object.fromEntries(headers(url,opts.headers));if(isUrl){if(typeof args[1]==='object')args[1]=opts;else args.splice(1,0,opts)}else args[0]=opts
+   const first=args[0],isUrl=typeof first==='string'||first instanceof URL,opts=isUrl?args[1]:first
+   let target
+   try{target={...(isUrl?require('node:url').urlToHttpOptions(new URL(first)):{}),...(typeof opts==='object'?opts:{})}}catch(_){}
+   const hostname=target?.hostname||target?.host,protocol=target?.protocol||(module===https?'https:':'http:'),port=target?.port||target?.defaultPort||target?.agent?.defaultPort||(module===https?443:80)
+   const scope=runtime.current(),lease=scope&&!target?.socketPath&&hostname==='127.0.0.1'&&internalOrigins.includes(protocol+'//127.0.0.1:'+port)?scope.lease.id:null
+   const initial=target?.headers
+   // Node headers are objects (array-valued fields allowed) or flat raw arrays.
+   // Do not route them through WHATWG Headers or normalize unrelated metadata.
+   let updated=initial
+   if(Array.isArray(initial)){
+    if(initial.length%2===0){const next=[];let removed=false;for(let i=0;i<initial.length;i+=2){if(typeof initial[i]==='string'&&initial[i].toLowerCase()===HEADER)removed=true;else next.push(initial[i],initial[i+1])}if(lease)next.push(HEADER,lease);if(removed||lease)updated=next}
+   }else if(initial==null||typeof initial==='object'){
+    const keys=Object.keys(initial||{}).filter(k=>k.toLowerCase()===HEADER)
+    if(keys.length||lease){updated={...initial};for(const key of keys)delete updated[key];if(lease)updated[HEADER]=lease}
+   }
+   if(updated!==initial){const next={...(typeof opts==='object'?opts:{}),headers:updated};if(isUrl){if(typeof args[1]==='function'||args.length===1)args.splice(1,0,next);else args[1]=next}else args[0]=next}
    const release=runtime.hold();let req
    try{req=original(...args)}catch(e){release();throw e}
    req.once('close',()=>queueMicrotask(release));return req
