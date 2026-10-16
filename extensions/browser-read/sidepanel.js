@@ -82,6 +82,8 @@ function presentWages(p){
  const details=document.createElement('details');details.id='wage-details';const title=document.createElement('summary');title.textContent='查看職位薪率明細';const text=document.createElement('pre');text.textContent=p.details;details.append(title,text);box.append(details)
 }
 function present(r){
+ let common=el('unified-status');if(common)common.remove()
+ if(r.unifiedStatus){common=document.createElement('p');common.id='unified-status';common.textContent='共用任務 · '+r.unifiedStatus.executionState+' · '+r.unifiedStatus.coverage+' · 目標尚未完成核實\n'+r.unifiedStatus.outcomes.map(o=>o.ownerQuote+' · 尚未完成核實').join('\n');el('answer').append(common)}
  workFromRecord(r)
  job=r;el('recover').hidden=r.state!=='processing';el('welcome').hidden=true;el('messages').replaceChildren();
  const rows=r.messages||[{id:r.id,question:r.question,state:r.state,result:r.result}];

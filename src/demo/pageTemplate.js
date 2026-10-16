@@ -18,6 +18,6 @@ function assemblePage (p) {
     html = html.split(key).join(value)
   }
   for (const key of Object.keys(parts)) if (html.includes(key)) throw Error('invalid_page_assets')
-  return html
+  return html.replace('data-unified-task-intake="false"', 'data-unified-task-intake="' + String(p.unifiedIntake === true) + '"')
 }
 module.exports = { assemblePage, SCRIPT_BOUNDARY }
