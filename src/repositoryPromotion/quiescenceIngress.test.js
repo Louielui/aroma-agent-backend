@@ -52,7 +52,7 @@ test('Native execution and its real child process finish before freeze without c
  assert.equal(fs.readFileSync(path.join(f.directory,'data','report'),'utf8'),'finished')
  assert.equal(fs.readFileSync(path.join(f.directory,'data','native-input'),'utf8'),'input-finished')
 })
-test('business filesystem cannot modify the Gate control records even while open',async t=>{const f=await fixture(t);assert.equal((await f.send('control-write')).error,'deployment_control_path_forbidden')})
+test('business filesystem cannot modify Gate records or remove their parent directory even while open',async t=>{const f=await fixture(t);assert.equal((await f.send('control-write')).error,'deployment_control_path_forbidden');assert.equal((await f.send('delete-control-parent')).error,'deployment_control_path_forbidden');assert.equal(fs.existsSync(path.join(f.directory,'gate','gate.json')),true)})
 test('real persisted pending Browser consent refuses freeze without cancellation or recovery mutation',async t=>{const f=await fixture(t),prepared=await f.send('native');assert.equal(prepared.result.state,'awaiting_consent');const file=path.join(f.directory,'data','reads',prepared.result.id+'.json'),before=fs.readFileSync(file);await f.send('prepare');assert.match((await f.send('freeze')).error,/participant_not_idle/);assert.deepEqual(fs.readFileSync(file),before)})
 test('background interval writes while open, skips new ticks during drain and cannot mutate after freeze',async t=>{
  const f=await fixture(t,'background'),file=path.join(f.directory,'data','ticks')

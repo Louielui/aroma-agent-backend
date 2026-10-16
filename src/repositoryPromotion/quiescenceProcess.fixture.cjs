@@ -59,6 +59,7 @@ process.on('message',async ({id,command})=>{
   else if(command==='truncate-read')result=fs.readFileSync(path.join(data,'get'),{flag:'w'})
   else if(command==='corrupt'){raw.writeFileSync(path.join(directory,'gate','gate.json'),'{broken');result='corrupt'}
   else if(command==='control-write'){fs.writeFileSync(path.join(directory,'gate','gate.json'),'forged');result='written'}
+  else if(command==='delete-control-parent'){fs.rmSync(directory,{recursive:true,force:true});result='deleted'}
   else if(command==='close'){
    if(background)clearInterval(background);host.close();if(server){server.closeAllConnections();server.close()};process.send({id,result:'closed'});process.disconnect();return
   }

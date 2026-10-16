@@ -5,7 +5,7 @@ const HEADER='x-aroma-quiescence-lease'
 function installFence(runtime,{serviceToken=()=>null,controlDirectory,internalOrigins=['http://127.0.0.1:8090','http://127.0.0.1:8091']}){
  const restores=[],rawFs={...fs},fdPaths=new Map(),timerScopes=new Map()
  const patch=(object,key,value)=>{const old=object[key];restores.push(()=>{object[key]=old});object[key]=value}
- function protectedControl(args){
+ function protectedControl(args,ancestors=false){
   const path=require('node:path'),root=path.resolve(controlDirectory).toLowerCase()
   for(let a of args){
    if(typeof a==='number')a=fdPaths.get(a)
@@ -16,11 +16,12 @@ function installFence(runtime,{serviceToken=()=>null,controlDirectory,internalOr
    while(!rawFs.existsSync(probe)&&path.dirname(probe)!==probe){tail.unshift(path.basename(probe));probe=path.dirname(probe)}
    if(rawFs.existsSync(probe))resolved=path.join(rawFs.realpathSync(probe),...tail)
    resolved=resolved.toLowerCase()
-   if(resolved===root||resolved.startsWith(root+path.sep))throw Error('deployment_control_path_forbidden')
+   if(resolved===root||resolved.startsWith(root+path.sep)||(ancestors&&root.startsWith(resolved+path.sep)))throw Error('deployment_control_path_forbidden')
   }
  }
  const pathsFor=(name,args)=>args.slice(0,['rename','renameSync','copyFile','copyFileSync','cp','cpSync','link','linkSync','symlink','symlinkSync'].includes(name)?2:1)
- function mutation(fn,args){protectedControl(pathsFor(fn.name,args));return runtime.write(()=>fn(...args))}
+ const destructive=name=>/^(?:rename|rm|rmdir|cp|copyFile|link|symlink|chmod|fchmod|lchmod|chown|fchown|lchown)/.test(name)
+ function mutation(fn,args){protectedControl(pathsFor(fn.name,args),destructive(fn.name));return runtime.write(()=>fn(...args))}
  const sync=['writeFileSync','appendFileSync','writeSync','writevSync','renameSync','unlinkSync','mkdirSync','rmdirSync','rmSync','copyFileSync','cpSync','truncateSync','ftruncateSync','chmodSync','fchmodSync','chownSync','fchownSync','lchownSync','lchmodSync','utimesSync','futimesSync','lutimesSync','linkSync','symlinkSync','mkdtempSync','fsyncSync','fdatasyncSync']
  for(const name of sync)if(typeof fs[name]==='function')patch(fs,name,(...args)=>{
   if(['writeSync','writevSync'].includes(name)&&[1,2].includes(args[0]))return rawFs[name](...args)
@@ -37,7 +38,7 @@ function installFence(runtime,{serviceToken=()=>null,controlDirectory,internalOr
   patch(fs,name,(...args)=>{
    const callback=args.pop()
    if(typeof callback!=='function')throw Error('callback_required')
-   protectedControl(pathsFor(name,args))
+   protectedControl(pathsFor(name,args),destructive(name))
    let invoked=false
    runtime.run(()=>new Promise(resolve=>original(...args,(error,...values)=>{
     invoked=true;callback(error,...values);resolve()
@@ -47,7 +48,7 @@ function installFence(runtime,{serviceToken=()=>null,controlDirectory,internalOr
  const promises=fs.promises
  for(const name of sync.map(n=>n.slice(0,-4)).filter(n=>typeof promises[n]==='function')){
   const original=promises[name].bind(promises)
-  patch(promises,name,(...args)=>{protectedControl(pathsFor(name,args));return runtime.run(()=>original(...args))})
+  patch(promises,name,(...args)=>{protectedControl(pathsFor(name,args),destructive(name));return runtime.run(()=>original(...args))})
  }
  // FileHandle methods bypass fs exports. Refuse opening a writable FileHandle;
  // read-only FileHandles also expose mutators, so they are refused as well. No
