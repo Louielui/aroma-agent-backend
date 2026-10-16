@@ -439,44 +439,4 @@ function updateDispatch (id, patch) {
 function listDispatches () { return (load().dispatches || []).slice().reverse() }
 function getDispatch (id) { return (load().dispatches || []).find(x => x.id === id) || null }
 
-// U1 reservations are task metadata, never a Decision or an approval. Reuse the
-// same lock and atomic writer as legacy tasks; preserve every unrelated field.
-function reserveUnifiedTask({envelope,payloadHash,principal,surface,scope,sourceHash}){
- const contract=require('../intake/unifiedContract'),b=contract.validate(envelope)
- if(principal!=='owner'||!['main','chrome'].includes(surface)||payloadHash!==contract.payloadHash(b)||!Array.isArray(scope)||scope.length>20||Buffer.byteLength(JSON.stringify(scope))>12000||sourceHash!==null&&!/^[a-f0-9]{64}$/.test(sourceHash))throw Error('invalid_unified_request')
- return withLock(()=>{
-  const db=load()
-  for(const t of db.tasks){const u=t.unifiedIntake;if(u?.version!==1||u.principal!==principal)continue
-   const old=u.attempts.find(a=>a.clientSubmissionId===b.clientSubmissionId)
-   if(old){if(old.payloadHash!==payloadHash||old.surface!==surface)throw Error('submission_conflict');return{taskId:t.id,goalId:t.ownerGoal.goalId,attemptId:old.id,revision:u.revision,replayed:true,executionRef:old.executionRef}}
-  }
-  let task=b.operation==='continue'?db.tasks.find(t=>t.id===b.taskRef&&t.unifiedIntake?.principal===principal):null
-  if(b.operation==='continue'){
-   if(!task||task.unifiedIntake.version!==1)throw Error('task_not_found')
-   if(surface!=='main')throw Error('owner_session_required')
-   if(task.unifiedIntake.revision!==b.expectedRevision)throw Error('revision_conflict')
-   if(task.ownerGoal.originalObjective!==b.message)throw Error('new_objective_requires_new_task')
-   if(task.unifiedIntake.attempts.length>=32)throw Error('task_attempt_limit')
-  }else{
-   let id;do{id='task_'+uuidv4()}while(db.tasks.some(t=>t.id===id))
-   const requestId=uuidv4(),goal=require('../intake/goal/ownerGoal').createGoal({objective:b.message,requestId})
-   task={id,title:b.message.slice(0,180),note:'',decision_id:null,state:'todo',created_at:new Date().toISOString(),ownerGoal:goal,unifiedIntake:{version:1,principal,revision:0,bindings:[],attempts:[]}}
-   db.tasks.push(task)
-  }
-  const u=task.unifiedIntake,a={id:uuidv4(),requestId:u.attempts.length?uuidv4():task.ownerGoal.requestId,clientSubmissionId:b.clientSubmissionId,payloadHash,surface,conversationId:b.conversationId,scope:structuredClone(scope),sourceHash,executionRef:null}
-  u.attempts.push(a);u.revision++
-  if(!u.bindings.some(x=>x.surface===surface&&x.conversationId===b.conversationId))u.bindings.push({surface,conversationId:b.conversationId})
-  db.events.push({id:'evt_'+uuidv4(),type:'task.intake_reserved',entity_id:task.id,actor:'aroma',at:new Date().toISOString()})
-  save(db);return{taskId:task.id,goalId:task.ownerGoal.goalId,attemptId:a.id,revision:u.revision,replayed:false}
- })
-}
-function linkUnifiedAttempt(binding,ref){
- require('../intake/unifiedContract').executionRef(ref)
- return withLock(()=>{
-  const db=load(),task=db.tasks.find(t=>t.id===binding?.taskId),u=task?.unifiedIntake,a=u?.attempts.find(a=>a.id===binding.attemptId)
-  if(!a||u.attempts.at(-1)!==a||binding.goalId!==task.ownerGoal.goalId||u.revision!==binding.revision)throw Error('revision_conflict')
-  if(a.executionRef){if(JSON.stringify(a.executionRef)!==JSON.stringify(ref))throw Error('execution_ref_conflict');return}
-  a.executionRef=structuredClone(ref);save(db)
- })
-}
-module.exports = { reserveUnifiedTask, linkUnifiedAttempt, persistIntake, recordLLMUsage, recordApprovalEvent, listApprovalEvents, APPROVAL_EVENT_TYPES, listDecisions, listTasks, getTask, setTaskProposalId, listEvents, usageSummary, createDispatch, updateDispatch, listDispatches, getDispatch }
+module.exports = { persistIntake, recordLLMUsage, recordApprovalEvent, listApprovalEvents, APPROVAL_EVENT_TYPES, listDecisions, listTasks, getTask, setTaskProposalId, listEvents, usageSummary, createDispatch, updateDispatch, listDispatches, getDispatch }

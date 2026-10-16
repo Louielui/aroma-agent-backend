@@ -14,7 +14,7 @@ function readView(r,now){
  if(!ID.test(r?.id||'')||r.workflow!=='browser_context_read'||!READ_STATES.has(r.state)||typeof r.question!=='string'||!Array.isArray(r.timeline)||r.timeline.length>50)throw Error('browser_work_unavailable')
  const timeline=r.timeline.map(e=>({stage:READ_PHASES.has(e.stage)?e.stage:'unknown',at:time(e.at)})),last=timeline.at(-1),startedAt=timeline.find(e=>e.stage==='consent_consumed_before_dispatch')?.at||null,terminalStage={completed:'answer_saved',failed:'failed_no_retry',cancelled:'cancelled',interrupted:'process_restarted_no_retry'}[r.state],endedAt=terminalStage&&last?.stage===terminalStage?last.at:null
  const phase=last?.stage||'unknown',active=r.state==='processing'&&phase!=='unknown'&&!!last?.at&&!!startedAt
- return {id:r.id,state:r.state,phase,active,startedAt,endedAt,elapsedSeconds:clock(startedAt,endedAt,active?now:NaN),updatedAt:last?.at||null,question:r.question.slice(0,1000),selection:selection(r.selection),answer:answer(r.result),sourceOrigin:origin(r.source?.origin),...(r.unifiedTask?{unifiedTask:structuredClone(r.unifiedTask)}:{})}
+ return {id:r.id,state:r.state,phase,active,startedAt,endedAt,elapsedSeconds:clock(startedAt,endedAt,active?now:NaN),updatedAt:last?.at||null,question:r.question.slice(0,1000),selection:selection(r.selection),answer:answer(r.result),sourceOrigin:origin(r.source?.origin)}
 }
 function createBrowserWork({reads,operators=()=>[],audits=()=>[],now=Date.now}){
  function snapshot(){
