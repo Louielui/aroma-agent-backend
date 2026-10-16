@@ -65,7 +65,12 @@ function createGate ({ directory, participants, ownerPassword, serviceCredential
     try {
       if (fs.lstatSync(directory).isSymbolicLink()) throw Error('gate_integrity_unconfirmed')
       fd = fs.openSync(lock, 'wx', 0o600)
-    } catch (e) { throw Error(e.code === 'EEXIST' ? 'gate_busy' : 'gate_integrity_unconfirmed') }
+    } catch (e) {
+      // Windows can report EPERM while another process's deleted lock handle is
+      // still pending closure. Refuse admission and let the bounded caller retry
+      // acquisition; never remove a lock, assume ownership or run the operation.
+      throw Error(e.code === 'EEXIST' || (process.platform === 'win32' && e.code === 'EPERM') ? 'gate_busy' : 'gate_integrity_unconfirmed')
+    }
     try { return fn() } finally { fs.closeSync(fd); fs.unlinkSync(lock) }
   }
   function event (s, name, details = {}) { s.events.push({ name, at: clock(), ...details }) }

@@ -5,6 +5,29 @@ tracking, persistence fencing and the independent launcher are implemented and
 tested offline. Independent external-memory writer attestation, real Windows
 launch bindings and deployment-driver integration remain unverified.
 
+## Runtime compatibility repair
+
+The fence preserves native function descriptors and custom promisification. A
+native custom promisifier runs inside admission, with its returned Promise and
+actual ChildProcess retained; copying an unfenced custom function is insufficient.
+Timer callbacks retain native arguments, receiver and invalid-callback errors.
+HTTP/HTTPS options and URL overloads retain native validation. Only the internal
+lease header is removed/replaced: raw flat headers, array-valued fields, casing
+and unrelated request metadata are otherwise unchanged. IPv6 is never parsed by
+concatenating an unbracketed hostname into a URL.
+
+The OPEN regression was reproduced with diagnostic control-I/O instrumentation:
+Windows reported `EPERM` opening `gate.lock` during concurrent acquisition. Such
+an acquisition remains refused, now with the same bounded retry as `EEXIST`.
+There is no lock removal, ownership inference, lease expiry or admission without
+a successfully acquired lock. Persistent denial still fails closed.
+
+This is one descriptor-preserving adapter, one Node HTTP argument adapter and a
+control-lock contention correction, not application-specific exception lists.
+Broader monkey-patch compatibility or independent native/external writers remain
+outside a complete-enforcement claim. Do not add API exceptions to claim PASS;
+reevaluate explicit admission boundaries if further broad incompatibility appears.
+
 The reviewed `open -> draining -> frozen -> open` protocol is retained. A child
 admission may refer to an existing unpredictable parent lease while draining; it
 acquires its own persistent lease and still needs ordinary route authentication.
