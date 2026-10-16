@@ -18,15 +18,16 @@ test('Administrative retrieval constructs OAuth from a fixture grant without any
 test('Only fixed me profile/list/get reads escape the Gmail SDK closure; neither watch nor send is reachable', async () => {
   const calls = [], oauth = { transporter: { defaults: {} }, getAccessToken: async () => ({ token: 'fixture-secret' }), getTokenInfo: async () => ({ scopes: ['https://www.googleapis.com/auth/gmail.readonly'] }) }
   const client = { users: { getProfile: async (args, opts) => { calls.push({ args, opts }); return { data: { emailAddress: 'chef@example.test' } } }, messages: {
-    list: async (args, opts) => { calls.push({ args, opts }); return { data: { messages: [] } } }, get: async (args, opts) => { calls.push({ args, opts }); return { data: { id: args.id } } }, send: () => assert.fail('send must not run') } } }
+    list: async (args, opts) => { calls.push({ args, opts }); return { data: { messages: [] } } }, get: async (args, opts) => { calls.push({ args, opts }); return { data: { id: args.id } } }, send: () => assert.fail('send must not run') }, threads:{get:async(args,opts)=>{calls.push({args,opts});return {data:{id:args.id,messages:[]}}}} } }
   for (const mailbox of ['owner', 'admin']) {
     const reader = api.createGmailReader(mailbox, { ownerOAuth: () => oauth, adminOAuth: () => ({ client: oauth }), serviceFactory: (name, version) => { assert.equal(name, 'gmail'); assert.equal(version, 'v1'); return client } })
-    assert.deepEqual(Object.keys(reader), ['identity', 'metadata', 'listMessages', 'getMessage']); assert.ok(Object.isFrozen(reader))
+    assert.deepEqual(Object.keys(reader), ['identity', 'metadata', 'listMessages', 'getThread', 'getMessage']); assert.ok(Object.isFrozen(reader))
     assert.ok(!JSON.stringify(await reader.identity()).includes('fixture-secret'))
-    await reader.metadata(); await reader.listMessages({ q: 'is:unread', userId: 'other', url: 'https://evil.test' }); await reader.getMessage('abc123', true)
+    await reader.metadata(); await reader.listMessages({ q: 'is:unread', userId: 'other', url: 'https://evil.test' }); await reader.getMessage('abc123', true); await reader.getThread('def456')
   }
   assert.ok(calls.every(c => c.args.userId === 'me' && c.opts.retry === false && c.opts.maxRedirects === 0 && c.opts.signal))
   assert.equal(calls[1].args.maxResults, 10); assert.deepEqual(calls[1].args.labelIds, ['INBOX']); assert.equal(calls[1].args.includeSpamTrash, false); assert.equal(calls[1].args.url, undefined)
   assert.equal(calls[2].args.format, 'full'); assert.match(calls[2].args.fields, /internalDate/)
+  assert.equal(calls[3].args.id,'def456');assert.equal(calls[3].args.format,'full');assert.match(calls[3].args.fields,/messages/)
   assert.throws(() => api.createGmailReader('other'), /invalid_mailbox/)
 })
