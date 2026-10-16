@@ -23,12 +23,17 @@ test('actual Direct Backend and Native Browser Read admissions are refused after
  assert.equal((await f.request('/api/v1/browser-read',{op:'prepare',requestId:randomUUID(),question:'Heading?',source})).status,503)
  assert.equal(fs.existsSync(path.join(f.directory,'data','reads')),false)
 })
-for(const route of ['/detached','/child'])test('admitted '+route+' retains lease until delayed final write; frozen rejects actual sync/async persistence bypass',async t=>{
+for(const route of ['/detached','/child'])test('admitted '+route+' retains final writes; unknown child descendants block freeze',async t=>{
  const f=await fixture(t)
  assert.equal((await f.request(route,{})).status,200)
  assert.equal((await f.send('prepare')).result.phase,'draining')
  assert.ok((await f.send('active')).result.leases.length>0)
  assert.match((await f.send('freeze')).error,/writers_not_drained/)
+ if(route==='/child'){
+  for(let i=0;i<100&&!fs.existsSync(path.join(f.directory,'data','child'));i++)await new Promise(r=>setTimeout(r,20))
+  assert.equal(fs.readFileSync(path.join(f.directory,'data','child'),'utf8'),'finished')
+  assert.match((await f.send('freeze')).error,/writers_not_drained|participant_not_idle/);return
+ }
  for(let i=0;i<100&&(await f.send('active')).result.leases.length;i++)await new Promise(r=>setTimeout(r,20))
  assert.equal((await f.send('freeze')).result.phase,'frozen')
  assert.equal(fs.readFileSync(path.join(f.directory,'data',route.slice(1)),'utf8'),'finished')
@@ -42,13 +47,12 @@ test('actual Bridge dispatch is blocked during drain and cannot create an outcom
  assert.equal((await f.request('/complete',{prompt:'fixture'})).status,503)
  assert.equal(fs.existsSync(path.join(f.directory,'data','bridge')),false)
 })
-test('Native execution and its real child process finish before freeze without cancellation',async t=>{
+test('Native execution finishes without cancellation; unverified descendant isolation blocks freeze',async t=>{
  const f=await fixture(t,'native'),running=f.send('native');await f.startedExecuting
  await f.send('prepare');assert.match((await f.send('freeze')).error,/writers_not_drained/)
  assert.match((await f.send('native')).error,/deployment_draining/)
  assert.equal((await running).result.state,'completed')
- for(let i=0;i<100&&(await f.send('active')).result.leases.length;i++)await new Promise(r=>setTimeout(r,20))
- assert.equal((await f.send('freeze')).result.phase,'frozen')
+ assert.match((await f.send('freeze')).error,/writers_not_drained|participant_not_idle/)
  assert.equal(fs.readFileSync(path.join(f.directory,'data','report'),'utf8'),'finished')
  assert.equal(fs.readFileSync(path.join(f.directory,'data','native-input'),'utf8'),'input-finished')
 })
