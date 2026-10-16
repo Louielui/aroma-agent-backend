@@ -1232,7 +1232,9 @@ function createApp (options = {}) {
     fs.mkdirSync(dir,{recursive:true});fs.writeFileSync(path.join(dir,require('node:crypto').randomUUID()+'.json'),JSON.stringify({...event,at:new Date().toISOString()}),{flag:'wx',mode:0o600})
   }}})
   const browserReadStore = require('./browserRead/store').createStore(path.join(require('./store/dataDir').resolveDataDir(), 'browser-context-reads'))
+  const unifiedIntake=require('./intake/unifiedIntake').createUnifiedIntake({store,reads:browserReadStore,enabled:()=>process.env.UNIFIED_TASK_INTAKE==='true'})
   const browserRead = require('./browserRead/service').createBrowserRead({
+    unifiedIntake,
     taskRunner: require('./browserRead/contextTask').createContextTask({ legacy: readTask, drive: liveContext.drive }),
     store: browserReadStore,
     selection: () => modelCenter.read().brain,
@@ -1243,6 +1245,7 @@ function createApp (options = {}) {
   })
   app.use('/api/v1/browser-read', requireServiceToken)
   app.use(require('./browserRead/routes').createRouter({ service: browserRead }))
+  app.use(require('./intake/unifiedRoutes').createRouter({intake:unifiedIntake,browserRead,conversations:capturedConversationStore}))
   const browserOperatorCompanyId = Number(process.env.SEVEN_SHIFTS_COMPANY_ID)
   const browserOperator = require('./browserOperator/service').createOperator({
     companyId: browserOperatorCompanyId,

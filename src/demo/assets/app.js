@@ -3428,6 +3428,7 @@
     data.turns.forEach(function (r) {
       var current = r.id === data.latest.id, turn = el(current ? 'article' : 'details', 'browser-work-turn')
       if (!current) { turn.setAttribute('data-browser-turn', r.id); turn.open = expanded.includes(r.id); turn.appendChild(el('summary', '', r.question || t('browserWork.operator'))) } else if (r.question) turn.appendChild(el('h3', '', r.question))
+      if (r.unifiedTask) { var openTask = el('button', 'ghost', t('unified.open')); openTask.type = 'button'; openTask.addEventListener('click', function () { bwClose(); showUnifiedTask(r.unifiedTask.taskId) }); turn.appendChild(openTask) }
       if (r.answer && typeof r.answer.text === 'string') turn.appendChild(el('div', 'browser-work-answer', r.answer.text))
       else turn.appendChild(el('p', '', r.state === 'processing' ? t('browserWork.processing') : t('browserWork.noAnswer')))
       var evidence = el('details'); evidence.appendChild(el('summary', '', t('browserWork.evidence')))
@@ -3436,6 +3437,53 @@
     })
     bwNode('browser-work-overlay').querySelector('.browser-work-columns').scrollTop = oldScroll
   }
+
+  // Thin explicit transport into the shared bounded read intake. Viewing never
+  // submits, merges histories or carries a browser grant into Main.
+  var unifiedBusy = false
+  async function showUnifiedTask(taskId, targetConversation) {
+    if (!active && !targetConversation) newConversation(false)
+    var conv = targetConversation || active, card = addBot(t('unified.scope'), conv)
+    try {
+      var response = await fetch('/api/v1/demo/task-intake/' + encodeURIComponent(taskId), { credentials: 'same-origin' })
+      if (!response.ok) throw Error('unavailable')
+      var task = await response.json(), box = card.body
+      box.appendChild(el('p', '', task.objective)); box.appendChild(el('p', '', task.executionState + ' · ' + task.coverage + ' · ' + t('unified.unverified')))
+      task.outcomes.forEach(function (o) { box.appendChild(el('p', '', o.ownerQuote + ' · ' + o.blockers.join(', '))) })
+      if (task.result) box.appendChild(el('p', '', task.result))
+      if (['running', 'awaiting_authorization'].includes(task.executionState)) {
+        var stopTask = el('button', 'ghost', t('unified.cancel')); stopTask.type = 'button'
+        stopTask.addEventListener('click', async function () {
+          stopTask.disabled = true
+          try {
+            var response = await fetch('/api/v1/demo/task-intake/' + encodeURIComponent(task.taskId) + '/cancel', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ attemptId: task.attemptId, expectedRevision: task.revision }) })
+            if (!response.ok) throw Error('unavailable')
+            showUnifiedTask(task.taskId, conv)
+          } catch (_) { addError(t('unified.unavailable'), conv) }
+        }); box.appendChild(stopTask)
+      } else if (task.continuationEnabled) {
+        var button = el('button', 'ghost', t('unified.continue')); button.type = 'button'
+        button.addEventListener('click', function () { if (active !== conv || pending) return; button.disabled = true; submitUnifiedTask(task.objective, conv, task) })
+        box.appendChild(button)
+      }
+    } catch (_) { addError(t('unified.unavailable'), conv) }
+  }
+  async function submitUnifiedTask(message, conv, prior) {
+    if (unifiedBusy) return
+    unifiedBusy = true
+    try {
+      var response = await fetch('/api/v1/demo/task-intake', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ version: 1, operation: prior ? 'continue' : 'start', clientSubmissionId: crypto.randomUUID(), message: message, conversationId: conv.cid, taskRef: prior ? prior.taskId : null, expectedRevision: prior ? prior.revision : null, contextRefs: [] }) })
+      var result = await response.json()
+      if (!response.ok || !result.unifiedTask) throw Error('unavailable')
+      await showUnifiedTask(result.unifiedTask.taskId, conv)
+    } catch (_) { addError(t('unified.unavailable'), conv) } finally { unifiedBusy = false }
+  }
+  if (document.body.dataset.unifiedTaskIntake === 'true') {
+    var startTask = el('button', 'ghost', t('unified.start')); startTask.type = 'button'
+    startTask.addEventListener('click', function () { if (pending || unifiedBusy || !msg.value.trim()) return; var message = msg.value; if (!active) newConversation(false); msg.value = message; autoGrow(); submitUnifiedTask(message, active, null) })
+    send.parentNode.appendChild(startTask)
+  }
+
   async function bwRefresh () {
     if (!browserWork.open || browserWork.busy) return
     bwStopTimers(); browserWork.busy = true; var sequence = ++browserWork.sequence, controller = new AbortController(); browserWork.controller = controller

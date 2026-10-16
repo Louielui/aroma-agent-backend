@@ -195,8 +195,12 @@ function createConversationStore (options = {}) {
    * Called once per completed turn from the UI path and nowhere else. A turn is only
    * written after the reply exists, so a failed turn leaves no half-conversation behind.
    */
-  function appendTurn ({ id, userText, replyText, servedBy = null, now = null, images, operatingRunId = null, developmentPlanRunId = null, codeDiagnosisRunId = null, codeRepairRunId = null, projectWorkRunId = null, taskPlanRunId = null, planningOffer = null, planningContext = null, investigationRunId = null, capabilityGapRunId = null, evidenceReport = null, evidenceReportAttempt = false, hrRecheckId = null, publicAnswerReceipt = null, publicCompletionRequestId = null, ownerGoal = null, ownerGoalReference = null } = {}) {
+  function appendTurn ({ id, userText, replyText, servedBy = null, now = null, images, operatingRunId = null, developmentPlanRunId = null, codeDiagnosisRunId = null, codeRepairRunId = null, projectWorkRunId = null, taskPlanRunId = null, planningOffer = null, planningContext = null, investigationRunId = null, capabilityGapRunId = null, evidenceReport = null, evidenceReportAttempt = false, hrRecheckId = null, publicAnswerReceipt = null, publicCompletionRequestId = null, ownerGoal = null, ownerGoalReference = null, unifiedTask = null } = {}) {
     if (!isValidId(id)) throw new Error('invalid_conversation_id')
+    if(unifiedTask!==null){
+      const {TASK}=require('../intake/unifiedContract'),{ID}=require('../browserRead/contract')
+      if(Object.keys(unifiedTask).sort().join(',')!=='attemptId,goalId,taskId'||!TASK.test(unifiedTask.taskId||'')||!ID.test(unifiedTask.attemptId||'')||!/^[a-f0-9]{64}$/.test(unifiedTask.goalId||''))throw Error('invalid_unified_reference')
+    }
     const attachments = images === undefined ? null : require('../chat/imageAttachments').validateImages(images)
     const ts = now || new Date().toISOString()
 
@@ -205,6 +209,7 @@ function createConversationStore (options = {}) {
     // precisely the erasure ac77ae1 removed from the truth store, and it would apply to
     // the Owner's transcripts rather than to metering.
     const existing = readOne(id, true)
+    if(unifiedTask&&existing?.messages.some(m=>m.role==='assistant'&&m.unifiedTask?.attemptId===unifiedTask.attemptId))return {id,messageCount:existing.messages.length}
     if (isValidId(hrRecheckId) && existing?.messages.some(m => m.role === 'assistant' && m.hrRecheckId === hrRecheckId)) return { id, count: existing.messages.length }
     if (evidenceReport !== null) {
       const prior = existing?.messages.find(m => m.role === 'assistant' && m.evidenceReport?.id === evidenceReport.id)
@@ -229,6 +234,7 @@ function createConversationStore (options = {}) {
     const previousOwnerGoal=goalContract.currentGoal(conversation)
     conversation.messages.push({ role: 'user', content: String(userText == null ? '' : userText), servedBy: null, ts, ...(attachments ? { images: attachments } : {}) })
     const assistantMessage = { role: 'assistant', content: String(replyText == null ? '' : replyText), servedBy: servedBy || null, ts }
+    if(unifiedTask)assistantMessage.unifiedTask=structuredClone(unifiedTask)
     if(ownerGoal!==undefined&&ownerGoal!==null){
       const previous=knownGoals.find(g=>g.goalId===ownerGoalReference)||previousOwnerGoal
       const continuation=require('../actions/chat').parseContinuation(String(userText))
