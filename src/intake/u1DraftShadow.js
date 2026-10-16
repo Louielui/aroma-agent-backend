@@ -56,8 +56,8 @@ const SERVER_FIXED = Object.freeze({
  *   IntakeUpstreamError   on adapter failure
  *   DistillParseError     on parse/schema violation (propagated)
  */
-async function runU1DraftShadow({ instruction, adapter, history, requestId, personaText, replyContext, signal }) {
-  const { system, prompt } = buildU1DraftPrompt({ instruction, history, personaText, replyContext });
+async function runU1DraftShadow({ instruction, adapter, history, requestId, personaText }) {
+  const { system, prompt } = buildU1DraftPrompt({ instruction, history, personaText });
 
   let llmResult;
   try {
@@ -65,7 +65,6 @@ async function runU1DraftShadow({ instruction, adapter, history, requestId, pers
       system,
       maxTokens: U1_MAX_TOKENS,
       temperature: U1_TEMPERATURE,
-      ...(replyContext && signal ? { signal } : {}),
       // Vendor-neutral structured output (U1 ONLY). An adapter that cannot honor
       // it fails closed (thrown here -> IntakeUpstreamError); it is never ignored.
       // The raw text still flows through the UNCHANGED parseU1DraftResponse below.
@@ -93,7 +92,6 @@ async function runU1DraftShadow({ instruction, adapter, history, requestId, pers
     stage: SERVER_FIXED.stage,
     gmailDraftCreated: SERVER_FIXED.gmailDraftCreated,
     persistentMemoryWritten: SERVER_FIXED.persistentMemoryWritten,
-    ...(replyContext ? { actualModel: typeof llmResult?.actualModel === 'string' ? llmResult.actualModel : null, billing: llmResult?.billing || null } : {}),
   };
 }
 

@@ -86,8 +86,6 @@ const FILE_CLASS = Object.freeze({
   'intake/readTask.js': CLASS.MATCHING, // Owner-goal authority guards and separately bilingual wage evidence; translating patterns would alter read admission.
   'context/intentRouting.js': CLASS.MATCHING, // Direct Owner request admission and query binding; matching terms must not be translated.
   'browserRead/contextTask.js': CLASS.MATCHING, // Source admission patterns and separately bilingual evidence output; no resolver may translate admission.
-  'browserRead/gmailReplyTask.js': CLASS.MATCHING, // Exact source admission and bilingual preview status; never translate authorization predicates.
-  'context/gmailReplyContract.js': CLASS.MATCHING, // Owner intent and exact Gmail identity validation, not interface copy.
   'context/sevenShiftsAttendance.js': CLASS.MATCHING, // Bounded attendance intent guards and separately bilingual evidence output; guards must not be translated.
   'context/sevenShiftsComparison.js': CLASS.MATCHING, // Bounded bilingual intent guards and deterministic comparison output; no model instructions.
   'intake/readObligationGap.js': CLASS.INTERFACE,
