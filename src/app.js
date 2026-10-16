@@ -1246,6 +1246,9 @@ function createApp (options = {}) {
   app.use('/api/v1/browser-read', requireServiceToken)
   app.use(require('./browserRead/routes').createRouter({ service: browserRead }))
   app.use(require('./intake/unifiedRoutes').createRouter({intake:unifiedIntake,browserRead,conversations:capturedConversationStore}))
+  const deploymentRuntime = globalThis[Symbol.for('aroma.deploymentQuiescence.runtime')]
+  deploymentRuntime?.registerInspector('browser-read', () => ({ idle: !browserReadStore.all().some(r => ['awaiting_consent','processing'].includes(r.state)) }))
+  deploymentRuntime?.registerInspector('durable-runs', () => ({ idle: runStore.listRuns(Number.MAX_SAFE_INTEGER).every(r => r.timeline?.some(e => /^RECONCILED_/.test(e.stage)) || ['completed','denied','failed','rolled_back','rejected','interrupted','succeeded'].includes(require('./run/run').deriveStatus(r))) }))
   const browserOperatorCompanyId = Number(process.env.SEVEN_SHIFTS_COMPANY_ID)
   const browserOperator = require('./browserOperator/service').createOperator({
     companyId: browserOperatorCompanyId,
@@ -1261,6 +1264,7 @@ function createApp (options = {}) {
     }
   })
   app.use(require('./browserOperator/routes').createRouter({ service: browserOperator }))
+  deploymentRuntime?.registerInspector('browser-operator', () => ({ idle: !browserOperator.inspectAll().some(r => ['ready','planning','awaiting_input','executing'].includes(r.state)) }))
   app.use('/api/v1/browser-client', requireServiceToken)
   app.use(require('./browserRead/clientUpdate').createRouter({reads:browserReadStore,operators:browserOperator.inspectAll,bootCommit:BOOT_COMMIT}))
   const browserWorkView = require('./browserWork/view').createBrowserWork({

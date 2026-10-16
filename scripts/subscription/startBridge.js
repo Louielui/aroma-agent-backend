@@ -1,4 +1,5 @@
 'use strict'
+if (require.main === module) require('../../src/repositoryPromotion/quiescenceBoot').assertStartup('bridge')
 
 // Run as the signed-in owner. The Windows service calls this loopback-only bridge.
 // No login token is copied into the service account and no API credential is used.

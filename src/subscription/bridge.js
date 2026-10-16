@@ -34,6 +34,7 @@ function createBridge ({ token, clientOptions, memoryClientOptions = clientOptio
   if (!validToken(token)) throw new Error('bridge requires a 256-bit local token')
   let busy = false; let memoryBusy = false
   const activeCalls = new Map()
+  globalThis[Symbol.for('aroma.deploymentQuiescence.runtime')]?.registerInspector('bridge-work', () => ({ idle: !busy && !memoryBusy && activeCalls.size === 0 && ![workerFlow,projectTasks,projectWork,projectAdoption,codeRepair].some(w => w?.isActive?.()) }))
   const publicSearch = require('./publicSearch').createSearchCache(async input => {
     const role='public_search',model=require('./publicSearch').MODEL
     activeCalls.set(role,{model,effort:'low',startedAt:new Date().toISOString()})
