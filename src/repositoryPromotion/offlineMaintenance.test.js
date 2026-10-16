@@ -226,7 +226,7 @@ test('snapshot failure is durable across controller reconstruction', async () =>
   } finally { await f.close() }
 })
 
-for (const scenario of ['pending-consent', 'active-timeout', 'service-crash', 'unknown-job', 'corrupt-gate']) test('integrated closed maintenance refuses ' + scenario, async () => {
+for (const scenario of ['invalid-authorization', 'pending-consent', 'active-timeout', 'service-crash', 'unknown-job', 'corrupt-gate']) test('integrated closed maintenance refuses ' + scenario, async () => {
   const f = setup()
   let lease
   try {
@@ -237,6 +237,12 @@ for (const scenario of ['pending-consent', 'active-timeout', 'service-crash', 'u
     if (scenario === 'active-timeout') lease = f.gate().admit('offline-host')
     const configuration = { port: 55439, inventory: scenario === 'unknown-job' ? [...f.jobs, 'imagine-fixture-' + randomUUID()] : [...f.jobs] }
     const maintenance = f.controller(configuration)
+    if (scenario === 'invalid-authorization') {
+      fs.writeFileSync(path.join(f.root, 'protected', 'company-access.json'), '{}')
+      assert.throws(() => maintenance.prepare({ ...credentials, run: randomUUID(), expectedGeneration: 0 }), /authorization_reference_invalid/)
+      assert.equal(maintenance.status().phase, 'draining'); assert.equal(maintenance.status().maintenanceFailed, true)
+      return
+    }
     const state = maintenance.prepare({ ...credentials, run: randomUUID(), expectedGeneration: 0 })
     const request = { ...credentials, run: state.run, expectedGeneration: state.generation }
     if (scenario === 'corrupt-gate') fs.writeFileSync(path.join(f.root, 'gate', 'gate.json'), '{')

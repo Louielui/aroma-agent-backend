@@ -22,7 +22,7 @@ The controller now integrates:
    unknown/unavailable Job evidence, unsupported schema and bounded drain timeout
    fail closed. Only transient `gate_busy` acquisition refusals are retried within
    the original drain deadline; no lock stealing or stale-lease deletion.
-   An auxiliary complete authorization-file read immediately before admission
+   An auxiliary complete authorization-file read immediately after admission
    closure is encrypted as the prepare-time reference. It is not a full live-store
    snapshot: admitted tasks may still be writing other files. Before the
    isolated seal, the pinned existing pure rolling verifier must prove unchanged

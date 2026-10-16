@@ -168,13 +168,13 @@ function createMaintenance ({ root, ownerPassword, serviceCredentials, jobs, pro
     authorize(request)
     if (fs.existsSync(journal)) throw Error('existing_maintenance_record')
     if (sourceIdentity().commit !== source.initial || !jobs.includes(database.job)) throw Error('baseline_identity_changed')
-    // An auxiliary complete authorization file, not a live whole-store baseline:
-    // admitted tasks may still be writing other files until drain completes.
+    const state = gate.prepare(request)
+    record({ configuration, run: state.run, baseline: null, logicalHash: null, recovered: false, pending: 'prepare' })
+    // Admission is closed even if reference validation fails. This auxiliary
+    // complete file is not a claim of a stationary live whole-store baseline.
     const authorizationPath = path.join(protectedRoot, 'company-access.json')
     const authorization = fs.existsSync(authorizationPath) ? regular(authorizationPath) : null
     if (authorization && !retention.verify(authorization, authorization).pass) throw Error('authorization_reference_invalid')
-    const state = gate.prepare(request)
-    record({ configuration, run: state.run, baseline: null, logicalHash: null, recovered: false, pending: 'prepare' })
     const initial = sealed.seal({ groups: {}, logical: { authorization: authorization ? authorization.toString('base64') : null }, binding: { configuration, run: state.run, stage: 'prepared' } })
     const evidence = readRecord(); evidence.initial = initial; record(evidence)
     return state
