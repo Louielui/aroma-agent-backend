@@ -16,7 +16,7 @@ process.on('message', async input => {
   if (input === 'exit') { process.disconnect(); return }
   if (input === 'startup') {
     try {
-      require('./offlineStartup.cjs').runEntrypoint({ gate, participant: 'offline-host', entry: path.join(root, 'entry.cjs') })
+      require('./offlineStartup.cjs').runEntrypoint({ gate, participant: 'offline-host', entry: path.join(root, 'entry.cjs'), maintenanceDirectory: root })
       reply({ result: 'initialized' })
     } catch (error) { reply({ result: error.message }) }
     return
