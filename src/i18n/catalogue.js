@@ -62,6 +62,7 @@ const CATALOGUE = Object.freeze({
   'unified.scope': {zh:'目前支援有限唯讀任務；網頁環境不會自動帶入。',en:'Bounded read tasks are supported; browser context is not carried automatically.'},
   'unified.unverified': {zh:'目標尚未完成核實',en:'Goal completion is unverified'},
   'unified.unavailable': {zh:'未能確認任務狀態；未自動重試。',en:'Task state could not be confirmed; no automatic retry.'},
+  'unified.historyUnavailable': {zh:'任務結果已保留，但本次對話未能保存。',en:'The task result is retained, but this conversation turn could not be saved.'},
   'unified.archTitle': {zh:'共用任務與跨介面延續',en:'Shared task intake and continuity'},
   'unified.archCurrent': {zh:'初始整合預設關閉，僅經離線測試；共用 task/goal 身份及 Chrome 至 Main 的有限唯讀延續。',en:'Initial integration is default-off and offline-tested only: shared task/goal identity and bounded read continuation from Chrome to Main.'},
   'unified.archNext': {zh:'仍需完整領域接線、完成證據驗證及獨立部署驗收。',en:'Full domain wiring, completion verifiers and separate deployed acceptance remain pending.'},

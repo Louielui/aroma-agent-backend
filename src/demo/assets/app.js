@@ -3451,7 +3451,7 @@
       box.appendChild(el('p', '', task.objective)); box.appendChild(el('p', '', task.executionState + ' · ' + task.coverage + ' · ' + t('unified.unverified')))
       task.outcomes.forEach(function (o) { box.appendChild(el('p', '', o.ownerQuote + ' · ' + o.blockers.join(', '))) })
       if (task.result) box.appendChild(el('p', '', task.result))
-      if (['running', 'awaiting_authorization'].includes(task.executionState)) {
+      if (task.active === true) {
         var stopTask = el('button', 'ghost', t('unified.cancel')); stopTask.type = 'button'
         stopTask.addEventListener('click', async function () {
           stopTask.disabled = true
@@ -3474,11 +3474,13 @@
     try {
       var response = await fetch('/api/v1/demo/task-intake', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ version: 1, operation: prior ? 'continue' : 'start', clientSubmissionId: crypto.randomUUID(), message: message, conversationId: conv.cid, taskRef: prior ? prior.taskId : null, expectedRevision: prior ? prior.revision : null, contextRefs: [] }) })
       var result = await response.json()
+      if (response.status === 409 && prior) await showUnifiedTask(prior.taskId, conv)
       if (!response.ok || !result.unifiedTask) throw Error('unavailable')
+      if (result.historySaved === false) addError(t('unified.historyUnavailable'), conv)
       await showUnifiedTask(result.unifiedTask.taskId, conv)
     } catch (_) { addError(t('unified.unavailable'), conv) } finally { unifiedBusy = false }
   }
-  if (document.body.dataset.unifiedTaskIntake === 'true') {
+  if (document.getElementById('app').getAttribute('data-unified-task-intake') === 'true') {
     var startTask = el('button', 'ghost', t('unified.start')); startTask.type = 'button'
     startTask.addEventListener('click', function () { if (pending || unifiedBusy || !msg.value.trim()) return; var message = msg.value; if (!active) newConversation(false); msg.value = message; autoGrow(); submitUnifiedTask(message, active, null) })
     send.parentNode.appendChild(startTask)

@@ -23,7 +23,7 @@ function createUnifiedIntake({store,enabled=()=>false,reads=null}){
   // The existing bounded read runner has no full-Owner-goal completion verifier.
   // An answer, even with complete read coverage, leaves every outcome unresolved.
   const proof=record?.result?.taskEvidence
-  return {version:1,taskId:id,goalId:task.ownerGoal.goalId,attemptId:a.id,revision:u.revision,objective:task.ownerGoal.originalObjective,goalStatus:task.ownerGoal.status,outcomes:structuredClone(task.ownerGoal.outcomes),constraints:structuredClone(task.ownerGoal.constraints),executionState:state,coverage:proof?.state==='live'?(proof.complete===true?'complete':'partial'):proof?.state==='failed'?'failed':'unknown',persistence,continuationEnabled:enabled()===true,executionRef:a.executionRef?structuredClone(a.executionRef):null,executionRefs:u.attempts.flatMap(x=>x.executionRef?[structuredClone(x.executionRef)]:[]),result:record?.result?.text||null,contextAvailability:record?.contextAvailability||'unavailable',limitations:['outcome_not_verified','fresh_context_required_for_browser_operations','bounded_read_runner_only']}
+  return {version:1,taskId:id,goalId:task.ownerGoal.goalId,attemptId:a.id,revision:u.revision,objective:task.ownerGoal.originalObjective,goalStatus:task.ownerGoal.status,outcomes:structuredClone(task.ownerGoal.outcomes),constraints:structuredClone(task.ownerGoal.constraints),executionState:state,active:['running','awaiting_authorization'].includes(state),coverage:proof?.state==='live'?(proof.complete===true?'complete':'partial'):proof?.state==='failed'?'failed':'unknown',persistence,continuationEnabled:enabled()===true,executionRef:a.executionRef?structuredClone(a.executionRef):null,executionRefs:u.attempts.flatMap(x=>x.executionRef?[structuredClone(x.executionRef)]:[]),result:record?.result?.text||null,contextAvailability:record?.contextAvailability||'unavailable',limitations:['outcome_not_verified','fresh_context_required_for_browser_operations','bounded_read_runner_only']}
  }
  function browserProjection(record){
   const binding=record?.unifiedTask,task=binding&&store.getTask(binding.taskId),a=task?.unifiedIntake?.attempts.find(a=>a.id===binding.attemptId)
@@ -32,6 +32,6 @@ function createUnifiedIntake({store,enabled=()=>false,reads=null}){
   delete result.result;result.executionRefs=[structuredClone(a.executionRef)]
   return result
  }
- return{enabled,reserve,link,view:(id,h)=>view(id,h),browserProjection}
+ return{enabled,reserve,link,view:(id,h)=>view(id,h),viewAttempt:(id,attemptId,h)=>view(id,h,attemptId),browserProjection}
 }
 module.exports={createUnifiedIntake}

@@ -34,7 +34,7 @@ function createRouter({intake,browserRead,conversations}){
    // A new UUID is a new Owner conversation; a missing/deleted old task binding
    // is never used to load private history into the native transport.
    conversations.get(b.conversationId)
-   const result=await browserRead.handleMain(b),projection=intake.view(result.unifiedTask.taskId,{principal:'owner',surface:'main'})
+   const result=await browserRead.handleMain(b),projection=intake.viewAttempt(result.unifiedTask.taskId,result.unifiedTask.attemptId,{principal:'owner',surface:'main'})
    let historySaved=false
    try{conversations.appendTurn({id:b.conversationId,userText:b.message,replyText:result.result?.text||projection.executionState,unifiedTask:result.unifiedTask});historySaved=true}catch{}
    return res.json({reply:result.result?.text||projection.executionState,lane:'chat',historySaved,unifiedTask:projection})
