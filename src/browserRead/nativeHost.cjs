@@ -1,13 +1,19 @@
 'use strict'
 const fs=require('node:fs'),path=require('node:path'),cp=require('node:child_process'),{validate,validateSource}=require('./contract'),{createReader,encode}=require('./nativeProtocol')
 function createBroker({request,clientStatus}){
- return async input=>{
+ const handle=async input=>{
+  const runtime=globalThis[Symbol.for('aroma.deploymentQuiescence.runtime')]
+  if(runtime&&!runtime.current())return runtime.run(()=>handle(input))
   if(input?.op==='client_status'&&Object.keys(input).join(',')==='op'&&clientStatus)return clientStatus()
   validate(input);if(['prepare','read'].includes(input.op)&&Object.hasOwn(input,'source'))validateSource(input.source,Date.now())
   return request(input)
  }
+ return handle
 }
 async function main(){
+ const gateConfig=path.join('C:/Aroma/aroma-agent-backend/data/.deployment-quiescence','host.json'),runtime=globalThis[Symbol.for('aroma.deploymentQuiescence.runtime')]
+ if(runtime&&runtime.participant!=='native')throw Error('deployment_interlock_required')
+ if(!runtime){let installed=false;try{fs.lstatSync(gateConfig);installed=true}catch(e){if(e.code!=='ENOENT')throw Error('deployment_interlock_unavailable')};if(installed)throw Error('deployment_interlock_required')}
  const config=JSON.parse(fs.readFileSync(path.join(__dirname,'host-config.json'),'utf8'))
  if(process.argv.length<3||process.argv[2]!==config.extensionOrigin||!/^chrome-extension:\/\/[a-p]{32}\/$/.test(config.extensionOrigin))throw Error('extension_not_allowed')
  const ps=path.join(process.env.SystemRoot,'System32/WindowsPowerShell/v1.0/powershell.exe')

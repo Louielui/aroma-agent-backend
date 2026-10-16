@@ -1,4 +1,93 @@
-# Deployment quiescence assessment and offline protocol
+# Deployment quiescence runtime integration
+
+Current deployment readiness: **BLOCKED**. Node runtime admission, lifetime
+tracking, persistence fencing and the independent launcher are implemented and
+tested offline. Independent external-memory writer attestation, real Windows
+launch bindings and deployment-driver integration remain unverified.
+
+The reviewed `open -> draining -> frozen -> open` protocol is retained. A child
+admission may refer to an existing unpredictable parent lease while draining; it
+acquires its own persistent lease and still needs ordinary route authentication.
+Promise-resolution hooks retain detached work after its HTTP response. Additional
+holds cover response completion, timers, streams, actual subprocess close and
+Worker exit. Crashed leases and orphan Promises block rather than being expired.
+Unscoped synchronous writes are fenced and prevent that process acknowledging idle.
+
+## Current writer coverage matrix
+
+| Boundary | Runtime connection | Idle condition / remaining limit |
+| --- | --- | --- |
+| Direct Backend, aliases, side-effecting GET | Common HTTP request admission and complete async scope | All requests and descendants finish; no GET exemption |
+| Browser Read and consent | Common HTTP fence, Native broker scope, actual store writes | Every awaiting_consent/processing record blocks, including expired consent |
+| Browser Operator / Native input | Backend fence, Native broker/stdin scope, actual child-close hold | Backend ready/planning/awaiting_input/executing and Native running map empty |
+| Bridge and all five existing workflows | HTTP fence, authenticated child admission for already admitted Backend work | Busy lanes, active calls and all workflow occupancy idle |
+| Detached internal runners | Descendant Promise, timer, network and child lifetime | Unresolved descendants retain leases |
+| Durable Run startup | Interlock before app import | Only terminal or already RECONCILED_* records; unknown/unreconciled blocks |
+| Background mail, history, events, capture, consolidation, backup and backlog | New scheduled tick admission; existing callback descendants drain | New ticks skip after prepare; no forced task cancellation |
+| Sync persistence | Mutation/open/descriptor guard under Gate lock | Actual write and freeze cannot race; control-path writes rejected |
+| Async persistence / streams | Lease through callback/Promise/close | FileHandle and disposable-directory APIs refused rather than unfenced |
+| Native/Python/worker processes and threads | Hold until actual close/exit, not timeout response | Crashed parent leaves durable lease; no automatic orphan reclamation |
+| Independent Hindsight/PostgreSQL writers | Client/child lifetime covered | BLOCKED: independent service-side admission/idle evidence unavailable |
+| Backend, Bridge, new and old rollback startup | Content-addressed external launcher before product import | New/old three-role parking tested; actual installed launch bindings not applied |
+| Deployment-host and Native publication writes | Separate trusted control plane | BLOCKED until existing promotion/recovery procedure binds and accounts for them |
+
+Existing auth, CSRF, consent, Origin and executor checks remain. Closed HTTP work
+returns 503 `deployment_unavailable`. Lease headers never authenticate an Owner;
+incoming continuation also needs the existing service credential and no browser
+Origin. Only fixed loopback service origins receive the header, and delegated
+fetch cannot follow redirects. Backend store, Bridge workflow and Native operator
+inspectors are registered at composition. Missing inspectors, pending work or
+unscoped writes refuse acknowledgement; another instance cannot overwrite one.
+
+The fence is a trusted-host interlock, not an OS sandbox against a malicious
+administrator/arbitrary native code. Diagnostic stdout/stderr are outside task
+persistence. Unsupported native transports and independent services cannot be
+called covered merely because the Node fixtures pass.
+
+## Independent startup and frozen recovery
+
+`scripts/deploymentQuiescence/bundle.cjs` copies the existing protocol and fixed
+runtime/verifier/launcher into a content-addressed host bundle. It verifies its
+manifest and the pinned host configuration before evaluating any entry. Closed,
+corrupt or unavailable Gate state parks first. It preserves CJS main semantics
+and Native arguments when an authorized release permits startup.
+
+The proposed fixed control namespace is
+`C:/Aroma/aroma-agent-backend/data/.deployment-quiescence/`: ignored runtime data,
+independent of Git source checkout. Existing inherited data-directory ACLs grant
+LocalService and Owner Modify; no new permission is added. It is a separate
+governance namespace forbidden to business filesystem writers, and must be
+inventoried without changing the adopted 549-file contract.
+
+Current source fails closed if the host record exists but the interlock is
+missing. Old rollback source lacks this check: its protection MUST come from
+independently pinned Backend service, Bridge Startup and Native Host launch
+bindings. Copying a bundle alone is insufficient. No service configuration,
+registry entry, shortcut, ACL or production control file is installed here.
+
+Frozen recovery imports no product module and runs no task/model/Native executor.
+The fixed `verifyRecovery` measures real Git commit/tree and the complete tracked
+source scope, allowed overlay hashes, protected bytes/membership, pinned launcher
+files and actual machine-produced TAP receipts/counts/skips. Git uses no optional
+locks, external diff or textconv. Source identity is checked again. Its digest
+attests those static conditions, not running application health.
+
+`releaseVerified` binds that verifier to the existing Owner-password operation
+and exact run/generation; it accepts no caller-supplied PASS callback. Service
+tokens, cookies and configured credential collisions cannot release. Host control
+composition must supply service credentials if loaded outside process.env. There
+is no maintenance HTTP route, AI tool, new credential or automatic thaw. Live
+application verification follows authorized release under existing recovery rules.
+
+The launcher requires an explicit `external-memory` participant. This branch
+does not invent an idle acknowledgement for that independent service. Production
+freeze/recovery and Windows boot-path coverage therefore remain BLOCKED.
+
+The 549-file baseline, backups and historical failure remain preserved; historical
+writer attribution is unresolved. U1 stays separate and inactive, at 19 PASS / 8
+Deferred. No merge, deployment, production restart or task mutation is performed.
+
+## Historical protocol-only assessment (050f794; superseded by the runtime work above)
 
 Status: **BLOCKED for deployment use**. This change is an inert, host-composed
 protocol and its disposable-fixture tests. It is not an installed admission or

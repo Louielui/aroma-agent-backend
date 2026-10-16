@@ -3,7 +3,8 @@
 // Host-composed protocol, deliberately not a route or model tool. This module
 // does not install itself: callers must account for every writer before using
 // it as a deployment fence. See docs/DEPLOYMENT-QUIESCENCE.md.
-const fs = require('node:fs')
+// Capture control-plane I/O before the host installs the business write fence.
+const fs = Object.freeze({ ...require('node:fs') })
 const path = require('node:path')
 const { randomUUID } = require('node:crypto')
 const { passwordMatches, MIN_PASSWORD_CHARS } = require('../governance/ownerAuth')
@@ -11,7 +12,7 @@ const UUID = /^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{1
 const NAME = /^[a-z][a-z0-9-]{0,63}$/
 const VERSION = 'deployment-quiescence-v1'
 
-function createGate ({ directory, participants, ownerPassword, clock = () => new Date().toISOString() }) {
+function createGate ({ directory, participants, ownerPassword, serviceCredentials = () => [process.env.HUB_TOKEN, process.env.CODEX_CHAT_BRIDGE_TOKEN], clock = () => new Date().toISOString() }) {
   if (!path.isAbsolute(directory || '') || !Array.isArray(participants) || participants.length === 0 ||
       participants.some(p => !NAME.test(p)) || new Set(participants).size !== participants.length || typeof ownerPassword !== 'function') throw Error('invalid_gate_configuration')
   const expected = [...participants].sort()
@@ -21,6 +22,7 @@ function createGate ({ directory, participants, ownerPassword, clock = () => new
   // substitute for the Owner secret in the host control interface.
   function authorize (credentials) {
     const secret = ownerPassword()
+    if(serviceCredentials().some(token=>typeof token==='string'&&passwordMatches(credentials?.password,token)))throw Error('deployment_control_unauthorized')
     if (typeof secret !== 'string' || secret.length < MIN_PASSWORD_CHARS || !passwordMatches(credentials?.password, secret)) throw Error('deployment_control_unauthorized')
   }
   function regular (target) {
@@ -80,13 +82,15 @@ function createGate ({ directory, participants, ownerPassword, clock = () => new
       event(s, 'initialized'); save(s); return s
     })
   }
-  function admit (name) {
+  function admit (name, parentId = null) {
     participant(name)
     const id = randomUUID()
     exclusive(() => {
       const s = read()
-      if (s.phase !== 'open') throw Error('deployment_' + s.phase)
-      s.leases.push({ id, participant: name, pid: process.pid })
+      const parent = parentId === null ? null : s.leases.find(l => l.id === parentId)
+      if (parentId !== null && (!UUID.test(parentId) || !parent)) throw Error('invalid_parent_lease')
+      if (s.phase !== 'open' && !(s.phase === 'draining' && parent)) throw Error('deployment_' + s.phase)
+      s.leases.push({ id, participant: name, pid: process.pid, ...(parent ? { parentId } : {}) })
       s.acknowledged = []; save(s)
     })
     let finished = false

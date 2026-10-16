@@ -3,7 +3,10 @@ const {ID,exact,NATIVE_FAILURES}=require('./contract')
 // The extension cannot supply an action, HWND, frame, image, executable or URL to a model route.
 function createOperatorBroker({request,executor}){
  const running=new Map()
- return async b=>{
+ globalThis[Symbol.for('aroma.deploymentQuiescence.runtime')]?.registerInspector('native-operator',()=>({idle:running.size===0}))
+ const handle=async b=>{
+  const runtime=globalThis[Symbol.for('aroma.deploymentQuiescence.runtime')]
+  if(runtime&&!runtime.current())return runtime.run(()=>handle(b))
   const shapes={operator_start:['op','requestId','question','consent','scope'],operator_next:['op','id','scope','text','targets'],operator_stop:['op','id'],operator_get:['op','id']}
   if(!b||!Object.hasOwn(shapes,b.op)||!exact(b,shapes[b.op])||!ID.test(b.op==='operator_start'?b.requestId:b.id))throw Error('invalid_operator_request')
   if(b.op==='operator_start')return request({...b,op:'start'})
@@ -36,5 +39,6 @@ function createOperatorBroker({request,executor}){
    return request({op:'report',id:b.id,success:true})
   }finally{running.delete(b.id)}
  }
+ return handle
 }
 module.exports={createOperatorBroker}

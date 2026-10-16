@@ -1,4 +1,5 @@
 'use strict'
+require('./repositoryPromotion/quiescenceBoot').assertStartup('backend')
 
 /**
  * index.js — server entry point.
