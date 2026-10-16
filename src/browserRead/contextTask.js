@@ -6,18 +6,16 @@ const {DOC,TEXT_TYPES}=require('../context/driveReadOnlyClient')
 const OP='drive.company_files',MAX_FILES=3
 const schema=(key,item)=>({type:'object',additionalProperties:false,required:[key],properties:{[key]:{type:'array',items:item}}})
 function parsed(result,key){let body;try{body=JSON.parse(result.text)}catch{throw Error('invalid_task_plan')}if(!body||Object.keys(body).join(',')!==key||!Array.isArray(body[key])||body[key].length>MAX_FILES)throw Error('invalid_task_plan');return body[key]}
-function createContextTask({legacy,drive,gmail,env=process.env}){
- const email=require('./gmailReplyTask').createGmailReplyTask({gmail,env})
+function createContextTask({legacy,drive,env=process.env}){
  function driveScope(provider){if(!drive||!isSharedWith(provider,'drive',env))return null;try{return drive.captureTaskScope()}catch{return null}}
- function describe(provider,version,source){const base=legacy.describe(provider);const access=[2,3].includes(version)?driveScope(provider):null;return [...base,...(access?[access.capability]:[]),...(version===3?email.describe(provider,source):[])]}
+ function describe(provider,version){const base=legacy.describe(provider);const access=version===2?driveScope(provider):null;return access?[...base,access.capability]:base}
  async function run(input){
   const {question,conversation=[],page=null,adapter,actor,capabilities,signal,onEvent}=input
-  if(input.taskVersion===3&&require('../context/gmailReplyContract').replyRequest(question))return email.run(input)
-  if(![2,3].includes(input.taskVersion))return legacy.run(input)
+  if(input.taskVersion!==2)return legacy.run(input)
   if(actor?.id!=='owner'||actor.role!=='owner')throw Error('permission_denied')
-  const check=()=>{if(signal?.aborted)throw Error('read_timeout');if(JSON.stringify(describe(adapter.providerName,input.taskVersion,page?.source))!==JSON.stringify(capabilities))throw Error('task_scope_changed')}
+  const check=()=>{if(signal?.aborted)throw Error('read_timeout');if(JSON.stringify(describe(adapter.providerName,2))!==JSON.stringify(capabilities))throw Error('task_scope_changed')}
   check()
-  if(wageTaskRequest(question,conversation))return legacy.run({...input,capabilities:capabilities.filter(c=>![OP,'gmail.reply_preview'].includes(c.id))})
+  if(wageTaskRequest(question,conversation))return legacy.run({...input,capabilities:capabilities.filter(c=>c.id!==OP)})
   const context=browserContext(page,input.contextAvailability||'excluded'),admitted=capabilities.find(c=>c.id===OP),ownerIntent=ownerLookup(question)
   let decision={intent:ownerIntent==='general'?'general':'clarify',requested:false,query:null},planning
   if(ownerIntent!=='general'){

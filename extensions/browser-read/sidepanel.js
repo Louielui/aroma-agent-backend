@@ -33,11 +33,7 @@ function workFromRecord(r){
   const phases={model_request_started:'正在等候模型回覆…',model_request_finished:'模型已回覆，正在處理結果…',read_task_started:'正在讀取已授權資料…',read_task_finished:'資料讀取已返回，正在整理回覆…'},phase=Object.hasOwn(phases,stage)?phases[stage]:'正在處理已送出的任務…'
   setWork('working',phase,start??workStart??Date.now())
  }else if(r.state==='awaiting_consent')setWork('waiting','尚未呼叫模型，請先確認範圍。',null)
- else if(r.state==='completed'){
-  const email=r.result?.taskEvidence?.operation==='gmail.reply_preview',preview=r.result?.taskEvidence?.previewPrepared===true
-  setWork('completed',email?(preview?'預覽已保存在香香；未儲存 Gmail 草稿、未寄信。':'尚未製作回覆；請查看缺少資料或待確認事項。'):r.result?.taskEvidence?.complete===false?'回覆已保存；部分資料仍待確認。':'回覆已保存。',start,end)
-  if(email)el('work-title').textContent=preview?'回覆預覽已準備':'回覆仍待確認'
- }
+ else if(r.state==='completed')setWork('completed',r.result?.taskEvidence?.complete===false?'回覆已保存；部分資料仍待確認。':'回覆已保存。',start,end)
  else if(r.state==='cancelled')setWork('cancelled','不會自動重試；已送出的工作可能仍計入訂閱額度。',start,end)
  else if(r.state==='interrupted')setWork('interrupted','服務重啟中斷了這次工作，沒有自動接續。',start,end)
  else if(r.state==='failed')setWork('failed','本次未完成；可查看狀態說明，沒有自動重試。',start,end)
@@ -91,12 +87,12 @@ function present(r){
  if(r.state==='completed'){
   el('answer').hidden=false;el('text').classList.remove('wage-summary');el('text').textContent=r.result.text
   const source=r.result.source,tool=r.result.taskEvidence
-  const metadata=(tool?.operation==='gmail.reply_preview'?`Gmail · ${tool.previewPrepared?'回覆預覽':'尚未製作回覆'} · ${tool.complete?'本次 thread 內容已核對':'內容未完整／未能核對'} · 未儲存草稿、未寄信`:tool?.operation==='drive.company_files'?`Aroma Base · ${tool.state==='live'?'已查閱':'未查閱文件'} · ${tool.complete?'本次範圍完整':'查閱未完整'}`:tool?`資料來源：7shifts · ${tool.retrievedAt} · ${tool.complete?'範圍完整':'未完整／未能讀取'} · 公司 ID：${tool.companyId??'未確認'}`:source?`快照來源：${source.origin} · ${new Date(source.capturedAt).toLocaleString()}`:'任務回答 · 未讀取網頁')+` · 所選 ${r.result.requestedModel} · 實際 ${r.result.actualModel||'未確認'}`
+  const metadata=(tool?.operation==='drive.company_files'?`Aroma Base · ${tool.state==='live'?'已查閱':'未查閱文件'} · ${tool.complete?'本次範圍完整':'查閱未完整'}`:tool?`資料來源：7shifts · ${tool.retrievedAt} · ${tool.complete?'範圍完整':'未完整／未能讀取'} · 公司 ID：${tool.companyId??'未確認'}`:source?`快照來源：${source.origin} · ${new Date(source.capturedAt).toLocaleString()}`:'任務回答 · 未讀取網頁')+` · 所選 ${r.result.requestedModel} · 實際 ${r.result.actualModel||'未確認'}`
   const wages=tool?.operation==='seven_shifts.employee_wages'&&r.result.wagePresentation?.version===1
   el('read-evidence').hidden=!wages;el('read-evidence').open=false;el('read-evidence-text').textContent=metadata
   if(wages){presentWages(r.result.wagePresentation);el('evidence').textContent='7shifts · '+(tool.state!=='live'?'本次未能讀取':tool.complete?'薪率已核對':tool.outputComplete===false?'明細未完整展示':'已讀取，部分薪率待確認')}else el('evidence').textContent=metadata
   el('context-chip').textContent=source?(source.coverage==='selection_text'?'選取文字':'網頁快照')+' · '+source.origin:'任務 · 不讀取網頁'
-  el('coverage-mode').value=[2,3].includes(r.taskVersion)?topicRecord.mode:source?(source.coverage||'main_frame_visible_text'):'task_only';el('status').textContent='可以接着追問；每次會重新確認讀取範圍。'
+  el('coverage-mode').value=r.taskVersion===2?topicRecord.mode:source?(source.coverage||'main_frame_visible_text'):'task_only';el('status').textContent='可以接着追問；每次會重新確認讀取範圍。'
  }
  else if(r.state==='failed')error(Error(r.error))
  else if(r.state==='cancelled')el('status').textContent='已停止本次讀取；不會自動重試。已送出的模型工作可能仍計入訂閱額度。'
@@ -112,20 +108,16 @@ async function prepare(){
   try{preparedCapture=taskOnly?{taskOnly:true}:await capturePanelPage()}catch(e){if(el('coverage-mode').value!=='auto_context'||!['page_access_unavailable_click_extension_icon','page_text_unavailable','site_not_allowed','current_tab_unavailable'].includes(e.message))throw e;preparedCapture={taskOnly:true,contextAvailability:'unavailable'}}
   if(version!==generation||epoch!==workEpoch)return
   const parentId=job?.messages?.findLast(m=>m.state==='completed')?.id||(job?.state==='completed'?job.id:null)
-  const taskVersion=parentId?(job?.taskVersion||1):3
-  const legacy=taskVersion===1
+  const legacy=parentId&&job?.taskVersion!==2
   const noPage=preparedCapture.taskOnly===true
-  // Old topic consent cannot acquire new E1 tools. A fresh topic is required.
-  if(taskVersion!==3&&preparedCapture.source?.gmail)delete preparedCapture.source.gmail
-  const r=await rpc({op:'prepare',requestId:crypto.randomUUID(),question:el('question').value,...(noPage?{}:{source:preparedCapture.source}),...(legacy?(noPage?{}:{taskVersion:1}):{taskVersion,...(noPage?{contextAvailability:preparedCapture.contextAvailability||'excluded'}:{})}),...(parentId?{parentId}:{})})
+  const r=await rpc({op:'prepare',requestId:crypto.randomUUID(),question:el('question').value,...(noPage?{}:{source:preparedCapture.source}),...(legacy?(noPage?{}:{taskVersion:1}):{taskVersion:2,...(noPage?{contextAvailability:preparedCapture.contextAvailability||'excluded'}:{})}),...(parentId?{parentId}:{})})
   if(version!==generation||epoch!==workEpoch){if(r.state==='awaiting_consent')await rpc({op:'cancel',id:r.id}).catch(()=>{});return}topicRecord.headId=r.id;topicRecord.title||=el('question').value.slice(0,60);topicRecord.mode=el('coverage-mode').value;await saveTopic();if(version!==generation||epoch!==workEpoch){if(r.state==='awaiting_consent')await rpc({op:'cancel',id:r.id}).catch(()=>{});return}capture=preparedCapture;present(r);el('question').readOnly=true
   el('source').textContent=noPage?(capture.contextAvailability==='unavailable'?'未取得目前頁面授權／快照；本次不會假設頁面內容。':'任務模式：沒有讀取目前網頁。'):capture.title+' · '+capture.source.url
   el('model').textContent='跟隨中央模型：'+r.selection.model+' · '+r.selection.effort
   el('context-chip').textContent=noPage?'未加入網頁內容':(capture.source.coverage==='selection_text'?'選取文字':'目前網頁')+' · '+capture.title
   el('coverage').textContent=(noPage?'沒有網頁快照。':`${capture.source.coverage==='selection_text'?'選取文字':'主框架可見文字'} ${capture.text.length} 字${capture.source.truncated?'（已截斷）':''}。`)+`含 ${r.messages?.length? r.messages.length-1:0} 輪先前對話${r.historyTruncated?'（部分回答截短至 2,000 字）':''}。圖片、iframe、輸入欄未讀取。`
-  const wageScope=r.taskCapabilities?.find(c=>c.id==='seven_shifts.employee_wages'),driveScope=r.taskCapabilities?.find(c=>c.id==='drive.company_files'),gmailScope=r.taskCapabilities?.find(c=>c.id==='gmail.reply_preview')
+  const wageScope=r.taskCapabilities?.find(c=>c.id==='seven_shifts.employee_wages'),driveScope=r.taskCapabilities?.find(c=>c.id==='drive.company_files')
   el('task-scope').textContent=[wageScope?'唯讀查詢 7shifts 公司 '+wageScope.companyId+' 的員工姓名、在職狀態、目前薪率與職位；可包含非在職及管理帳號。':'',driveScope?'工具範圍 v'+driveScope.version+'：Aroma Base（'+driveScope.scope+'）唯讀核對目前 Drive 位置、搜尋及取得文件；最多讀取 3 份候選文件，可能只取得 metadata、截斷文字或不支援格式。':'',r.taskCapabilities?.length?'已確認的快照和相關查詢結果會外送予上述模型；回答保留本機。頁面不是授權；不會修改公司資料。':'本次未接通可用的公司查詢工具；佢會說明資料缺漏。'].filter(Boolean).join('\n')
-  if(gmailScope)el('task-scope').textContent+='\nGmail 唯讀回覆預覽 v1：'+gmailScope.accountEmail+'；message '+gmailScope.messageId+'；thread '+gmailScope.threadId+'。最多 8 封訊息，每封最多 4,000 字；附件不讀取。未儲存 Gmail 草稿、未寄信。'
   el('excerpt').textContent=noPage?el('question').value:capture.text;el('history-details').hidden=!parentId
   el('history-preview').textContent=(r.messages||[]).filter(m=>m.result).map(m=>'你：'+m.question+'\n香香：'+m.result.text+(m.result.truncated?'\n（回答已截短）':'')).join('\n\n')
   el('preview').hidden=false;el('status').textContent='尚未呼叫模型。請先確認範圍。'

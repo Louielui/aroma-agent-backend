@@ -24,7 +24,7 @@ function createGmailScope ({ registry, env = process.env, credentials = mailbox 
   return Object.freeze({ lease (mailbox) {
     const p = projection(mailbox); if (!valid(p)) throw Error('source_access_unavailable')
     const revision = JSON.stringify(p)
-    return { email: p.email.toLowerCase(), revision: require('node:crypto').createHash('sha256').update(revision).digest('hex'), verify () { const current = projection(mailbox); if (!valid(current) || JSON.stringify(current) !== revision) throw Error('source_access_changed') } }
+    return { email: p.email.toLowerCase(), verify () { const current = projection(mailbox); if (!valid(current) || JSON.stringify(current) !== revision) throw Error('source_access_changed') } }
   } })
 }
 function clip (value, bytes) {
@@ -101,13 +101,12 @@ function createGmailContextAdapter ({ scope, readerFactory = createGmailReader, 
     const method = prefix + (mailbox === 'owner' ? 'Owner' : 'Admin') + 'Mail' + (op === 'readMetadata' ? 'Metadata' : '')
     methods[method] = input => retrieve(mailbox, op, input); rowLimits[method] = op === 'get' || op === 'readMetadata' ? 1 : 10
   }
-  const reply = require('./gmailReplyRead').createReplyMethods({ scope, readerFactory, clock })
-  return Object.freeze({ source: 'gmail', methods: Object.freeze({ ...methods, ...reply.methods }), rowLimits: Object.freeze({ ...rowLimits, ...reply.rowLimits }), readTimeoutMs: 35000 })
+  return Object.freeze({ source: 'gmail', methods: Object.freeze(methods), rowLimits: Object.freeze(rowLimits), readTimeoutMs: 35000 })
 }
 function gmailResources () {
   return ['owner', 'admin'].map(mailbox => ({ id: 'gmail.' + mailbox + '_mail', source: 'gmail', scope: mailbox + '_mailbox', sensitivity: mailbox === 'owner' ? 'private' : 'company', layer: 'truth',
     validateRow: row => row.fields?.mailbox === mailbox,
     operations: Object.fromEntries([['list', 'list'], ['search', 'search'], ['get', 'get'], ['readMetadata', 'read']].map(([op, prefix]) => [op, {
-      method: prefix + (mailbox === 'owner' ? 'Owner' : 'Admin') + 'Mail' + (op === 'readMetadata' ? 'Metadata' : ''), params: input => validateGmailRequest(op, input) }])) })).concat(require('./gmailReplyRead').resources())
+      method: prefix + (mailbox === 'owner' ? 'Owner' : 'Admin') + 'Mail' + (op === 'readMetadata' ? 'Metadata' : ''), params: input => validateGmailRequest(op, input) }])) }))
 }
 module.exports = { validateGmailRequest, createGmailScope, createGmailContextAdapter, gmailResources }

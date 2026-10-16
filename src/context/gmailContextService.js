@@ -16,13 +16,7 @@ function gmailIntent (message) {
   try { return { resource: match[1] === '我的' ? 'gmail.owner_mail' : 'gmail.admin_mail', operation: 'search', input: validateGmailRequest('search', input) } } catch (_) { return null }
 }
 function createGmailContextService ({ gateway, scope }) {
-  return Object.freeze({ captureReplyScope (accountEmail) {
-    const matches=[]
-    for(const mailbox of ['owner','admin'])try{const lease=scope.lease(mailbox);if(lease.email===accountEmail.toLowerCase())matches.push({mailbox,lease})}catch{}
-    if(matches.length!==1)throw Error('source_identity_unavailable')
-    const {mailbox,lease}=matches[0],resource='gmail.'+mailbox+'_reply_thread'
-    return {capability:{id:'gmail.reply_preview',source:'gmail',mailbox,accountEmail:lease.email,revision:lease.revision,definitionVersion:1,toolScopeVersion:1,readOnly:true},verify:()=>lease.verify(),async read(actor,input){if(actor?.id!=='owner'||actor.role!=='owner')throw Error('permission_denied');lease.verify();const pack=await gateway.get(actor,resource,input);lease.verify();return pack}}
-  }, captureAccess (resource) { const lease = scope.lease(gmailMailbox(resource)); return () => lease.verify() }, async read (actor, resource, operation, input = {}) {
+  return Object.freeze({ captureAccess (resource) { const lease = scope.lease(gmailMailbox(resource)); return () => lease.verify() }, async read (actor, resource, operation, input = {}) {
     if (actor?.role !== 'owner') throw Error('permission_denied')
     const mailbox = gmailMailbox(resource), normalized = validateGmailRequest(operation, input), lease = scope.lease(mailbox)
     const pack = await gateway[operation](actor, resource, normalized); lease.verify()

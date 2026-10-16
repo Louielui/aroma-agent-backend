@@ -16,9 +16,6 @@ function createGmailReader (mailbox, { ownerOAuth = auth.createOAuthClient, admi
     async metadata () { return (await client.users.getProfile({ userId: 'me', fields: 'emailAddress,messagesTotal,threadsTotal' }, options())).data },
     async listMessages ({ q }) { return (await client.users.messages.list({ userId: 'me', maxResults: 10, labelIds: ['INBOX'], includeSpamTrash: false,
       fields: 'messages(id),nextPageToken,resultSizeEstimate', ...(q ? { q } : {}) }, options())).data },
-    async getThread (id) {
-      return (await client.users.threads.get({ userId: 'me', id, format: 'full', fields: 'id,messages(id,threadId,internalDate,labelIds,payload)' }, options())).data
-    },
     async getMessage (id, full = false) {
       return (await client.users.messages.get({ userId: 'me', id, format: full ? 'full' : 'metadata',
         ...(full ? {} : { metadataHeaders: ['Subject', 'From', 'To', 'Date'] }),
