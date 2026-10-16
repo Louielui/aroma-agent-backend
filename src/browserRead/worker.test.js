@@ -1,6 +1,6 @@
 'use strict'
 const test=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path'),vm=require('node:vm')
-function fixture({native=false,local={},session={},releaseHash=null,url='https://example.com/',failLocalRemove=false,grantedTabs=null}={}){
+function fixture({native=false,local={},session={},releaseHash=null,url='https://example.com/',failLocalRemove=false,grantedTabs=null,captureExtra={}}={}){
  const calls=[],listeners={},injections=[],nativeCalls=[];let nativeReply;let focusedWindow=99,nextText='Example Domain'
  const storage=data=>({get:async key=>key===null?{...data}:Object.fromEntries((Array.isArray(key)?key:[key]).map(k=>[k,data[k]])),set:async v=>{Object.assign(data,v)},remove:async key=>{if(data===local&&failLocalRemove)throw Error('fixture_storage_failure');for(const k of Array.isArray(key)?key:[key])delete data[k]}})
  const chrome={
@@ -8,7 +8,7 @@ function fixture({native=false,local={},session={},releaseHash=null,url='https:/
   sidePanel:{setPanelBehavior:async o=>{calls.push({kind:'behavior',...o})},setOptions:async o=>{calls.push({kind:'options',...o})},open:async o=>{calls.push({kind:'open',...o})}},
   storage:{session:storage(session),local:storage(local)},
   tabs:{get:async id=>({id,windowId:id-100,...(!grantedTabs||grantedTabs.has(id)?{url}:{})}),query:async o=>{calls.push({kind:'query',...o});const windowId=o.windowId??focusedWindow;return[{id:windowId+100,windowId,url}]},onActivated:{addListener:f=>{listeners.activated=f}},onAttached:{addListener:f=>{listeners.attached=f}},onUpdated:{addListener:f=>{listeners.updated=f}},onRemoved:{addListener:f=>{listeners.removed=f}}},
-  scripting:{executeScript:async o=>{injections.push(o);return[{frameId:0,documentId:'document-'+o.target.tabId,result:{title:'Public fixture',url:'https://example.com/',text:nextText,truncated:false}}]}},
+  scripting:{executeScript:async o=>{injections.push(o);return[{frameId:0,documentId:'document-'+o.target.tabId,result:{title:'Public fixture',url:'https://example.com/',text:nextText,truncated:false,...captureExtra}}]}},
   runtime:{id:'test-extension',getURL:s=>'chrome-extension://test-extension/'+s,onStartup:{addListener:f=>{listeners.startup=f}},onInstalled:{addListener:f=>{listeners.installed=f}},onMessage:{addListener:f=>{listeners.message=f}},connectNative:()=>{if(!native)throw Error('unexpected_native_dispatch');return {onMessage:{addListener:f=>{nativeReply=f}},onDisconnect:{addListener:()=>{}},postMessage:m=>nativeCalls.push(m),disconnect:()=>{}}}}
  }
  const context=vm.createContext({IMAGINE_CLIENT_RELEASE:releaseHash?{workerHash:releaseHash}:null,chrome,URL,crypto:require('node:crypto').webcrypto,TextEncoder,setTimeout:(f,n)=>setTimeout(f,n===10000?1:n),clearTimeout,importScripts:()=>{},collectVisiblePage:()=>{},operatorPage:async scope=>({scope:{...scope,url:'https://example.com/',width:800,height:600}})})
@@ -75,6 +75,12 @@ test('read verification rechecks the prepared window instead of the last-focused
  // proves the real worker matched the unchanged prepared source first.
  assert.equal(response.error,'unexpected_native_dispatch')
  assert.deepEqual(f.calls.filter(c=>c.kind==='query'),[{kind:'query',active:true,windowId:7},{kind:'query',active:true,windowId:7},{kind:'query',active:true,windowId:7}])
+})
+test('E1 worker rechecks exact Gmail locator before native dispatch and never upgrades legacy snapshots',async()=>{
+ const gmail={kind:'gmail_message',accountEmail:'chef@example.test',messageId:'abc123',threadId:'def456',routeToken:'FMfcgSyntheticMessage'},extra={url:'https://mail.google.com/mail/u/0/',gmail}
+ const f=fixture({url:extra.url,captureExtra:extra}),p=await f.send({type:'capture',windowId:7});assert.equal(p.result.source.gmail.messageId,'abc123')
+ extra.gmail={...gmail,accountEmail:'other@example.test'};const changed=await f.send({type:'rpc',body:{op:'read',id:require('crypto').randomUUID(),consent:true,source:p.result.source,text:p.result.text}});assert.equal(changed.error,'source_changed');assert.equal(f.nativeCalls.length,0)
+ const old={...p.result.source};delete old.gmail;const legacy=await f.send({type:'rpc',body:{op:'read',id:require('crypto').randomUUID(),consent:true,source:old,text:p.result.text}});assert.equal(legacy.error,'unexpected_native_dispatch')
 })
 
 test('selection capture passes only a fixed scope argument and changed selected content refuses native dispatch',async()=>{const f=fixture(),selected=await f.send({type:'capture',windowId:7,coverage:'selection_text'});assert.equal(selected.result.source.coverage,'selection_text');assert.equal(f.injections[0].args[0],'selection_text');f.setText('Changed selection');assert.equal((await f.send({type:'rpc',body:{op:'read',id:require('crypto').randomUUID(),consent:true,source:selected.result.source,text:selected.result.text}})).error,'source_changed');assert.equal((await f.send({type:'capture',windowId:7,coverage:'input_fields'})).error,'invalid_request')})
