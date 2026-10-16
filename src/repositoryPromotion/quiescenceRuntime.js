@@ -5,6 +5,8 @@ function createRuntime ({ gate, participant, requiredInspectors = [] }) {
   const storage = new AsyncLocalStorage(), promises = new Map(), scopes = new Set()
   const inspectors = new Map()
   let muted = 0, closed = false, writing = 0, untrackedWrites = 0
+  const unverifiedNative = []
+  function recordUnverifiedNative(kind,pid){unverifiedNative.push({kind,pid:Number.isInteger(pid)?pid:null})}
   function control (fn) { muted++; try { return fn() } finally { muted-- } }
   function retry (fn) {
     for (let i = 0; ; i++) {
@@ -66,12 +68,13 @@ function createRuntime ({ gate, participant, requiredInspectors = [] }) {
   function close () { closed = true; hook.disable() }
   function registerInspector(name,inspect){if(typeof inspect!=='function')throw Error('invalid_idle_inspector');if(!inspectors.has(name))inspectors.set(name,[]);inspectors.get(name).push(inspect)}
   function inspectIdle(){
+    if(unverifiedNative.length)return{idle:false,reason:'unverified_native_descendants',count:unverifiedNative.length}
     if(scopes.size||untrackedWrites||requiredInspectors.some(name=>!inspectors.has(name)))return{idle:false,reason:'writers_or_inspectors_pending'}
     try{for(const inspect of [...inspectors.values()].flat()){const r=inspect();if(r?.idle!==true||typeof r.then==='function')return{idle:false,reason:'pending_work'}}}catch(_){return{idle:false,reason:'inspection_unavailable'}}
     return{idle:true}
   }
   function acknowledge(){return retry(()=>gate.acknowledge(participant,inspectIdle))}
-  return { participant, untracked:()=>untrackedWrites, registerInspector, inspectIdle, acknowledge, run, call, write, hold, enter, current: () => { const s=storage.getStore();return s&&!s.finished?s:null }, status: () => retry(() => gate.status()), control, close,
+  return { participant, untracked:()=>untrackedWrites, recordUnverifiedNative, unverifiedNative:()=>unverifiedNative.map(v=>({...v})), registerInspector, inspectIdle, acknowledge, run, call, write, hold, enter, current: () => { const s=storage.getStore();return s&&!s.finished?s:null }, status: () => retry(() => gate.status()), control, close,
     active: () => [...scopes].map(s => ({ id: s.lease.id, kind: s.kind, promises: s.promises, holds: s.holds, done: s.done })) }
 }
 function current () { return globalThis[SLOT] || null }

@@ -2,8 +2,10 @@
 
 Current deployment readiness: **BLOCKED**. Node runtime admission, lifetime
 tracking, persistence fencing and the independent launcher are implemented and
-tested offline. Independent external-memory writer attestation, real Windows
-launch bindings and deployment-driver integration remain unverified.
+tested offline. Uncontained native descendants now prevent freeze even after the
+direct child exits. Independent external-memory writer attestation, real Windows
+launch bindings and deployment-driver integration remain unverified. See
+[the boundary inventory and bootstrap approval plan](QUIESCENCE-BOUNDARY-CLOSURE.md).
 
 ## Runtime compatibility repair
 
@@ -32,8 +34,10 @@ The reviewed `open -> draining -> frozen -> open` protocol is retained. A child
 admission may refer to an existing unpredictable parent lease while draining; it
 acquires its own persistent lease and still needs ordinary route authentication.
 Promise-resolution hooks retain detached work after its HTTP response. Additional
-holds cover response completion, timers, streams, actual subprocess close and
-Worker exit. Crashed leases and orphan Promises block rather than being expired.
+holds cover response completion, timers and streams. Native subprocesses and
+threads retain unresolved holds beyond direct close/exit: those events do not
+prove that spawned descendants cannot modify protected persistence. Crashed
+leases and orphan Promises block rather than being expired.
 Unscoped synchronous writes are fenced and prevent that process acknowledging idle.
 
 ## Current writer coverage matrix
@@ -49,7 +53,7 @@ Unscoped synchronous writes are fenced and prevent that process acknowledging id
 | Background mail, history, events, capture, consolidation, backup and backlog | New scheduled tick admission; existing callback descendants drain | New ticks skip after prepare; no forced task cancellation |
 | Sync persistence | Mutation/open/descriptor guard under Gate lock | Actual write and freeze cannot race; control-path writes rejected |
 | Async persistence / streams | Lease through callback/Promise/close | FileHandle and disposable-directory APIs refused rather than unfenced |
-| Native/Python/worker processes and threads | Hold until actual close/exit, not timeout response | Crashed parent leaves durable lease; no automatic orphan reclamation |
+| Native/Python/worker processes and threads | Unverified descendant containment keeps the existing durable lease after close/exit | BLOCKED: no OS containment or independent descendant completion proof; startup Git/native probes also conservatively block freeze |
 | Independent Hindsight/PostgreSQL writers | Client/child lifetime covered | BLOCKED: independent service-side admission/idle evidence unavailable |
 | Backend, Bridge, new and old rollback startup | Content-addressed external launcher before product import | New/old three-role parking tested; actual installed launch bindings not applied |
 | Deployment-host and Native publication writes | Separate trusted control plane | BLOCKED until existing promotion/recovery procedure binds and accounts for them |

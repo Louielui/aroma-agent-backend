@@ -5,6 +5,10 @@ const HEADER='x-aroma-quiescence-lease'
 function installFence(runtime,{serviceToken=()=>null,controlDirectory,internalOrigins=['http://127.0.0.1:8090','http://127.0.0.1:8091']}){
  const restores=[],rawFs={...fs},fdPaths=new Map(),timerScopes=new Map()
  const custom=require('node:util').promisify.custom
+ // Node's close/exit events do not prove that descendants have exited or lost
+ // access to protected storage. Keep the existing durable lease when native
+ // work has actually started. There is no automatic clearance or PID guessing.
+ const nativeClosed=(child,release,kind)=>{if(!Number.isInteger(child.pid))release();else runtime.recordUnverifiedNative(kind,child.pid)}
  const patch=(object,key,value)=>{
   const old=object[key]
   // Preserve Node's API descriptors, including multi-result promisification.
@@ -16,7 +20,7 @@ function installFence(runtime,{serviceToken=()=>null,controlDirectory,internalOr
     const nativeCustom=old[property]
     const promisified=function(...args){return runtime.call(()=>{
      const result=Reflect.apply(nativeCustom,this,args)
-     if(result?.child){const release=runtime.hold();result.child.once('close',()=>queueMicrotask(release))}
+     if(result?.child){const release=runtime.hold();result.child.once('close',()=>nativeClosed(result.child,release,'promisified-child'))}
      return result
     },{kind:'promisified'})}
     Object.defineProperty(value,property,{value:promisified,configurable:descriptor.configurable,enumerable:descriptor.enumerable,writable:false})
@@ -93,19 +97,19 @@ function installFence(runtime,{serviceToken=()=>null,controlDirectory,internalOr
  patch(fs,'close',(fd,callback)=>originalClose(fd,error=>{if(!error)fdPaths.delete(fd);callback(error)}))
  const originalStream=fs.createWriteStream
  patch(fs,'createWriteStream',(...args)=>runtime.call(()=>{protectedControl(args);const release=runtime.hold();let stream;try{stream=originalStream(...args)}catch(e){release();throw e}stream.once('close',()=>queueMicrotask(release));return stream}))
- // A subprocess retains its own hold until actual close, including cancellation
- // and output draining. A timeout rejection cannot release a still-live writer.
+ // Direct close is necessary but cannot prove descendant containment. Successful
+ // native launches keep a durable unresolved hold; timeout/kill/exit are not proof.
  for(const name of ['spawn','execFile','exec','fork']){
   const original=cp[name]
   patch(cp,name,(...args)=>runtime.call(()=>{
    const release=runtime.hold();let child
    try{child=original(...args)}catch(e){release();throw e}
-   child.once('close',()=>queueMicrotask(release));return child
+   child.once('close',()=>nativeClosed(child,release,name));return child
   },{kind:'subprocess'}))
  }
- for(const name of ['spawnSync','execFileSync','execSync']){const original=cp[name];patch(cp,name,(...args)=>runtime.call(()=>original(...args),{kind:'subprocess'}))}
+ for(const name of ['spawnSync','execFileSync','execSync']){const original=cp[name];patch(cp,name,(...args)=>runtime.call(()=>{runtime.hold();try{return original(...args)}finally{runtime.recordUnverifiedNative(name,null)}},{kind:'subprocess'}))}
  const threads=require('node:worker_threads'),Worker=threads.Worker
- patch(threads,'Worker',new Proxy(Worker,{construct(target,args){return runtime.call(()=>{const release=runtime.hold();let worker;try{worker=Reflect.construct(target,args)}catch(e){release();throw e}worker.once('exit',()=>queueMicrotask(release));return worker},{kind:'worker-thread'})}}))
+ patch(threads,'Worker',new Proxy(Worker,{construct(target,args){return runtime.call(()=>{const release=runtime.hold();let worker;try{worker=Reflect.construct(target,args)}catch(e){release();throw e}const threadId=worker.threadId;worker.once('exit',()=>runtime.recordUnverifiedNative('worker-thread',threadId));return worker},{kind:'worker-thread'})}}))
  // Intervals are independent scheduled admissions. Request-owned intervals are
  // retained with the original operation until clearInterval, never cancelled by
  // draining. Startup-created polling intervals do not hold startup forever.

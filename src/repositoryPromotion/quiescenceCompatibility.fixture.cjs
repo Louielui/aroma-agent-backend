@@ -49,10 +49,12 @@ async function main(){
   injected=1;fs.writeFileSync(path.join(directory,'business'),'complete');const completed=fs.readFileSync(path.join(directory,'business'),'utf8')==='complete';injected=-1;let refused=false;try{fs.writeFileSync(path.join(directory,'business'),'unsafe')}catch(_){refused=true}injected=0;return{completed,refused,unchanged:fs.readFileSync(path.join(directory,'business'),'utf8')==='complete'}
  }
  if(scenario==='drain'){
-  const p=util.promisify(cp.execFile)(process.execPath,['-e','setTimeout(()=>process.stdout.write("done"),200)']);const timer=util.promisify(setTimeout)(150,'timer');const request={password:'fixture-owner-password',run:randomUUID(),expectedGeneration:0};gate.prepare(request)
-  const pending=gate.status().leases.length>0;let refused=false;try{await util.promisify(cp.execFile)(process.execPath,['-e','process.exit(0)'])}catch(e){refused=e.message==='deployment_draining'}await Promise.all([p,timer]);for(let i=0;i<50&&gate.status().leases.length;i++)await sleep(10)
+  const timer=util.promisify(setTimeout)(150,'timer');const request={password:'fixture-owner-password',run:randomUUID(),expectedGeneration:0};gate.prepare(request)
+  const pending=gate.status().leases.length>0;let refused=false;try{await util.promisify(cp.execFile)(process.execPath,['-e','process.exit(0)'])}catch(e){refused=e.message==='deployment_draining'}await timer;for(let i=0;i<50&&gate.status().leases.length;i++)await sleep(10)
   const finished=gate.status().leases.length===0;gate.acknowledge('backend',()=>({idle:true}));gate.freeze({...request,expectedGeneration:1});let frozen=false;try{await util.promisify(setTimeout)(1)}catch(e){frozen=e.message==='deployment_frozen'}return{pending,refused,finished,frozen}
  }
  throw Error('unknown_scenario')
 }
-main().then(async result=>{for(let i=0;i<200&&runtime.active().length;i++)await sleep(5);if(runtime.active().length)throw Error('fixture_writers_not_drained');restore();runtime.close();raw.rmSync(directory,{recursive:true,force:true});if(process.send)await new Promise(r=>process.send(result,r))}).catch(e=>{restore();runtime.close();console.error(e.stack);process.exitCode=1}).finally(()=>process.disconnect?.())
+// The parent cleans this disposable directory only after the entire fixture
+// process exits. Logical unresolved leases are intentionally not auto-cleared.
+main().then(async result=>{restore();runtime.close();if(process.send)await new Promise(r=>process.send({result,directory},r))}).catch(e=>{restore();runtime.close();console.error(e.stack);process.exitCode=1}).finally(()=>process.disconnect?.())
