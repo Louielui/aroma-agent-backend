@@ -65,7 +65,7 @@ async function capture(windowId,coverage='main_frame_visible_text',expectedTab=n
  if(!row?.documentId||!row.result?.text)throw Error('page_text_unavailable')
  const bytes=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(row.result.text))
  const contentHash=Array.from(new Uint8Array(bytes),b=>b.toString(16).padStart(2,'0')).join('')
- return{title:row.result.title,text:row.result.text,source:{url:row.result.url,tabId:tab.id,windowId:tab.windowId,documentId:row.documentId,frameId:0,capturedAt:new Date().toISOString(),contentHash,truncated:row.result.truncated,coverage}}
+  return{title:row.result.title,text:row.result.text,source:{url:row.result.url,tabId:tab.id,windowId:tab.windowId,documentId:row.documentId,frameId:0,capturedAt:new Date().toISOString(),contentHash,truncated:row.result.truncated,coverage,...(row.result.gmail?{gmail:row.result.gmail}:{})}}
 }
 function rpc(body){
  clearTimeout(closeTimer)
@@ -106,11 +106,12 @@ chrome.runtime.onMessage.addListener((message,sender,sendResponse)=>{
    if(scope&&(b.source?.windowId!==scope.windowId||b.source?.tabId!==scope.tabId))throw Error('conversation_tab_changed')
     readJobs.set(b.id,{tabId:b.source?.tabId,windowId:b.source?.windowId})
     try{
-    const fresh=await capture(b.source?.windowId,b.source?.coverage,scope?.tabId??null)
+     const fresh=await capture(b.source?.windowId,b.source?.coverage,scope?.tabId??null)
+     if(!b.source?.gmail)delete fresh.source.gmail
     const current=(await chrome.tabs.query({active:true,windowId:fresh.source.windowId}))[0]
     if(!readJobs.has(b.id)||current?.id!==fresh.source.tabId)throw Error('source_changed')
    for(const k of ['url','tabId','windowId','documentId','frameId','contentHash','truncated'])if(fresh.source[k]!==b.source?.[k])throw Error('source_changed')
-   if(fresh.source.coverage!==(b.source?.coverage||'main_frame_visible_text'))throw Error('source_changed')
+    if(fresh.source.coverage!==(b.source?.coverage||'main_frame_visible_text')||JSON.stringify(fresh.source.gmail)!==JSON.stringify(b.source?.gmail))throw Error('source_changed')
    if(fresh.text!==b.text)throw Error('source_changed')
     return await rpc({...b,source:fresh.source})
     }finally{readJobs.delete(b.id)}

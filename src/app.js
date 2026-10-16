@@ -1233,7 +1233,7 @@ function createApp (options = {}) {
   }}})
   const browserReadStore = require('./browserRead/store').createStore(path.join(require('./store/dataDir').resolveDataDir(), 'browser-context-reads'))
   const browserRead = require('./browserRead/service').createBrowserRead({
-    taskRunner: require('./browserRead/contextTask').createContextTask({ legacy: readTask, drive: liveContext.drive }),
+    taskRunner: require('./browserRead/contextTask').createContextTask({ legacy: readTask, drive: liveContext.drive, gmail: liveContext.gmail }),
     store: browserReadStore,
     selection: () => modelCenter.read().brain,
     provider: choice => {
