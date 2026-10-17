@@ -18,7 +18,7 @@ const { t, currentLocale } = require('../i18n/t')
 
 const {
   SESSION_COOKIE, readCookie, passwordMatches, readOwnerPassword,
-  ownerPasswordConfigured, sessionCookie, clearedCookie
+  ownerPasswordConfigured, sessionCookie, clearedCookie, sessionCookieName
 } = require('../governance/ownerAuth')
 const { iconDataUri } = require('../demo/appManifest') // the same dot the rest of the app uses
 
@@ -94,13 +94,14 @@ button:hover{background:#c96a47}
 </body></html>`
 }
 
-function createOwnerAuthRouter ({ sessions, isConfigured = ownerPasswordConfigured, resolvePassword = readOwnerPassword } = {}) {
+function createOwnerAuthRouter ({ sessions, isConfigured = ownerPasswordConfigured, resolvePassword = readOwnerPassword, cookieName = SESSION_COOKIE } = {}) {
   if (!sessions) throw new Error('createOwnerAuthRouter: a session store is required')
+  cookieName = sessionCookieName(cookieName)
   const router = express.Router()
 
   router.get('/owner/login', (req, res) => {
     // Already signed in → straight through, no need to type it again.
-    if (isConfigured() && sessions.valid(readCookie(req, SESSION_COOKIE))) {
+    if (isConfigured() && sessions.valid(readCookie(req, cookieName))) {
       return res.redirect(302, '/demo')
     }
     res.status(isConfigured() ? 200 : 503).type('html')
@@ -123,14 +124,14 @@ function createOwnerAuthRouter ({ sessions, isConfigured = ownerPasswordConfigur
       return res.status(401).type('html').send(loginPage({ next: body.next, error: t('auth.wrongPassword') }))
     }
     const sid = sessions.issue()
-    res.setHeader('Set-Cookie', sessionCookie(sid, sessions.TTL_MS))
+    res.setHeader('Set-Cookie', sessionCookie(sid, sessions.TTL_MS, cookieName))
     const next = safePath(body.next)
     return res.redirect(302, next)
   })
 
   router.post('/owner/logout', (req, res) => {
-    sessions.revoke(readCookie(req, SESSION_COOKIE))
-    res.setHeader('Set-Cookie', clearedCookie())
+    sessions.revoke(readCookie(req, cookieName))
+    res.setHeader('Set-Cookie', clearedCookie(cookieName))
     return res.status(200).json({ ok: true })
   })
 

@@ -124,13 +124,17 @@ function createSessionStore ({ ttlMs = DEFAULT_TTL_MS, now = () => Date.now() } 
  * If a non-loopback plain-http bind is ever considered, this flag has to be revisited
  * FIRST, and the failure will look like "login does nothing", not like a cookie problem.
  */
-function sessionCookie (id, ttlMs) {
-  return `${SESSION_COOKIE}=${encodeURIComponent(id)}; Path=/; HttpOnly; SameSite=Strict; Secure; Max-Age=${Math.floor(ttlMs / 1000)}`
+function sessionCookieName (name = SESSION_COOKIE) {
+  if (typeof name !== 'string' || !/^[A-Za-z0-9_-]{1,80}$/.test(name)) throw Error('invalid_owner_cookie')
+  return name
 }
-function clearedCookie () {
+function sessionCookie (id, ttlMs, cookieName = SESSION_COOKIE) {
+  return `${sessionCookieName(cookieName)}=${encodeURIComponent(id)}; Path=/; HttpOnly; SameSite=Strict; Secure; Max-Age=${Math.floor(ttlMs / 1000)}`
+}
+function clearedCookie (cookieName = SESSION_COOKIE) {
   // Must carry the SAME attributes as the cookie it clears, or the browser treats it as a
   // different cookie and the original quietly survives — i.e. logout would not log out.
-  return `${SESSION_COOKIE}=; Path=/; HttpOnly; SameSite=Strict; Secure; Max-Age=0`
+  return `${sessionCookieName(cookieName)}=; Path=/; HttpOnly; SameSite=Strict; Secure; Max-Age=0`
 }
 
 /**
@@ -143,13 +147,14 @@ function clearedCookie () {
  * @param {function} [deps.serviceTokenOk]     (req) => boolean
  * @param {function} [deps.onUnauthenticated]  (req,res) => void — e.g. redirect a page to /owner/login
  */
-function createRequireOwner ({ sessions, isConfigured = ownerPasswordConfigured, serviceTokenOk = null, onUnauthenticated = null } = {}) {
+function createRequireOwner ({ sessions, isConfigured = ownerPasswordConfigured, serviceTokenOk = null, onUnauthenticated = null, cookieName = SESSION_COOKIE } = {}) {
   if (!sessions) throw new Error('createRequireOwner: a session store is required')
+  cookieName = sessionCookieName(cookieName)
 
   return function requireOwner (req, res, next) {
     // An Owner session is only possible if a password was configured to create it, so
     // this needs no separate configured-check.
-    if (sessions.valid(readCookie(req, SESSION_COOKIE))) return next()
+    if (sessions.valid(readCookie(req, cookieName))) return next()
 
     // THE SERVICE TOKEN IS CHECKED BEFORE THE FAIL-CLOSED BRANCH, DELIBERATELY. It is an
     // independent credential with its own fail-closed startup check (the server refuses
@@ -180,6 +185,7 @@ module.exports = {
   readCookie,
   createSessionStore,
   createRequireOwner,
+  sessionCookieName,
   sessionCookie,
   clearedCookie
 }

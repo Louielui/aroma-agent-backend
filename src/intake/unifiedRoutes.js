@@ -1,9 +1,10 @@
 'use strict'
-const {SESSION_COOKIE,readCookie}=require('../governance/ownerAuth')
+const {SESSION_COOKIE,readCookie,sessionCookieName}=require('../governance/ownerAuth')
 const {validate,TASK}=require('./unifiedContract')
-function createRouter({intake,browserRead,conversations,withOwner=(_b,_v,execute)=>execute()}){
+function createRouter({intake,browserRead,conversations,withOwner=(_b,_v,execute)=>execute(),cookieName=SESSION_COOKIE}){
+ cookieName=sessionCookieName(cookieName)
  const router=require('express').Router(),base='/api/v1/demo/task-intake'
- const sessionValid=req=>{try{return req.app.locals.conversationDemo===true&&req.app.locals.ownerSessions?.valid(readCookie(req,SESSION_COOKIE))===true}catch{return false}}
+ const sessionValid=req=>{try{return req.app.locals.conversationDemo===true&&req.app.locals.ownerSessions?.valid(readCookie(req,cookieName))===true}catch{return false}}
  router.use(base,(req,res,next)=>{
   res.set('Cache-Control','no-store');res.set('X-Content-Type-Options','nosniff')
   const valid=sessionValid(req)
