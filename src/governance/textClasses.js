@@ -93,6 +93,7 @@ const FILE_CLASS = Object.freeze({
   'intake/readObligationGap.js': CLASS.INTERFACE,
   'intake/toolSelection/synthesis.js': CLASS.INTERFACE, // Chinese is fixed answer presentation; model contracts are English.
   'intake/toolSelection/taskRunner.js': CLASS.INTERFACE, // Synthetic-data disclosure, never authorization or input matching.
+  'intake/toolSelection/dependency.js': CLASS.INTERFACE, // Fixed bilingual clarification/availability presentation; typed identity validation is not translated.
   'investigation/ownerBrief.js': CLASS.INTERFACE,
   'actions/view.js': CLASS.INTERFACE,
     'actions/chat.js': CLASS.INTERFACE,
