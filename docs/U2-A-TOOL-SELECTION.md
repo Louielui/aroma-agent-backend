@@ -68,6 +68,14 @@ The existing child-environment allowlist strips API keys and business secrets.
 No paid API or business credential is used. Model access uses the existing
 development subscription; it does not change Xiangxiang's runtime brain.
 
+Alternatively append `--codex-subscription <absolute-codex-executable>` to use
+the existing `codexClient` with GPT-6 Astra / high. That client requires ChatGPT
+subscription authentication, disables tools/MCP/hooks/apps/memory, uses ephemeral
+read-only text-only threads, verifies the actual model and forbids additional
+credits (`allowCredits:false`). Receipts identify the actual provider; this option
+does not replace the required independent Claude Sonnet 5.5 code review. A model
+transport failure stops the demonstration and records remaining cases as not run.
+
 Sixteen cases include English/Chinese paraphrases across Aroma System, Calendar
 and Drive, a flat combination, ambiguity, no-tool, unsupported calendar write,
 approval-required development dispatch, unavailable Gmail/Drive, unsupported

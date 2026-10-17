@@ -14,12 +14,19 @@ async function main() {
   if (source.dirty) throw Error('clean_candidate_required')
   const provider = require('../../src/core/workerFlow/providers')
   const { fixture, MODEL } = require('./fixture.cjs')
+  const codex = process.argv[3] === '--codex-subscription' && typeof process.argv[4] === 'string'
+  if (process.argv[3] && (!codex || process.argv.length !== 5)) throw Error('invalid_demo_provider')
+  const selectedModel = codex ? 'gpt-6-astra' : MODEL, effort = codex ? 'high' : 'medium'
+  const billing = codex ? 'chatgpt-subscription' : 'claude-subscription'
+  const client = codex ? require('../../src/subscription/codexClient') : null
+  const clientOptions = codex ? { executable: process.argv[4], cwd: data, allowCredits: false, timeoutMs: 180000 } : null
   const { createSelectionTaskRunner } = require('../../src/intake/toolSelection/taskRunner')
   const { createStore } = require('../../src/browserRead/store')
   const { createBrowserRead } = require('../../src/browserRead/service')
   const { createUnifiedIntake } = require('../../src/intake/unifiedIntake')
   const tasks = require('../../src/store/store')
-  await provider.claudeStatus({ cwd: data, timeoutMs: 15000 })
+  if (codex) await client.checkSubscription({ ...clientOptions, model: selectedModel, effort })
+  else await provider.claudeStatus({ cwd: data, timeoutMs: 15000 })
   const cases = [
     { goal: 'Which replenishment suggestions does Aroma System currently have?', tools: ['aroma.order_planning.list'] },
     { goal: '香香，幫我睇下 Aroma System 記錄咗哪些發票。', tools: ['aroma.invoices.list'] },
@@ -44,6 +51,15 @@ async function main() {
     const c = cases[i], invocations = []
     let modelFailure = null
     const f = fixture({ unavailable: c.unavailable || [], complete: async (prompt, options) => {
+      if (codex) {
+        try {
+          const out = await client.complete({ ...clientOptions, signal: options.signal }, { prompt, system: options.system, model: selectedModel, effort })
+          if (out.model !== selectedModel || out.billing !== billing) throw Error('actual_model_mismatch')
+          invocations.push({ actualModels: [out.model], billing, effort, inputSha256: sha(prompt), responseSha256: sha(out.text),
+            usage: out.usage, durationMs: out.latencyMs, toolsEnabled: false, hooksEnabled: false, evidence: 'actual_model_backed_selection' })
+          return { ...out, actualModel: out.model }
+        } catch (error) { modelFailure = { reason: ['subscription_login_required', 'subscription_limit_reached', 'subscription_unavailable', 'subscription_model_unavailable', 'actual_model_mismatch'].includes(error.code || error.message) ? error.code || error.message : 'model_call_failed' }; throw error }
+      }
       const args = provider.textReviewArgs(['selection'], 'Select capabilities only.')
       args[args.indexOf('--system-prompt') + 1] = options.system
       args[args.indexOf('--model') + 1] = MODEL
@@ -61,11 +77,11 @@ async function main() {
         modelUsage: envelope.modelUsage, durationMs: envelope.duration_ms, toolsEnabled: false, hooksEnabled: false, evidence: 'actual_model_backed_selection' })
       return { model: MODEL, actualModel: MODEL, text: envelope.result }
     } })
-    f.model.billing = 'claude-subscription'
+    f.model.billing = billing; f.model.model = selectedModel
     if (c.unauthorized) f.context.actor.role = 'native_service'
     const reads = createStore(path.join(data, 'reads-' + i)), intake = createUnifiedIntake({ store: tasks, reads, enabled: () => true })
     const runner = createSelectionTaskRunner({ bindings: f.bindings, authorize: f.authorize, evidenceMode: 'synthetic_fixture' })
-    const browser = createBrowserRead({ store: reads, selection: () => ({ model: MODEL, effort: 'medium' }), provider: () => f.model, taskRunner: runner, unifiedIntake: intake, timeoutMs: 190000 })
+    const browser = createBrowserRead({ store: reads, selection: () => ({ model: selectedModel, effort }), provider: () => f.model, taskRunner: runner, unifiedIntake: intake, timeoutMs: 190000 })
     let record = null, error = null
     try { record = await browser.handleMain({ version: 1, operation: 'start', clientSubmissionId: require('node:crypto').randomUUID(), message: c.goal,
       conversationId: f.context.conversationId, taskRef: null, expectedRevision: null, contextRefs: [] }) } catch (_) { error = 'request_rejected' }
@@ -91,7 +107,7 @@ async function main() {
     console.log(JSON.stringify(results.at(-1)))
     if (modelFailure) { blocked = true; break }
   }
-  const receipt = { version: 1, ...source, at: new Date().toISOString(), selection: 'actual_claude_subscription', businessData: 'synthetic_disposable_fixture', liveExternalActions: false,
+  const receipt = { version: 1, ...source, at: new Date().toISOString(), selection: 'actual_' + billing, model: selectedModel, effort, businessData: 'synthetic_disposable_fixture', liveExternalActions: false,
     blocked, counts: { planned: cases.length, total: results.length, notRun: cases.length - results.length, passed: results.filter(r => r.pass).length, failed: results.filter(r => !r.pass).length }, results,
     files: fs.readdirSync(directory).sort().map(file => ({ file, sha256: sha(fs.readFileSync(path.join(directory, file))) })) }
   fs.writeFileSync(path.join(directory, 'receipt.json'), JSON.stringify(receipt, null, 2) + '\n', { flag: 'wx' })
