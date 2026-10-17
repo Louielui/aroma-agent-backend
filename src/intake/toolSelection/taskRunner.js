@@ -54,6 +54,10 @@ function createSelectionTaskRunner({ bindings, authorize, evidenceMode, synthesi
     }
     try {
       const carriedLeases = []
+      if (clarification?.crossSourceIntent) {
+        const proof = require('./clarification'), origin = clarificationEvidence
+        if (!crossSourceEnabled || !origin || proof.hash(origin) !== clarification.originEvidenceHash || origin.execution?.packs?.length !== 1 || proof.hash(origin.execution.crossSourceIntent) !== proof.hash(proof.SOURCE_A_INTENT)) throw Error('cross_source_origin_unavailable')
+      }
       if (clarification?.crossSource) {
         const origin = clarificationEvidence
         if (!crossSourceEnabled || !origin || require('./clarification').hash(origin) !== clarification.originEvidenceHash || !origin.execution?.handoff || origin.execution.packs.length !== 3) throw Error('cross_source_origin_unavailable')
@@ -70,6 +74,7 @@ function createSelectionTaskRunner({ bindings, authorize, evidenceMode, synthesi
       const synthesisSelection = selection.dependency ? { ...selection, tools: [...selection.tools, { id: selection.dependency.id }] } : selection
       const leases = carriedLeases.concat(synthesizeResults && selection.status === 'read_tool_needed' ? synthesisSelection.tools.map(t => bindings.find(b => b.descriptor.id === t.id).capture()) : [])
       let execution = selection.status === 'read_tool_needed' ? await selector.execute(selection) : null
+      if (crossSourceEnabled && !clarification && execution?.status === 'clarification_required') execution = { ...execution, crossSourceIntent: { ...require('./clarification').SOURCE_A_INTENT } }
       const checkInitial = () => { assertActive(); if (signal?.aborted || digest(authorize()) !== digest(context)) throw Error('selection_scope_changed'); for (const lease of leases) lease() }
       let investigation = null
       if (crossSourceEnabled && clarification?.crossSource) {
@@ -81,7 +86,7 @@ function createSelectionTaskRunner({ bindings, authorize, evidenceMode, synthesi
         const prefix = origin.execution.packs.slice(0, 2)
         investigation = origin.execution.handoff
         if (execution) execution = { ...execution, packs: [...prefix, ...execution.packs], handoff: investigation }
-      } else if (crossSourceEnabled && !clarification && execution?.status === 'read_completed') {
+      } else if (crossSourceEnabled && (!clarification || clarification.crossSourceIntent) && execution?.status === 'read_completed') {
         checkInitial()
         const initial = execution, initialSelection = selection, next = await selector.handoff(question, selection, execution)
         checkInitial()
@@ -93,6 +98,9 @@ function createSelectionTaskRunner({ bindings, authorize, evidenceMode, synthesi
           selection = next.selection
           investigation = { ...next.lineage, initialSelection, prefixPacks: 2 }
           execution = { ...next.execution, packs: [...initial.packs, ...next.execution.packs], handoff: investigation }
+          if (clarification?.crossSourceIntent && execution.status === 'clarification_required') {
+            execution = { ...execution, status: 'clarification_limit_reached', dependency: { ...execution.dependency, reason: 'second_clarification_not_supported' } }
+          }
         }
       }
       let synthesis = null
@@ -108,7 +116,7 @@ function createSelectionTaskRunner({ bindings, authorize, evidenceMode, synthesi
         }
         const synthesisModel = { model: adapter.model, billing: adapter.billing, complete(prompt, options) { return adapter.complete(prompt, { ...options, signal }) } }
         const visible = boundedExecution(execution)
-        const detailIndexes = investigation ? [...new Set([1, execution.packs.length - 1])] : clarification ? [1] : null
+        const detailIndexes = execution.status === 'clarification_limit_reached' ? [1] : investigation ? [...new Set([1, execution.packs.length - 1])] : clarification ? [1] : null
         const synthesisInput = detailIndexes ? { selection: { ...selection, tools: detailIndexes.map(i => ({ id: execution.packs[i].resource + '.' + execution.packs[i].operation })) }, execution: { ...execution, packs: detailIndexes.map(i => visible.packs[i]) } } : { selection: synthesisSelection, execution: visible }
         synthesis = await require('./synthesis').synthesize({ question, selection: synthesisInput.selection, execution: synthesisInput.execution, model: synthesisModel, check, record, crossSource: !!investigation })
       }
@@ -117,14 +125,14 @@ function createSelectionTaskRunner({ bindings, authorize, evidenceMode, synthesi
       runs.appendStage(run.id, 'SUCCEEDED', { executor: 'context_tool_gateway', selectionStatus: selection.status, executionStatus: execution?.status || 'not_executed', goalCompleted: false })
       const evidence = { version: 1, operation: crossSourceEnabled ? 'u3.cross_source_investigation' : dependentReads ? 'u3.bounded_dependent_read' : synthesizeResults ? 'u2.grounded_synthesis' : 'u2.bounded_selection', state: evidenceMode === 'synthetic_fixture' ? 'synthetic' : 'unverified_goal',
         evidenceMode, selection, execution: boundedExecution(execution), ...(synthesizeResults ? { synthesis } : {}), run: runs.getRun(run.id), goalCompleted: false }
-      const dependencyMessage = investigation?.reason === 'no_supported_handoff' ? null : require('./dependency').dependencyReply(execution)
+      const dependencyMessage = execution?.status === 'clarification_limit_reached' ? 'Several Source B candidates were returned. This workflow has already used its one clarification cycle; no Source B detail was selected or read. The bounded investigation stopped and the Owner goal remains open.' : investigation?.reason === 'no_supported_handoff' ? null : require('./dependency').dependencyReply(execution)
       const dependentReply = investigation && dependencyMessage ? 'Source B: ' + dependencyMessage : dependencyMessage
       const text = (clarification && selection.status === 'ambiguous_goal' ? 'I could not identify one record from that reply. Which of the previously listed records should I read? No source read was performed; the original Owner goal remains open.' : null) || (investigation && synthesis ? (evidenceMode === 'synthetic_fixture' ? '【隔離合成資料示範】\n' : '') + (dependentReply || '') + '\n' + synthesis.text : dependentReply) || (synthesis ? (evidenceMode === 'synthetic_fixture' ? '【隔離合成資料示範】\n' : '') + synthesis.text : JSON.stringify({ evidenceMode, selectionStatus: selection.status, interpretation: selection.interpretedOutcome || null,
           executionStatus: execution?.status || 'not_executed', sources: execution?.packs.map(readReceipt) || [], goalCompleted: false }))
       return { model: adapter.model, actualModel: selection.actualModel || null, billing: adapter.billing || null,
         text: (crossSourceEnabled && evidenceMode === 'synthetic_fixture' && !text.startsWith('【隔離合成資料示範】') ? '【隔離合成資料示範】\n' : '') + text +
           (investigation && !synthesis ? '\n' + require('./synthesis').CROSS_SOURCE_LIMITATION : '') +
-          (crossSourceEnabled && clarification && !clarification.crossSource && execution?.status === 'read_completed' ? '\nThis Source A clarification completed only its bounded read. No cross-source handoff was performed; a fresh explicit investigation is required.' : '') + (investigation?.reason === 'no_supported_handoff' ? '\nSource A detail was read. No permitted relevant Source B search was selected. No Source B read was performed.' : ''), evidence }
+          (investigation?.reason === 'no_supported_handoff' ? '\nSource A detail was read. No permitted relevant Source B search was selected. No Source B read was performed.' : ''), evidence }
     } catch (error) {
       runs.appendStage(run.id, 'FAILED', { error: 'selection_or_read_failed' })
       onEvent({ stage: 'u2_failed_no_retry', runId: run.id, evidenceMode })

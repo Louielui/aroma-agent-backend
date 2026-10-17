@@ -241,7 +241,7 @@ function createSelection({ bindings, authorize, model, record, signal, dependent
     const selection = { ...initial, id: randomUUID(), tools: [tool], dependency, interpretationTrust: 'evidence_grounded_model_proposal', actualModel: response.actualModel || response.model || null }
     const lineage = { originSelectionId: initial.id, source: pack.source, sourceId: row.sourceId, packSha256: digest(pack), field, value, valueSha256: digest(value), retrievedAt: pack.retrievedAt,
       target: tool.id, transactionRelationship: 'not_established', comparison: 'not_supported', queryIsAuthority: false }
-    emit({ stage: 'u3_cross_source_selected', selectionSha256: digest(selection), lineage }); verify()
+    emit({ stage: 'u3_cross_source_selected', selectionSha256: digest(selection), lineage, search: tool.id, detail: dependency.id }); verify()
     // Retain all captured earlier-source leases through every Source B await.
     const nextLeases = [checks.get(tool.id), checks.get(dependency.id)]
     for (const id of [tool.id, dependency.id]) { const lease = checks.get(id); checks.set(id, () => { verify(); lease() }) }

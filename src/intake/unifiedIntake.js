@@ -40,6 +40,7 @@ function createUnifiedIntake({store,enabled=()=>false,reads=null}){
   const proof=require('./toolSelection/clarification'),actual=proof.fromRecord(reads.get(c.originExecutionRef.id),origin)
   for(const k of ['authorizationHash','scopeHash','discovery','dependency','source','resource','candidates','discoveryPackHash','originEvidenceHash','originalSelectionId'])if(proof.hash(actual[k])!==proof.hash(c[k]))throw Error('clarification_evidence_changed')
   if(proof.hash(actual.crossSource??null)!==proof.hash(c.crossSource??null))throw Error('clarification_evidence_changed')
+  if(proof.hash(actual.crossSourceIntent??null)!==proof.hash(c.crossSourceIntent??null))throw Error('clarification_evidence_changed')
   if(c.lastExecutionRef&&proof.hash(reads.get(c.lastExecutionRef.id))!==c.lastRecordHash)throw Error('clarification_evidence_changed')
   if(tool!==null)store.checkUnifiedClarification(binding,tool)
   return c

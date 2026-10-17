@@ -515,7 +515,15 @@ function checkUnifiedClarification(binding,tool=null){
   return{task,c}
  }
  if(tool===null)return structuredClone(check(load()).c)
- return withLock(()=>{const db=load(),{task,c}=check(db),base=c.crossSource?3:1,expected=c.reads===base?c.discovery.id:c.reads===base+1?c.dependency.id:null
+ return withLock(()=>{const db=load(),{task,c}=check(db)
+  if(tool&&typeof tool==='object'){
+   const e=tool,h=e.lineage,proof=require('../intake/toolSelection/clarification'),scope=task.unifiedIntake.attempts.at(-1).scope
+   const search=scope.find(s=>s.id===e.search),detail=scope.find(s=>s.id===e.detail)
+   if(!c.crossSourceIntent||c.reads!==3||c.handoff||e.stage!=='u3_cross_source_selected'||!search||!detail||search.source===c.source||detail.source!==search.source||!e.search.endsWith('.search')||e.detail!==e.search.slice(0,-7)+'.get'||h?.source!==c.source||!c.candidates.some(r=>r.sourceId===h.sourceId)||h.target!==e.search||h.queryIsAuthority!==false||h.transactionRelationship!=='not_established'||h.comparison!=='not_supported'||!/^[a-f0-9]{64}$/.test(h.packSha256||'')||!/^[a-f0-9]{64}$/.test(e.selectionSha256||''))throw Error('clarification_handoff_not_authorized')
+   c.handoff={search:e.search,detail:e.detail,selectionSha256:e.selectionSha256,lineageHash:proof.hash(h),sourceId:h.sourceId,sourcePackHash:h.packSha256}
+   clarificationEvent(db,task,'task.clarification_handoff_bound',{attemptId:binding.attemptId,...c.handoff});save(db);return
+  }
+  const base=c.crossSource?3:1,expected=c.reads===base?c.discovery.id:c.reads===base+1?c.dependency.id:c.crossSourceIntent&&c.reads===3?c.handoff?.search:c.crossSourceIntent&&c.reads===4?c.handoff?.detail:null
   if(tool!==expected)throw Error('clarification_read_budget_exhausted')
   c.reads++;clarificationEvent(db,task,'task.clarification_read_attempt',{attemptId:binding.attemptId,tool,ordinal:c.reads});save(db)
  })
@@ -530,7 +538,7 @@ function finishUnifiedClarification(binding,record){
   c.lastExecutionRef=structuredClone(a.executionRef);c.lastRecordHash=proof.hash(record)
   if(record.state==='completed'&&record.result?.taskEvidence?.selection?.status==='ambiguous_goal'&&c.reads===(c.crossSource?3:1)){
    c.previousId=c.id;c.id=uuidv4();c.state='WAITING_CLARIFICATION';c.reason='ambiguous_owner_response'
-  }else{c.state=record.state==='completed'&&x?.status==='read_completed'&&c.reads===(c.crossSource?5:3)?'CLARIFICATION_COMPLETED':record.state==='cancelled'?'CLARIFICATION_CANCELLED':record.state==='interrupted'?'CLARIFICATION_INTERRUPTED':'CLARIFICATION_FAILED';c.reason=x?.dependency?.reason||record.error||x?.status||'continuation_not_completed'}
+  }else{c.state=record.state==='completed'&&x?.status==='read_completed'&&c.reads===(c.crossSource||c.crossSourceIntent?5:3)?'CLARIFICATION_COMPLETED':record.state==='cancelled'?'CLARIFICATION_CANCELLED':record.state==='interrupted'?'CLARIFICATION_INTERRUPTED':'CLARIFICATION_FAILED';c.reason=x?.dependency?.reason||record.error||x?.status||'continuation_not_completed'}
   u.revision++;clarificationEvent(db,task,'task.clarification_terminal',{attemptId:a.id,state:c.state,reads:c.reads,recordHash:c.lastRecordHash});save(db)
  })
 }
