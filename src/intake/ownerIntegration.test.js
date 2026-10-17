@@ -25,16 +25,23 @@ for (const phase of ['status','complete']) test('R1 actual HTTP model/billing mi
 test('R1 Owner session revoked during a read discards its content and prevents follow-up access', async()=>{
   let f
   f=await require('../../scripts/r1/fixture.cjs').fixture({beforeRead:async()=>{await f.logout()}})
-  try{await f.post(f.start);assert.equal(f.calls.length,1);const r=f.reads.all().at(-1);assert.equal(r.state,'failed');assert.equal(r.result,undefined)}finally{await f.close()}
+  try{await f.post(f.start);assert.equal(f.calls.length,1);const r=f.reads.all().find(r=>r.requestId===f.start.clientSubmissionId);assert.equal(r.state,'failed');assert.equal(r.result,undefined)}finally{await f.close()}
 })
-test('R1 actual app restart interrupts an admitted model attempt; late completion and exact replay cannot read sources',async()=>{
+test('R1 actual app restart interrupts an admitted model attempt; late completion and exact replay cannot read sources',{timeout:15000},async()=>{
   let ready,release
   const started=new Promise(r=>{ready=r})
   const f=await require('../../scripts/r1/fixture.cjs').fixture({transport:async(route,input)=>{
     if(route==='/status')return {model:input.model,billing:'chatgpt-subscription'}
     ready();return new Promise(r=>{release=()=>r({model:input.model,billing:'chatgpt-subscription',stopReason:'end_turn',text:JSON.stringify({kind:'read',outcome:'Find quotation',capability:null,tools:[{id:'drive.company_files.search',arguments:{query:'quotation'}}],dependency:{from:0,id:'drive.company_files.get',result:'sourceId'}})})})
   }})
-  try{const running=f.post(f.start);await started;f.rebuild();assert.equal(f.reads.all().at(-1).state,'interrupted');release();const result=await running;assert.equal(result.body.unifiedTask.executionState,'interrupted');assert.equal(f.calls.length,0);await f.post(f.start);assert.equal(f.calls.length,0)}finally{await f.close()}
+  let running
+  try{
+    running=f.post(f.start)
+    await Promise.race([started,running.then(r=>{throw Error('model_not_started:'+JSON.stringify(r.body))})])
+    f.rebuild()
+    assert.equal(f.reads.all().find(r=>r.requestId===f.start.clientSubmissionId).state,'interrupted')
+    release();const result=await running;assert.equal(result.body.unifiedTask.executionState,'interrupted');assert.equal(f.calls.length,0);await f.post(f.start);assert.equal(f.calls.length,0)
+  }finally{if(release)release();if(running)await running;await f.close()}
 })
 test('R1 actual application login and Main Owner route preserve same-task five-read clarification and reject bearer/origin/session bypasses', async () => {
   const f = await require('../../scripts/r1/fixture.cjs').fixture()
