@@ -45,6 +45,8 @@ are checked by the existing binder; unsupported/contradicted/uncertain wording
 is withheld by the existing semantic reviewer. Verified binding proves what the
 source returned, not the truth of the source or the semantic correctness of a
 model paraphrase. The final answer discloses this limit.
+Source attribution itself is a cited scalar from the validated Context Pack;
+catalog IDs stay out of model prose and are appended by the host with a legend.
 
 Source observations, unestablished interpretation/recommendation, missing
 information and partial coverage are visibly distinguished. All record claims

@@ -36,6 +36,12 @@ test('invented price is rejected by the reused scalar binder before semantic rev
   const m = modelFor([f.claim]), r = await run(f, m)
   assert.equal(r.claims.length, 0); assert(!r.text.includes('999')); assert.equal(m.calls.length, 1)
 })
+test('catalog IDs cannot smuggle extra numbers into prose; exact source identity is available for attribution', async () => {
+  const f = await setup(); assert.equal(f.report.sections[0].records[0].source, 'aroma_system')
+  f.claim.text = 'S2 records CAD 84.'
+  const m = modelFor([f.claim]), r = await run(f, m)
+  assert.equal(r.claims.length, 0); assert.equal(m.calls.length, 1)
+})
 test('wrong reference IDs or values cannot be rescued by a supportive model reviewer', async () => {
   for (const field of ['sourceId', 'recordId', 'value']) {
     const f = await setup(); f.claim.references[0][field] = 'invented'
