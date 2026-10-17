@@ -7,6 +7,7 @@ async function main(){
  if(process.argv.length!==4||!path.isAbsolute(directory||'')||!path.isAbsolute(executable||'')||fs.existsSync(directory))throw Error('fresh_absolute_evidence_and_subscription_executable_required')
  fs.mkdirSync(directory)
  const cwd=fs.mkdtempSync(path.join(os.tmpdir(),'u3b-demo-'));process.env.AROMA_DATA_DIR=path.join(cwd,'data');process.env.AROMA_ARTIFACT_DIR=path.join(cwd,'artifacts')
+ fs.mkdirSync(process.env.AROMA_DATA_DIR);fs.mkdirSync(process.env.AROMA_ARTIFACT_DIR)
  const root=path.resolve(__dirname,'../..'),git=a=>cp.execFileSync('git',a,{cwd:root,encoding:'utf8',windowsHide:true}).trim()
  const source={commit:git(['rev-parse','HEAD']),tree:git(['rev-parse','HEAD^{tree}'])}
  if(git(['status','--porcelain']))throw Error('clean_candidate_required')
