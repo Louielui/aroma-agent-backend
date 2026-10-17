@@ -17,7 +17,7 @@ const DEPENDENT_SYSTEM = SYSTEM.replace('For read, tools contains 1 to 3 indepen
 In this opt-in host mode return the same JSON object with one additional required key "dependency": null or {"from":0,"id":"advertised get tool ID","result":"sourceId"}.
 Use one typed dependency when the Owner asks to find/locate a record or document and then read its details/content, where its actual ID is not yet known. Choose a list/search discovery and an advertised get accepting the SAME identityType and source/resource. The server binds the returned sourceId to the target argument. Never put a file ID, record ID, URL, arguments or scope in dependency. Only a unique result with complete discovery coverage may advance. Multiple matches require clarification; never rank or choose one yourself. Non-read kinds and independent reads require dependency:null. Maximum two reads in a dependent workflow (one discovery, one detail); no later model decision or fallback.`
 
-function createSelection({ bindings, authorize, model, record, signal, dependentReads = false }) {
+function createSelection({ bindings, authorize, model, record, signal, dependentReads = false, clarificationEnabled = false, assertActive = () => {} }) {
   if (!Array.isArray(bindings) || typeof authorize !== 'function' || typeof model?.complete !== 'function' || typeof record !== 'function') throw Error('invalid_selection_host')
   const catalog = new Map(bindings.map(b => [b.descriptor.id, b]))
   if (catalog.size !== bindings.length) throw Error('duplicate_tool')
@@ -30,6 +30,7 @@ function createSelection({ bindings, authorize, model, record, signal, dependent
     }
   }
   const check = () => {
+    assertActive()
     if (signal?.aborted) throw Error('selection_cancelled')
     const c = authorize()
     // Only authenticated host state; never accepted as part of the model response.
@@ -93,9 +94,36 @@ function createSelection({ bindings, authorize, model, record, signal, dependent
     else if (selected.some(t => !checks.has(t.id))) status = 'tool_unavailable'
     const selection = { id, goal, status, interpretedOutcome: proposal.outcome, interpretationTrust: 'model_proposal', capability: proposal.capability,
       tools: normalized, ...(dependentReads ? { dependency } : {}), grantsAuthority: false, actualModel: response.actualModel || null,
+      ...(clarificationEnabled ? { authorizationHash: digest(context) } : {}),
       ...(status === 'approval_required' ? { nextBoundary: 'existing_owner_approval_gateway', approvalCreated: false } : {}) }
     emit({ stage: 'u2_selection_validated', id, status, tools: normalized, selectionSha256: digest(selection) })
     if (status === 'read_tool_needed') pending.set(selection, { selection: structuredClone(selection), context, checks })
+    return selection
+  }
+  // Reconstruct a fixed host-claimed typed edge, never a serialized model token.
+  async function resume(objective, clarification) {
+    const proof = require('./clarification'), c = structuredClone(clarification), context = check()
+    if (!clarificationEnabled || !dependentReads || !proof.valid(c) || c.state !== 'PROCESSING_CLARIFICATION' || digest(context) !== c.authorizationHash || context.surface !== 'main') throw Error('clarification_not_authorized')
+    const tool = catalog.get(c.discovery.id), target = catalog.get(c.dependency.id)
+    const normalized = [{ id: c.discovery.id, arguments: tool?.validate(c.discovery.arguments) }]
+    const dependency = require('./dependency').validateDependency({ from: c.dependency.from, id: c.dependency.id, result: c.dependency.result }, normalized, catalog)
+    if (tool.descriptor.source !== c.source || tool.descriptor.resource !== c.resource) throw Error('clarification_scope_changed')
+    const checks = new Map()
+    for (const b of [tool, target]) {
+      if (!context.sources.includes(b.descriptor.source)) throw Error('selection_not_authorized')
+      const verify = b.capture(); verify(); checks.set(b.descriptor.id, verify)
+    }
+    const id = randomUUID(), prompt = JSON.stringify({ originalObjective: objective, response: c.response, candidates: c.candidates.map((r, i) => ({ position: i + 1, untrustedLabel: r.label })) })
+    const verify = () => { same(context); for (const check of checks.values()) check() }
+    emit({ stage: 'u3_clarification_started', id, inputSha256: digest(prompt), clarificationId: c.id }); verify()
+    const response = await model.complete(prompt, { system: proof.SYSTEM, invocationPhase: 'clarification', signal }); verify()
+    if (typeof response?.text !== 'string' || response.text.length > 1000) throw Error('invalid_clarification_response')
+    let proposed; try { proposed = JSON.parse(response.text) } catch { throw Error('invalid_clarification_response') }
+    if (!exact(proposed, ['choice']) || proposed.choice !== null && (!Number.isSafeInteger(proposed.choice) || proposed.choice < 1 || proposed.choice > c.candidates.length)) throw Error('invalid_clarification_response')
+    emit({ stage: 'u3_clarification_resolved', id, clarificationId: c.id, position: proposed.choice, responseSha256: digest(response.text), actualModel: response.actualModel || null }); verify()
+    const selection = { id, goal: createGoal({ objective, requestId: id }), status: proposed.choice === null ? 'ambiguous_goal' : 'read_tool_needed', interpretedOutcome: 'Continue the original bounded discovery/detail read', interpretationTrust: 'model_proposal', capability: null,
+      tools: normalized, dependency, grantsAuthority: false, actualModel: response.actualModel || null, authorizationHash: digest(context) }
+    if (proposed.choice !== null) pending.set(selection, { selection: structuredClone(selection), context, checks, clarification: c, position: proposed.choice })
     return selection
   }
   async function execute(selection) {
@@ -135,7 +163,15 @@ function createSelection({ bindings, authorize, model, record, signal, dependent
     if (edge) {
       same(context); for (const t of guarded) saved.checks.get(t.id)()
       const target = catalog.get(edge.id)
-      dependent = { ...edge, ...require('./dependency').resolveDependency(packs[0], target), discoveryPackSha256: digest(packs[0]) }
+      let discovery = packs[0], continuation = null
+      if (saved.clarification) {
+        const proof = require('./clarification'), c = saved.clarification
+        let fresh = null; try { fresh = proof.candidates(discovery) } catch { /* Unverifiable is not a fresh identity. */ }
+        const matches = fresh && digest(fresh) === digest(c.candidates)
+        continuation = { clarificationId: c.id, originAttemptId: c.originAttemptId, originalDiscoveryPackSha256: c.discoveryPackHash, position: saved.position, freshIdentityVerified: !!matches }
+        discovery = matches ? { ...discovery, content: [discovery.content[saved.position - 1]] } : null
+      }
+      dependent = { ...edge, ...(discovery ? require('./dependency').resolveDependency(discovery, target) : { status: 'clarification_required', reason: 'candidate_changed_or_unverifiable' }), discoveryPackSha256: digest(packs[0]), ...(continuation ? { continuation } : {}) }
       if (dependent.status === 'resolved') {
         emit({ stage: 'u3_dependency_resolved', id: saved.selection.id, target: edge.id, identityType: edge.identityType,
           identity: dependent.identity, arguments: dependent.arguments, discoveryPackSha256: dependent.discoveryPackSha256 })
@@ -156,6 +192,6 @@ function createSelection({ bindings, authorize, model, record, signal, dependent
     if (edge) { same(context); for (const selected of guarded) saved.checks.get(selected.id)() }
     return result
   }
-  return Object.freeze({ select, execute })
+  return Object.freeze({ select, execute, ...(clarificationEnabled ? { resume } : {}) })
 }
 module.exports = { createSelection, SYSTEM, digest }

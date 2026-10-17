@@ -443,6 +443,7 @@ function getDispatch (id) { return (load().dispatches || []).find(x => x.id === 
 // same lock and atomic writer as legacy tasks; preserve every unrelated field.
 function reserveUnifiedTask({envelope,payloadHash,principal,surface,scope,sourceHash}){
  const contract=require('../intake/unifiedContract'),b=contract.validate(envelope)
+ if(b.operation==='clarification_response')return reserveClarification({envelope:b,payloadHash,principal,surface,scope,sourceHash})
  if(principal!=='owner'||!['main','chrome'].includes(surface)||payloadHash!==contract.payloadHash(b)||!Array.isArray(scope)||scope.length>20||Buffer.byteLength(JSON.stringify(scope))>12000||sourceHash!==null&&!/^[a-f0-9]{64}$/.test(sourceHash))throw Error('invalid_unified_request')
  return withLock(()=>{
   const db=load()
@@ -456,6 +457,7 @@ function reserveUnifiedTask({envelope,payloadHash,principal,surface,scope,source
    if(surface!=='main')throw Error('owner_session_required')
    if(task.unifiedIntake.revision!==b.expectedRevision)throw Error('revision_conflict')
    if(task.ownerGoal.originalObjective!==b.message)throw Error('new_objective_requires_new_task')
+   if(['WAITING_CLARIFICATION','PROCESSING_CLARIFICATION'].includes(task.unifiedIntake.clarification?.state))throw Error('clarification_pending')
    if(task.unifiedIntake.attempts.length>=32)throw Error('task_attempt_limit')
   }else{
    let id;do{id='task_'+uuidv4()}while(db.tasks.some(t=>t.id===id))
@@ -470,6 +472,86 @@ function reserveUnifiedTask({envelope,payloadHash,principal,surface,scope,source
   save(db);return{taskId:task.id,goalId:task.ownerGoal.goalId,attemptId:a.id,revision:u.revision,replayed:false}
  })
 }
+// These transitions share the authoritative U1 lock and atomic writer. A
+// cross-store receipt failure is reconciliation, never invented completion.
+function clarificationEvent(db,task,type,data={}){db.events.push({id:'evt_'+uuidv4(),type,entity_id:task.id,actor:'aroma',at:new Date().toISOString(),...data})}
+function publishUnifiedClarification(binding,record){
+ return withLock(()=>{
+  const db=load(),task=db.tasks.find(t=>t.id===binding.taskId),u=task?.unifiedIntake,a=u?.attempts.at(-1)
+  if(!a||a.id!==binding.attemptId||u.revision!==binding.revision||task.ownerGoal.goalId!==binding.goalId||a.executionRef?.id!==record.id||record.unifiedTask?.taskId!==task.id||record.unifiedTask?.attemptId!==a.id)throw Error('revision_conflict')
+  const c=require('../intake/toolSelection/clarification').fromRecord(record,a)
+  if(u.clarification){u.clarificationHistory||=[];u.clarificationHistory.push(u.clarification)}
+  u.clarification=c;u.revision++;clarificationEvent(db,task,'task.clarification_waiting',{clarificationId:c.id,attemptId:a.id,evidenceHash:c.originEvidenceHash});save(db)
+ })
+}
+function reserveClarification({envelope:b,payloadHash,principal,surface,scope,sourceHash}){
+ const contract=require('../intake/unifiedContract'),proof=require('../intake/toolSelection/clarification')
+ if(principal!=='owner'||surface!=='main'||payloadHash!==contract.payloadHash(b)||!Array.isArray(scope)||scope.length>20||Buffer.byteLength(JSON.stringify(scope))>12000||sourceHash!==null)throw Error('owner_session_required')
+ return withLock(()=>{
+  const db=load()
+  for(const t of db.tasks){const u=t.unifiedIntake;if(u?.principal!==principal)continue;const prior=u.attempts.find(a=>a.clientSubmissionId===b.clientSubmissionId)
+   if(prior){if(prior.payloadHash!==payloadHash||prior.surface!==surface)throw Error('submission_conflict');return{taskId:t.id,goalId:t.ownerGoal.goalId,attemptId:prior.id,revision:u.revision,replayed:true,executionRef:prior.executionRef}}
+  }
+  const task=db.tasks.find(t=>t.id===b.taskRef),u=task?.unifiedIntake,c=u?.clarification,origin=u?.attempts.find(a=>a.id===c?.originAttemptId)
+  if(!u||u.principal!==principal||!proof.valid(c)||c.state!=='WAITING_CLARIFICATION'||c.id!==b.clarificationId)throw Error('clarification_unavailable')
+  if(u.revision!==b.expectedRevision)throw Error('revision_conflict')
+  if(origin?.conversationId!==b.conversationId||proof.hash(scope)!==c.scopeHash)throw Error('clarification_scope_changed')
+  if(u.attempts.length>=32)throw Error('task_attempt_limit')
+  const a={id:uuidv4(),requestId:uuidv4(),clientSubmissionId:b.clientSubmissionId,payloadHash,surface,conversationId:b.conversationId,scope:structuredClone(scope),sourceHash:null,executionRef:null}
+  u.attempts.push(a);u.revision++;c.state='PROCESSING_CLARIFICATION';c.attemptId=a.id;c.response=b.response;c.responseSubmissionId=b.clientSubmissionId
+  clarificationEvent(db,task,'task.clarification_consumed',{clarificationId:c.id,attemptId:a.id,responseHash:proof.hash(b.response)});save(db)
+  return{taskId:task.id,goalId:task.ownerGoal.goalId,attemptId:a.id,revision:u.revision,replayed:false}
+ })
+}
+function checkUnifiedClarification(binding,tool=null){
+ const check=db=>{const task=db.tasks.find(t=>t.id===binding.taskId),u=task?.unifiedIntake,c=u?.clarification
+  if(!c||c.state!=='PROCESSING_CLARIFICATION'||c.attemptId!==binding.attemptId||u.revision!==binding.revision||task.ownerGoal.goalId!==binding.goalId)throw Error('clarification_interrupted')
+  return{task,c}
+ }
+ if(tool===null)return structuredClone(check(load()).c)
+ return withLock(()=>{const db=load(),{task,c}=check(db),expected=c.reads===1?c.discovery.id:c.reads===2?c.dependency.id:null
+  if(tool!==expected)throw Error('clarification_read_budget_exhausted')
+  c.reads++;clarificationEvent(db,task,'task.clarification_read_attempt',{attemptId:binding.attemptId,tool,ordinal:c.reads});save(db)
+ })
+}
+function finishUnifiedClarification(binding,record){
+ return withLock(()=>{
+  const db=load(),task=db.tasks.find(t=>t.id===binding.taskId),u=task?.unifiedIntake,c=u?.clarification,a=u?.attempts.at(-1),proof=require('../intake/toolSelection/clarification')
+  if(!c||c.attemptId!==binding.attemptId||!a||a.id!==binding.attemptId||a.executionRef?.id!==record.id||record.unifiedTask?.taskId!==task.id||record.unifiedTask?.goalId!==task.ownerGoal.goalId)throw Error('revision_conflict')
+  if(c.state==='CLARIFICATION_CANCELLED')return
+  if(c.state!=='PROCESSING_CLARIFICATION'||u.revision!==binding.revision)throw Error('revision_conflict')
+  const x=record.result?.taskEvidence?.execution
+  c.lastExecutionRef=structuredClone(a.executionRef);c.lastRecordHash=proof.hash(record)
+  if(record.state==='completed'&&record.result?.taskEvidence?.selection?.status==='ambiguous_goal'&&c.reads===1){
+   c.previousId=c.id;c.id=uuidv4();c.state='WAITING_CLARIFICATION';c.reason='ambiguous_owner_response'
+  }else{c.state=record.state==='completed'&&x?.status==='read_completed'&&c.reads===3?'CLARIFICATION_COMPLETED':record.state==='cancelled'?'CLARIFICATION_CANCELLED':record.state==='interrupted'?'CLARIFICATION_INTERRUPTED':'CLARIFICATION_FAILED';c.reason=x?.dependency?.reason||record.error||x?.status||'continuation_not_completed'}
+  u.revision++;clarificationEvent(db,task,'task.clarification_terminal',{attemptId:a.id,state:c.state,reads:c.reads,recordHash:c.lastRecordHash});save(db)
+ })
+}
+function cancelUnifiedClarification(id,revision,attemptId){
+ return withLock(()=>{const db=load(),task=db.tasks.find(t=>t.id===id),u=task?.unifiedIntake,c=u?.clarification
+  if(!c||!['WAITING_CLARIFICATION','PROCESSING_CLARIFICATION'].includes(c.state)||u.revision!==revision||u.attempts.at(-1)?.id!==attemptId)throw Error('revision_conflict')
+  c.state='CLARIFICATION_CANCELLED';u.revision++;clarificationEvent(db,task,'task.clarification_cancelled',{attemptId});save(db)
+ })
+}
+function reconcileUnifiedClarifications(reads){
+ return withLock(()=>{const db=load();let changed=false;const proof=require('../intake/toolSelection/clarification')
+  for(const task of db.tasks){const u=task.unifiedIntake,c=u?.clarification;if(!c)continue
+   let state=null
+   try{
+    const original=reads.get(c.originExecutionRef.id)
+    if(!proof.valid(c)||!original||proof.hash(original.result?.taskEvidence)!==c.originEvidenceHash)state='CLARIFICATION_RECONCILIATION_REQUIRED'
+    if(c.lastExecutionRef&&proof.hash(reads.get(c.lastExecutionRef.id))!==c.lastRecordHash)state='CLARIFICATION_RECONCILIATION_REQUIRED'
+   }catch{state='CLARIFICATION_RECONCILIATION_REQUIRED'}
+   if(!state&&c.state==='PROCESSING_CLARIFICATION'){
+    const ref=u.attempts.at(-1)?.executionRef
+    state=ref&&reads.get(ref.id)?.reconciliationRequired?'CLARIFICATION_RECONCILIATION_REQUIRED':'CLARIFICATION_INTERRUPTED'
+   }
+   if(state&&c.state!==state){c.state=state;u.revision++;changed=true;clarificationEvent(db,task,'task.clarification_recovery_no_retry',{state})}
+  }
+  if(changed)save(db)
+ })
+}
 function linkUnifiedAttempt(binding,ref){
  require('../intake/unifiedContract').executionRef(ref)
  return withLock(()=>{
@@ -479,4 +561,4 @@ function linkUnifiedAttempt(binding,ref){
   a.executionRef=structuredClone(ref);save(db)
  })
 }
-module.exports = { reserveUnifiedTask, linkUnifiedAttempt, persistIntake, recordLLMUsage, recordApprovalEvent, listApprovalEvents, APPROVAL_EVENT_TYPES, listDecisions, listTasks, getTask, setTaskProposalId, listEvents, usageSummary, createDispatch, updateDispatch, listDispatches, getDispatch }
+module.exports = { publishUnifiedClarification, checkUnifiedClarification, finishUnifiedClarification, cancelUnifiedClarification, reconcileUnifiedClarifications, reserveUnifiedTask, linkUnifiedAttempt, persistIntake, recordLLMUsage, recordApprovalEvent, listApprovalEvents, APPROVAL_EVENT_TYPES, listDecisions, listTasks, getTask, setTaskProposalId, listEvents, usageSummary, createDispatch, updateDispatch, listDispatches, getDispatch }

@@ -25,6 +25,7 @@ function createBrowserRead({store,selection,provider,taskRunner,unifiedIntake=nu
   return v
  }
  for(const r of store.all())if(['awaiting_consent','processing'].includes(r.state)){r.state='interrupted';save(r,'process_restarted_no_retry')}
+ if(taskRunner?.clarificationEnabled&&unifiedIntake?.enabled())unifiedIntake.reconcileClarifications()
  async function handle(input,mainEnvelope=null){
   const b=validate(input)
   if(b.op==='prepare'){
@@ -53,6 +54,7 @@ function createBrowserRead({store,selection,provider,taskRunner,unifiedIntake=nu
     if(binding.replayed)throw Error('intake_interrupted_no_retry')
     unifiedIntake.link(binding,{kind:'browser_read',id:r.id,version:1})
     r.unifiedTask={taskId:binding.taskId,goalId:binding.goalId,attemptId:binding.attemptId}
+    if(mainEnvelope?.operation==='clarification_response'){r.clarificationBinding=binding;r.clarificationEnvelopeHash=require('../intake/unifiedContract').payloadHash(mainEnvelope);r.clarification=unifiedIntake.verifyClarification(binding)}
     r.unifiedSurface=mainEnvelope?'main':'chrome'
    }
    save(r,'prepared_no_model_call');return view(r)
@@ -80,7 +82,7 @@ function createBrowserRead({store,selection,provider,taskRunner,unifiedIntake=nu
    const timer=setTimeout(()=>controller.abort(),timeoutMs)
    try{
     const adapter=provider(r.selection)
-    const checked=()=>{if(controller.signal.aborted||store.get(r.id)?.state==='cancelled')throw Error('read_timeout')}
+    const checked=()=>{if(controller.signal.aborted||store.get(r.id)?.state==='cancelled')throw Error('read_timeout');if(r.clarificationBinding)unifiedIntake.verifyClarification(r.clarificationBinding)}
     const observedAdapter=Object.create(adapter)
     Object.defineProperty(observedAdapter,'complete',{value:async(...args)=>{checked();save(r,'model_request_started');const result=await adapter.complete(...args);checked();save(r,'model_request_finished');return result}})
     const conversation=ancestors(r.parentId).map(m=>({question:m.question,answer:m.result.text.slice(0,2000),truncated:m.result.text.length>2000,...(m.result.taskEvidence?.operation==='seven_shifts.employee_wages'?{readOperation:m.result.taskEvidence.operation,readStatus:m.result.taskEvidence.status||'all'}:{})}))
@@ -88,7 +90,7 @@ function createBrowserRead({store,selection,provider,taskRunner,unifiedIntake=nu
     const prompt=JSON.stringify({question:r.question,source:pageSource,conversation,untrustedPageText:b.text})
     // Legacy awaiting-consent records did not disclose company tools. Never
     // upgrade their consent into a new business read after a source update.
-     const out=taskRunner&&Object.hasOwn(r,'taskCapabilities')?await taskRunner.run({question:r.question,conversation,page:s?{source:pageSource,text:b.text}:null,taskVersion:r.taskVersion,contextAvailability:r.contextAvailability,ownerGoal:r.ownerGoal,adapter:observedAdapter,actor:{id:'owner',role:'owner'},capabilities:r.taskCapabilities,signal:controller.signal,onEvent:event=>{checked();r.timeline.push({...event,at:new Date(now()).toISOString()});store.save(r)}}):await observedAdapter.complete(prompt,{system:SYSTEM,signal:controller.signal})
+     const out=taskRunner&&Object.hasOwn(r,'taskCapabilities')?await taskRunner.run({question:r.question,...(r.clarification?{clarification:r.clarification,assertActive:checked}:{}),conversation,page:s?{source:pageSource,text:b.text}:null,taskVersion:r.taskVersion,contextAvailability:r.contextAvailability,ownerGoal:r.ownerGoal,adapter:observedAdapter,actor:{id:'owner',role:'owner'},capabilities:r.taskCapabilities,signal:controller.signal,onEvent:event=>{checked();if(r.clarificationBinding&&event.stage==='u2_read_started')unifiedIntake.verifyClarification(r.clarificationBinding,event.tool);r.timeline.push({...event,at:new Date(now()).toISOString()});store.save(r)}}):await observedAdapter.complete(prompt,{system:SYSTEM,signal:controller.signal})
     const current=store.get(r.id);if(current.state==='cancelled')return view(current)
     if(controller.signal.aborted)throw Error('read_timeout')
     const wageReport=Object.hasOwn(r,'taskCapabilities')&&r.taskCapabilities.some(c=>c.id==='seven_shifts.employee_wages')&&out?.evidence?.operation==='seven_shifts.employee_wages'
@@ -96,10 +98,17 @@ function createBrowserRead({store,selection,provider,taskRunner,unifiedIntake=nu
     r.result={text:out.text.trim(),actualModel:typeof out.actualModel==='string'&&out.actualModel.length<=200?out.actualModel:null,requestedModel:r.selection.model,effort:r.selection.effort,billing:out.billing||null,source:s?{...pageSource,snapshot:true}:null,...(out.evidence?{taskEvidence:out.evidence}:{}),...(wageReport&&out.presentation?{wagePresentation:out.presentation}:{})}
      if(r.taskVersion===3&&r.ownerGoal&&out.ownerGoal&&require('../intake/goal/ownerGoal').validGoal(out.ownerGoal)&&out.ownerGoal.originalObjective===r.question)r.result.ownerGoal=out.ownerGoal
      r.state='completed';save(r,'answer_saved')
+     try{
+      if(r.clarificationBinding)unifiedIntake.finishClarification(r.clarificationBinding,r)
+      else if(taskRunner?.clarificationEnabled&&r.unifiedSurface==='main'&&out.evidence?.execution?.dependency?.reason==='multiple_matches'){
+       const v=unifiedIntake.view(r.unifiedTask.taskId,{principal:'owner',surface:'main'})
+       unifiedIntake.publishClarification({...r.unifiedTask,revision:v.revision},r)
+      }
+     }catch{r.reconciliationRequired=true;throw Error('clarification_reconciliation_required')}
    }finally{clearTimeout(timer)}
   }catch(e){
    const current=store.get(r.id);if(current.state==='cancelled')return view(current)
-   r.state='failed';r.error=['subscription_login_required','subscription_limit_reached','subscription_model_unavailable','subscription_unavailable','read_timeout','invalid_model_result','task_scope_changed','invalid_task_plan','task_not_authorised','audit_unavailable'].includes(e.code||e.message)?e.code||e.message:'read_unavailable';save(r,'failed_no_retry')
+   r.state='failed';r.error=['subscription_login_required','subscription_limit_reached','subscription_model_unavailable','subscription_unavailable','read_timeout','clarification_reconciliation_required','invalid_model_result','task_scope_changed','invalid_task_plan','task_not_authorised','audit_unavailable'].includes(e.code||e.message)?e.code||e.message:'read_unavailable';save(r,'failed_no_retry');if(r.clarificationBinding&&!r.reconciliationRequired){try{unifiedIntake.finishClarification(r.clarificationBinding,r)}catch{r.reconciliationRequired=true;save(r,'clarification_reconciliation_required')}}
   }finally{active.delete(r.id)}
   return view(r)
  }
@@ -107,13 +116,18 @@ function createBrowserRead({store,selection,provider,taskRunner,unifiedIntake=nu
   const b=require('../intake/unifiedContract').validate(envelope)
   if(!unifiedIntake?.enabled())throw Error('unified_intake_disabled')
   const prior=store.all().find(r=>r.requestId===b.clientSubmissionId)
+  if(b.operation==='clarification_response'){
+   if(!taskRunner?.clarificationEnabled)throw Error('clarification_unavailable')
+   if(prior){if(prior.clarificationEnvelopeHash!==require('../intake/unifiedContract').payloadHash(b)||prior.unifiedSurface!=='main'||prior.clarification?.response!==b.response||prior.clarification?.id!==b.clarificationId||prior.unifiedTask?.taskId!==b.taskRef||prior.clarification?.responseSubmissionId!==b.clientSubmissionId)throw Error('submission_conflict');return view(prior)}
+  }
   if(b.operation==='continue'){
    const current=unifiedIntake.view(b.taskRef,{principal:'owner',surface:'main'})
    if(!prior&&['running','awaiting_authorization'].includes(current.executionState))throw Error('prior_attempt_active')
   }
   // Fresh scope comes from the existing runner/selected provider at prepare.
   // Prior page text, grants, history, approvals and nonces never cross surfaces.
-  const prepared=await handle({op:'prepare',requestId:b.clientSubmissionId,question:b.message,taskVersion:2,contextAvailability:'unavailable'},b)
+  const question=b.operation==='clarification_response'?unifiedIntake.view(b.taskRef,{principal:'owner',surface:'main'}).objective:b.message
+  const prepared=await handle({op:'prepare',requestId:b.clientSubmissionId,question,taskVersion:2,contextAvailability:'unavailable'},b)
   if(!prepared.unifiedTask)throw Error('intake_link_unavailable')
   // Resolve an uncertain response observationally. Even an unconsumed prepared
   // read needs a fresh explicit attempt; reloading/retrying is not consent.
@@ -123,7 +137,11 @@ function createBrowserRead({store,selection,provider,taskRunner,unifiedIntake=nu
  }
  // Only the authenticated Main route can call this host method. Native callers
  // continue to use handle(), which refuses Main records and private ancestors.
- const cancelMain=id=>handle({op:'cancel',id},{surface:'main'})
+ const cancelMain=id=>{
+  const r=store.get(id)
+  if(r?.unifiedSurface==='main'&&unifiedIntake){const v=unifiedIntake.view(r.unifiedTask.taskId,{principal:'owner',surface:'main'});if(['WAITING_CLARIFICATION','PROCESSING_CLARIFICATION'].includes(v.executionState))unifiedIntake.cancelClarification(v.taskId,v.revision,v.attemptId,{principal:'owner',surface:'main'})}
+  return handle({op:'cancel',id},{surface:'main'})
+ }
  return{handle:input=>handle(input),handleMain,cancelMain}
 }
 module.exports={createBrowserRead,SYSTEM}

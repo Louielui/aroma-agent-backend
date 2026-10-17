@@ -24,6 +24,7 @@ function resolveDependency(pack, target) {
 function dependencyReply(execution) {
   if (!execution?.dependency || execution.status === 'read_completed') return null
   const reason = execution.dependency.reason
+  if (execution.status === 'clarification_required' && reason === 'candidate_changed_or_unverifiable') return 'The source candidates changed or could not be verified. No detail read was performed. A fresh explicit discovery is needed; this continuation cannot read again. The original Owner goal remains open.'
   if (execution.status === 'clarification_required') return reason === 'multiple_matches'
     ? 'Several matching records were returned. Which record should I read? Candidates (untrusted source labels): ' + JSON.stringify(execution.dependency.choices) + '. No detail read was performed; the Owner goal remains open.'
     : 'Discovery coverage is incomplete or unknown. Please narrow the request before selecting a record. No detail read was performed; the Owner goal remains open.'

@@ -11,7 +11,7 @@ function createRouter({intake,browserRead,conversations}){
   if(Object.keys(req.query).length)return res.status(400).json({error:'invalid_unified_request'})
   next()
  })
- const errors=new Set(['unified_intake_disabled','task_not_found','submission_conflict','revision_conflict','new_objective_requires_new_task','prior_attempt_active','intake_interrupted_no_retry','task_attempt_limit'])
+ const errors=new Set(['unified_intake_disabled','task_not_found','submission_conflict','revision_conflict','new_objective_requires_new_task','prior_attempt_active','intake_interrupted_no_retry','task_attempt_limit','clarification_pending','clarification_unavailable','clarification_scope_changed','clarification_interrupted','clarification_evidence_changed'])
  const failed=(res,e)=>res.status(e.message==='invalid_unified_request'?400:errors.has(e.message)?409:503).json({error:errors.has(e.message)||e.message==='invalid_unified_request'?e.message:'task_intake_unavailable'})
  router.get(base+'/configuration',(req,res)=>res.json({enabled:intake.enabled()===true}))
  router.get(base+'/:id',(req,res)=>{try{if(!TASK.test(req.params.id))throw Error('invalid_unified_request');res.json(intake.view(req.params.id,{principal:'owner',surface:'main'}))}catch(e){failed(res,e)}})
@@ -22,6 +22,7 @@ function createRouter({intake,browserRead,conversations}){
    const v=intake.view(req.params.id,{principal:'owner',surface:'main'})
    if(b.expectedRevision!==v.revision||b.attemptId!==v.attemptId)throw Error('revision_conflict')
    if(!v.executionRef)throw Error('task_not_found')
+   if(['WAITING_CLARIFICATION','PROCESSING_CLARIFICATION'].includes(v.executionState))intake.cancelClarification(v.taskId,b.expectedRevision,b.attemptId,{principal:'owner',surface:'main'})
    await browserRead.cancelMain(v.executionRef.id)
    res.json(intake.view(req.params.id,{principal:'owner',surface:'main'}))
   }catch(e){failed(res,e)}
@@ -36,7 +37,7 @@ function createRouter({intake,browserRead,conversations}){
    conversations.get(b.conversationId)
    const result=await browserRead.handleMain(b),projection=intake.viewAttempt(result.unifiedTask.taskId,result.unifiedTask.attemptId,{principal:'owner',surface:'main'})
    let historySaved=false
-   try{conversations.appendTurn({id:b.conversationId,userText:b.message,replyText:result.result?.text||projection.executionState,unifiedTask:result.unifiedTask});historySaved=true}catch{}
+   try{conversations.appendTurn({id:b.conversationId,userText:b.operation==='clarification_response'?b.response:b.message,replyText:result.result?.text||projection.executionState,unifiedTask:result.unifiedTask});historySaved=true}catch{}
    return res.json({reply:result.result?.text||projection.executionState,lane:'chat',historySaved,unifiedTask:projection})
   }catch(e){failed(res,e)}
  })
