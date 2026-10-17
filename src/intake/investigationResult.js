@@ -18,6 +18,8 @@ function investigationResult(task, record) {
     groundedAnswer: synthesis?.state === 'reviewed' && synthesis.claims.length > 0,
     sourceCoverage: !packs.length ? 'not_read' : packs.every(p => p.state === 'ok' && p.kind !== 'bounded_read_receipt' && p.coverage?.complete === true && p.coverage?.truncated === false) ? 'complete_within_returned_scope' : 'partial_or_unknown',
     answerCoverage: synthesis?.sources?.every(s => s.state === 'ok') ? 'complete_within_projected_scope' : 'partial_or_unknown',
+    answerSources: (synthesis?.report?.sections || []).map(s => ({ sourceId: s.sourceId, source: s.source, tool: s.tool, packSha256: s.packSha256, state: s.state,
+      records: s.records.map(r => ({ recordId: r.sourceId, originalSourceId: r.originalSourceId, link: r.link || null, ...(Number.isSafeInteger(r.start) ? { start: r.start, end: r.end, contentSha256: r.contentSha256 } : {}) })) })),
     evidenceMode: evidence.evidenceMode, sourceReceipts: packs.map(p => ({ source: p.source, resource: p.resource, operation: p.operation, packSha256: p.packSha256 || require('./toolSelection/selection').digest(p) })),
     goalVerifiedComplete: false, goalStatus: goal.status, unresolvedReason: 'no_host_verified_receipt_for_all_mandatory_owner_outcomes', goal }
 }

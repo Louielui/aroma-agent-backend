@@ -86,7 +86,7 @@ function createBrowserRead({store,selection,provider,taskRunner:browserTaskRunne
    const timer=setTimeout(()=>controller.abort(),timeoutMs)
    try{
      const adapter=(r.ownerCoordination?mainProvider:provider)(r.selection)
-    const checked=()=>{verifyOwner();if(controller.signal.aborted||store.get(r.id)?.state==='cancelled')throw Error('read_timeout');if(r.clarificationBinding)unifiedIntake.verifyClarification(r.clarificationBinding)}
+    const checked=()=>{verifyOwner();if(controller.signal.aborted||store.get(r.id)?.state==='cancelled'||r.ownerCoordination&&store.get(r.id)?.state!=='processing')throw Error('read_timeout');if(r.clarificationBinding)unifiedIntake.verifyClarification(r.clarificationBinding)}
     const observedAdapter=Object.create(adapter)
     Object.defineProperty(observedAdapter,'complete',{value:async(...args)=>{checked();save(r,'model_request_started');const result=await adapter.complete(...args);checked();save(r,'model_request_finished');return result}})
     const conversation=ancestors(r.parentId).map(m=>({question:m.question,answer:m.result.text.slice(0,2000),truncated:m.result.text.length>2000,...(m.result.taskEvidence?.operation==='seven_shifts.employee_wages'?{readOperation:m.result.taskEvidence.operation,readStatus:m.result.taskEvidence.status||'all'}:{})}))
@@ -95,7 +95,7 @@ function createBrowserRead({store,selection,provider,taskRunner:browserTaskRunne
     // Legacy awaiting-consent records did not disclose company tools. Never
     // upgrade their consent into a new business read after a source update.
      const out=taskRunner&&Object.hasOwn(r,'taskCapabilities')?await taskRunner.run({question:r.question,...(r.clarification?{clarification:r.clarification,...(r.clarification.crossSource||r.clarification.crossSourceIntent?{clarificationEvidence:unifiedIntake.clarificationEvidence(r.clarificationBinding)}:{}),assertActive:checked}:{}),conversation,page:s?{source:pageSource,text:b.text}:null,taskVersion:r.taskVersion,contextAvailability:r.contextAvailability,ownerGoal:r.ownerCoordination?unifiedIntake.goal(r.unifiedTask):r.ownerGoal,assertActive:checked,adapter:observedAdapter,actor:{id:'owner',role:'owner'},capabilities:r.taskCapabilities,signal:controller.signal,onEvent:event=>{checked();if(r.clarificationBinding&&event.stage==='u2_read_started')unifiedIntake.verifyClarification(r.clarificationBinding,event.tool);if(r.clarificationBinding&&(event.stage==='u3_cross_source_selected'||r.clarification.crossSourceIntent&&event.stage==='u3_clarification_resolved'))unifiedIntake.verifyClarification(r.clarificationBinding,event);r.timeline.push({...event,at:new Date(now()).toISOString()});store.save(r)}}):await observedAdapter.complete(prompt,{system:SYSTEM,signal:controller.signal})
-    const current=store.get(r.id);if(current.state==='cancelled')return view(current)
+    const current=store.get(r.id);if(current.state==='cancelled'||r.ownerCoordination&&current.state==='interrupted')return view(current)
     if(controller.signal.aborted)throw Error('read_timeout')
     const wageReport=Object.hasOwn(r,'taskCapabilities')&&r.taskCapabilities.some(c=>c.id==='seven_shifts.employee_wages')&&out?.evidence?.operation==='seven_shifts.employee_wages'
     if(!out||typeof out.text!=='string'||!out.text.trim()||(wageReport?Buffer.byteLength(JSON.stringify({text:out.text,presentation:out.presentation||null}))>120000:out.text.length>30000)||out.model!==r.selection.model)throw Error('invalid_model_result')
@@ -111,7 +111,7 @@ function createBrowserRead({store,selection,provider,taskRunner:browserTaskRunne
      }catch{r.reconciliationRequired=true;throw Error('clarification_reconciliation_required')}
    }finally{clearTimeout(timer)}
   }catch(e){
-   const current=store.get(r.id);if(current.state==='cancelled')return view(current)
+   const current=store.get(r.id);if(current.state==='cancelled'||r.ownerCoordination&&current.state==='interrupted')return view(current)
    r.state='failed';r.error=['subscription_login_required','subscription_limit_reached','subscription_model_unavailable','subscription_unavailable','read_timeout','clarification_reconciliation_required','invalid_model_result','task_scope_changed','invalid_task_plan','task_not_authorised','audit_unavailable'].includes(e.code||e.message)?e.code||e.message:'read_unavailable';save(r,'failed_no_retry');if(r.clarificationBinding&&!r.reconciliationRequired){try{unifiedIntake.finishClarification(r.clarificationBinding,r)}catch{r.reconciliationRequired=true;save(r,'clarification_reconciliation_required')}}
   }finally{active.delete(r.id)}
   return view(r)

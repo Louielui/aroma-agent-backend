@@ -34,6 +34,9 @@ typed `clarification_response` envelope. It includes server task/clarification/
 revision identities, a client submission UUID and the literal reply. The same
 UUID is retained for an explicit retry after uncertain transport failure. It
 never submits candidate source IDs. Existing cancellation and server CAS remain.
+The existing panel is extracted to `assets/taskPanel.js` and fingerprinted and
+packaged as a protected UI dependency. This keeps the unchanged 245k main-script
+package bound; no file-size gate is relaxed.
 
 Long source records use at most three positional verbatim fragments of at most
 280 characters, with original source ID, exact offsets and content hash. Existing

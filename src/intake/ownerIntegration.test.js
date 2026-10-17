@@ -27,6 +27,15 @@ test('R1 Owner session revoked during a read discards its content and prevents f
   f=await require('../../scripts/r1/fixture.cjs').fixture({beforeRead:async()=>{await f.logout()}})
   try{await f.post(f.start);assert.equal(f.calls.length,1);const r=f.reads.all().at(-1);assert.equal(r.state,'failed');assert.equal(r.result,undefined)}finally{await f.close()}
 })
+test('R1 actual app restart interrupts an admitted model attempt; late completion and exact replay cannot read sources',async()=>{
+  let ready,release
+  const started=new Promise(r=>{ready=r})
+  const f=await require('../../scripts/r1/fixture.cjs').fixture({transport:async(route,input)=>{
+    if(route==='/status')return {model:input.model,billing:'chatgpt-subscription'}
+    ready();return new Promise(r=>{release=()=>r({model:input.model,billing:'chatgpt-subscription',stopReason:'end_turn',text:JSON.stringify({kind:'read',outcome:'Find quotation',capability:null,tools:[{id:'drive.company_files.search',arguments:{query:'quotation'}}],dependency:{from:0,id:'drive.company_files.get',result:'sourceId'}})})})
+  }})
+  try{const running=f.post(f.start);await started;f.rebuild();assert.equal(f.reads.all().at(-1).state,'interrupted');release();const result=await running;assert.equal(result.body.unifiedTask.executionState,'interrupted');assert.equal(f.calls.length,0);await f.post(f.start);assert.equal(f.calls.length,0)}finally{await f.close()}
+})
 test('R1 actual application login and Main Owner route preserve same-task five-read clarification and reject bearer/origin/session bypasses', async () => {
   const f = await require('../../scripts/r1/fixture.cjs').fixture()
   try {
@@ -46,21 +55,23 @@ test('R1 actual application login and Main Owner route preserve same-task five-r
     assert.equal(r.body.unifiedTask.investigation.goal.goalId, v.goalId)
     assert.equal(r.body.unifiedTask.investigation.readState, 'retrieved')
     assert.equal(r.body.unifiedTask.investigation.groundedAnswer, true)
+    assert.equal(r.body.unifiedTask.investigation.answerSources[0].records[0].originalSourceId, f.ids[1])
     assert.equal(r.body.unifiedTask.investigation.answerCoverage, 'partial_or_unknown')
     await f.post(body); assert.equal(f.calls.length, 5)
     assert(f.modelCalls.filter(c => c.route === '/status').length === 2)
   } finally { await f.close() }
 })
-for (const scenario of ['suspended','goal_not_shared','content_not_shared','source_not_shared','flag_off','expired_session','revoked','changed_candidate','cancelled','duplicate_concurrent','restart','missing_source_b']) test('R1 actual Main HTTP boundary: ' + scenario, async () => {
+for (const scenario of ['non_owner','suspended','goal_not_shared','content_not_shared','source_not_shared','flag_off','expired_session','revoked','changed_candidate','cancelled','duplicate_concurrent','restart','missing_source_b']) test('R1 actual Main HTTP boundary: ' + scenario, async () => {
   const f = await require('../../scripts/r1/fixture.cjs').fixture({ flag: scenario !== 'flag_off', missingB: scenario === 'missing_source_b' })
   try {
     if (scenario === 'suspended') f.state.users[0].suspended = true
+    if (scenario === 'non_owner') f.state.users[0].role = 'admin'
     if (scenario === 'goal_not_shared') process.env.OWNER_TASK_GOAL_SHARING = 'false'
     if (scenario === 'content_not_shared') process.env.OWNER_TASK_CONTENT_SHARING = 'false'
     if (scenario === 'source_not_shared') process.env.CONTEXT_DRIVE_OPENAI = 'off'
-    if (scenario === 'expired_session') await f.logout()
+    if (scenario === 'expired_session') f.expire()
     const first = await f.post(f.start)
-    if (['suspended','goal_not_shared','content_not_shared','source_not_shared','flag_off','expired_session'].includes(scenario)) {
+    if (['non_owner','suspended','goal_not_shared','content_not_shared','source_not_shared','flag_off','expired_session'].includes(scenario)) {
       assert.equal(f.calls.length, 0); assert.notEqual(first.body.unifiedTask?.executionState, 'WAITING_CLARIFICATION'); return
     }
     const v = first.body.unifiedTask; assert.equal(v.executionState, 'WAITING_CLARIFICATION')
@@ -71,8 +82,7 @@ for (const scenario of ['suspended','goal_not_shared','content_not_shared','sour
     if (scenario === 'restart') {
       // Real app reconstruction triggers existing startup reconciliation. It
       // must not dispatch or revive the persisted waiting task.
-      f.app.createApp = require('../app').createApp
-      f.app.createApp({ ownerPassword: 'synthetic-owner-password', serviceToken: 'synthetic-service-token', liveContext: f.liveContext, companyOptions: { registry: { snapshot: () => structuredClone(f.state) } } })
+      f.rebuild()
       assert.equal(f.calls.length, 1)
       // A fresh explicit authenticated reply is required after a waiting
       // restart; reconstruction itself performs no follow-up work.

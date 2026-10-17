@@ -92,6 +92,7 @@ const FILE_CLASS = Object.freeze({
   'context/sevenShiftsComparison.js': CLASS.MATCHING, // Bounded bilingual intent guards and deterministic comparison output; no model instructions.
   'intake/readObligationGap.js': CLASS.INTERFACE,
   'intake/toolSelection/synthesis.js': CLASS.INTERFACE, // Chinese is fixed answer presentation; model contracts are English.
+  'demo/assets/taskPanel.js': CLASS.INTERFACE, // Extracted Main task presentation and literal translation keys only.
   'intake/toolSelection/taskRunner.js': CLASS.INTERFACE, // Synthetic-data disclosure, never authorization or input matching.
   'intake/toolSelection/dependency.js': CLASS.INTERFACE, // Fixed bilingual clarification/availability presentation; typed identity validation is not translated.
   'investigation/ownerBrief.js': CLASS.INTERFACE,

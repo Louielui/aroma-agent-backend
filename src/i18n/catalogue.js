@@ -61,6 +61,7 @@ const CATALOGUE = Object.freeze({
   'unified.cancel': {zh:'停止目前任務嘗試',en:'Stop current attempt'},
   'unified.scope': {zh:'目前支援有限唯讀任務；網頁環境不會自動帶入。',en:'Bounded read tasks are supported; browser context is not carried automatically.'},
   'unified.investigation': {zh:'調查結果',en:'Investigation result'},
+  'unified.goalUnresolved': {zh:'調查沒有涵蓋所有必要目標的主機驗證完成收據；整體目標仍未解決。',en:'This investigation has no host-verified completion receipt covering all mandatory outcomes; the overall goal remains unresolved.'},
   'unified.clarification': {zh:'回覆澄清問題',en:'Reply to clarification'},
   'unified.reply': {zh:'提交回覆',en:'Submit reply'},
   'unified.untitled': {zh:'未命名紀錄',en:'Untitled record'},
