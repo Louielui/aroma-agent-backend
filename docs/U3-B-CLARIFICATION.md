@@ -20,6 +20,10 @@ The existing selection task runner has an explicit host-only
 discovery/get dependencies, server argument validators, existing Context services,
 Tool Gateway and source leases, and U2-B synthesis plus its semantic reviewer.
 There is no new store, planner, registry, permission system or scheduler.
+The legacy generic task-list projection omits only the new clarification and
+clarification-history metadata. It gains no access to candidate labels, source
+identities or Owner replies; authoritative Task records and authenticated Main
+views retain them. All pre-existing list fields and authentication are unchanged.
 
 ## Durable bounded transitions
 

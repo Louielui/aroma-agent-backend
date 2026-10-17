@@ -344,7 +344,13 @@ function listApprovalEvents () {
 }
 
 function listDecisions () { return load().decisions }
-function listTasks () { return load().tasks.map(require('../intake/goal/ownerGoal').projectTask) }
+function listTasks () { return load().tasks.map(task=>{
+  // Legacy task-list consumers do not acquire the new Main-only source labels,
+  // candidate identities or Owner replies. Authoritative records stay intact.
+  const projected=structuredClone(task)
+  if(projected.unifiedIntake){delete projected.unifiedIntake.clarification;delete projected.unifiedIntake.clarificationHistory}
+  return require('../intake/goal/ownerGoal').projectTask(projected)
+}) }
 
 /**
  * Return one Task by id, or null. Back-compat: a Task persisted before the

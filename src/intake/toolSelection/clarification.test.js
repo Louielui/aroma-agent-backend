@@ -264,3 +264,13 @@ test('U3-B Main session revoked during continuation stops detail and suppresses 
  assert.equal(response.status,403);assert.equal(f.calls.length,2);assert.equal((await response.json()).error,'owner_session_required')
  assert.notEqual(f.view(v.taskId).executionState,'CLARIFICATION_COMPLETED')
 })
+
+test('U3-B legacy task listing gains no access to private clarification labels, source IDs or Owner replies',async()=>{
+ const f=setup();f.rows[f.resource][1].title='Tea SYNTHETIC_PRIVATE_OWNER_LABEL'
+ const r=await f.browser.handleMain(f.start),v=f.view(r.unifiedTask.taskId)
+ const publicTask=()=>JSON.stringify(tasks.listTasks().find(t=>t.id===v.taskId))
+ assert(!publicTask().includes('SYNTHETIC_PRIVATE_OWNER_LABEL'));assert(!publicTask().includes('fixture_second'))
+ assert(JSON.stringify(tasks.getTask(v.taskId)).includes('SYNTHETIC_PRIVATE_OWNER_LABEL'))
+ await f.browser.handleMain(f.response(v,'second, PRIVATE_OWNER_REPLY'))
+ assert(!publicTask().includes('PRIVATE_OWNER_REPLY'));assert(!publicTask().includes('fixture_second'))
+})
