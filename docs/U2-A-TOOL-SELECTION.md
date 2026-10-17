@@ -51,6 +51,18 @@ classification. Source text remains data and is not fed back into the selector.
 Page snapshots and previous conversation content are explicitly excluded from
 this first runner; this is not live Chrome-to-Main handoff activation.
 
+Result text contains bounded read receipts (source/tool, counts, source coverage
+and original Context Pack SHA256), not duplicate full bodies. Task evidence retains
+complete packs up to 36,000 serialized bytes per pack. Larger packs are replaced
+by explicitly discriminated `bounded_read_receipt` objects with content omitted,
+original byte count, scope hash and the same pack hash recorded in the read
+timeline. These are not full Context Packs: `presentation.contentOmitted` and
+`fullContentIncluded:false` disclose that full content is not retained.
+Source coverage and presentation omission are separate facts. This keeps both
+the 30,000-character text limit and native response frame bounded without adding
+a new store or weakening U1. Large-result regression fixtures exercise both
+full-pack retention and multi-source omission through the actual U1 service.
+
 ## Verification and demonstration
 
 `node --test src/intake/toolSelection/*.test.js` runs deterministic contract and

@@ -73,3 +73,52 @@ test('gateway unavailable is retained as unavailable, never live success', async
   assert.equal(r.state, 'completed'); assert.equal(r.result.taskEvidence.execution.status, 'tool_unavailable')
   assert.notEqual(f.intake.view(r.unifiedTask.taskId, { principal: 'owner', surface: 'main' }).goalStatus, 'GOAL_COMPLETED')
 })
+
+test('more than 30000 characters of source data complete with bounded text and full pack evidence', async () => {
+  const f = integrated()
+  f.rows['aroma.invoices'] = Array.from({ length: 2 }, (_, i) => ({ id: 'large_' + i, title: 'Synthetic large invoice', text: 'a'.repeat(16000), fields: { synthetic: true } }))
+  const r = await f.browser.handleMain(f.envelope())
+  assert.equal(r.state, 'completed'); assert(r.result.text.length < 30000)
+  const pack = r.result.taskEvidence.execution.packs[0]
+  assert(JSON.stringify(pack).length > 30000)
+  assert.equal(pack.content.length, 2); assert.equal(pack.content[1].content.length, 16000)
+  const receipt = JSON.parse(r.result.text).sources[0]
+  assert.equal(receipt.packSha256, require('./selection').digest(pack))
+  assert.equal(receipt.contentIncluded, false); assert.equal(receipt.count, 2)
+  assert.equal(f.calls.length, 1); assert.equal(r.result.taskEvidence.goalCompleted, false)
+})
+
+test('oversized multi-source evidence fits the actual native response bound with explicit omissions', async () => {
+  const proposal = { ...read('aroma.invoices.list'), tools: [...read('aroma.invoices.list').tools, ...read('calendar.owner_events.list').tools, ...read('drive.company_files.list').tools] }
+  const f = integrated({ proposal, partial: true })
+  for (const resource of ['aroma.invoices', 'calendar.owner_events', 'drive.company_files']) {
+    f.rows[resource] = Array.from({ length: 25 }, (_, i) => ({ id: 'huge_' + i, title: 'Synthetic row', text: ('測試"\n').repeat(1600), fields: { synthetic: true } }))
+  }
+  const prepared = await f.browser.handle({ op: 'prepare', requestId: randomUUID(), question: 'Read three synthetic sources', taskVersion: 2, contextAvailability: 'excluded' })
+  const r = await f.browser.handle({ op: 'read', id: prepared.id, consent: true })
+  assert.equal(r.state, 'completed'); assert(r.result.text.length < 30000)
+  assert(Buffer.byteLength(JSON.stringify({ result: r, id: '0'.repeat(36) })) < 195000)
+  assert.equal(f.calls.length, 3)
+  const evidence = r.result.taskEvidence
+  assert.equal(evidence.execution.presentation.contentOmitted, true)
+  for (let i = 0; i < 3; i++) {
+    const packReceipt = evidence.execution.packs[i]
+    assert.equal(packReceipt.kind, 'bounded_read_receipt')
+    assert.equal(packReceipt.contentIncluded, false); assert.equal(packReceipt.count, 25)
+    assert.equal(packReceipt.coverage.complete, false); assert.equal(packReceipt.coverage.truncated, true)
+    const persisted = f.reads.get(r.id).timeline.filter(e => e.stage === 'u2_read_finished')[i]
+    assert.equal(packReceipt.packSha256, persisted.packSha256)
+  }
+  assert.notEqual(f.intake.view(r.unifiedTask.taskId, { principal: 'owner', surface: 'main' }).goalStatus, 'GOAL_COMPLETED')
+})
+
+test('policy denial integrates with Run Timeline without model, reads or approval execution', async () => {
+  const f = integrated(), r = await f.browser.handleMain(f.envelope({ message: 'Read banking secrets' }))
+  assert.equal(r.state, 'completed')
+  const evidence = r.result.taskEvidence
+  assert.equal(evidence.selection.status, 'denied'); assert.equal(evidence.execution, null)
+  assert.equal(evidence.run.timeline[1].facts.verdict, 'deny')
+  assert.equal(evidence.run.timeline.at(-1).facts.executionStatus, 'not_executed')
+  assert.equal(evidence.run.approvalId, null); assert.equal(evidence.goalCompleted, false)
+  assert.equal(f.prompts.length, 0); assert.equal(f.calls.length, 0)
+})

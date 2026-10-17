@@ -2,6 +2,24 @@
 const { createSelection, digest } = require('./selection')
 const runs = require('../../run/run')
 
+// Browser Read limits text to 30k characters and its native response to 195k
+// bytes. Do not duplicate complete Context Packs into the text. Retain packs
+// when bounded; oversized bodies become explicitly labeled hash-bound read
+// receipts, never silently truncated Context Packs or a claim of full content.
+function readReceipt(pack) {
+  return { kind: 'bounded_read_receipt', source: pack.source, resource: pack.resource, operation: pack.operation,
+    state: pack.state, count: pack.count, contentPolicy: 'data_only', contentIncluded: false,
+    packSha256: digest(pack), packBytes: Buffer.byteLength(JSON.stringify(pack)), scopeSha256: digest(pack.sourceId),
+    coverage: { complete: pack.coverage?.complete ?? null, truncated: pack.coverage?.truncated ?? null },
+    limitation: 'content_omitted_from_presentation; hash_binds_original_gateway_pack' }
+}
+function boundedExecution(execution) {
+  if (!execution) return null
+  const packs = execution.packs.map(pack => Buffer.byteLength(JSON.stringify(pack)) <= 36000 ? pack : readReceipt(pack))
+  return { ...execution, packs, presentation: { contentOmitted: packs.some(pack => pack.kind === 'bounded_read_receipt'),
+    maxPackBytes: 36000, fullContentIncluded: packs.every(pack => pack.kind !== 'bounded_read_receipt') } }
+}
+
 // Opt-in host injection only. No HTTP route, startup registration or production
 // default changes. U1's existing prepare/consent/linkage owns the outer attempt.
 function createSelectionTaskRunner({ bindings, authorize, evidenceMode }) {
@@ -33,10 +51,10 @@ function createSelectionTaskRunner({ bindings, authorize, evidenceMode }) {
       // that the Owner's goal, approval, or an external action was completed.
       runs.appendStage(run.id, 'SUCCEEDED', { executor: 'context_tool_gateway', selectionStatus: selection.status, executionStatus: execution?.status || 'not_executed', goalCompleted: false })
       const evidence = { version: 1, operation: 'u2.bounded_selection', state: evidenceMode === 'synthetic_fixture' ? 'synthetic' : 'unverified_goal',
-        evidenceMode, selection, execution, run: runs.getRun(run.id), goalCompleted: false }
+        evidenceMode, selection, execution: boundedExecution(execution), run: runs.getRun(run.id), goalCompleted: false }
       return { model: adapter.model, actualModel: selection.actualModel || null, billing: adapter.billing || null,
         text: JSON.stringify({ evidenceMode, selectionStatus: selection.status, interpretation: selection.interpretedOutcome || null,
-          executionStatus: execution?.status || 'not_executed', sources: execution?.packs || [], goalCompleted: false }), evidence }
+          executionStatus: execution?.status || 'not_executed', sources: execution?.packs.map(readReceipt) || [], goalCompleted: false }), evidence }
     } catch (error) {
       runs.appendStage(run.id, 'FAILED', { error: 'selection_or_read_failed' })
       onEvent({ stage: 'u2_failed_no_retry', runId: run.id, evidenceMode })
