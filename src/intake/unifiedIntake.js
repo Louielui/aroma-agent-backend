@@ -44,6 +44,6 @@ function createUnifiedIntake({store,enabled=()=>false,reads=null}){
   return c
  }
  function cancelClarification(id,revision,attemptId,h){host(h);if(h.surface!=='main'||!enabled())throw Error('owner_session_required');return store.cancelUnifiedClarification(id,revision,attemptId)}
- return{enabled,reserve,link,verifyClarification,cancelClarification,publishClarification:(binding,r)=>store.publishUnifiedClarification(binding,r),finishClarification:(binding,r)=>store.finishUnifiedClarification(binding,r),reconcileClarifications:()=>store.reconcileUnifiedClarifications(reads),view:(id,h)=>view(id,h),viewAttempt:(id,attemptId,h)=>view(id,h,attemptId),browserProjection}
+ return{enabled,reserve,link,abortResponse:b=>store.abortUnifiedClarification(b),verifyClarification,cancelClarification,publishClarification:(binding,r)=>store.publishUnifiedClarification(binding,r),finishClarification:(binding,r)=>store.finishUnifiedClarification(binding,r),reconcileClarifications:()=>store.reconcileUnifiedClarifications(reads),view:(id,h)=>view(id,h),viewAttempt:(id,attemptId,h)=>view(id,h,attemptId),browserProjection}
 }
 module.exports={createUnifiedIntake}

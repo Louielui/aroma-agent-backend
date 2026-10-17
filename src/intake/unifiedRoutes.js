@@ -37,7 +37,7 @@ function createRouter({intake,browserRead,conversations}){
    conversations.get(b.conversationId)
    const result=await browserRead.handleMain(b),projection=intake.viewAttempt(result.unifiedTask.taskId,result.unifiedTask.attemptId,{principal:'owner',surface:'main'})
    let historySaved=false
-   try{conversations.appendTurn({id:b.conversationId,userText:b.operation==='clarification_response'?b.response:b.message,replyText:result.result?.text||projection.executionState,unifiedTask:result.unifiedTask});historySaved=true}catch{}
+   if(['completed','failed','cancelled','interrupted'].includes(result.state))try{conversations.appendTurn({id:b.conversationId,userText:b.operation==='clarification_response'?b.response:b.message,replyText:result.result?.text||projection.executionState,unifiedTask:result.unifiedTask});historySaved=true}catch{}
    return res.json({reply:result.result?.text||projection.executionState,lane:'chat',historySaved,unifiedTask:projection})
   }catch(e){failed(res,e)}
  })

@@ -103,7 +103,10 @@ function createSelection({ bindings, authorize, model, record, signal, dependent
   // Reconstruct a fixed host-claimed typed edge, never a serialized model token.
   async function resume(objective, clarification) {
     const proof = require('./clarification'), c = structuredClone(clarification), context = check()
-    if (!clarificationEnabled || !dependentReads || !proof.valid(c) || c.state !== 'PROCESSING_CLARIFICATION' || digest(context) !== c.authorizationHash || context.surface !== 'main') throw Error('clarification_not_authorized')
+    if (!clarificationEnabled || !dependentReads || !proof.valid(c) || c.state !== 'PROCESSING_CLARIFICATION' || digest(context) !== c.authorizationHash || context.surface !== 'main' || context.synthesisSharing !== true) throw Error('clarification_not_authorized')
+    const policy = evaluate({ capabilityId: 'Research', version: 1, context: { description: objective } })
+    emit({ stage: 'u2_policy_checked', verdict: policy.verdict, ruleId: policy.rule_id })
+    if (policy.verdict !== 'allow') throw Error('clarification_not_authorized')
     const tool = catalog.get(c.discovery.id), target = catalog.get(c.dependency.id)
     const normalized = [{ id: c.discovery.id, arguments: tool?.validate(c.discovery.arguments) }]
     const dependency = require('./dependency').validateDependency({ from: c.dependency.from, id: c.dependency.id, result: c.dependency.result }, normalized, catalog)

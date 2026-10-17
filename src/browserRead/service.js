@@ -114,6 +114,14 @@ function createBrowserRead({store,selection,provider,taskRunner,unifiedIntake=nu
  }
  async function handleMain(envelope){
   const b=require('../intake/unifiedContract').validate(envelope)
+  const abort=()=>{
+   if(b.operation!=='clarification_response'||!unifiedIntake?.abortResponse(b))return
+   const r=store.all().find(r=>r.requestId===b.clientSubmissionId)
+   if(r&&['awaiting_consent','processing'].includes(r.state)){active.get(r.id)?.abort();r.state='interrupted';r.reconciliationRequired=true;save(r,'clarification_claim_aborted_no_retry')}
+  }
+  try{const result=await handleMainOperation(b);if(result.reconciliationRequired)abort();return result}catch(error){abort();throw error}
+ }
+ async function handleMainOperation(b){
   if(!unifiedIntake?.enabled())throw Error('unified_intake_disabled')
   const prior=store.all().find(r=>r.requestId===b.clientSubmissionId)
   if(b.operation==='clarification_response'){

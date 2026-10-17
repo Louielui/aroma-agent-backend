@@ -534,6 +534,14 @@ function cancelUnifiedClarification(id,revision,attemptId){
   c.state='CLARIFICATION_CANCELLED';u.revision++;clarificationEvent(db,task,'task.clarification_cancelled',{attemptId});save(db)
  })
 }
+function abortUnifiedClarification(response){
+ return withLock(()=>{const db=load(),task=db.tasks.find(t=>t.id===response.taskRef),u=task?.unifiedIntake,c=u?.clarification,a=u?.attempts.at(-1)
+  // A rejected competing/stale/altered submission cannot interrupt the winner.
+  if(c?.state!=='PROCESSING_CLARIFICATION'||c.attemptId!==a?.id||a.clientSubmissionId!==response.clientSubmissionId||a.payloadHash!==require('../intake/unifiedContract').payloadHash(response))return false
+  c.state='CLARIFICATION_RECONCILIATION_REQUIRED';c.reason='claimed_attempt_receipt_commit_failed';u.revision++
+  clarificationEvent(db,task,'task.clarification_claim_aborted_no_retry',{attemptId:a.id,executionRef:a.executionRef});save(db);return true
+ })
+}
 function reconcileUnifiedClarifications(reads){
  return withLock(()=>{const db=load();let changed=false;const proof=require('../intake/toolSelection/clarification')
   for(const task of db.tasks){const u=task.unifiedIntake,c=u?.clarification;if(!c)continue
@@ -543,10 +551,10 @@ function reconcileUnifiedClarifications(reads){
     if(!proof.valid(c)||!original||proof.hash(original.result?.taskEvidence)!==c.originEvidenceHash)state='CLARIFICATION_RECONCILIATION_REQUIRED'
     if(c.lastExecutionRef&&proof.hash(reads.get(c.lastExecutionRef.id))!==c.lastRecordHash)state='CLARIFICATION_RECONCILIATION_REQUIRED'
    }catch{state='CLARIFICATION_RECONCILIATION_REQUIRED'}
-   if(!state&&c.state==='PROCESSING_CLARIFICATION'){
+   if(!state&&c.state==='PROCESSING_CLARIFICATION')try{
     const ref=u.attempts.at(-1)?.executionRef
     state=ref&&reads.get(ref.id)?.reconciliationRequired?'CLARIFICATION_RECONCILIATION_REQUIRED':'CLARIFICATION_INTERRUPTED'
-   }
+   }catch{state='CLARIFICATION_RECONCILIATION_REQUIRED'}
    if(state&&c.state!==state){c.state=state;u.revision++;changed=true;clarificationEvent(db,task,'task.clarification_recovery_no_retry',{state})}
   }
   if(changed)save(db)
@@ -561,4 +569,4 @@ function linkUnifiedAttempt(binding,ref){
   a.executionRef=structuredClone(ref);save(db)
  })
 }
-module.exports = { publishUnifiedClarification, checkUnifiedClarification, finishUnifiedClarification, cancelUnifiedClarification, reconcileUnifiedClarifications, reserveUnifiedTask, linkUnifiedAttempt, persistIntake, recordLLMUsage, recordApprovalEvent, listApprovalEvents, APPROVAL_EVENT_TYPES, listDecisions, listTasks, getTask, setTaskProposalId, listEvents, usageSummary, createDispatch, updateDispatch, listDispatches, getDispatch }
+module.exports = { abortUnifiedClarification, publishUnifiedClarification, checkUnifiedClarification, finishUnifiedClarification, cancelUnifiedClarification, reconcileUnifiedClarifications, reserveUnifiedTask, linkUnifiedAttempt, persistIntake, recordLLMUsage, recordApprovalEvent, listApprovalEvents, APPROVAL_EVENT_TYPES, listDecisions, listTasks, getTask, setTaskProposalId, listEvents, usageSummary, createDispatch, updateDispatch, listDispatches, getDispatch }

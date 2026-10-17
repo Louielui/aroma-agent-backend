@@ -188,3 +188,67 @@ test('U3-B closed clarification envelope rejects invented identities, grants, al
  assert.deepEqual(validate(b),b)
  for(const altered of [{...b,fileId:'guessed'},{...b,permission:'owner'},{...b,version:2},{...b,response:'x'.repeat(1001)}])assert.throws(()=>validate(altered),/invalid_unified_request/)
 })
+
+test('U3-B source-label sharing requires explicit host source-content sharing, not goal/catalog permission alone',async()=>{
+ const f=setup();f.context.synthesisSharing=false
+ const r=await f.browser.handleMain(f.start),v=f.view(r.unifiedTask.taskId)
+ await f.browser.handleMain(f.response(v))
+ assert.equal(f.prompts.length,1);assert.equal(f.calls.length,1);assert.equal(f.view(v.taskId).executionState,'CLARIFICATION_FAILED')
+})
+
+test('U3-B missing or unavailable detail cannot become fabricated synthesis',async()=>{
+ for(const kind of ['missing','unavailable']){
+  const f=setup({beforeRead:({operation})=>{if(kind==='unavailable'&&operation==='get')throw Error('fixture_detail_unavailable')}})
+  const r=await f.browser.handleMain(f.start),v=f.view(r.unifiedTask.taskId)
+  if(kind==='missing')f.detailRows[f.resource]=[]
+  const answer=await f.browser.handleMain(f.response(v));assert.equal(f.calls.length,3)
+  assert.equal(f.view(v.taskId).executionState,'CLARIFICATION_FAILED');assert.equal(Boolean(answer.result?.taskEvidence?.synthesis),false)
+ }
+})
+
+test('U3-B post-claim link failure is durably reconciliation-required without waiting for restart',async()=>{
+ const f=setup(),r=await f.browser.handleMain(f.start),v=f.view(r.unifiedTask.taskId),b=f.response(v)
+ f.intake.link=()=>{throw Error('fixture_link_write_failure')}
+ await assert.rejects(f.browser.handleMain(b));assert.equal(f.calls.length,1)
+ assert.equal(tasks.getTask(v.taskId).unifiedIntake.clarification.state,'CLARIFICATION_RECONCILIATION_REQUIRED')
+ f.restart();assert.equal(f.view(v.taskId).executionState,'CLARIFICATION_RECONCILIATION_REQUIRED')
+})
+
+test('U3-B corrupt current receipt in recovery is classified without an uncaught store exception',async()=>{
+ const f=setup(),r=await f.browser.handleMain(f.start),v=f.view(r.unifiedTask.taskId),b=f.response(v)
+ const binding=f.intake.reserve(b,{principal:'owner',surface:'main',scope:f.runner.describe(),sourceHash:null}),id=randomUUID()
+ f.intake.link(binding,{kind:'browser_read',id,version:1});fs.writeFileSync(path.join(f.readsDir,id+'.json'),'{corrupt')
+ assert.doesNotThrow(()=>f.intake.reconcileClarifications())
+ assert.equal(tasks.getTask(v.taskId).unifiedIntake.clarification.state,'CLARIFICATION_RECONCILIATION_REQUIRED')
+})
+
+test('U3-B in-flight HTTP replay cannot occupy the completed answer transcript slot',async t=>{
+ const f=setup(),original=f.model.complete.bind(f.model);let entered,release
+ const started=new Promise(r=>{entered=r}),held=new Promise(r=>{release=r})
+ f.model.complete=async(p,o)=>{if(o.invocationPhase==='clarification'){entered();await held}return original(p,o)}
+ const conversations=require('../../store/conversationStore').createConversationStore({dataDir:fs.mkdtempSync(path.join(os.tmpdir(),'u3b-replay-conv-'))}),express=require('express'),app=express()
+ app.locals.conversationDemo=true;app.locals.ownerSessions={valid:()=>true};app.use(express.json());app.use(require('../unifiedRoutes').createRouter({intake:f.intake,browserRead:f.browser,conversations}))
+ const server=app.listen(0,'127.0.0.1');await new Promise(r=>server.once('listening',r));t.after(()=>{release();return new Promise(r=>server.close(r))})
+ const url='http://127.0.0.1:'+server.address().port+'/api/v1/demo/task-intake',post=async b=>(await fetch(url,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(b)})).json()
+ const initial=await post(f.start),b=f.response(initial.unifiedTask),first=post(b);await started
+ try{
+  const altered=await fetch(url,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({...b,response:'the first one'})});assert.equal(altered.status,409)
+  assert.equal(tasks.getTask(b.taskRef).unifiedIntake.clarification.state,'PROCESSING_CLARIFICATION')
+  const replay=await post(b);assert.equal(replay.historySaved,false);assert.equal(conversations.get(f.context.conversationId).messages.length,2)
+ }finally{release()}
+ const result=await first,history=conversations.get(f.context.conversationId).messages
+ assert.equal(result.historySaved,true);assert.equal(history.length,4);assert.equal(history[3].content,result.reply);assert.equal(f.calls.length,3)
+})
+
+test('U3-B busy refusal after claim is durable and cannot leave a processing task or reuse consent',async()=>{
+ const f=setup(),r=await f.browser.handleMain(f.start),v=f.view(r.unifiedTask.taskId),b=f.response(v),original=f.model.complete.bind(f.model)
+ let entered,release;const started=new Promise(r=>{entered=r}),held=new Promise(r=>{release=r})
+ f.model.complete=async(p,o)=>{entered();await held;return original(p,o)}
+ const other=f.browser.handleMain({...f.start,clientSubmissionId:randomUUID()});await started
+ try{
+  await assert.rejects(f.browser.handleMain(b),/browser_read_busy/)
+  assert.equal(tasks.getTask(v.taskId).unifiedIntake.clarification.state,'CLARIFICATION_RECONCILIATION_REQUIRED');assert.equal(f.calls.length,1)
+  await f.browser.handleMain(b);assert.equal(f.calls.length,1)
+ }finally{release()}
+ await other
+})

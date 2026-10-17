@@ -38,7 +38,7 @@ There is no new store, planner, registry, permission system or scheduler.
    without reading. A changed selection is valid only before execution is claimed;
    a later reply cannot silently replace or erase an already performed read.
 4. A fixed host entry reconstructs only the stored typed dependency. Current
-   Owner context, provider sharing, authorization revision, fresh disclosed
+   Owner context, separate source-content/provider sharing, authorization revision, fresh disclosed
    capabilities, source leases, evidence and cancellation are checked repeatedly.
    The new Browser Read attempt has its own prepare/consumed-consent receipt.
    Owner clarification itself is not approval or a source grant.
@@ -69,11 +69,18 @@ Startup never executes a waiting clarification, repeats a read, or resumes a
 claimed attempt. An interrupted workflow requires a new explicit Owner action
 for a new discovery attempt under the same Task/Goal; the original reply cannot
 be replayed as recovery authority. No automatic retries, loops or fallback reads.
+Every post-claim admission/prepare/link failure marks the matching consumed
+submission reconciliation-required immediately; a rejected competing submission
+cannot abort the winning attempt. Corrupt current receipts are caught by Task
+reconciliation. The legacy Browser Read store still refuses to initialize from
+unreadable audit data; that remains a fail-closed availability limitation.
 
 Main transcripts retain actual reply text and unifiedTask linkage. The existing
 ownerGoalReference check is unchanged; this router does not attach a replacement
 Owner Goal from reply prose. A transcript failure is reported as historySaved=false;
 durable Task/attempt evidence still prevents redispatch.
+In-flight duplicate HTTP requests do not append placeholder transcript turns;
+only terminal receipts can occupy the existing per-attempt transcript slot.
 
 Tests use disposable persistence and actual existing gateways with synthetic
 transports. `scripts/u2/clarification-demo.cjs` separately uses GPT-6 Astra / High
