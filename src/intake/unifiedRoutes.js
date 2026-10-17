@@ -1,7 +1,7 @@
 'use strict'
 const {SESSION_COOKIE,readCookie,sessionCookieName}=require('../governance/ownerAuth')
 const {validate,TASK}=require('./unifiedContract')
-function createRouter({intake,browserRead,conversations,withOwner=(_b,_v,execute)=>execute(),cookieName=SESSION_COOKIE}){
+function createRouter({intake,browserRead,conversations,withOwner=(_b,_v,execute)=>execute(),cookieName=SESSION_COOKIE,operation=(_req,_res,execute)=>execute(),reportFailure=null}){
  cookieName=sessionCookieName(cookieName)
  const router=require('express').Router(),base='/api/v1/demo/task-intake'
  const sessionValid=req=>{try{return req.app.locals.conversationDemo===true&&req.app.locals.ownerSessions?.valid(readCookie(req,cookieName))===true}catch{return false}}
@@ -14,10 +14,10 @@ function createRouter({intake,browserRead,conversations,withOwner=(_b,_v,execute
   next()
  })
  const errors=new Set(['unified_intake_disabled','task_not_found','submission_conflict','revision_conflict','new_objective_requires_new_task','prior_attempt_active','intake_interrupted_no_retry','task_attempt_limit','clarification_pending','clarification_unavailable','clarification_scope_changed','clarification_interrupted','clarification_evidence_changed'])
- const failed=(res,e)=>res.status(e.message==='owner_session_required'?403:e.message==='invalid_unified_request'?400:errors.has(e.message)?409:503).json({error:errors.has(e.message)||['invalid_unified_request','owner_session_required'].includes(e.message)?e.message:'task_intake_unavailable'})
+ const failed=(res,e)=>{if(reportFailure&&!errors.has(e.message)&&!['invalid_unified_request','owner_session_required'].includes(e.message))return reportFailure(res,e);return res.status(e.message==='owner_session_required'?403:e.message==='invalid_unified_request'?400:errors.has(e.message)?409:503).json({error:errors.has(e.message)||['invalid_unified_request','owner_session_required'].includes(e.message)?e.message:'task_intake_unavailable'})}
  router.get(base+'/configuration',(req,res)=>res.json({enabled:intake.enabled()===true}))
  router.get(base+'/:id',(req,res)=>{try{if(!TASK.test(req.params.id))throw Error('invalid_unified_request');res.json(intake.view(req.params.id,{principal:'owner',surface:'main'}))}catch(e){failed(res,e)}})
- router.post(base+'/:id/cancel',async(req,res)=>{
+ router.post(base+'/:id/cancel',(req,res)=>operation(req,res,async()=>{
   try{
    const b=req.body
    if(!req.is('application/json')||!b||Object.keys(b).sort().join(',')!=='attemptId,expectedRevision'||!TASK.test(req.params.id))throw Error('invalid_unified_request')
@@ -28,8 +28,8 @@ function createRouter({intake,browserRead,conversations,withOwner=(_b,_v,execute
    await browserRead.cancelMain(v.executionRef.id)
    res.json(intake.view(req.params.id,{principal:'owner',surface:'main'}))
   }catch(e){failed(res,e)}
- })
- router.post(base,async(req,res)=>{
+ }))
+ router.post(base,(req,res)=>operation(req,res,async()=>{
   try{
    if(!req.is('application/json'))throw Error('invalid_unified_request')
    const b=validate(req.body)
@@ -42,10 +42,11 @@ function createRouter({intake,browserRead,conversations,withOwner=(_b,_v,execute
    verifyOwner()
    const projection=intake.viewAttempt(result.unifiedTask.taskId,result.unifiedTask.attemptId,{principal:'owner',surface:'main'})
    let historySaved=false
-   if(['completed','failed','cancelled','interrupted'].includes(result.state))try{conversations.appendTurn({id:b.conversationId,userText:b.operation==='clarification_response'?b.response:b.message,replyText:result.result?.text||projection.executionState,unifiedTask:result.unifiedTask});historySaved=true}catch{}
+   if(['completed','failed','cancelled','interrupted'].includes(result.state))try{conversations.appendTurn({id:b.conversationId,userText:b.operation==='clarification_response'?b.response:b.message,replyText:result.result?.text||projection.executionState,unifiedTask:result.unifiedTask});historySaved=true}catch(e){if(reportFailure)throw e}
+   if(reportFailure&&result.state==='failed')return reportFailure(res,Error(result.error||'read_unavailable'),{reply:result.result?.text||projection.executionState,lane:'chat',historySaved,unifiedTask:projection})
    return res.json({reply:result.result?.text||projection.executionState,lane:'chat',historySaved,unifiedTask:projection})
   }catch(e){failed(res,e)}
- })
+ }))
  return router
 }
 module.exports={createRouter}

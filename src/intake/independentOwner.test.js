@@ -2,7 +2,8 @@
 const test = require('node:test'), assert = require('node:assert/strict'), fs = require('node:fs'), os = require('node:os'), path = require('node:path')
 const { fork } = require('node:child_process'), { randomUUID, createHash } = require('node:crypto')
 const codeRoot = path.resolve(__dirname, '../..'), probe = path.join(codeRoot, 'scripts/r1/independentProbe.cjs')
-const fixtures = require('../../scripts/r1/independentFixture.cjs'), hostInstances = new Map()
+const fixtures = require('../../scripts/r1/independentFixture.cjs'), hostInstances = new Map(), openChildren = new Set()
+test.after(async () => { for (const close of openChildren) await close() })
 function rootFixture(parent = fs.mkdtempSync(path.join(os.tmpdir(), 'independent-r1-')), options = {}) {
   const owned = fixtures.createFixture(parent, { sharing: { goal: true, content: true, source: true }, ...options })
   hostInstances.set(owned.root, owned)
@@ -28,9 +29,13 @@ async function child(root, overrides = {}, environment = {}) {
     return { status: r.status, body: data, cookie: r.headers.get('set-cookie') }
   }
   const login = async () => { const r = await request('/owner/login', { body: 'password=' + encodeURIComponent(options.password), headers: { 'content-type': 'application/x-www-form-urlencoded' } }); assert.equal(r.status, 302); return r.cookie.split(';')[0] }
+  const close = async () => { if (!p.connected) { openChildren.delete(close); return } const closed = await rpc({ op: 'close' }); await new Promise(resolve => p.exitCode !== null ? resolve() : p.once('exit', resolve)); openChildren.delete(close); const owned = hostInstances.get(root); owned.hostEvidence = fixtures.retainClose(owned, closed.receipt); owned.resumeReceipt = closed.receipt }
+  openChildren.add(close)
   return { root, origin, options, pid: ready.pid, request, login, snapshot: () => rpc({ op: 'snapshot', root }), control: () => rpc({ op: 'observerControl' }),
+    holdSource: () => rpc({ op: 'holdSource' }), releaseSource: () => rpc({ op: 'releaseSource' }),
+    holdPersistence: (stage, barrier) => rpc({ op: 'holdPersistence', stage, barrier }),
     crash: () => rpc({ op: 'crash' }),
-    close: async () => { if (!p.connected) return; const closed = await rpc({ op: 'close' }); hostInstances.get(root).resumeReceipt = closed.receipt; await new Promise(resolve => p.exitCode !== null ? resolve() : p.once('exit', resolve)) } }
+    close }
 }
 const goal = () => ({ version: 1, operation: 'start', clientSubmissionId: randomUUID(), conversationId: randomUUID(), message: 'Find the synthetic tea record and summarize its instruction.', taskRef: null, expectedRevision: null, contextRefs: [] })
 const route = '/api/v1/demo/task-intake'
@@ -46,13 +51,109 @@ test('persisted synthetic provenance cannot assert real subscription verificatio
     assert.equal(saved.result.executionProvenance.executionMode, 'synthetic_fixture')
     assert.equal(saved.result.executionProvenance.billingVerified, false)
     assert.equal(saved.result.executionProvenance.modelInvocationVerified, false)
+    assert.equal(saved.result.billing, 'synthetic-not-verified')
+    assert.equal(saved.timeline.find(e => e.stage === 'r1_synthetic_contract_exercised').billing, 'synthetic-not-verified')
+    assert(!JSON.stringify(saved).includes('"billing":"chatgpt-subscription"'))
     assert.equal(saved.result.executionProvenance.sourceReadVerification, 'synthetic_adapter_observed')
     assert.equal(saved.result.taskEvidence.run.executionProvenance.billingVerified, false)
     assert.equal(result.body.unifiedTask.investigation.executionProvenance.synthetic, true)
     const sameTask = (await f.snapshot()).tasks[0]
+    assert(!JSON.stringify(sameTask).includes('"billing":"chatgpt-subscription"'))
     assert.equal(sameTask.ownerGoal.goalId, result.body.unifiedTask.goalId)
     assert.equal(sameTask.unifiedIntake.attempts[0].executionRef.id, saved.id)
     assert.equal(result.body.unifiedTask.investigation.goalVerifiedComplete, false)
+  } finally { await f.close() }
+})
+
+test('client disconnect cannot release actual source operation before final persistence and graceful close', async () => {
+  const root = rootFixture(), f = await child(root), cookie = await f.login(), body = goal()
+  await f.holdSource()
+  const q = require('node:http').request(f.origin + route, { method: 'POST', headers: { cookie, origin: f.origin, 'content-type': 'application/json' } })
+  q.on('error', () => {}); q.end(JSON.stringify(body))
+  let reached = false
+  for (let n = 0; n < 100; n++) { if ((await f.snapshot()).held === 'source_reached') { reached = true; break } await new Promise(r => setTimeout(r, 10)) }
+  assert(reached); q.destroy()
+  await new Promise(r => setTimeout(r, 30))
+  assert.equal((await f.snapshot()).activeRequests, 1)
+  let released = false
+  const closing = f.close().then(() => { released = true })
+  await new Promise(r => setTimeout(r, 30))
+  assert.equal(released, false); assert(fs.existsSync(path.join(root, '.independent-process.json')))
+  assert.equal((await f.snapshot()).activeRequests, 1)
+  await f.releaseSource(); await closing
+  const files = fs.readdirSync(path.join(root, 'data/browser-context-reads')).filter(n => n.endsWith('.json'))
+  const record = JSON.parse(fs.readFileSync(path.join(root, 'data/browser-context-reads', files[0])))
+  assert.equal(record.state, 'completed'); assert.equal(record.result.billing, 'synthetic-not-verified')
+  const history = JSON.parse(fs.readFileSync(path.join(root, 'data/conversations', body.conversationId + '.json')))
+  assert(history.messages.some(m => String(m.content).includes('four minutes')))
+  assert(!fs.existsSync(path.join(root, '.independent-process.json')))
+  if (process.env.INDEPENDENT_R1_EVIDENCE) fs.writeFileSync(path.join(process.env.INDEPENDENT_R1_EVIDENCE, 'disconnect-final-' + body.clientSubmissionId + '.json'), JSON.stringify({ task: record.unifiedTask, state: record.state, timeline: record.timeline, taskEvidence: record.result.taskEvidence, historySaved: true, safeClosed: hostInstances.get(root).resumeReceipt.safeClosed }), { flag: 'wx' })
+})
+
+for (const stage of ['task','browserResult']) test('disconnect and graceful close retain ownership through synchronous ' + stage + ' persistence', async () => {
+  const root = rootFixture(), f = await child(root), cookie = await f.login(), body = goal()
+  const barrier = path.join(fs.mkdtempSync(path.join(path.dirname(root), 'r1-persistence-')), 'barrier')
+  await f.holdPersistence(stage, barrier)
+  const q = require('node:http').request(f.origin + route, { method: 'POST', headers: { cookie, origin: f.origin, 'content-type': 'application/json' } })
+  q.on('error', () => {}); q.end(JSON.stringify(body))
+  let reached = false
+  for (let n = 0; n < 200; n++) { if (fs.existsSync(barrier + '.reached')) { reached = true; break } await new Promise(r => setTimeout(r, 10)) }
+  assert(reached, stage + ' actual persistence boundary reached')
+  q.destroy(); const closing = f.close()
+  assert(fs.existsSync(path.join(root, '.independent-process.json')))
+  fs.writeFileSync(barrier + '.release', 'explicit test release', { flag: 'wx' }); await closing
+  const files = fs.readdirSync(path.join(root, 'data/browser-context-reads')).filter(n => n.endsWith('.json'))
+  assert.equal(JSON.parse(fs.readFileSync(path.join(root, 'data/browser-context-reads', files[0]))).state, 'completed')
+  assert(JSON.parse(fs.readFileSync(path.join(root, 'data/conversations', body.conversationId + '.json'))).messages.some(m => String(m.content).includes('four minutes')))
+  assert(!fs.existsSync(path.join(root, '.independent-process.json')))
+})
+
+test('malformed unauthenticated and authenticated request floods have zero diagnostic writes and do not close admission', async () => {
+  const root = rootFixture(), f = await child(root)
+  try {
+    for (let i = 0; i < 80; i++) assert.equal((await f.request(route, { body: '{bad' })).status, 403)
+    for (let i = 0; i < 10; i++) assert.equal((await f.request('/owner/login', { body: '{bad' })).status, 400)
+    assert.deepEqual(fs.readdirSync(path.join(root, 'logs')), [])
+    const cookie = await f.login()
+    for (let i = 0; i < 80; i++) assert.equal((await f.request(route, { cookie, body: '{bad' })).status, 400)
+    assert.deepEqual(fs.readdirSync(path.join(root, 'logs')), [])
+    assert.equal((await f.request(route, { cookie, body: goal() })).status, 200)
+  } finally { await f.close() }
+})
+
+test('strict own history and Main errors are unavailable, correlated and bounded rather than empty or successful', async () => {
+  const root = rootFixture(), f = await child(root)
+  try {
+    const cookie = await f.login(), id = randomUUID(), dir = path.join(root, 'data/conversations')
+    assert.deepEqual((await f.request('/api/v1/conversations', { cookie })).body, { ok: true, conversations: [] })
+    fs.mkdirSync(dir); fs.writeFileSync(path.join(dir, id + '.json'), '{private-corrupt')
+    for (const endpoint of ['/api/v1/conversations', '/api/v1/conversations/' + id]) {
+      const r = await f.request(endpoint, { cookie }); assert.equal(r.status, 503); assert.match(r.body.correlationId, /^[a-f0-9-]{36}$/)
+    }
+    const b = { ...goal(), conversationId: id }, failure = await f.request(route, { cookie, body: b })
+    assert.equal(failure.status, 503); assert.match(failure.body.correlationId, /^[a-f0-9-]{36}$/)
+    for (let n = 0; n < 70; n++) assert.equal((await f.request(route, { cookie, body: b })).status, 503)
+    const names = fs.readdirSync(path.join(root, 'logs')); assert(names.length <= 64)
+    const logs = names.map(n => fs.readFileSync(path.join(root, 'logs', n), 'utf8')).join('')
+    assert(!logs.includes('private-corrupt')); assert(!logs.includes(root)); assert(!logs.includes(f.options.password))
+    fs.unlinkSync(path.join(dir, id + '.json')); fs.rmdirSync(dir); fs.writeFileSync(dir, 'synthetic unavailable directory')
+    assert.equal((await f.request('/api/v1/conversations', { cookie })).status, 503)
+    fs.unlinkSync(dir)
+  } finally { await f.close() }
+})
+
+test('failed audit is a durable failed read with an HTTP failure and private correlation', async () => {
+  const root = rootFixture(), f = await child(root)
+  try {
+    const cookie = await f.login(), dir = path.join(root, 'data/context-activity')
+    if (fs.existsSync(dir)) fs.rmdirSync(dir)
+    fs.writeFileSync(dir, 'synthetic unavailable audit')
+    const r = await f.request(route, { cookie, body: goal() })
+    assert.equal(r.status, 503); assert.match(r.body.correlationId, /^[a-f0-9-]{36}$/)
+    assert.notEqual(r.body.unifiedTask?.investigation?.goalVerifiedComplete, true)
+    const files = fs.readdirSync(path.join(root, 'data/browser-context-reads')).filter(n => n.endsWith('.json'))
+    assert.equal(JSON.parse(fs.readFileSync(path.join(root, 'data/browser-context-reads', files[0]))).state, 'failed')
+    fs.unlinkSync(dir)
   } finally { await f.close() }
 })
 
@@ -76,7 +177,7 @@ test('sharing defaults deny and no selected tool confers content authority', asy
   const root = rootFixture(), f = await child(root, { sharing: {} })
   try {
     const cookie = await f.login(), result = await f.request(route, { cookie, body: goal() })
-    assert.equal(result.status, 200)
+    assert.equal(result.status, 503)
     assert.equal((await f.snapshot()).calls.length, 0)
     assert(!result.body.reply.includes('four minutes'))
   } finally { await f.close() }
@@ -110,14 +211,16 @@ test('sharing intersection rejects absent source sharing, missing source grants 
   }
 })
 
-test('malformed JSON is input failure and failed private diagnostics close admission and retain ownership', async () => {
+test('malformed JSON does not persist diagnostics; internal diagnostic failure closes admission and retains ownership', async () => {
   const root = rootFixture(), f = await child(root)
   const cookie = await f.login()
   const invalid = await f.request(route, { cookie, body: '{invalid' })
-  assert.equal(invalid.status, 400); assert.match(invalid.body.correlationId, /^[a-f0-9-]{36}$/)
+  assert.equal(invalid.status, 400); assert.equal(invalid.body.correlationId, undefined)
+  assert.equal(fs.readdirSync(path.join(root, 'logs')).length, 0)
   fs.renameSync(path.join(root, 'logs'), path.join(root, 'logs-preserved'))
   fs.writeFileSync(path.join(root, 'logs'), 'synthetic-diagnostic-failure')
-  assert.equal((await f.request(route, { cookie, body: '{invalid' })).status, 503)
+  const conversationId = randomUUID(); fs.mkdirSync(path.join(root, 'data/conversations')); fs.writeFileSync(path.join(root, 'data/conversations', conversationId + '.json'), '{broken')
+  assert.equal((await f.request('/api/v1/conversations/' + conversationId, { cookie })).status, 503)
   assert.equal((await f.request(route, { cookie, body: goal() })).status, 503)
   assert.equal((await f.snapshot()).calls.length, 0)
   await assert.rejects(f.close(), /recovery_required/)
@@ -137,7 +240,7 @@ test('actual disposable child interruption preserves ownership and cannot automa
   await f.request(route, { cookie, body: goal() })
   await assert.rejects(f.crash(), /probe_exit_73/)
   assert(fs.existsSync(path.join(root, '.independent-process.json')))
-  await assert.rejects(child(root), /fixture_changed|EEXIST/)
+  await assert.rejects(child(root), /EEXIST/)
 })
 
 test('manual CLI launches a clean operational child and releases only its verified marker', async () => {
@@ -236,10 +339,11 @@ test('startup rejects hardlinked fixture data and explicit ambient service crede
   await assert.rejects(child(other, {}, { HUB_TOKEN: 'synthetic-not-a-production-token' }), /clean_environment/)
   assert(!fs.existsSync(path.join(other, 'data/aroma-truth.json')))
 })
-test('corrupt own task store fails startup without erasure or any other fixture mutation', async () => {
-  const root = rootFixture(), file = path.join(root, 'data/aroma-truth.json'), bytes = '{synthetic-corrupt'
+test('corrupt retained own task store reaches loader and fails startup without erasure', async () => {
+  const root = rootFixture(), f = await child(root), file = path.join(root, 'data/aroma-truth.json'), bytes = '{synthetic-corrupt'
   fs.writeFileSync(file, bytes)
-  await assert.rejects(child(root))
+  await f.close()
+  await assert.rejects(child(root), /independent_storage_corrupt/)
   assert.equal(fs.readFileSync(file, 'utf8'), bytes)
 })
 test('instances use fixed injected choices from private files and cannot read a fake legacy modelCenter', async () => {
@@ -262,9 +366,11 @@ test('concurrent replay cannot multiply source execution; unavailable own source
     const cookie = await f.login(), body = goal()
     await Promise.all([f.request(route, { cookie, body }), f.request(route, { cookie, body }), f.request(route, { cookie, body })])
     assert.equal((await f.snapshot()).calls.length, 2)
-    fs.unlinkSync(path.join(root, 'config/synthetic-source.json'))
+    const sourceFile = path.join(root, 'config/synthetic-source.json'), sourceBytes = fs.readFileSync(sourceFile)
+    fs.unlinkSync(sourceFile)
     const next = await f.request(route, { cookie, body: goal() })
     assert(!next.body.reply.includes('four minutes')); assert.notEqual(next.body.unifiedTask?.goalStatus, 'GOAL_COMPLETED')
+    fs.writeFileSync(sourceFile, sourceBytes)
   } finally { await f.close() }
 })
 test('fresh Chromium profile observes same-host cookie collision control and independent login/logout coexistence', async () => {
@@ -305,7 +411,18 @@ test('fresh Chromium profile observes same-host cookie collision control and ind
     assert.equal(reply.historySaved, true); assert.equal(reply.unifiedTask.investigation.goalVerifiedComplete, false)
     await pa.getByText('Steep synthetic tea for four minutes.', { exact: false }).first().waitFor()
     const history = await pa.evaluate(async id => (await fetch('/api/v1/independent/conversations/' + id)).json(), submitted.conversationId)
-    assert(history.messages.some(m => JSON.stringify(m).includes('four minutes')))
+    assert(history.ok); assert(history.conversation.messages.some(m => JSON.stringify(m).includes('four minutes')))
+    // Real sidebar restoration after a real reload, then a user click loads history.
+    await pa.reload({ waitUntil: 'load' })
+    const historyButton = pa.locator('button.conv').filter({ hasText: 'Find the synthetic tea record' }).first()
+    await historyButton.waitFor(); await historyButton.click()
+    await pa.getByText('Steep synthetic tea for four minutes.', { exact: false }).first().waitFor()
+    assert((await pa.locator('#log').innerText()).includes('four minutes'))
+    if (process.env.INDEPENDENT_R1_EVIDENCE) {
+      const screenshot = await pa.screenshot({ fullPage: true })
+      fs.writeFileSync(path.join(process.env.INDEPENDENT_R1_EVIDENCE, 'browser-refresh-' + submitted.conversationId + '.png'), screenshot, { flag: 'wx' })
+      fs.writeFileSync(path.join(process.env.INDEPENDENT_R1_EVIDENCE, 'browser-refresh-' + submitted.conversationId + '.json'), JSON.stringify({ conversationId: submitted.conversationId, task: reply.unifiedTask.taskId, goal: reply.unifiedTask.goalId, sidebarTitle: await historyButton.innerText(), restoredAnswer: await pa.locator('#log').innerText(), screenshotHash: createHash('sha256').update(screenshot).digest('hex'), at: new Date().toISOString(), synthetic: true }), { flag: 'wx' })
+    }
     await pb.goto(attackerOrigin)
     const crossOrigin = pb.waitForResponse(r => r.url() === a.origin + '/owner/logout' && r.request().method() === 'POST')
     const rejectedNavigation = pb.waitForURL(a.origin + '/owner/logout', { waitUntil: 'load' })

@@ -4,7 +4,8 @@ const http = require('node:http'), fixture = require('./independentFixture.cjs')
 const codes = new Set(['EEXIST','independent_fixture_identity_required','independent_fixture_invalid','independent_fixture_changed','independent_resume_refused','independent_root_alias','independent_root_required','independent_root_overlap','independent_clean_environment_required','independent_model_config_invalid','independent_auth_required','independent_port_invalid','offline_dependencies_fixed','offline_dependencies_required','synthetic_source_required','independent_ownership_changed','independent_recovery_required','independent_diagnostic_unavailable','EADDRINUSE'])
 codes.add('independent_offline_boundary_required')
 codes.add('independent_input_invalid')
-const safeCode = e => ['ENOENT','EACCES','EPERM','EIO'].includes(e?.code) ? 'independent_storage_unavailable' : codes.has(e?.code || e?.message) ? e.code || e.message : 'independent_startup_unavailable'
+for (const code of ['independent_authorization_invalid','independent_config_invalid','independent_dependencies_required','independent_process_required','independent_root_too_large','independent_storage_corrupt','independent_host_evidence_required']) codes.add(code)
+const safeCode = e => e?.code === 'MODULE_NOT_FOUND' ? 'independent_dependencies_required' : e instanceof SyntaxError ? 'independent_storage_corrupt' : ['ENOENT','EACCES','EPERM','EIO','ENOTDIR'].includes(e?.code) ? 'independent_storage_unavailable' : codes.has(e?.code || e?.message) ? e.code || e.message : 'independent_startup_unavailable'
 async function startIndependent(options = {}) {
   const { port = 0, ...composition } = options
   if (!Number.isInteger(port) || port < 0 || port > 65535 || [8081,8090,8091,8888].includes(port)) throw Error('independent_port_invalid')
@@ -20,10 +21,9 @@ async function startIndependent(options = {}) {
         let expired = false
         // Deadline refuses release; it never cancels a task or kills a process.
         const deadline = setTimeout(() => { expired = true; reject(Error('independent_recovery_required')) }, 15000)
-        server.close(error => {
-          clearTimeout(deadline)
-          if (error || expired) return reject(Error('independent_recovery_required'))
-          try { const receipt = instance.checkpoint(); instance.releaseOwnership(); resolve(receipt) } catch (e) { reject(e) }
+        server.close(async error => {
+          if (error || expired) { clearTimeout(deadline); return reject(Error('independent_recovery_required')) }
+          try { await instance.whenIdle(); if (expired) return; const receipt = instance.checkpoint(); instance.releaseOwnership(); clearTimeout(deadline); resolve(receipt) } catch (e) { clearTimeout(deadline); reject(e) }
         })
       })
       return closed

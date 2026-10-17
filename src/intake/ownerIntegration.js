@@ -39,12 +39,14 @@ function createOwnerIntegration({ liveContext, registry, enabled, selection, env
     const synthetic = evidenceMode === 'synthetic_fixture'
     const provenance = synthetic ? { executionMode: 'synthetic_fixture', synthetic: true, billingVerified: false,
       evidenceSource: 'host_owned_synthetic_adapters', modelInvocationVerified: false, sourceReadVerification: 'not_yet_observed' } : null
-    input.onEvent({ stage: synthetic ? 'r1_synthetic_contract_exercised' : 'r1_subscription_verified', model: verified.model, billing: verified.billing, effort: input.adapter.effort, goalId: input.ownerGoal?.goalId,
+    input.onEvent({ stage: synthetic ? 'r1_synthetic_contract_exercised' : 'r1_subscription_verified', model: verified.model, billing: synthetic ? 'synthetic-not-verified' : verified.billing, effort: input.adapter.effort, goalId: input.ownerGoal?.goalId,
       ...(synthetic ? { evidenceMode, executionProvenance: provenance } : {}) })
     const out = await r.runner.run(input); current()
     if (!synthetic) return out
     const executionProvenance = { ...provenance, sourceReadVerification: out.evidence?.execution?.packs?.some(p => p.state === 'ok' && p.coverage?.provenance === 'synthetic_disposable_fixture') ? 'synthetic_adapter_observed' : 'not_verified' }
-    return { ...out, executionProvenance, evidence: { ...out.evidence, executionProvenance,
+    const synthesis = out.evidence?.synthesis
+    return { ...out, billing: 'synthetic-not-verified', executionProvenance, evidence: { ...out.evidence,
+      ...(synthesis ? { synthesis: { ...synthesis, ...(synthesis.review ? { review: { ...synthesis.review, billing: 'synthetic-not-verified', modelInvocationVerified: false } } : {}) } } : {}), executionProvenance,
       run: { ...out.evidence?.run, executionProvenance } } }
   } })
   function withOwner(body, verifyOwner, execute) {

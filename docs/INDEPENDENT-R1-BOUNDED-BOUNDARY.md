@@ -45,3 +45,56 @@ Historical production attribution UNKNOWN, preservation NOT PASS, the 549-file c
 
 A full-suite result, exact committed source, mandatory browser execution and independently reviewed evidence are required before any offline acceptance claim. No live subscription, real connector/data, permission change, installation, push, merge or production action follows from this code.
 
+# Final correction boundary (2026-10-17)
+
+This tranche extends only the isolated Independent R1 composition. It does not
+authorize deployment, live models, connectors or production migration.
+
+The shared Main HTTP adapter accepts optional `operation` and `reportFailure`
+composition callbacks. Defaults preserve the accepted R1 route behavior. The
+Independent composition tracks the entire awaited handler, including final
+conversation persistence; socket close cannot settle a running operation.
+Graceful close waits for both server closure and the actual operation count.
+Expiry refuses checkpoint/release and does not cancel operations.
+
+Private history uses the existing strict single-record reader and its existing
+metadata projection. It does not call the shared lenient list implementation.
+It returns the existing frontend envelopes, refuses corrupt/unreadable entries,
+and differentiates missing named conversations from unavailable history.
+
+Malformed requests do not write diagnostics. Unauthenticated work never reaches
+body parsing. Authenticated internal failures use bounded, sanitized private
+diagnostic slots and correlation IDs. A failed diagnostic write closes admission.
+
+The trusted disposable fixture host retains an initial evidence file OUTSIDE the
+operational root, with a separately held SHA256. Safe-close receipts do not supply
+this trust anchor. After the child exits safely, `retainClose` independently
+checks current inventory, initial immutable pins, allowed membership and exact
+receipt bytes, and retains a new host evidence generation. Resume requires the
+latest host-held path/hash and that exact safe-close receipt. The host must retain
+the latest pins; an adversary controlling the trusted host invocation is outside
+this offline boundary. There is no automatic adoption, marker removal, or replay.
+HTTP/model/source data cannot provide these pins or authorize resume.
+
+Synthetic billing fields are projected as `synthetic-not-verified` only AFTER
+the existing internal adapter contract checks. This includes the preflight event,
+Browser Read result and synthesis-review evidence. Connected-source subscription
+validation and billing remain unchanged. Test model-shaped responses remain
+explicit simulations, never real subscription evidence.
+
+Test-only IPC probes can pause local synthetic reads and synchronous persistence
+at explicit barriers. They are not application routes or general execution tools.
+No Node global, core Task/Goal/store contract, model router or UI is patched.
+The supported application composition starts no native/subprocess/background
+writer; test control subprocesses finish before their observation returns.
+
+Isolation evidence must include host-positive synthetic canaries, known mapped
+bytes, explicit read-only write errors, a functioning guest loopback control,
+unreachable actual host address, guest route/interface observations, exact launch
+configuration, actual tool hashes and host integrity checks. Guest ENOENT means
+namespace absence, not permission denial; timeout is not denial. No production
+paths, credentials or business records are probed.
+
+Historical UNKNOWN/NOT PASS, the 549-file concern, Option B installation BLOCKED,
+bootstrap NO-GO and suspended legacy migration are unchanged.
+

@@ -6,7 +6,20 @@ const hook = asyncHooks.createHook({ init(_id, type) { observed[type] = (observe
 function inventory(root, prefix = '') {
   return fs.readdirSync(root, { withFileTypes: true }).flatMap(e => e.isDirectory() ? inventory(path.join(root, e.name), prefix + e.name + '/') : [{ file: prefix + e.name, sha256: crypto.createHash('sha256').update(fs.readFileSync(path.join(root, e.name))).digest('hex') }])
 }
-let instance
+let instance, held = null, releaseRead = null
+// Test-only local adapter observation. No Node globals or application contract is patched.
+const adapterModule = require('./independentAdapters.cjs'), originalFactory = adapterModule.createSyntheticAdapters
+adapterModule.createSyntheticAdapters = () => {
+  const adapters = originalFactory(), createContext = adapters.createContext
+  return { ...adapters, createContext(options) {
+    const context = createContext(options), drive = context.drive
+    return { drive: { ...drive, async read(...args) {
+      const result = await drive.read(...args)
+      if (held === 'source') { held = 'source_reached'; await new Promise(resolve => { releaseRead = resolve }) }
+      return result
+    } } }
+  } }
+}
 process.on('message', async message => {
   try {
     if (message.op === 'start') {
@@ -15,7 +28,20 @@ process.on('message', async message => {
     } else if (message.op === 'snapshot') {
       process.send({ id: message.id, choice: instance.choice, roots: instance.roots,
         calls: instance.calls, modelCalls: instance.modelCalls, files: inventory(message.root), observed,
-        resources: process.getActiveResourcesInfo(), activeRequests: instance.activeRequests(), imports: Object.keys(require.cache), tasks: instance.store.listTasks() })
+        resources: process.getActiveResourcesInfo(), held, activeRequests: instance.activeRequests(), imports: Object.keys(require.cache), tasks: instance.store.listTasks() })
+    } else if (message.op === 'holdSource') { held = 'source'; process.send({ id: message.id, held })
+    } else if (message.op === 'releaseSource') { if (!releaseRead) throw Error('probe_not_held'); releaseRead(); releaseRead = null; held = null; process.send({ id: message.id, released: true })
+    } else if (message.op === 'holdPersistence') {
+      const barrier = message.barrier, temporary = path.dirname(path.dirname(instance.roots.data))
+      if (!['task','browserResult'].includes(message.stage) || typeof barrier !== 'string' || !path.relative(temporary, barrier).startsWith('r1-persistence-')) throw Error('invalid_probe_barrier')
+      const pause = () => {
+        fs.writeFileSync(barrier + '.reached', JSON.stringify({ stage: message.stage, at: new Date().toISOString() }), { flag: 'wx' })
+        const end = Date.now() + 10000
+        while (!fs.existsSync(barrier + '.release')) { if (Date.now() > end) throw Error('probe_barrier_deadline'); Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 10) }
+      }
+      if (message.stage === 'task') { const original = instance.store.linkUnifiedAttempt; let once = false; instance.store.linkUnifiedAttempt = (...args) => { if (!once) { once = true; pause() } return original(...args) } }
+      else { const original = instance.reads.save; let once = false; instance.reads.save = record => { if (!once && record.state === 'completed') { once = true; pause() } return original(record) } }
+      process.send({ id: message.id, armed: true })
     } else if (message.op === 'observerControl') {
       const response = await fetch(instance.origin + '/owner/login'); await response.text()
       await new Promise((resolve, reject) => fs.readFile(path.join(instance.roots.config, 'model-selection.json'), error => error ? reject(error) : resolve()))
