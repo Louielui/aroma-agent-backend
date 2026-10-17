@@ -518,8 +518,14 @@ function checkUnifiedClarification(binding,tool=null){
  return withLock(()=>{const db=load(),{task,c}=check(db)
   if(tool&&typeof tool==='object'){
    const e=tool,h=e.lineage,proof=require('../intake/toolSelection/clarification'),scope=task.unifiedIntake.attempts.at(-1).scope
+   if(e.stage==='u3_clarification_resolved'){
+    if(!c.crossSourceIntent||c.reads!==1||e.clarificationId!==c.id||c.resolvedSelection||e.position!==null&&(!Number.isSafeInteger(e.position)||e.position<1||e.position>c.candidates.length))throw Error('clarification_selection_not_authorized')
+    if(e.position!==null){const candidate=c.candidates[e.position-1];c.resolvedSelection={position:e.position,sourceId:candidate.sourceId,fingerprint:candidate.fingerprint,attemptId:binding.attemptId}}
+    clarificationEvent(db,task,'task.clarification_selection_resolved',{attemptId:binding.attemptId,position:e.position,sourceId:c.resolvedSelection?.sourceId||null});save(db);return
+   }
    const search=scope.find(s=>s.id===e.search),detail=scope.find(s=>s.id===e.detail)
-   if(!c.crossSourceIntent||c.reads!==3||c.handoff||e.stage!=='u3_cross_source_selected'||!search||!detail||search.source===c.source||detail.source!==search.source||!e.search.endsWith('.search')||e.detail!==e.search.slice(0,-7)+'.get'||h?.source!==c.source||!c.candidates.some(r=>r.sourceId===h.sourceId)||h.target!==e.search||h.queryIsAuthority!==false||h.transactionRelationship!=='not_established'||h.comparison!=='not_supported'||!/^[a-f0-9]{64}$/.test(h.packSha256||'')||!/^[a-f0-9]{64}$/.test(e.selectionSha256||''))throw Error('clarification_handoff_not_authorized')
+   const selected=c.resolvedSelection,candidate=selected&&c.candidates[selected.position-1]
+   if(!c.crossSourceIntent||c.reads!==3||c.handoff||e.stage!=='u3_cross_source_selected'||!search||!detail||search.source===c.source||detail.source!==search.source||!e.search.endsWith('.search')||e.detail!==e.search.slice(0,-7)+'.get'||h?.source!==c.source||selected?.attemptId!==binding.attemptId||selected.sourceId!==h?.sourceId||candidate?.sourceId!==selected.sourceId||candidate.fingerprint!==selected.fingerprint||h.target!==e.search||h.queryIsAuthority!==false||h.transactionRelationship!=='not_established'||h.comparison!=='not_supported'||!/^[a-f0-9]{64}$/.test(h.packSha256||'')||!/^[a-f0-9]{64}$/.test(e.selectionSha256||''))throw Error('clarification_handoff_not_authorized')
    c.handoff={search:e.search,detail:e.detail,selectionSha256:e.selectionSha256,lineageHash:proof.hash(h),sourceId:h.sourceId,sourcePackHash:h.packSha256}
    clarificationEvent(db,task,'task.clarification_handoff_bound',{attemptId:binding.attemptId,...c.handoff});save(db);return
   }

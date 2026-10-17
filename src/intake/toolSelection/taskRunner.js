@@ -75,6 +75,11 @@ function createSelectionTaskRunner({ bindings, authorize, evidenceMode, synthesi
       const leases = carriedLeases.concat(synthesizeResults && selection.status === 'read_tool_needed' ? synthesisSelection.tools.map(t => bindings.find(b => b.descriptor.id === t.id).capture()) : [])
       let execution = selection.status === 'read_tool_needed' ? await selector.execute(selection) : null
       if (crossSourceEnabled && !clarification && execution?.status === 'clarification_required') execution = { ...execution, crossSourceIntent: { ...require('./clarification').SOURCE_A_INTENT } }
+      // Only the new Source A continuation opts into localized host text. Existing
+      // U1/U2/U3 behavior keeps its original presentation contract.
+      const language = crossSourceEnabled && (clarification?.crossSourceIntent || execution?.crossSourceIntent) ? /[\u4e00-\u9fff]/.test(question) ? 'zh' : 'en' : null
+      const choose = (en, zh) => language === 'zh' ? zh : en
+      const prefix = evidenceMode === 'synthetic_fixture' ? language === 'en' ? '[Isolated synthetic-data demonstration]\n' : '【隔離合成資料示範】\n' : ''
       const checkInitial = () => { assertActive(); if (signal?.aborted || digest(authorize()) !== digest(context)) throw Error('selection_scope_changed'); for (const lease of leases) lease() }
       let investigation = null
       if (crossSourceEnabled && clarification?.crossSource) {
@@ -118,21 +123,21 @@ function createSelectionTaskRunner({ bindings, authorize, evidenceMode, synthesi
         const visible = boundedExecution(execution)
         const detailIndexes = execution.status === 'clarification_limit_reached' ? [1] : investigation ? [...new Set([1, execution.packs.length - 1])] : clarification ? [1] : null
         const synthesisInput = detailIndexes ? { selection: { ...selection, tools: detailIndexes.map(i => ({ id: execution.packs[i].resource + '.' + execution.packs[i].operation })) }, execution: { ...execution, packs: detailIndexes.map(i => visible.packs[i]) } } : { selection: synthesisSelection, execution: visible }
-        synthesis = await require('./synthesis').synthesize({ question, selection: synthesisInput.selection, execution: synthesisInput.execution, model: synthesisModel, check, record, crossSource: !!investigation })
+        synthesis = await require('./synthesis').synthesize({ question, selection: synthesisInput.selection, execution: synthesisInput.execution, model: synthesisModel, check, record, crossSource: !!investigation, language })
       }
       // This terminal means the bounded selection/read attempt finished, never
       // that the Owner's goal, approval, or an external action was completed.
       runs.appendStage(run.id, 'SUCCEEDED', { executor: 'context_tool_gateway', selectionStatus: selection.status, executionStatus: execution?.status || 'not_executed', goalCompleted: false })
       const evidence = { version: 1, operation: crossSourceEnabled ? 'u3.cross_source_investigation' : dependentReads ? 'u3.bounded_dependent_read' : synthesizeResults ? 'u2.grounded_synthesis' : 'u2.bounded_selection', state: evidenceMode === 'synthetic_fixture' ? 'synthetic' : 'unverified_goal',
         evidenceMode, selection, execution: boundedExecution(execution), ...(synthesizeResults ? { synthesis } : {}), run: runs.getRun(run.id), goalCompleted: false }
-      const dependencyMessage = execution?.status === 'clarification_limit_reached' ? 'Several Source B candidates were returned. This workflow has already used its one clarification cycle; no Source B detail was selected or read. The bounded investigation stopped and the Owner goal remains open.' : investigation?.reason === 'no_supported_handoff' ? null : require('./dependency').dependencyReply(execution)
-      const dependentReply = investigation && dependencyMessage ? 'Source B: ' + dependencyMessage : dependencyMessage
-      const text = (clarification && selection.status === 'ambiguous_goal' ? 'I could not identify one record from that reply. Which of the previously listed records should I read? No source read was performed; the original Owner goal remains open.' : null) || (investigation && synthesis ? (evidenceMode === 'synthetic_fixture' ? '【隔離合成資料示範】\n' : '') + (dependentReply || '') + '\n' + synthesis.text : dependentReply) || (synthesis ? (evidenceMode === 'synthetic_fixture' ? '【隔離合成資料示範】\n' : '') + synthesis.text : JSON.stringify({ evidenceMode, selectionStatus: selection.status, interpretation: selection.interpretedOutcome || null,
+      const dependencyMessage = execution?.status === 'clarification_limit_reached' ? choose('Several Source B candidates were returned. This workflow has already used its one clarification cycle; no Source B detail was selected or read. The bounded investigation stopped and the Owner goal remains open.', '來源 B 返回多筆候選。本流程已用完一次澄清，未選擇或讀取 B 的詳情；本次調查已停止，原有目標仍未完成。') : investigation?.reason === 'no_supported_handoff' ? null : require('./dependency').dependencyReply(execution, language || 'en')
+      const dependentReply = investigation && dependencyMessage ? choose('Source B: ', '來源 B：') + dependencyMessage : dependencyMessage
+      const text = (clarification && selection.status === 'ambiguous_goal' ? choose('I could not identify one record from that reply. Which of the previously listed records should I read? No source read was performed; the original Owner goal remains open.', '從這個回覆無法確認唯一紀錄，請選擇先前列出的哪一份。沒有執行來源讀取；原有目標仍未完成。') : null) || (investigation && synthesis ? prefix + (dependentReply || '') + '\n' + synthesis.text : dependentReply) || (synthesis ? prefix + synthesis.text : JSON.stringify({ evidenceMode, selectionStatus: selection.status, interpretation: selection.interpretedOutcome || null,
           executionStatus: execution?.status || 'not_executed', sources: execution?.packs.map(readReceipt) || [], goalCompleted: false }))
       return { model: adapter.model, actualModel: selection.actualModel || null, billing: adapter.billing || null,
-        text: (crossSourceEnabled && evidenceMode === 'synthetic_fixture' && !text.startsWith('【隔離合成資料示範】') ? '【隔離合成資料示範】\n' : '') + text +
-          (investigation && !synthesis ? '\n' + require('./synthesis').CROSS_SOURCE_LIMITATION : '') +
-          (investigation?.reason === 'no_supported_handoff' ? '\nSource A detail was read. No permitted relevant Source B search was selected. No Source B read was performed.' : ''), evidence }
+        text: (crossSourceEnabled && prefix && !text.startsWith(prefix) ? prefix : '') + text +
+          (investigation && !synthesis ? '\n' + require('./synthesis').crossSourceLimitation(language) : '') +
+          (investigation?.reason === 'no_supported_handoff' ? '\n' + choose('Source A detail was read. No permitted relevant Source B search was selected. No Source B read was performed.', '已讀取來源 A 詳情，但未選到獲准且相關的來源 B 搜尋，沒有讀取 B。') : ''), evidence }
     } catch (error) {
       runs.appendStage(run.id, 'FAILED', { error: 'selection_or_read_failed' })
       onEvent({ stage: 'u2_failed_no_retry', runId: run.id, evidenceMode })

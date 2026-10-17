@@ -71,7 +71,7 @@ async function main() {
       oneHandoff: invocations.filter(i => i.phase === 'cross_source_handoff').length === 1, trackedReads: allReads.flatMap(r => r.timeline.filter(e => e.stage === 'u2_read_started')).length === f.calls.length,
       noVerifiedRelationship: e?.execution?.handoff?.transactionRelationship === 'not_established', synthesisReviewed: e?.synthesis?.state === 'reviewed' && e.synthesis.claims.length > 0,
       combinedSources: new Set(e?.synthesis?.claims.flatMap(cl => cl.references.map(r => r.sourceId))).size >= 2,
-      noGoalCompletion: v?.goalStatus !== 'GOAL_COMPLETED', explicitLimits: answer?.reply.includes('不計算或宣稱金額差額'), replayNoReads, historySaved: answer?.historySaved === true,
+      noGoalCompletion: v?.goalStatus !== 'GOAL_COMPLETED', explicitLimits: /不計算或宣稱金額差額|no financial variance is calculated or claimed/.test(answer?.reply || ''), replayNoReads, historySaved: answer?.historySaved === true,
       clarificationState: v?.executionState === 'CLARIFICATION_COMPLETED',
       waitingNoSynthesis: initialRead?.result?.taskEvidence?.synthesis === null && initialRead.timeline.filter(e => e.stage === 'u2_synthesis_started').length === 0 }
     const result = { ...source, case: c.id, model, effort, billing: 'chatgpt-subscription', data: 'synthetic_disposable_only', liveExternalActions: false, goal: c.goal, dialogue, checks,

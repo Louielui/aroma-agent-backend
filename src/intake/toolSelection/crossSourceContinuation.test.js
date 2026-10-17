@@ -3,7 +3,7 @@ const test = require('node:test'), assert = require('node:assert/strict'), fs = 
 const { fixture, read, MODEL } = require('../../../scripts/u2/fixture.cjs')
 const { createSelectionTaskRunner } = require('./taskRunner')
 const { createStore } = require('../../browserRead/store'), { createBrowserRead } = require('../../browserRead/service'), { createUnifiedIntake } = require('../unifiedIntake')
-function setup({ multipleB = false, missingB = false, unavailableB = false, beforeRead, onEvent, choice = 2, proposal } = {}) {
+function setup({ multipleB = false, missingB = false, unavailableB = false, beforeRead, beforeEvent, onEvent, choice = 2, proposal } = {}) {
   process.env.AROMA_DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'u3d-truth-'))
   delete require.cache[require.resolve('../../store/store')]; const tasks = require('../../store/store')
   const f = fixture({ beforeRead, unavailable: unavailableB ? ['aroma_system'] : [], complete: async (prompt, options) => {
@@ -21,7 +21,7 @@ function setup({ multipleB = false, missingB = false, unavailableB = false, befo
   if (multipleB) f.rows['aroma.invoices'].push({ ...f.rows['aroma.invoices'][0], id: 'fixture_invoice_1' })
   const reads = createStore(fs.mkdtempSync(path.join(os.tmpdir(), 'u3d-reads-'))), intake = createUnifiedIntake({ store: tasks, reads, enabled: () => true })
   const runner = createSelectionTaskRunner({ bindings: f.bindings, authorize: f.authorize, evidenceMode: 'synthetic_fixture', synthesizeResults: true, dependentReads: true, clarificationEnabled: true, crossSourceEnabled: true })
-  const decorated = { ...runner, run(a) { return runner.run({ ...a, onEvent(e) { a.onEvent(e); onEvent?.(e, f) } }) } }
+  const decorated = { ...runner, run(a) { return runner.run({ ...a, onEvent(e) { beforeEvent?.(e, f); a.onEvent(e); onEvent?.(e, f) } }) } }
   const restart = () => createBrowserRead({ store: reads, selection: () => ({ model: MODEL, effort: 'high' }), provider: () => f.model, taskRunner: decorated, unifiedIntake: intake })
   const browser = restart(), start = { version: 1, operation: 'start', clientSubmissionId: randomUUID(), message: 'Find supplier quotations in Drive, investigate relevant Aroma invoices and summarize what both sources establish.', conversationId: f.context.conversationId, taskRef: null, expectedRevision: null, contextRefs: [] }
   const view = id => intake.view(id, { principal: 'owner', surface: 'main' })
@@ -157,4 +157,26 @@ test('U3-D clarification requires the current authenticated Main Owner boundary'
   const f = setup(), first = await f.browser.handleMain(f.start), v = f.view(first.unifiedTask.taskId)
   await assert.rejects(f.browser.handleMain(f.reply(v), () => { throw Error('owner_session_required') }))
   assert.equal(f.calls.length, 1); assert.equal(f.view(v.taskId).executionState, 'WAITING_CLARIFICATION')
+})
+test('U3-D store rejects another discovered A ID in handoff despite its candidate membership', async () => {
+  const f = setup({ beforeEvent(e) { if (e.stage === 'u3_cross_source_selected') e.lineage.sourceId = 'fixture_quote_0' } })
+  const first = await f.browser.handleMain(f.start), v = f.view(first.unifiedTask.taskId), r = await f.browser.handleMain(f.reply(v))
+  assert.equal(r.state, 'failed'); assert.equal(f.calls.length, 3)
+  const c = f.tasks.getTask(v.taskId).unifiedIntake.clarification
+  assert.equal(c.resolvedSelection.position, 2); assert.equal(c.resolvedSelection.sourceId, 'fixture_quote_1'); assert.equal(c.handoff, undefined)
+})
+test('U3-D English fixed prompts and synthesis presentation follow the original Owner language', async () => {
+  const f = setup(), first = await f.browser.handleMain(f.start), v = f.view(first.unifiedTask.taskId)
+  assert.match(first.result.text, /^\[Isolated synthetic-data demonstration\]/)
+  const r = await f.browser.handleMain(f.reply(v, 'The second one, black tea.'))
+  assert.doesNotMatch(r.result.text, /[\u4e00-\u9fff]/)
+  assert.match(r.result.text, /Cross-source investigation limits/)
+})
+test('U3-D Chinese waiting and ambiguous prompts follow the original Owner language', async () => {
+  const f = setup({ choice: null }); f.start.message = '請找供應商報價並調查 Aroma 發票，整理兩邊證據。'
+  const first = await f.browser.handleMain(f.start), v = f.view(first.unifiedTask.taskId)
+  assert.match(first.result.text, /請選擇/); assert.doesNotMatch(first.result.text, /Which record should I read/)
+  const r = await f.browser.handleMain(f.reply(v, '茶的那份'))
+  assert.match(r.result.text, /無法確認/); assert.doesNotMatch(r.result.text, /I could not identify/)
+  assert.equal(f.calls.length, 1)
 })

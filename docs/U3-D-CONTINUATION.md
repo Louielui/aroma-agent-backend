@@ -8,6 +8,8 @@ The existing runner stamps a fixed typed `crossSourceIntent` only on its initial
 
 The existing selector resolves the Owner reply to a position, not a model-generated ID. Its fresh discovery must exactly match the recorded candidates and ordering before reading the selected detail. Only that actual two-pack selector execution can enter the existing one-use handoff. Source B's query must be an exact validated value from the selected Source A detail. Both source permissions, session, leases, cancellation and sharing remain checked.
 
+U1 durably resolves the model's ordinal against its own candidate ordering before the freshness read, retaining position, source ID, fingerprint and current Attempt ID. Handoff binding requires that exact resolved ID, not membership in the candidate set. The new Source A continuation's fixed questions, limitations and synthesis presentation use Traditional Chinese or English according to the original objective; source labels remain quoted untrusted data. Existing U2/U3 presentation defaults stay unchanged.
+
 ## Durable budget and sequencing
 
 The original discovery consumes read 1. U1's locked clarification counter reserves each subsequent read attempt before dispatch, including failures; it never resets on another reply/Attempt or replay. Expected sequence:
