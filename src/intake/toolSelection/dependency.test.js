@@ -87,6 +87,12 @@ test('durable identity-binding receipt failure stops before the detail', async (
   await assert.rejects(f.selector.execute(await f.selector.select('Read tea')), /audit_failed/)
   assert.equal(f.calls.length, 1)
 })
+test('revocation by the final outcome receipt sink prevents clarification data release', async () => {
+  let f; f = setup({ record(e) { if (e.stage === 'u2_execution_recorded') f.versions.drive++ } })
+  f.rows['drive.company_files'].push({ ...f.rows['drive.company_files'][0], id: 'other_recipe' })
+  await assert.rejects(f.selector.execute(await f.selector.select('Read tea')), /scope_changed|source_access_changed/)
+  assert.equal(f.calls.length, 1)
+})
 test('cancellation at dependency resolution prevents an untracked follow-up', async () => {
   const controller = new AbortController(), f = setup({ signal: controller.signal, record(e) { if (e.stage === 'u3_dependency_resolved') controller.abort() } })
   await assert.rejects(f.selector.execute(await f.selector.select('Read tea recipe')), /cancelled/)

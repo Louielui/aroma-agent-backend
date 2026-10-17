@@ -81,6 +81,7 @@ async function main() {
       sameTypedResource: f.calls.every(call => call.resource === resource),
       originalGoal: intake.view(record.unifiedTask.taskId, { principal: 'owner', surface: 'main' }).objective === c.question,
       actualSelectionOnce: selectionCalls.length === 1,
+      identityNotInSelectionInput: !JSON.stringify(f.prompts.find(p => p.phase === 'selection')?.prompt).includes(discoveredId),
       groundedAnswer: !c.success || evidence?.synthesis?.claims.some(cl => cl.references.some(ref => ref.sourceId === 'S2')) && record.result.text.includes(c.expected),
       noFabricatedDetail: c.success || !evidence?.synthesis,
       noGoalCompletion: intake.view(record.unifiedTask.taskId, { principal: 'owner', surface: 'main' }).goalStatus !== 'GOAL_COMPLETED',
@@ -90,7 +91,8 @@ async function main() {
     const row = { ...source, case: c.id, question: c.question, expected: c, checks, structuralPass: Object.values(checks).every(Boolean),
       businessData: 'synthetic_disposable_fixture', liveExternalActions: false, answer: record.result?.text ?? null, state: record.state, error: record.error ?? null,
       answerProvenance: c.success ? 'actual_model_draft_and_semantic_review' : 'host_control_reply_or_no_answer_after_stop',
-      task: record.unifiedTask, discoveredId, invocations, failure, actualAdapterCalls: f.calls, gatewayAudit: f.audit, sourcePacks: readPacks, evidence: evidence || null, timeline: persisted.timeline, duplicates }
+      task: record.unifiedTask, discoveredId, selectorInput: f.prompts.find(p => p.phase === 'selection')?.prompt ?? null,
+      invocations, failure, actualAdapterCalls: f.calls, gatewayAudit: f.audit, sourcePacks: readPacks, evidence: evidence || null, timeline: persisted.timeline, duplicates }
     const file = 'case-' + c.id + '.json'
     fs.writeFileSync(path.join(directory, file), JSON.stringify(row, null, 2), { flag: 'wx' })
     results.push({ case: c.id, question: c.question, structuralPass: row.structuralPass, checks, state: row.state, answer: row.answer, file, sha256: sha(fs.readFileSync(path.join(directory, file))) })

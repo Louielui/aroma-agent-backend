@@ -153,6 +153,7 @@ function createSelection({ bindings, authorize, model, record, signal, dependent
       packs, ...(dependent ? { dependency: dependent } : {}), goalCompleted: false,
       limitations: ['read_receipts_are_not_goal_completion', edge ? 'one_typed_dependency_no_replanning' : 'no_result_driven_followup'] }
     emit({ stage: 'u2_execution_recorded', id: saved.selection.id, status: result.status, evidenceSha256: digest(result) })
+    if (edge) { same(context); for (const selected of guarded) saved.checks.get(selected.id)() }
     return result
   }
   return Object.freeze({ select, execute })
