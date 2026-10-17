@@ -37,7 +37,7 @@ function createSelectionTaskRunner({ bindings, authorize, evidenceMode, synthesi
       contractHash: digest(b.descriptor), scopeHash: digest(context), evidenceMode
     }))
   }
-  async function run({ question, adapter, capabilities, actor, page, conversation, signal, onEvent, clarification = null, clarificationEvidence = null, assertActive = () => {} }) {
+  async function run({ question, adapter, capabilities, actor, page, conversation, signal, onEvent, ownerGoal = null, clarification = null, clarificationEvidence = null, assertActive = () => {} }) {
     // This slice accepts no browser context or conversation-derived authority.
     if (page || conversation?.length || actor?.role !== 'owner' || !Array.isArray(capabilities) || digest(capabilities) !== digest(describe()) || typeof onEvent !== 'function') throw Error('task_not_authorised')
     const context = authorize()
@@ -68,7 +68,7 @@ function createSelectionTaskRunner({ bindings, authorize, evidenceMode, synthesi
         }
       }
       const guardedActive = () => { assertActive(); for (const lease of carriedLeases) lease() }
-      const selector = createSelection({ bindings, authorize, model: adapter, record, signal, dependentReads, clarificationEnabled, crossSourceEnabled, assertActive: guardedActive })
+      const selector = createSelection({ bindings, authorize, model: adapter, record, signal, dependentReads, clarificationEnabled, crossSourceEnabled, ownerGoal, assertActive: guardedActive })
       if (clarification && !clarificationEnabled) throw Error('clarification_not_authorized')
       let selection = clarification ? await selector.resume(question, clarification) : await selector.select(question)
       const synthesisSelection = selection.dependency ? { ...selection, tools: [...selection.tools, { id: selection.dependency.id }] } : selection

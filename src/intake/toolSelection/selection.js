@@ -17,13 +17,18 @@ const DEPENDENT_SYSTEM = SYSTEM.replace('For read, tools contains 1 to 3 indepen
 In this opt-in host mode return the same JSON object with one additional required key "dependency": null or {"from":0,"id":"advertised get tool ID","result":"sourceId"}.
 Use one typed dependency when the Owner asks to find/locate a record or document and then read its details/content, where its actual ID is not yet known. Choose a list/search discovery and an advertised get accepting the SAME identityType and source/resource. The server binds the returned sourceId to the target argument. Never put a file ID, record ID, URL, arguments or scope in dependency. Only a unique result with complete discovery coverage may advance. Multiple matches require clarification; never rank or choose one yourself. Non-read kinds and independent reads require dependency:null. Maximum two reads in a dependent workflow (one discovery, one detail); no later model decision or fallback.`
 
-function createSelection({ bindings, authorize, model, record, signal, dependentReads = false, clarificationEnabled = false, crossSourceEnabled = false, assertActive = () => {} }) {
+function createSelection({ bindings, authorize, model, record, signal, dependentReads = false, clarificationEnabled = false, crossSourceEnabled = false, ownerGoal = null, assertActive = () => {} }) {
   if (!Array.isArray(bindings) || typeof authorize !== 'function' || typeof model?.complete !== 'function' || typeof record !== 'function') throw Error('invalid_selection_host')
   const catalog = new Map(bindings.map(b => [b.descriptor.id, b]))
   if (catalog.size !== bindings.length) throw Error('duplicate_tool')
   const pending = new WeakMap()
   const handedOff = new WeakSet()
   const completed = new WeakMap()
+  const goalFor = (objective, id) => {
+    if (!ownerGoal) return createGoal({ objective, requestId: id })
+    if (!require('../goal/ownerGoal').validGoal(ownerGoal) || ownerGoal.originalObjective !== objective) throw Error('owner_goal_changed')
+    return structuredClone(ownerGoal)
+  }
   const emit = event => {
     const result = record(event)
     if (result && typeof result.then === 'function') {
@@ -46,7 +51,7 @@ function createSelection({ bindings, authorize, model, record, signal, dependent
   async function select(objective) {
     const context = check()
     if (typeof objective !== 'string' || !objective.trim() || objective.length > 1000) throw Error('invalid_owner_goal')
-    const id = randomUUID(), goal = createGoal({ objective, requestId: id })
+    const id = randomUUID(), goal = goalFor(objective, id)
     const policy = evaluate({ capabilityId: 'Research', version: 1, context: { description: objective } })
     emit({ stage: 'u2_policy_checked', id, verdict: policy.verdict, ruleId: policy.rule_id })
     if (policy.verdict !== 'allow') {
@@ -127,7 +132,7 @@ function createSelection({ bindings, authorize, model, record, signal, dependent
     let proposed; try { proposed = JSON.parse(response.text) } catch { throw Error('invalid_clarification_response') }
     if (!exact(proposed, ['choice']) || proposed.choice !== null && (!Number.isSafeInteger(proposed.choice) || proposed.choice < 1 || proposed.choice > c.candidates.length)) throw Error('invalid_clarification_response')
     emit({ stage: 'u3_clarification_resolved', id, clarificationId: c.id, position: proposed.choice, responseSha256: digest(response.text), actualModel: response.actualModel || null }); verify()
-    const selection = { id, goal: createGoal({ objective, requestId: id }), status: proposed.choice === null ? 'ambiguous_goal' : 'read_tool_needed', interpretedOutcome: 'Continue the original bounded discovery/detail read', interpretationTrust: 'model_proposal', capability: null,
+    const selection = { id, goal: goalFor(objective, id), status: proposed.choice === null ? 'ambiguous_goal' : 'read_tool_needed', interpretedOutcome: 'Continue the original bounded discovery/detail read', interpretationTrust: 'model_proposal', capability: null,
       tools: normalized, dependency, grantsAuthority: false, actualModel: response.actualModel || null, authorizationHash: digest(context) }
     if (proposed.choice !== null) pending.set(selection, { selection: structuredClone(selection), context, checks, clarification: c, position: proposed.choice })
     return selection

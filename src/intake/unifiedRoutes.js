@@ -1,7 +1,7 @@
 'use strict'
 const {SESSION_COOKIE,readCookie}=require('../governance/ownerAuth')
 const {validate,TASK}=require('./unifiedContract')
-function createRouter({intake,browserRead,conversations}){
+function createRouter({intake,browserRead,conversations,withOwner=(_b,_v,execute)=>execute()}){
  const router=require('express').Router(),base='/api/v1/demo/task-intake'
  const sessionValid=req=>{try{return req.app.locals.conversationDemo===true&&req.app.locals.ownerSessions?.valid(readCookie(req,SESSION_COOKIE))===true}catch{return false}}
  router.use(base,(req,res,next)=>{
@@ -37,8 +37,8 @@ function createRouter({intake,browserRead,conversations}){
    // is never used to load private history into the native transport.
    conversations.get(b.conversationId)
    const verifyOwner=()=>{if(!sessionValid(req))throw Error('owner_session_required')}
-   const result=await browserRead.handleMain(b,b.operation==='clarification_response'?verifyOwner:undefined)
-   if(b.operation==='clarification_response')verifyOwner()
+   const result=await withOwner(b,verifyOwner,()=>browserRead.handleMain(b,verifyOwner))
+   verifyOwner()
    const projection=intake.viewAttempt(result.unifiedTask.taskId,result.unifiedTask.attemptId,{principal:'owner',surface:'main'})
    let historySaved=false
    if(['completed','failed','cancelled','interrupted'].includes(result.state))try{conversations.appendTurn({id:b.conversationId,userText:b.operation==='clarification_response'?b.response:b.message,replyText:result.result?.text||projection.executionState,unifiedTask:result.unifiedTask});historySaved=true}catch{}

@@ -26,14 +26,31 @@ function buildEvidence(selection, execution) {
     if (['ok', 'partial'].includes(state)) {
       for (let j = 0; j < pack.content.length; j++) {
         const r = pack.content[j]
-        // Metadata-only reads and long bodies cannot silently masquerade as full
-        // business content. Never truncate a sentence or expose just its prefix.
-        if (pack.operation === 'readMetadata' || typeof r.content !== 'string' || !r.content || r.content.length > 320) continue
-        s.records.push({ sourceId: 'r' + (j + 1), source: pack.source, originalSourceId: r.sourceId ?? null,
-          content: r.content, title: r.title, fields: r.fields,
-          originalDate: r.originalDate, link: r.link })
+        if (pack.operation === 'readMetadata' || typeof r.content !== 'string' || !r.content) continue
+        const row = { sourceId: 'r' + (j + 1), source: pack.source, originalSourceId: r.sourceId ?? null,
+          content: r.content, title: r.title, fields: r.fields, originalDate: r.originalDate, link: r.link }
+        if (r.content.length <= 320) s.records.push(row)
+        else {
+          // Fixed positional projection, never model-selected text or another read.
+          // Verbatim fragments are independently attributable; omitted middle text
+          // cannot support claims. Three disjoint spans per document at most.
+          const text = r.content, width = 280, starts = [...new Set([0, Math.floor((text.length - width) / 2), text.length - width])]
+          s.projection ||= { policy: 'verbatim_positional_fragments_not_full_document', documents: [], omittedCharacters: 0 }
+          s.projection.documents.push({ originalSourceId: r.sourceId ?? null, characters: text.length, contentSha256: digest(text) })
+          let priorEnd = 0
+          starts.forEach((start, k) => {
+            start = Math.max(start, priorEnd)
+            if (start >= text.length) return
+            if (start > 0 && /[\uDC00-\uDFFF]/.test(text[start])) start++
+            let end = Math.min(text.length, start + width)
+            if (end < text.length && /[\uDC00-\uDFFF]/.test(text[end])) end--
+            priorEnd = end
+            s.records.push({ ...row, sourceId: row.sourceId + 's' + (k + 1), content: text.slice(start, end), start, end, contentSha256: digest(text) })
+          })
+          s.state = 'partial'
+        }
       }
-      s.omitted = pack.content.length - s.records.length
+      s.omitted = pack.content.filter((r,j) => !s.records.some(v => v.sourceId === 'r' + (j + 1) || v.sourceId.startsWith('r' + (j + 1) + 's'))).length
     }
     report.sections.push(s)
   }
@@ -65,6 +82,9 @@ function buildEvidence(selection, execution) {
     s.records.pop(); s.omitted++; s.state = 'partial'
   }
   if (Buffer.byteLength(JSON.stringify(report)) > 12000) throw Error('synthesis_evidence_budget')
+  for (const s of report.sections) if (s.projection) {
+    s.projection.omittedCharacters = s.projection.documents.reduce((n,d) => n + d.characters - s.records.filter(r => r.contentSha256 === d.contentSha256 && r.originalSourceId === d.originalSourceId).reduce((sum,r) => sum + r.end - r.start, 0), 0)
+  }
   return report
 }
 

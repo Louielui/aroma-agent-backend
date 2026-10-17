@@ -1233,9 +1233,12 @@ function createApp (options = {}) {
   }}})
   const browserReadStore = require('./browserRead/store').createStore(path.join(require('./store/dataDir').resolveDataDir(), 'browser-context-reads'))
   const unifiedIntake=require('./intake/unifiedIntake').createUnifiedIntake({store,reads:browserReadStore,enabled:()=>process.env.UNIFIED_TASK_INTAKE==='true'})
+  const ownerTaskEnabled=()=>process.env.UNIFIED_TASK_INTAKE==='true'&&process.env.OWNER_TASK_COORDINATION==='true'
+  const ownerTasks=require('./intake/ownerIntegration').createOwnerIntegration({liveContext,registry:companyRegistry,enabled:ownerTaskEnabled,selection:()=>modelCenter.read().brain,request:opts.ownerTaskOptions?.request,evidenceMode:opts.ownerTaskOptions?.evidenceMode||'connected_source'})
   const browserRead = require('./browserRead/service').createBrowserRead({
     unifiedIntake,
     taskRunner: require('./browserRead/contextTask').createContextTask({ legacy: readTask, drive: liveContext.drive, gmail: liveContext.gmail }),
+    mainTaskRunner: ownerTasks.runner, mainTaskEnabled: ownerTaskEnabled, mainProvider: ownerTasks.provider,
     store: browserReadStore,
     selection: () => modelCenter.read().brain,
     provider: choice => {
@@ -1245,7 +1248,7 @@ function createApp (options = {}) {
   })
   app.use('/api/v1/browser-read', requireServiceToken)
   app.use(require('./browserRead/routes').createRouter({ service: browserRead }))
-  app.use(require('./intake/unifiedRoutes').createRouter({intake:unifiedIntake,browserRead,conversations:capturedConversationStore}))
+  app.use(require('./intake/unifiedRoutes').createRouter({intake:unifiedIntake,browserRead,conversations:capturedConversationStore,withOwner:ownerTasks.withOwner}))
   const browserOperatorCompanyId = Number(process.env.SEVEN_SHIFTS_COMPANY_ID)
   const browserOperator = require('./browserOperator/service').createOperator({
     companyId: browserOperatorCompanyId,

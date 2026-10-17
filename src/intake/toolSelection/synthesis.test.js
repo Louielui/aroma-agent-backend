@@ -97,9 +97,9 @@ test('oversized bodies are excluded before provider sharing; metadata-only recei
   assert.equal(m.calls.length, 0); assert.equal(r.claims.length, 0)
   assert.equal(r.sources[0].state, 'content_omitted'); assert(!JSON.stringify(r).includes('SECRET_OMITTED'))
 })
-test('long scalar content is omitted rather than silently truncated into a business fact', async () => {
+test('long scalar content is projected as bounded verbatim fragments with explicit omission', async () => {
   const f = await setup(); f.execution.packs[0].content[0].content = 'long'.repeat(300)
-  const r = await run(f, modelFor([])); assert.equal(r.sources[0].omittedRecords, 1); assert.equal(r.claims.length, 0)
+  const r = await run(f, modelFor([])); assert.equal(r.sources[0].state, 'partial'); assert(r.report.sections[0].projection.omittedCharacters > 0); assert.equal(r.claims.length, 0)
 })
 test('partial coverage, unread selected sources and unavailable sources remain explicit', async () => {
   const f = await setup({ partial: true }), r = await run(f, modelFor([f.claim]))

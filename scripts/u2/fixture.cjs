@@ -64,6 +64,6 @@ function fixture({ proposal = read('aroma.invoices.list'), complete, unavailable
   } }
   const record = event => { if (sink) sink(event); events.push(structuredClone(event)) }
   const selector = createSelection({ bindings, authorize, model, record })
-  return { selector, bindings, authorize, model, context, versions, calls, events, audit, prompts, rows, detailRows, connector, gateway, record }
+  return { selector, bindings, authorize, model, context, versions, calls, events, audit, prompts, rows, detailRows, connector, gateway, record, liveContext: { aroma, calendar, drive } }
 }
 module.exports = { fixture, read, MODEL }
