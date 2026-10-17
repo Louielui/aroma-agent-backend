@@ -9,7 +9,8 @@ const { createBrowserRead } = require('../../browserRead/service')
 const { createUnifiedIntake } = require('../unifiedIntake')
 function integrated(options) {
   const f = fixture(options), reads = createStore(fs.mkdtempSync(path.join(os.tmpdir(), 'u2-browser-tests-')))
-  const runner = createSelectionTaskRunner({ bindings: f.bindings, authorize: f.authorize, evidenceMode: 'synthetic_fixture' })
+  if (options?.synthesisSharing) f.context.synthesisSharing = true
+  const runner = createSelectionTaskRunner({ bindings: f.bindings, authorize: f.authorize, evidenceMode: 'synthetic_fixture', synthesizeResults: options?.synthesizeResults === true })
   let enabled = true
   const intake = createUnifiedIntake({ store: taskStore, reads, enabled: () => enabled })
   const browser = createBrowserRead({ store: reads, selection: () => ({ model: MODEL, effort: 'medium' }), provider: () => f.model, taskRunner: runner, unifiedIntake: intake })
@@ -121,4 +122,46 @@ test('policy denial integrates with Run Timeline without model, reads or approva
   assert.equal(evidence.run.timeline.at(-1).facts.executionStatus, 'not_executed')
   assert.equal(evidence.run.approvalId, null); assert.equal(evidence.goalCompleted, false)
   assert.equal(f.prompts.length, 0); assert.equal(f.calls.length, 0)
+})
+
+function synthesisFixture(options = {}) {
+  return integrated({ synthesizeResults: true, synthesisSharing: true, complete(prompt, opts) {
+    if (!opts.invocationPhase) return { text: JSON.stringify(read('aroma.invoices.list')), model: MODEL, billing: 'chatgpt-subscription' }
+    if (opts.invocationPhase === 'evidence_review') return { text: JSON.stringify({ reviews: [{ id: 'c1', decision: 'supported', reason: 'matches_reference' }] }), model: MODEL, billing: 'chatgpt-subscription' }
+    const data = JSON.parse(prompt), s = data.catalog.sections[0], r = s.records[0]
+    return { model: MODEL, billing: 'chatgpt-subscription', text: JSON.stringify({ claims: [{ id: 'c1', text: 'Invoice DEMO-17 records CAD 84.', kind: 'observation', evidenceState: 'supported', temporalScope: 'historical',
+      references: [{ sourceId: s.sourceId, recordId: r.recordId, field: 'content', value: r.fields.content }] }] }) }
+  }, ...options })
+}
+test('U2-B synthesis is wired through actual U1 identity and durable timeline without completing the goal', async () => {
+  const f = synthesisFixture(); f.model.billing = 'chatgpt-subscription'
+  const r = await f.browser.handleMain(f.envelope())
+  assert.equal(r.state, 'completed'); assert.match(r.result.text, /CAD 84/)
+  assert.equal(r.result.taskEvidence.operation, 'u2.grounded_synthesis')
+  assert.equal(r.result.taskEvidence.synthesis.claims[0].references[0].value, r.result.taskEvidence.execution.packs[0].content[0].content)
+  assert.equal(f.prompts.length, 3); assert.equal(f.calls.length, 1)
+  assert(f.reads.get(r.id).timeline.some(e => e.stage === 'u2_synthesis_recorded'))
+  assert.notEqual(f.intake.view(r.unifiedTask.taskId, { principal: 'owner', surface: 'main' }).goalStatus, 'GOAL_COMPLETED')
+})
+test('providerSharing for selection does not authorize sharing retrieved content for synthesis', async () => {
+  const f = synthesisFixture({ synthesisSharing: false }); f.model.billing = 'chatgpt-subscription'
+  const r = await f.browser.handleMain(f.envelope())
+  assert.equal(r.state, 'failed'); assert.equal(f.prompts.length, 1)
+})
+test('revocation during synthesis discards the answer and cannot cross conversation scope', async () => {
+  const f = synthesisFixture(); f.model.billing = 'chatgpt-subscription'
+  const complete = f.model.complete
+  f.model.complete = async (p, o) => { const out = await complete(p, o); if (o.invocationPhase === 'result_synthesis') f.context.conversationId = 'other'; return out }
+  const r = await f.browser.handleMain(f.envelope())
+  assert.equal(r.state, 'failed'); assert.equal(f.prompts.length, 2); assert.equal(r.result, undefined)
+})
+test('large U2-B native response retains byte bound with explicit content omissions and no synthesis guesses', async () => {
+  const f = synthesisFixture(); f.model.billing = 'chatgpt-subscription'
+  f.rows['aroma.invoices'] = Array.from({ length: 20 }, (_, i) => ({ id: 'big_' + i, title: 'Synthetic large record', text: '秘密'.repeat(8000), fields: { synthetic: true } }))
+  const p = await f.browser.handle({ op: 'prepare', requestId: randomUUID(), question: 'Read synthetic invoices', taskVersion: 2, contextAvailability: 'excluded' })
+  const r = await f.browser.handle({ op: 'read', id: p.id, consent: true })
+  assert.equal(r.state, 'completed'); assert.equal(f.prompts.length, 1)
+  assert.equal(r.result.taskEvidence.synthesis.sources[0].state, 'content_omitted')
+  assert.equal(r.result.taskEvidence.synthesis.claims.length, 0)
+  assert(Buffer.byteLength(JSON.stringify({ result: r, id: '0'.repeat(36) })) < 195000)
 })

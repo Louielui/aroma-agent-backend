@@ -57,7 +57,9 @@ function fixture({ proposal = read('aroma.invoices.list'), complete, unavailable
   const drive = require('../../src/context/driveContextService').createDriveContextService({ gateway, scope: { lease: () => lease('drive'), source: () => driveSource } })
   const bindings = contextBindings({ aroma, calendar, drive, driveSource })
   const model = { model: MODEL, billing: 'simulated_model', async complete(prompt, options) {
-    prompts.push({ prompt: JSON.parse(prompt), system: options.system })
+    let data
+    try { data = JSON.parse(prompt) } catch (_) { data = prompt }
+    prompts.push({ prompt: data, system: options.system, phase: options.invocationPhase || 'selection' })
     return complete ? complete(prompt, options) : { model: MODEL, actualModel: 'simulated_model', text: JSON.stringify(proposal) }
   } }
   const record = event => { if (sink) sink(event); events.push(structuredClone(event)) }

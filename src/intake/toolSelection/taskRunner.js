@@ -22,7 +22,7 @@ function boundedExecution(execution) {
 
 // Opt-in host injection only. No HTTP route, startup registration or production
 // default changes. U1's existing prepare/consent/linkage owns the outer attempt.
-function createSelectionTaskRunner({ bindings, authorize, evidenceMode }) {
+function createSelectionTaskRunner({ bindings, authorize, evidenceMode, synthesizeResults = false }) {
   if (!['synthetic_fixture', 'connected_source'].includes(evidenceMode)) throw Error('evidence_mode_required')
   function describe() {
     const context = authorize()
@@ -42,18 +42,34 @@ function createSelectionTaskRunner({ bindings, authorize, evidenceMode }) {
       if (event.stage === 'u2_policy_checked') runs.appendStage(run.id, 'POLICY_EVALUATED', { verdict: event.verdict, rule_id: event.ruleId })
       else if (event.stage === 'u2_model_started') runs.appendStage(run.id, 'AGENT_RUNNING', { purpose: 'bounded_tool_selection', inputSha256: event.inputSha256 })
       else if (event.stage === 'u2_selection_validated') runs.appendStage(run.id, 'AGENT_FINISHED', { purpose: 'bounded_tool_selection', selection: event })
+      else if (event.stage === 'u2_synthesis_started') runs.appendStage(run.id, 'AGENT_RUNNING', { purpose: 'grounded_result_synthesis', inputSha256: event.inputSha256 })
+      else if (event.stage === 'u2_synthesis_recorded') runs.appendStage(run.id, 'AGENT_FINISHED', { purpose: 'grounded_result_synthesis', state: event.state, evidenceSha256: event.evidenceSha256 })
     }
     try {
       const selector = createSelection({ bindings, authorize, model: adapter, record, signal })
       const selection = await selector.select(question)
+      const leases = synthesizeResults && selection.status === 'read_tool_needed' ? selection.tools.map(t => bindings.find(b => b.descriptor.id === t.id).capture()) : []
       const execution = selection.status === 'read_tool_needed' ? await selector.execute(selection) : null
+      let synthesis = null
+      if (synthesizeResults && execution) {
+        const check = () => {
+          if (signal?.aborted) throw Error('synthesis_cancelled')
+          const current = authorize()
+          // Sharing source bodies is a separate trusted-host decision from
+          // sharing the Owner goal/catalog during U2-A tool selection.
+          if (context.synthesisSharing !== true || current.synthesisSharing !== true || digest(current) !== digest(context)) throw Error('synthesis_not_authorized')
+          for (const verify of leases) verify()
+        }
+        const synthesisModel = { model: adapter.model, billing: adapter.billing, complete(prompt, options) { return adapter.complete(prompt, { ...options, signal }) } }
+        synthesis = await require('./synthesis').synthesize({ question, selection, execution: boundedExecution(execution), model: synthesisModel, check, record })
+      }
       // This terminal means the bounded selection/read attempt finished, never
       // that the Owner's goal, approval, or an external action was completed.
       runs.appendStage(run.id, 'SUCCEEDED', { executor: 'context_tool_gateway', selectionStatus: selection.status, executionStatus: execution?.status || 'not_executed', goalCompleted: false })
-      const evidence = { version: 1, operation: 'u2.bounded_selection', state: evidenceMode === 'synthetic_fixture' ? 'synthetic' : 'unverified_goal',
-        evidenceMode, selection, execution: boundedExecution(execution), run: runs.getRun(run.id), goalCompleted: false }
+      const evidence = { version: 1, operation: synthesizeResults ? 'u2.grounded_synthesis' : 'u2.bounded_selection', state: evidenceMode === 'synthetic_fixture' ? 'synthetic' : 'unverified_goal',
+        evidenceMode, selection, execution: boundedExecution(execution), ...(synthesizeResults ? { synthesis } : {}), run: runs.getRun(run.id), goalCompleted: false }
       return { model: adapter.model, actualModel: selection.actualModel || null, billing: adapter.billing || null,
-        text: JSON.stringify({ evidenceMode, selectionStatus: selection.status, interpretation: selection.interpretedOutcome || null,
+        text: synthesis ? (evidenceMode === 'synthetic_fixture' ? '【隔離合成資料示範】\n' : '') + synthesis.text : JSON.stringify({ evidenceMode, selectionStatus: selection.status, interpretation: selection.interpretedOutcome || null,
           executionStatus: execution?.status || 'not_executed', sources: execution?.packs.map(readReceipt) || [], goalCompleted: false }), evidence }
     } catch (error) {
       runs.appendStage(run.id, 'FAILED', { error: 'selection_or_read_failed' })
