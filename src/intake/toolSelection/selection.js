@@ -17,6 +17,13 @@ function createSelection({ bindings, authorize, model, record, signal }) {
   const catalog = new Map(bindings.map(b => [b.descriptor.id, b]))
   if (catalog.size !== bindings.length) throw Error('duplicate_tool')
   const pending = new WeakMap()
+  const emit = event => {
+    const result = record(event)
+    if (result && typeof result.then === 'function') {
+      Promise.resolve(result).catch(() => {})
+      throw Error('synchronous_evidence_sink_required')
+    }
+  }
   const check = () => {
     if (signal?.aborted) throw Error('selection_cancelled')
     const c = authorize()
@@ -33,10 +40,10 @@ function createSelection({ bindings, authorize, model, record, signal }) {
     if (typeof objective !== 'string' || !objective.trim() || objective.length > 1000) throw Error('invalid_owner_goal')
     const id = randomUUID(), goal = createGoal({ objective, requestId: id })
     const policy = evaluate({ capabilityId: 'Research', version: 1, context: { description: objective } })
-    record({ stage: 'u2_policy_checked', id, verdict: policy.verdict, ruleId: policy.rule_id })
+    emit({ stage: 'u2_policy_checked', id, verdict: policy.verdict, ruleId: policy.rule_id })
     if (policy.verdict !== 'allow') {
       const selection = { id, goal, status: policy.verdict === 'deny' ? 'denied' : 'approval_required', tools: [], grantsAuthority: false, reason: policy.rule_id }
-      record({ stage: 'u2_selection_validated', id, status: selection.status, tools: [] })
+      emit({ stage: 'u2_selection_validated', id, status: selection.status, tools: [] })
       return selection
     }
     const offered = bindings.filter(b => context.sources.includes(b.descriptor.source))
@@ -46,12 +53,12 @@ function createSelection({ bindings, authorize, model, record, signal }) {
       catch (_) { return { ...b.descriptor, availability: 'unavailable' } }
     })
     const prompt = JSON.stringify({ objective, tools, implementationFacts: REGISTRY, limits: { maxReads: 3, noExecutionAuthority: true } })
-    record({ stage: 'u2_model_started', id, inputSha256: digest(prompt), catalogSha256: digest(tools) })
+    emit({ stage: 'u2_model_started', id, inputSha256: digest(prompt), catalogSha256: digest(tools) })
     same(context)
     const response = await model.complete(prompt, { system: SYSTEM, signal })
     same(context)
     if (typeof response?.text !== 'string' || response.text.length > 12000) throw Error('invalid_selection')
-    record({ stage: 'u2_model_finished', id, responseSha256: digest(response.text), actualModel: response.actualModel || null })
+    emit({ stage: 'u2_model_finished', id, responseSha256: digest(response.text), actualModel: response.actualModel || null })
     let proposal
     try { proposal = JSON.parse(response.text) } catch (_) { throw Error('invalid_selection') }
     if (!exact(proposal, ['kind', 'outcome', 'capability', 'tools']) || !['read', 'answer', 'clarify', 'capability', 'unsupported'].includes(proposal.kind) ||
@@ -75,7 +82,7 @@ function createSelection({ bindings, authorize, model, record, signal }) {
     const selection = { id, goal, status, interpretedOutcome: proposal.outcome, interpretationTrust: 'model_proposal', capability: proposal.capability,
       tools: normalized, grantsAuthority: false, actualModel: response.actualModel || null,
       ...(status === 'approval_required' ? { nextBoundary: 'existing_owner_approval_gateway', approvalCreated: false } : {}) }
-    record({ stage: 'u2_selection_validated', id, status, tools: normalized, selectionSha256: digest(selection) })
+    emit({ stage: 'u2_selection_validated', id, status, tools: normalized, selectionSha256: digest(selection) })
     if (status === 'read_tool_needed') pending.set(selection, { selection: structuredClone(selection), context, checks })
     return selection
   }
@@ -89,7 +96,7 @@ function createSelection({ bindings, authorize, model, record, signal }) {
     const packs = []
     for (const t of chosen) {
       same(context); saved.checks.get(t.id)()
-      record({ stage: 'u2_read_started', id: saved.selection.id, tool: t.id, arguments: t.arguments })
+      emit({ stage: 'u2_read_started', id: saved.selection.id, tool: t.id, arguments: t.arguments })
       same(context); saved.checks.get(t.id)()
       const b = catalog.get(t.id), out = await b.read(context.actor, t.arguments)
       same(context)
@@ -97,15 +104,16 @@ function createSelection({ bindings, authorize, model, record, signal }) {
       for (const selected of chosen) saved.checks.get(selected.id)()
       const pack = out?.pack
       if (!pack || pack.resource !== b.descriptor.resource || pack.source !== b.descriptor.source || pack.operation !== b.descriptor.operation ||
-        pack.contentPolicy !== 'data_only' || !['ok', 'unavailable'].includes(pack.state)) throw Error('invalid_context_pack')
-      record({ stage: 'u2_read_finished', id: saved.selection.id, tool: t.id, state: pack.state, packSha256: digest(pack) })
+        pack.contentPolicy !== 'data_only' || !['ok', 'unavailable'].includes(pack.state) ||
+        (pack.state === 'ok' ? pack.trust !== 'source_data' || !Array.isArray(pack.content) : pack.trust !== 'unavailable')) throw Error('invalid_context_pack')
+      emit({ stage: 'u2_read_finished', id: saved.selection.id, tool: t.id, state: pack.state, packSha256: digest(pack) })
       packs.push(pack)
       if (pack.state !== 'ok') break // No retry or alternate source after an unavailable read.
     }
     same(context)
     const result = { selectionId: saved.selection.id, status: packs.length === chosen.length && packs.every(p => p.state === 'ok') ? 'read_completed' : 'tool_unavailable',
       packs, goalCompleted: false, limitations: ['read_receipts_are_not_goal_completion', 'no_result_driven_followup'] }
-    record({ stage: 'u2_execution_recorded', id: saved.selection.id, status: result.status, evidenceSha256: digest(result) })
+    emit({ stage: 'u2_execution_recorded', id: saved.selection.id, status: result.status, evidenceSha256: digest(result) })
     return result
   }
   return Object.freeze({ select, execute })

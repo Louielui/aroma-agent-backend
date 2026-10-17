@@ -39,17 +39,24 @@ async function main() {
     { goal: 'Read Aroma System invoices.', unauthorized: true }
   ]
   const results = []
+  let blocked = false
   for (let i = 0; i < cases.length; i++) {
     const c = cases[i], invocations = []
+    let modelFailure = null
     const f = fixture({ unavailable: c.unavailable || [], complete: async (prompt, options) => {
       const args = provider.textReviewArgs(['selection'], 'Select capabilities only.')
       args[args.indexOf('--system-prompt') + 1] = options.system
       args[args.indexOf('--model') + 1] = MODEL
       args[args.indexOf('--max-turns') + 1] = '1'
-      const envelope = await provider.runClaude(args, { cwd: data, input: prompt, timeoutMs: 180000, signal: options.signal })
+      let envelope
+      try { envelope = await provider.runClaude(args, { cwd: data, input: prompt, timeoutMs: 180000, signal: options.signal }) }
+      catch (error) {
+        modelFailure = { reason: ['claude_unavailable', 'claude_login_required', 'subscription_limit_reached', 'worker_timeout'].includes(error.message) ? error.message : 'model_call_failed', diagnostics: error.safeDiagnostics || null }
+        throw error
+      }
       if (envelope.type !== 'result' || envelope.subtype !== 'success' || envelope.is_error || typeof envelope.result !== 'string') throw Error('model_result_unavailable')
       const modelIds = Object.keys(envelope.modelUsage || {})
-      if (!modelIds.includes(MODEL)) throw Error('actual_model_mismatch')
+      if (!modelIds.includes(MODEL)) { modelFailure = { reason: 'actual_model_mismatch', actualModels: modelIds }; throw Error('actual_model_mismatch') }
       invocations.push({ actualModels: modelIds, billing: 'claude-subscription', inputSha256: sha(prompt), responseSha256: sha(envelope.result),
         modelUsage: envelope.modelUsage, durationMs: envelope.duration_ms, toolsEnabled: false, hooksEnabled: false, evidence: 'actual_model_backed_selection' })
       return { model: MODEL, actualModel: MODEL, text: envelope.result }
@@ -77,14 +84,15 @@ async function main() {
       sourceEvidence: !execution || execution.packs.every(p => p.contentPolicy === 'data_only' && (p.state !== 'ok' || p.coverage.provenance === 'synthetic_disposable_fixture')),
       noGoalCompletion: !evidence || evidence.goalCompleted === false
     }
-    const row = { index: i + 1, goal: c.goal, expected: c, checks, pass: Object.values(checks).every(Boolean), source, invocations, error,
+    const row = { index: i + 1, goal: c.goal, expected: c, checks, pass: Object.values(checks).every(Boolean), source, invocations, error, modelFailure,
       task: record?.unifiedTask || null, state: record?.state || null, evidence: evidence || null, gatewayAudit: f.audit, actualAdapterCalls: f.calls }
     fs.writeFileSync(path.join(directory, 'case-' + String(i + 1).padStart(2, '0') + '.json'), JSON.stringify(row, null, 2) + '\n', { flag: 'wx' })
     results.push({ index: row.index, goal: c.goal, pass: row.pass, selection: selection?.status || record?.state || error, tools: gotTools, checks })
     console.log(JSON.stringify(results.at(-1)))
+    if (modelFailure) { blocked = true; break }
   }
   const receipt = { version: 1, ...source, at: new Date().toISOString(), selection: 'actual_claude_subscription', businessData: 'synthetic_disposable_fixture', liveExternalActions: false,
-    counts: { total: results.length, passed: results.filter(r => r.pass).length, failed: results.filter(r => !r.pass).length }, results,
+    blocked, counts: { planned: cases.length, total: results.length, notRun: cases.length - results.length, passed: results.filter(r => r.pass).length, failed: results.filter(r => !r.pass).length }, results,
     files: fs.readdirSync(directory).sort().map(file => ({ file, sha256: sha(fs.readFileSync(path.join(directory, file))) })) }
   fs.writeFileSync(path.join(directory, 'receipt.json'), JSON.stringify(receipt, null, 2) + '\n', { flag: 'wx' })
   console.log(JSON.stringify({ counts: receipt.counts, receiptSha256: sha(fs.readFileSync(path.join(directory, 'receipt.json'))) }))

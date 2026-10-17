@@ -111,3 +111,20 @@ test('cancellation before selection or after model response prevents execution',
   await assert.rejects(selector.select('Read invoices'), /cancelled/)
   await assert.rejects(selector.select('Read invoices'), /cancelled/); assert.equal(f.calls.length, 0)
 })
+test('async evidence sink cannot be mistaken for committed evidence', async () => {
+  const f = fixture(), selector = createSelection({ bindings: f.bindings, authorize: f.authorize, model: f.model, record: async () => {} })
+  await assert.rejects(selector.select('Read invoices'), /synchronous_evidence_sink_required/)
+  assert.equal(f.prompts.length, 0); assert.equal(f.calls.length, 0)
+})
+test('context trust/identity mismatch is rejected and cannot yield an execution receipt', async () => {
+  const f = fixture(), bindings = f.bindings.map(b => ({ ...b, async read() { return { pack: { resource: b.descriptor.resource, source: 'gmail', operation: b.descriptor.operation, state: 'ok', contentPolicy: 'data_only', trust: 'source_data', content: [] } } } }))
+  const selector = createSelection({ bindings, authorize: f.authorize, model: f.model, record: f.record })
+  await assert.rejects(selector.execute(await selector.select('Read invoices')), /invalid_context_pack/)
+  assert(!f.events.some(e => e.stage === 'u2_execution_recorded'))
+})
+test('all selected source leases are rechecked after the final read', async () => {
+  const f = fixture({ proposal: { ...read('drive.company_files.list'), tools: [...read('drive.company_files.list').tools, ...read('calendar.owner_events.list').tools] },
+    beforeRead: ({ source, versions }) => { if (source === 'calendar') versions.drive++ } })
+  await assert.rejects(f.selector.execute(await f.selector.select('Read two sources')), /scope_changed|source_access_changed/)
+  assert.equal(f.calls.length, 2); assert(!f.events.some(e => e.stage === 'u2_execution_recorded'))
+})
