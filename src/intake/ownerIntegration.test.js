@@ -3,6 +3,23 @@ const test = require('node:test'), assert = require('node:assert/strict')
 const fs = require('node:fs'), os = require('node:os'), path = require('node:path')
 process.env.AROMA_DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'r1-http-'))
 process.env.AROMA_ARTIFACT_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'r1-artifacts-'))
+
+test('connected-source preflight evidence contract is unchanged by synthetic-mode projection', async () => {
+  const choice = { model: 'gpt-6-astra', effort: 'high' }, events = []
+  const registry = { snapshot: () => ({ users: [{ id: 'owner', role: 'owner', email: 'owner@fixture.invalid', suspended: false, grants: [] }], sources: [] }) }
+  const integration = require('./ownerIntegration').createOwnerIntegration({
+    liveContext: {}, registry, enabled: () => true, selection: () => choice,
+    env: { OWNER_TASK_GOAL_SHARING: 'true', OWNER_TASK_CONTENT_SHARING: 'true' },
+    request: async (_route, input) => ({ model: input.model, billing: 'chatgpt-subscription', text: JSON.stringify({ kind: 'answer', outcome: 'No source read required', capability: null, tools: [], dependency: null }), stopReason: 'end_turn' })
+  })
+  const result = await integration.withOwner({ conversationId: 'contract-fixture' }, () => {}, () => integration.runner.run({
+    question: 'Hello', adapter: integration.provider(choice), capabilities: integration.runner.describe(), actor: { id: 'owner', role: 'owner' }, onEvent: e => events.push(e)
+  }))
+  assert(events.some(e => e.stage === 'r1_subscription_verified' && e.billing === 'chatgpt-subscription'))
+  assert(!events.some(e => e.stage === 'r1_synthetic_contract_exercised'))
+  assert.equal(result.executionProvenance, undefined); assert.equal(result.evidence.evidenceMode, 'connected_source')
+  // Contract-only injected responses above are not account or live-model proof.
+})
 test('R1 subscription facade verifies before inference and rejects returned identities without fallback', async () => {
   const { verifiedSubscription } = require('./ownerIntegration')
   const calls = [], choice = { model: 'gpt-6-astra', effort: 'high' }

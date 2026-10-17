@@ -99,7 +99,7 @@ function createBrowserRead({store,selection,provider,taskRunner:browserTaskRunne
     if(controller.signal.aborted)throw Error('read_timeout')
     const wageReport=Object.hasOwn(r,'taskCapabilities')&&r.taskCapabilities.some(c=>c.id==='seven_shifts.employee_wages')&&out?.evidence?.operation==='seven_shifts.employee_wages'
     if(!out||typeof out.text!=='string'||!out.text.trim()||(wageReport?Buffer.byteLength(JSON.stringify({text:out.text,presentation:out.presentation||null}))>120000:out.text.length>30000)||out.model!==r.selection.model)throw Error('invalid_model_result')
-    r.result={text:out.text.trim(),actualModel:typeof out.actualModel==='string'&&out.actualModel.length<=200?out.actualModel:null,requestedModel:r.selection.model,effort:r.selection.effort,billing:out.billing||null,source:s?{...pageSource,snapshot:true}:null,...(out.evidence?{taskEvidence:out.evidence}:{}),...(wageReport&&out.presentation?{wagePresentation:out.presentation}:{})}
+    r.result={text:out.text.trim(),actualModel:typeof out.actualModel==='string'&&out.actualModel.length<=200?out.actualModel:null,requestedModel:r.selection.model,effort:r.selection.effort,billing:out.billing||null,source:s?{...pageSource,snapshot:true}:null,...(out.evidence?{taskEvidence:out.evidence}:{}),...(r.ownerCoordination&&out.evidence?.evidenceMode==='synthetic_fixture'&&out.executionProvenance?{executionProvenance:out.executionProvenance}:{}),...(wageReport&&out.presentation?{wagePresentation:out.presentation}:{})}
      if(r.taskVersion===3&&r.ownerGoal&&out.ownerGoal&&require('../intake/goal/ownerGoal').validGoal(out.ownerGoal)&&out.ownerGoal.originalObjective===r.question)r.result.ownerGoal=out.ownerGoal
      r.state='completed';save(r,'answer_saved')
      try{

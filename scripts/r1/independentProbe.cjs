@@ -15,13 +15,16 @@ process.on('message', async message => {
     } else if (message.op === 'snapshot') {
       process.send({ id: message.id, choice: instance.choice, roots: instance.roots,
         calls: instance.calls, modelCalls: instance.modelCalls, files: inventory(message.root), observed,
-        resources: process.getActiveResourcesInfo(), imports: Object.keys(require.cache), tasks: instance.store.listTasks() })
+        resources: process.getActiveResourcesInfo(), activeRequests: instance.activeRequests(), imports: Object.keys(require.cache), tasks: instance.store.listTasks() })
     } else if (message.op === 'observerControl') {
       const response = await fetch(instance.origin + '/owner/login'); await response.text()
       await new Promise((resolve, reject) => fs.readFile(path.join(instance.roots.config, 'model-selection.json'), error => error ? reject(error) : resolve()))
       await new Promise((resolve, reject) => require('node:child_process').execFile(process.execPath, ['-e', 'process.exit(0)'], { windowsHide: true, timeout: 5000 }, error => error ? reject(error) : resolve()))
       process.send({ id: message.id, observed })
-    } else if (message.op === 'close') { await instance.close(); process.send({ id: message.id, closed: true }); hook.disable(); process.disconnect() }
+    } else if (message.op === 'crash') {
+      // Deliberate self-exit of this disposable test child, never an external kill.
+      process.exitCode = 73; hook.disable(); process.disconnect(); instance.server.unref()
+    } else if (message.op === 'close') { const receipt = await instance.close(); process.send({ id: message.id, closed: true, receipt }); hook.disable(); process.disconnect() }
     else throw Error('unsupported_probe_operation')
   } catch (e) { process.send({ id: message.id, error: e.message }); if (!instance) process.disconnect() }
 })

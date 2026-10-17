@@ -10,7 +10,7 @@ function investigationResult(task, record) {
   // investigations retain all mandatory original clauses without guessed mapping.
   const proposed = capabilities.length === 1 && task.ownerGoal.outcomes.length === 1 ? [{ ownerQuote: task.ownerGoal.outcomes[0].ownerQuote, capability: capabilities[0], kind: 'read' }] : []
   let goal = goals.refineGoal(task.ownerGoal, proposed)
-  goal = goals.observeReads(goal, { perSource: packs.map(p => ({ source: p.source, trust: p.state === 'ok' ? 'live' : 'unavailable' })), evidenceSets: packs.map(p => ({ source: p.source, completeness: p.coverage?.complete && p.coverage?.truncated === false ? 'complete' : 'partial' })) })
+  if (evidence.evidenceMode !== 'synthetic_fixture') goal = goals.observeReads(goal, { perSource: packs.map(p => ({ source: p.source, trust: p.state === 'ok' ? 'live' : 'unavailable' })), evidenceSets: packs.map(p => ({ source: p.source, completeness: p.coverage?.complete && p.coverage?.truncated === false ? 'complete' : 'partial' })) })
   // These read receipts establish retrieval, never a verified mandatory outcome.
   goal = goals.applyEvidence(goal, [], () => false)
   return { taskId: task.id, goalId: goal.goalId, attemptId: record.unifiedTask.attemptId,
@@ -20,7 +20,7 @@ function investigationResult(task, record) {
     answerCoverage: synthesis?.sources?.every(s => s.state === 'ok') ? 'complete_within_projected_scope' : 'partial_or_unknown',
     answerSources: (synthesis?.report?.sections || []).map(s => ({ sourceId: s.sourceId, source: s.source, tool: s.tool, packSha256: s.packSha256, state: s.state,
       records: s.records.map(r => ({ recordId: r.sourceId, originalSourceId: r.originalSourceId, link: r.link || null, ...(Number.isSafeInteger(r.start) ? { start: r.start, end: r.end, contentSha256: r.contentSha256 } : {}) })) })),
-    evidenceMode: evidence.evidenceMode, sourceReceipts: packs.map(p => ({ source: p.source, resource: p.resource, operation: p.operation, packSha256: p.packSha256 || require('./toolSelection/selection').digest(p) })),
+    evidenceMode: evidence.evidenceMode, ...(evidence.executionProvenance ? { executionProvenance: evidence.executionProvenance } : {}), sourceReceipts: packs.map(p => ({ source: p.source, resource: p.resource, operation: p.operation, packSha256: p.packSha256 || require('./toolSelection/selection').digest(p) })),
     goalVerifiedComplete: false, goalStatus: goal.status, unresolvedReason: 'no_host_verified_receipt_for_all_mandatory_owner_outcomes', goal }
 }
 module.exports = { investigationResult }

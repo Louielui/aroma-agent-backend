@@ -1,72 +1,73 @@
 'use strict'
-// Manual synthetic-only demonstration entry. No .env, provider/connector login,
-// service installation, persistent supervisor or automatic continuation.
-const fs = require('node:fs'), path = require('node:path'), http = require('node:http')
-async function startIndependent({ root, password, cookieName, port = 0, enabled = true } = {}) {
-  if (!Number.isInteger(port) || port < 0 || port > 65535 || [8081, 8090, 8091, 8888].includes(port)) throw Error('independent_port_invalid')
-  // These are test adapters, not an alternate runtime framework or live clients.
-  const calls = [], modelCalls = []
-  const request = async (route, input) => {
-    let result = {}
-    if (route === '/complete') {
-      if (input.system.startsWith('Select one relevant advertised SEARCH')) result = { id: null, evidence: null }
-      else if (input.system.startsWith('You are an independent evidence paraphrase')) {
-        const data = JSON.parse(input.prompt.split('\nDATA:\n')[1].split('\nOUTPUT_SCHEMA:')[0])
-        result = { reviews: data.claims.map(c => ({ id: c.claim.id, decision: 'supported', reason: 'matches_reference' })) }
-      } else if (input.system.includes('Synthesize a useful')) {
-        const catalog = JSON.parse(input.prompt).catalog
-        result = { claims: catalog.sections.flatMap(s => s.records.slice(0, 1).map((r, i) => ({ id: 'c' + (catalog.sections.indexOf(s) + i + 1),
-          text: r.fields.content, kind: 'observation', evidenceState: 'supported', temporalScope: 'historical',
-          references: [{ sourceId: s.sourceId, recordId: r.recordId, field: 'content', value: r.fields.content }] }))) }
-      } else result = { kind: 'read', outcome: 'Summarize the synthetic tea record', capability: null,
-        tools: [{ id: 'drive.company_files.search', arguments: { query: 'tea' } }], dependency: { from: 0, id: 'drive.company_files.get', result: 'sourceId' } }
-    } else if (route !== '/status') throw Error('offline_model_route_unavailable')
-    const response = { model: input.model, billing: 'chatgpt-subscription', text: JSON.stringify(result), stopReason: 'end_turn', actualModel: 'synthetic_fixture' }
-    modelCalls.push({ route, input: structuredClone(input), response, execution: 'simulated_model', billingIdentity: 'not_verified' })
-    return response
-  }
-  const createContext = ({ registry, audit, roots }) => {
-    const source = registry.snapshot({ readOnly: true }).sources.find(s => s.id === 'company-drive')
-    if (!source || source.rootId !== 'synthetic_root' || source.driveId !== source.rootId) throw Error('synthetic_source_required')
-    const scope = require('../../src/context/driveScope').createOwnerDriveScope({ registry,
-      env: { READ_ACCESS: 'on', CONTEXT_DRIVE: 'on' }, credentials: () => ({ client: true, token: true, revision: 'synthetic-no-credentials' }) })
-    const resources = require('../../src/context/driveContext').driveResources(source)
-    const connector = require('../../src/context/readConnector').createReadConnector({ env: { READ_ACCESS: 'on', CONTEXT_DRIVE: 'on' } })
-    const methods = {}
-    for (const resource of resources) for (const [operation, spec] of Object.entries(resource.operations)) methods[spec.method] = async input => {
-      calls.push({ operation, input: structuredClone(input), execution: 'synthetic_source_adapter' })
-      const file = path.join(roots.config, 'synthetic-source.json'), s = fs.lstatSync(file)
-      if (!s.isFile() || s.isSymbolicLink() || s.nlink !== 1 || s.size > 10000) throw Error('synthetic_source_invalid')
-      const data = JSON.parse(fs.readFileSync(file, 'utf8'))
-      if (data.mode !== 'synthetic_fixture' || data.sourceId !== 'synthetic_tea' || typeof data.content !== 'string') throw Error('synthetic_source_invalid')
-      const selected = operation === 'get' ? input.fileId === data.sourceId : operation === 'search' ? /tea/i.test(input.query) : false
-      return { results: selected ? [require('../../src/context/contextResult').makeContextResult({ source: 'drive', sourceId: data.sourceId,
-        title: 'Synthetic tea record', link: 'https://drive.google.com/file/d/' + data.sourceId + '/view',
-        content: operation === 'get' ? data.content : 'Synthetic tea discovery record', fields: { contentState: operation === 'get' ? 'text' : 'metadata_only', synthetic: true } })] : [],
-        evidence: { completeWithinScope: true, truncated: false, provenance: 'synthetic_disposable_fixture' } }
-    }
-    connector.register({ source: 'drive', methods })
-    const gateway = require('../../src/context/toolGateway').createToolGateway({ connector, resources, audit })
-    return { drive: require('../../src/context/driveContextService').createDriveContextService({ scope, gateway }) }
-  }
-  const instance = require('../../src/intake/independentOwner').createIndependentOwner({ root, password, cookieName, createContext, request, enabled })
+// Manual synthetic-only entry. Requires a verified disposable OS boundary.
+const http = require('node:http'), fixture = require('./independentFixture.cjs')
+const codes = new Set(['EEXIST','independent_fixture_identity_required','independent_fixture_invalid','independent_fixture_changed','independent_resume_refused','independent_root_alias','independent_root_required','independent_root_overlap','independent_clean_environment_required','independent_model_config_invalid','independent_auth_required','independent_port_invalid','offline_dependencies_fixed','offline_dependencies_required','synthetic_source_required','independent_ownership_changed','independent_recovery_required','independent_diagnostic_unavailable','EADDRINUSE'])
+codes.add('independent_offline_boundary_required')
+codes.add('independent_input_invalid')
+const safeCode = e => ['ENOENT','EACCES','EPERM','EIO'].includes(e?.code) ? 'independent_storage_unavailable' : codes.has(e?.code || e?.message) ? e.code || e.message : 'independent_startup_unavailable'
+async function startIndependent(options = {}) {
+  const { port = 0, ...composition } = options
+  if (!Number.isInteger(port) || port < 0 || port > 65535 || [8081,8090,8091,8888].includes(port)) throw Error('independent_port_invalid')
+  const instance = require('../../src/intake/independentOwner').createIndependentOwner(composition)
   const server = http.createServer(instance.app)
   await new Promise((resolve, reject) => { server.once('error', reject); server.listen(port, '127.0.0.1', resolve) })
-  return { ...instance, server, calls, modelCalls, origin: 'http://127.0.0.1:' + server.address().port,
-    close: () => new Promise((resolve, reject) => server.close(error => {
-      if (error) return reject(error)
-      try { instance.releaseOwnership(); resolve() } catch (e) { reject(e) }
-    })) }
+  let closed
+  return { ...instance, server, origin: 'http://127.0.0.1:' + server.address().port,
+    close() {
+      if (closed) return closed
+      instance.beginClose()
+      closed = new Promise((resolve, reject) => {
+        let expired = false
+        // Deadline refuses release; it never cancels a task or kills a process.
+        const deadline = setTimeout(() => { expired = true; reject(Error('independent_recovery_required')) }, 15000)
+        server.close(error => {
+          clearTimeout(deadline)
+          if (error || expired) return reject(Error('independent_recovery_required'))
+          try { const receipt = instance.checkpoint(); instance.releaseOwnership(); resolve(receipt) } catch (e) { reject(e) }
+        })
+      })
+      return closed
+    }
+  }
+}
+function rejectPreload() {
+  if (process.env.NODE_OPTIONS || process.env.NODE_PATH || process.execArgv.some(a => /^(?:--require|-r|--import|--loader|--experimental-loader)(?:=|$)/.test(a))) throw Error('independent_clean_environment_required')
 }
 if (require.main === module) {
-  let text = ''
-  process.stdin.setEncoding('utf8')
-  process.stdin.on('data', data => { text += data; if (text.length > 8000) process.exit(2) })
-  process.stdin.on('end', async () => {
-    try {
-      const options = JSON.parse(text), instance = await startIndependent(options)
-      process.stdout.write(JSON.stringify({ event: 'ready', origin: instance.origin, mode: instance.mode, realModelInvocation: 'BLOCKED' }) + '\n')
-    } catch (_) { process.stderr.write('independent_startup_refused\n'); process.exitCode = 1 }
-  })
+  // This cannot undo a preload. The external trusted invocation must exclude it
+  // before this parent starts; the operational child receives a fresh allowlist.
+  try { rejectPreload() } catch (e) { process.stderr.write(JSON.stringify({ error: safeCode(e) }) + '\n'); process.exitCode = 1 }
+  if (!process.exitCode) {
+    let text = ''
+    process.stdin.setEncoding('utf8')
+    process.stdin.on('data', data => { text += data; if (text.length > 8000) { text = ''; process.exitCode = 2; process.stdin.destroy() } })
+    process.stdin.on('end', async () => {
+      if (process.exitCode) return
+      try {
+        let options
+        try { options = JSON.parse(text) } catch (_) { throw Error('independent_input_invalid') }
+        if (process.argv[2] !== '--operational') {
+          const child = require('node:child_process').fork(__filename, ['--operational'], { execArgv: [], cwd: options.root,
+            env: fixture.cleanEnvironment(options.root), windowsHide: true, stdio: ['pipe','pipe','pipe','ipc'] })
+          child.stdout.pipe(process.stdout); child.stderr.pipe(process.stderr); child.stdin.end(JSON.stringify(options))
+          child.on('error', () => { process.stderr.write(JSON.stringify({ error: 'independent_child_unavailable' }) + '\n'); process.exitCode = 1 })
+          child.on('exit', code => { process.exitCode = code === 0 ? 0 : 1; if (process.connected) process.disconnect() })
+          for (const signal of ['SIGINT','SIGTERM','SIGBREAK']) process.on(signal, () => { if (child.connected) child.send({ op: 'close' }) })
+          process.on('message', m => { if (m?.op === 'close' && child.connected) child.send({ op: 'close' }) })
+        } else {
+          const instance = await startIndependent(options)
+          let shutting = false
+          const close = async () => {
+            if (shutting) return; shutting = true
+            try { const receipt = await instance.close(); process.stdout.write(JSON.stringify({ event: 'closed', receipt }) + '\n'); if (process.connected) process.disconnect() }
+            catch (e) { process.stderr.write(JSON.stringify({ error: safeCode(e) }) + '\n'); process.exitCode = 1 }
+          }
+          for (const signal of ['SIGINT','SIGTERM','SIGBREAK']) process.on(signal, close)
+          process.on('message', m => { if (m?.op === 'close') close() })
+          process.stdout.write(JSON.stringify({ event: 'ready', origin: instance.origin, mode: instance.mode, realModelInvocation: 'BLOCKED' }) + '\n')
+        }
+      } catch (e) { process.stderr.write(JSON.stringify({ error: safeCode(e) }) + '\n'); process.exitCode = 1; if (process.connected) process.disconnect() }
+    })
+  }
 }
-module.exports = { startIndependent }
+module.exports = { startIndependent, safeCode }
