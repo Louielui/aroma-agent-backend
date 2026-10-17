@@ -10,10 +10,10 @@ const { createUnifiedIntake } = require('../unifiedIntake')
 function integrated(options) {
   const f = fixture(options), reads = createStore(fs.mkdtempSync(path.join(os.tmpdir(), 'u2-browser-tests-')))
   if (options?.synthesisSharing) f.context.synthesisSharing = true
-  const runner = createSelectionTaskRunner({ bindings: f.bindings, authorize: f.authorize, evidenceMode: 'synthetic_fixture', synthesizeResults: options?.synthesizeResults === true })
+  const runner = createSelectionTaskRunner({ bindings: f.bindings, authorize: f.authorize, evidenceMode: 'synthetic_fixture', synthesizeResults: options?.synthesizeResults === true, dependentReads: options?.dependentReads === true })
   let enabled = true
   const intake = createUnifiedIntake({ store: taskStore, reads, enabled: () => enabled })
-  const browser = createBrowserRead({ store: reads, selection: () => ({ model: MODEL, effort: 'medium' }), provider: () => f.model, taskRunner: runner, unifiedIntake: intake })
+  const browser = createBrowserRead({ store: reads, selection: () => ({ model: MODEL, effort: 'medium' }), provider: () => f.model, taskRunner: options?.decorateRunner ? options.decorateRunner(runner, { reads }) : runner, unifiedIntake: intake })
   const envelope = (patch = {}) => ({ version: 1, operation: 'start', clientSubmissionId: randomUUID(), message: 'Read synthetic invoice records',
     conversationId: f.context.conversationId, taskRef: null, expectedRevision: null, contextRefs: [], ...patch })
   return { ...f, reads, runner, browser, intake, envelope, off: () => { enabled = false } }
@@ -164,4 +164,60 @@ test('large U2-B native response retains byte bound with explicit content omissi
   assert.equal(r.result.taskEvidence.synthesis.sources[0].state, 'content_omitted')
   assert.equal(r.result.taskEvidence.synthesis.claims.length, 0)
   assert(Buffer.byteLength(JSON.stringify({ result: r, id: '0'.repeat(36) })) < 195000)
+})
+
+function dependentFixture(options = {}) {
+  const f = integrated({ dependentReads: true, synthesizeResults: true, synthesisSharing: true, complete(prompt, opts) {
+    if (!opts.invocationPhase) return { model: MODEL, billing: 'chatgpt-subscription', text: JSON.stringify({ ...read('drive.company_files.search', { query: 'tea' }), dependency: { from: 0, id: 'drive.company_files.get', result: 'sourceId' } }) }
+    if (opts.invocationPhase === 'evidence_review') return { model: MODEL, billing: 'chatgpt-subscription', text: JSON.stringify({ reviews: [{ id: 'c1', decision: 'supported', reason: 'matches_reference' }] }) }
+    const s = JSON.parse(prompt).catalog.sections.find(s => s.sourceId === 'S2'), r = s.records[0]
+    return { model: MODEL, billing: 'chatgpt-subscription', text: JSON.stringify({ claims: [{ id: 'c1', text: 'The detailed recipe says to steep for 4 minutes.', kind: 'observation', evidenceState: 'supported', temporalScope: 'historical', references: [{ sourceId: s.sourceId, recordId: r.recordId, field: 'content', value: r.fields.content }] }] }) }
+  }, ...options })
+  f.model.billing = 'chatgpt-subscription'
+  f.detailRows['drive.company_files'] = [{ ...f.rows['drive.company_files'][0], text: 'Tea recipe: steep for 4 minutes.' }]
+  f.rows['drive.company_files'][0].text = 'Tea recipe index match; full content requires a detail read.'
+  return f
+}
+test('U3 actual U1 attempt links discovery, verified identity, detail and grounded answer', async () => {
+  const f = dependentFixture(), r = await f.browser.handleMain(f.envelope({ message: 'Find and read the tea recipe' }))
+  assert.equal(r.state, 'completed'); assert.match(r.result.text, /4 minutes/)
+  const evidence = r.result.taskEvidence
+  assert.equal(evidence.operation, 'u3.bounded_dependent_read'); assert.equal(evidence.execution.packs.length, 2)
+  assert(!evidence.execution.packs[0].content[0].content.includes('4 minutes'))
+  assert.equal(evidence.synthesis.claims[0].references[0].sourceId, 'S2')
+  assert.equal(evidence.run.timeline.filter(e => e.facts.purpose === 'authorized_read_attempt').length, 4)
+  assert.equal(f.calls.length, 2); assert.equal(f.prompts.length, 3)
+  assert.notEqual(f.intake.view(r.unifiedTask.taskId, { principal: 'owner', surface: 'main' }).goalStatus, 'GOAL_COMPLETED')
+})
+test('ambiguous discovery asks the Owner and never invokes detail or synthesis', async () => {
+  const f = dependentFixture(); f.rows['drive.company_files'].push({ ...f.rows['drive.company_files'][0], id: 'tea_recipe_other' })
+  const r = await f.browser.handleMain(f.envelope({ message: 'Find and read the tea recipe' }))
+  assert.equal(r.state, 'completed'); assert.match(r.result.text, /Which record/)
+  assert.equal(r.result.taskEvidence.execution.status, 'clarification_required')
+  assert.equal(r.result.taskEvidence.synthesis, null); assert.equal(f.calls.length, 1); assert.equal(f.prompts.length, 1)
+})
+test('detail absence cannot be replaced by a discovery blurb or a fabricated summary', async () => {
+  const f = dependentFixture(); f.detailRows['drive.company_files'] = []
+  const r = await f.browser.handleMain(f.envelope({ message: 'Find and read the tea recipe' }))
+  assert.equal(r.state, 'completed'); assert.match(r.result.text, /missing or unavailable/)
+  assert.equal(r.result.taskEvidence.execution.status, 'detail_missing'); assert.equal(f.prompts.length, 1)
+})
+test('actual U1 cancellation between steps leaves no untracked detail and replay remains observational', async () => {
+  let f, cancel
+  f = dependentFixture({ decorateRunner(runner, { reads }) { return { ...runner, run(args) { return runner.run({ ...args, onEvent(e) {
+    args.onEvent(e)
+    if (e.stage === 'u3_dependency_resolved') cancel = f.browser.cancelMain(reads.all().find(r => r.state === 'processing').id)
+  } }) } } } })
+  const envelope = f.envelope({ message: 'Find and read tea recipe' }), r = await f.browser.handleMain(envelope)
+  await cancel
+  assert.equal(r.state, 'cancelled'); assert.equal(f.calls.length, 1)
+  assert.equal((await f.browser.handleMain(envelope)).state, 'cancelled'); assert.equal(f.calls.length, 1)
+  assert.equal(f.reads.get(r.id).timeline.filter(e => e.stage === 'u2_read_started').length, 1)
+})
+test('concurrent Main submission replay cannot multiply dependent reads or synthesis', async () => {
+  const f = dependentFixture(), envelope = f.envelope({ message: 'Find and read tea recipe' })
+  const results = await Promise.all([f.browser.handleMain(envelope), f.browser.handleMain(envelope)])
+  assert(results.some(r => r.state === 'completed')); assert.equal(f.calls.length, 2); assert.equal(f.prompts.length, 3)
+  assert.equal(new Set(results.map(r => r.unifiedTask.taskId)).size, 1)
+  const again = await f.browser.handleMain(envelope); assert.equal(again.state, 'completed'); assert.equal(f.calls.length, 2)
 })

@@ -12,7 +12,7 @@ const { createToolGateway } = require('../../src/context/toolGateway')
 const { makeContextResult } = require('../../src/context/contextResult')
 const MODEL = 'claude-sonnet-5-5'
 const read = (id, args = {}) => ({ kind: 'read', outcome: 'Synthetic contract-test proposal', capability: null, tools: [{ id, arguments: args }] })
-function fixture({ proposal = read('aroma.invoices.list'), complete, unavailable = [], partial = false, beforeRead = null, record: sink = null } = {}) {
+function fixture({ proposal = read('aroma.invoices.list'), complete, unavailable = [], partial = false, beforeRead = null, detailRows = {}, record: sink = null } = {}) {
   const calls = [], events = [], audit = [], prompts = [], versions = { aroma_system: 1, calendar: 1, drive: 1 }
   const context = { actor: { id: 'fixture-owner', role: 'owner' }, surface: 'main', conversationId: randomUUID(),
     sources: ['aroma_system', 'calendar', 'drive'], providerSharing: true }
@@ -32,9 +32,9 @@ function fixture({ proposal = read('aroma.invoices.list'), complete, unavailable
     for (const r of resources.filter(r => r.source === source)) for (const [operation, spec] of Object.entries(r.operations)) {
       methods[spec.method] = async input => {
         calls.push({ source, resource: r.id, operation, input: structuredClone(input) })
-        if (beforeRead) await beforeRead({ source, operation, versions, context })
+        if (beforeRead) await beforeRead({ source, resource: r.id, operation, input, versions, context })
         if (unavailable.includes(source)) throw Error('synthetic_unavailable')
-        let selected = rows[r.id]
+        let selected = operation === 'get' && Object.hasOwn(detailRows, r.id) ? detailRows[r.id] : rows[r.id]
         if (operation === 'get') selected = selected.filter(row => row.id === (input.fileId || input.eventId || input.sourceId))
         if (operation === 'search') selected = selected.filter(row => (row.title + ' ' + row.text).toLowerCase().includes(input.query.toLowerCase()))
         return { results: selected.map(row => makeContextResult({ source, sourceId: row.id, title: row.title,
@@ -64,6 +64,6 @@ function fixture({ proposal = read('aroma.invoices.list'), complete, unavailable
   } }
   const record = event => { if (sink) sink(event); events.push(structuredClone(event)) }
   const selector = createSelection({ bindings, authorize, model, record })
-  return { selector, bindings, authorize, model, context, versions, calls, events, audit, prompts, rows, connector, gateway, record }
+  return { selector, bindings, authorize, model, context, versions, calls, events, audit, prompts, rows, detailRows, connector, gateway, record }
 }
 module.exports = { fixture, read, MODEL }

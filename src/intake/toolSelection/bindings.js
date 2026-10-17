@@ -24,6 +24,8 @@ function contextBindings({ aroma, calendar, drive, driveSource }) {
       if (resource.source === 'drive' && operation === 'list') args.folderId = 'optional existing folder ID within the registered root'
       if (resource.source === 'drive' && operation === 'readMetadata') args.fileId = 'optional existing file ID within the registered root'
       return Object.freeze({
+        // Server-owned nominal identity type; never inferred from document prose.
+        identity: Object.freeze({ type: resource.source + '/' + resource.id, field: 'sourceId', parameter: identityKey }),
         descriptor: Object.freeze({ id: resource.id + '.' + operation, resource: resource.id, source: resource.source,
           capability, operation, description: [capabilityEntry(capability).label, vocabulary?.label || resource.id,
             operation === 'readMetadata' ? 'Inspect source metadata only' : operation === 'search' ? 'Find matching records' : operation === 'list' ? 'List records in the permitted scope' : 'Read one identified record'].join('; '),
