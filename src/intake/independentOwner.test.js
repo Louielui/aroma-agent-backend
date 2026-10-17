@@ -125,6 +125,8 @@ test('strict own history and Main errors are unavailable, correlated and bounded
   const root = rootFixture(), f = await child(root)
   try {
     const cookie = await f.login(), id = randomUUID(), dir = path.join(root, 'data/conversations')
+    assert.equal((await f.request('/api/v1/conversations')).status, 401)
+    assert.equal((await f.request('/api/v1/conversations/' + id)).status, 401)
     assert.deepEqual((await f.request('/api/v1/conversations', { cookie })).body, { ok: true, conversations: [] })
     fs.mkdirSync(dir); fs.writeFileSync(path.join(dir, id + '.json'), '{private-corrupt')
     for (const endpoint of ['/api/v1/conversations', '/api/v1/conversations/' + id]) {

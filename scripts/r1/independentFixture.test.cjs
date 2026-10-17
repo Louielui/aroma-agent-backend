@@ -43,5 +43,6 @@ test('startup classification preserves safe causes and never prints arbitrary er
  for(const code of ['independent_authorization_invalid','independent_config_invalid','independent_dependencies_required','independent_process_required','independent_root_too_large','independent_storage_corrupt','independent_recovery_required','EEXIST'])assert.equal(safeCode(Error(code)),code)
  assert.equal(safeCode(new SyntaxError('private path secret')),'independent_storage_corrupt')
  assert.equal(safeCode(Object.assign(Error('private path secret'),{code:'EACCES'})),'independent_storage_unavailable')
+ assert.equal(safeCode(Object.assign(Error('private dependency path'),{code:'MODULE_NOT_FOUND'})),'independent_dependencies_required')
  assert.equal(safeCode(Error('private path secret')),'independent_startup_unavailable')
 })
