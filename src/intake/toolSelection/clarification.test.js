@@ -252,3 +252,15 @@ test('U3-B busy refusal after claim is durable and cannot leave a processing tas
  }finally{release()}
  await other
 })
+
+test('U3-B Main session revoked during continuation stops detail and suppresses private HTTP output',async t=>{
+ let session=true
+ const f=setup({onEvent(e){if(e.stage==='u3_dependency_resolved')session=false}}),express=require('express'),app=express()
+ app.locals.conversationDemo=true;app.locals.ownerSessions={valid:()=>session};app.use(express.json())
+ app.use(require('../unifiedRoutes').createRouter({intake:f.intake,browserRead:f.browser,conversations:require('../../store/conversationStore').createConversationStore({dataDir:fs.mkdtempSync(path.join(os.tmpdir(),'u3b-session-'))})}))
+ const server=app.listen(0,'127.0.0.1');await new Promise(r=>server.once('listening',r));t.after(()=>new Promise(r=>server.close(r)))
+ const url='http://127.0.0.1:'+server.address().port+'/api/v1/demo/task-intake',post=b=>fetch(url,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(b)})
+ const initial=await (await post(f.start)).json(),v=initial.unifiedTask,response=await post(f.response(v))
+ assert.equal(response.status,403);assert.equal(f.calls.length,2);assert.equal((await response.json()).error,'owner_session_required')
+ assert.notEqual(f.view(v.taskId).executionState,'CLARIFICATION_COMPLETED')
+})

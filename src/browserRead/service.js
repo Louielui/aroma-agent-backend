@@ -26,7 +26,8 @@ function createBrowserRead({store,selection,provider,taskRunner,unifiedIntake=nu
  }
  for(const r of store.all())if(['awaiting_consent','processing'].includes(r.state)){r.state='interrupted';save(r,'process_restarted_no_retry')}
  if(taskRunner?.clarificationEnabled&&unifiedIntake?.enabled())unifiedIntake.reconcileClarifications()
- async function handle(input,mainEnvelope=null){
+ async function handle(input,mainEnvelope=null,verifyOwner=()=>{}){
+  if(mainEnvelope?.operation==='clarification_response')verifyOwner()
   const b=validate(input)
   if(b.op==='prepare'){
    const source=Object.hasOwn(b,'source')?permittedSource(b.source,now()):null,requestHash=digest(JSON.stringify({question:b.question,source,parentId:b.parentId||null,...(b.taskVersion!==undefined?{taskVersion:b.taskVersion,contextAvailability:b.contextAvailability||'available'}:{}),...(mainEnvelope?{unifiedEnvelope:mainEnvelope}:{})}))
@@ -82,7 +83,7 @@ function createBrowserRead({store,selection,provider,taskRunner,unifiedIntake=nu
    const timer=setTimeout(()=>controller.abort(),timeoutMs)
    try{
     const adapter=provider(r.selection)
-    const checked=()=>{if(controller.signal.aborted||store.get(r.id)?.state==='cancelled')throw Error('read_timeout');if(r.clarificationBinding)unifiedIntake.verifyClarification(r.clarificationBinding)}
+    const checked=()=>{verifyOwner();if(controller.signal.aborted||store.get(r.id)?.state==='cancelled')throw Error('read_timeout');if(r.clarificationBinding)unifiedIntake.verifyClarification(r.clarificationBinding)}
     const observedAdapter=Object.create(adapter)
     Object.defineProperty(observedAdapter,'complete',{value:async(...args)=>{checked();save(r,'model_request_started');const result=await adapter.complete(...args);checked();save(r,'model_request_finished');return result}})
     const conversation=ancestors(r.parentId).map(m=>({question:m.question,answer:m.result.text.slice(0,2000),truncated:m.result.text.length>2000,...(m.result.taskEvidence?.operation==='seven_shifts.employee_wages'?{readOperation:m.result.taskEvidence.operation,readStatus:m.result.taskEvidence.status||'all'}:{})}))
@@ -112,16 +113,17 @@ function createBrowserRead({store,selection,provider,taskRunner,unifiedIntake=nu
   }finally{active.delete(r.id)}
   return view(r)
  }
- async function handleMain(envelope){
+ async function handleMain(envelope,verifyOwner=()=>{}){
+  if(typeof verifyOwner!=='function')throw Error('owner_session_required')
   const b=require('../intake/unifiedContract').validate(envelope)
   const abort=()=>{
    if(b.operation!=='clarification_response'||!unifiedIntake?.abortResponse(b))return
    const r=store.all().find(r=>r.requestId===b.clientSubmissionId)
    if(r&&['awaiting_consent','processing'].includes(r.state)){active.get(r.id)?.abort();r.state='interrupted';r.reconciliationRequired=true;save(r,'clarification_claim_aborted_no_retry')}
   }
-  try{const result=await handleMainOperation(b);if(result.reconciliationRequired)abort();return result}catch(error){abort();throw error}
+  try{if(b.operation==='clarification_response')verifyOwner();const result=await handleMainOperation(b,verifyOwner);if(result.reconciliationRequired)abort();if(b.operation==='clarification_response')verifyOwner();return result}catch(error){abort();throw error}
  }
- async function handleMainOperation(b){
+ async function handleMainOperation(b,verifyOwner){
   if(!unifiedIntake?.enabled())throw Error('unified_intake_disabled')
   const prior=store.all().find(r=>r.requestId===b.clientSubmissionId)
   if(b.operation==='clarification_response'){
@@ -135,12 +137,12 @@ function createBrowserRead({store,selection,provider,taskRunner,unifiedIntake=nu
   // Fresh scope comes from the existing runner/selected provider at prepare.
   // Prior page text, grants, history, approvals and nonces never cross surfaces.
   const question=b.operation==='clarification_response'?unifiedIntake.view(b.taskRef,{principal:'owner',surface:'main'}).objective:b.message
-  const prepared=await handle({op:'prepare',requestId:b.clientSubmissionId,question,taskVersion:2,contextAvailability:'unavailable'},b)
+  const prepared=await handle({op:'prepare',requestId:b.clientSubmissionId,question,taskVersion:2,contextAvailability:'unavailable'},b,verifyOwner)
   if(!prepared.unifiedTask)throw Error('intake_link_unavailable')
   // Resolve an uncertain response observationally. Even an unconsumed prepared
   // read needs a fresh explicit attempt; reloading/retrying is not consent.
   if(prior)return prepared
-  if(prepared.state==='awaiting_consent')return handle({op:'read',id:prepared.id,consent:true},b)
+  if(prepared.state==='awaiting_consent')return handle({op:'read',id:prepared.id,consent:true},b,verifyOwner)
   return prepared
  }
  // Only the authenticated Main route can call this host method. Native callers

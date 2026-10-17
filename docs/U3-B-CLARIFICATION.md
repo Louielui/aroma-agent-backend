@@ -40,6 +40,9 @@ There is no new store, planner, registry, permission system or scheduler.
 4. A fixed host entry reconstructs only the stored typed dependency. Current
    Owner context, separate source-content/provider sharing, authorization revision, fresh disclosed
    capabilities, source leases, evidence and cancellation are checked repeatedly.
+   The Main router supplies a host-only callback to the existing Owner session
+   validator; expiry/revocation during model or gateway awaits stops subsequent
+   reads and returns HTTP 403 without releasing private results.
    The new Browser Read attempt has its own prepare/consumed-consent receipt.
    Owner clarification itself is not approval or a source grant.
 5. Exactly one new discovery checks complete coverage and the ordered candidate
