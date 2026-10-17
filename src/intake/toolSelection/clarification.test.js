@@ -3,9 +3,13 @@ const test = require('node:test'), assert = require('node:assert/strict'), fs = 
 const { fixture, read, MODEL } = require('../../../scripts/u2/fixture.cjs')
 const { createSelectionTaskRunner } = require('./taskRunner')
 const { createStore } = require('../../browserRead/store'), { createBrowserRead } = require('../../browserRead/service')
-const { createUnifiedIntake } = require('../unifiedIntake'), tasks = require('../../store/store')
+const { createUnifiedIntake } = require('../unifiedIntake')
+let tasks
 
 function setup({ resource = 'drive.company_files', choice = 2, beforeRead, onEvent, complete, synthesize = false } = {}) {
+  // Each test owns a complete disposable Task/Read persistence boundary.
+  process.env.AROMA_DATA_DIR=fs.mkdtempSync(path.join(os.tmpdir(),'u3b-truth-'))
+  delete require.cache[require.resolve('../../store/store')];tasks=require('../../store/store')
   const f = fixture({ beforeRead, proposal: { ...read(resource + '.search', { query: 'tea' }), dependency: { from: 0, id: resource + '.get', result: 'sourceId' } }, complete: async (prompt, options) => {
     if (complete) return complete(prompt, options)
     if (options.invocationPhase === 'clarification') return { model: MODEL, text: JSON.stringify({ choice }) }
@@ -273,4 +277,11 @@ test('U3-B legacy task listing gains no access to private clarification labels, 
  assert(JSON.stringify(tasks.getTask(v.taskId)).includes('SYNTHETIC_PRIVATE_OWNER_LABEL'))
  await f.browser.handleMain(f.response(v,'second, PRIVATE_OWNER_REPLY'))
  assert(!publicTask().includes('PRIVATE_OWNER_REPLY'));assert(!publicTask().includes('fixture_second'))
+})
+
+test('U3-B shared Task/Read persistence retains multiple waiting tasks across startup reconciliation',async()=>{
+ const f=setup(),first=await f.browser.handleMain(f.start),second=await f.browser.handleMain({...f.start,clientSubmissionId:randomUUID()})
+ const before=[first,second].map(r=>f.view(r.unifiedTask.taskId));f.restart()
+ for(const v of before){const current=f.view(v.taskId);assert.equal(current.executionState,'WAITING_CLARIFICATION');assert.equal(current.goalId,v.goalId);assert.equal(current.revision,v.revision)}
+ assert.equal(f.calls.length,2)
 })
