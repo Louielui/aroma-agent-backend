@@ -48,7 +48,7 @@ async function main() {
       f.rows['calendar.owner_events'] = [{ id: 'fixture_event', title: 'Supplier meeting', text: 'Supplier meeting is scheduled today at 14:00 America/Winnipeg.', fields: { synthetic: true } }]
       f.rows['drive.company_files'] = [{ id: 'fixture_meeting', title: 'Supplier meeting brief', text: 'Supplier meeting is scheduled today at 15:00 America/Winnipeg. This brief does not establish which source is newer.', fields: { synthetic: true } }]
     }
-    if (c.huge) f.rows['aroma.invoices'] = [{ id: 'fixture_large', title: 'Synthetic large invoice export', text: 'OMITTED_PRIVATE_FIXTURE_'.repeat(2500), fields: { synthetic: true } }]
+    if (c.huge) f.rows['aroma.invoices'] = Array.from({ length: 3 }, (_, i) => ({ id: 'fixture_large_' + i, title: 'Synthetic large invoice export', text: 'OMITTED_PRIVATE_FIXTURE_'.repeat(2500), fields: { synthetic: true } }))
     const reads = createStore(path.join(cwd, 'reads-' + i)), intake = createUnifiedIntake({ store: tasks, reads, enabled: () => true })
     const runner = createSelectionTaskRunner({ bindings: f.bindings, authorize: f.authorize, evidenceMode: 'synthetic_fixture', synthesizeResults: true })
     const browser = createBrowserRead({ store: reads, selection: () => ({ model, effort }), provider: () => f.model, taskRunner: runner, unifiedIntake: intake, timeoutMs: 540000 })
@@ -56,7 +56,7 @@ async function main() {
     try { record = await browser.handleMain({ version: 1, operation: 'start', clientSubmissionId: randomUUID(), message: c.question,
       conversationId: f.context.conversationId, taskRef: null, expectedRevision: null, contextRefs: [] }) } catch (_) {}
     const evidence = record?.result?.taskEvidence, synthesis = evidence?.synthesis
-    const resources = (evidence?.selection?.tools || []).map(t => t.id.split('.').slice(0, -1).join('.')).sort()
+    const resources = [...new Set((evidence?.selection?.tools || []).map(t => t.id.split('.').slice(0, -1).join('.')))].sort()
     const claimsText = (synthesis?.claims || []).map(c => c.text).join('\n')
     const checks = {
       completedAttempt: record?.state === 'completed', selectedSources: JSON.stringify(resources) === JSON.stringify(c.resources.slice().sort()),

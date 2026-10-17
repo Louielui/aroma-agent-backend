@@ -91,6 +91,8 @@ const FILE_CLASS = Object.freeze({
   'context/sevenShiftsAttendance.js': CLASS.MATCHING, // Bounded attendance intent guards and separately bilingual evidence output; guards must not be translated.
   'context/sevenShiftsComparison.js': CLASS.MATCHING, // Bounded bilingual intent guards and deterministic comparison output; no model instructions.
   'intake/readObligationGap.js': CLASS.INTERFACE,
+  'intake/toolSelection/synthesis.js': CLASS.INTERFACE, // Chinese is fixed answer presentation; model contracts are English.
+  'intake/toolSelection/taskRunner.js': CLASS.INTERFACE, // Synthetic-data disclosure, never authorization or input matching.
   'investigation/ownerBrief.js': CLASS.INTERFACE,
   'actions/view.js': CLASS.INTERFACE,
     'actions/chat.js': CLASS.INTERFACE,

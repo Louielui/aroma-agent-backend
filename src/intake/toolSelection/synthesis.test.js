@@ -28,6 +28,7 @@ test('real Context Packs become exact references; one draft and existing semanti
   assert.equal(result.claims[0].references[0].value, f.execution.packs[0].content[0].content)
   assert.equal(result.sources[0].packSha256, require('./selection').digest(f.execution.packs[0]))
   assert.equal(model.calls.length, 2); assert.equal(f.calls.length, 1); assert.equal(result.goalCompleted, false)
+  assert(model.calls[1].prompt.includes(JSON.stringify(require('../../investigation/semanticAnswer').reviewSchema)))
   assert.equal(result.machineEntailmentProven, false)
 })
 test('invented price is rejected by the reused scalar binder before semantic review', async () => {

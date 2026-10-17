@@ -14,7 +14,7 @@ function buildEvidence(selection, execution) {
     const tool = selection.tools[i], pack = execution.packs[i]
     if (pack && tool.id !== pack.resource + '.' + pack.operation) throw Error('synthesis_source_mismatch')
     const oversized = pack && Buffer.byteLength(JSON.stringify(pack)) > 36000
-    const state = !pack ? 'not_read' : pack.state !== 'ok' ? 'unavailable' : oversized || pack.kind === 'bounded_read_receipt' ? 'content_omitted'
+    const state = !pack ? 'not_read' : pack.state !== 'ok' ? 'unavailable' : oversized || pack.kind === 'bounded_read_receipt' || pack.operation === 'readMetadata' ? 'content_omitted'
       : pack.coverage?.complete === true && pack.coverage?.truncated === false ? 'ok' : 'partial'
     const s = { section: 'tool_read', sourceId: 'S' + (i + 1), tool: tool.id, state,
       packSha256: pack ? (pack.kind === 'bounded_read_receipt' ? pack.packSha256 : digest(pack)) : null,
@@ -96,8 +96,11 @@ async function synthesize({ question, selection, execution, model, check, record
       try { if (typeof response.text !== 'string' || response.text.length > 12000) throw Error(); draft = JSON.parse(response.text) } catch (_) { result.state = 'invalid_draft' }
       if (draft) {
         const reviewAdapter = { async complete(prompt, options) {
-          check(); emit({ stage: 'u2_synthesis_review_started', inputSha256: digest(prompt) }); check()
-          const out = await model.complete(prompt, options)
+          // Existing text-only subscription clients do not all enforce responseFormat.
+          // Carry the exact existing schema in the prompt as well, without relaxing it.
+          const reviewPrompt = prompt + '\nOUTPUT_SCHEMA:\n' + JSON.stringify(options.responseFormat.schema)
+          check(); emit({ stage: 'u2_synthesis_review_started', inputSha256: digest(reviewPrompt) }); check()
+          const out = await model.complete(reviewPrompt, options)
           check(); emit({ stage: 'u2_synthesis_review_received', responseSha256: digest(out?.text), actualModel: out?.model ?? null })
           return out
         } }
