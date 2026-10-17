@@ -96,7 +96,7 @@ function createSelectionTaskRunner({ bindings, authorize, evidenceMode, synthesi
         }
       }
       let synthesis = null
-      if (synthesizeResults && execution && (investigation || !selection.dependency || execution.status === 'read_completed')) {
+      if (synthesizeResults && execution && execution.status !== 'clarification_required' && (investigation || !selection.dependency || execution.status === 'read_completed')) {
         const check = () => {
           assertActive()
           if (signal?.aborted) throw Error('synthesis_cancelled')
@@ -120,7 +120,9 @@ function createSelectionTaskRunner({ bindings, authorize, evidenceMode, synthesi
       const text = (clarification && selection.status === 'ambiguous_goal' ? 'I could not identify one record from that reply. Which of the previously listed records should I read? No source read was performed; the original Owner goal remains open.' : null) || (investigation && synthesis ? (evidenceMode === 'synthetic_fixture' ? '【隔離合成資料示範】\n' : '') + (require('./dependency').dependencyReply(execution) || '') + '\n' + synthesis.text : require('./dependency').dependencyReply(execution)) || (synthesis ? (evidenceMode === 'synthetic_fixture' ? '【隔離合成資料示範】\n' : '') + synthesis.text : JSON.stringify({ evidenceMode, selectionStatus: selection.status, interpretation: selection.interpretedOutcome || null,
           executionStatus: execution?.status || 'not_executed', sources: execution?.packs.map(readReceipt) || [], goalCompleted: false }))
       return { model: adapter.model, actualModel: selection.actualModel || null, billing: adapter.billing || null,
-        text: text + (crossSourceEnabled && clarification && !clarification.crossSource && execution?.status === 'read_completed' ? '\nThis Source A clarification completed only its bounded read. No cross-source handoff was performed; a fresh explicit investigation is required.' : '') + (investigation?.reason === 'no_supported_handoff' ? '\nNo permitted relevant Source B search was selected. No Source B read was performed.' : ''), evidence }
+        text: (crossSourceEnabled && evidenceMode === 'synthetic_fixture' && !text.startsWith('【隔離合成資料示範】') ? '【隔離合成資料示範】\n' : '') + text +
+          (investigation && !synthesis ? '\n' + require('./synthesis').CROSS_SOURCE_LIMITATION : '') +
+          (crossSourceEnabled && clarification && !clarification.crossSource && execution?.status === 'read_completed' ? '\nThis Source A clarification completed only its bounded read. No cross-source handoff was performed; a fresh explicit investigation is required.' : '') + (investigation?.reason === 'no_supported_handoff' ? '\nNo permitted relevant Source B search was selected. No Source B read was performed.' : ''), evidence }
     } catch (error) {
       runs.appendStage(run.id, 'FAILED', { error: 'selection_or_read_failed' })
       onEvent({ stage: 'u2_failed_no_retry', runId: run.id, evidenceMode })

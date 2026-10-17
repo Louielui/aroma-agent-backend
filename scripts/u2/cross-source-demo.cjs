@@ -61,6 +61,7 @@ async function main() {
     } catch (e) { error = e.message } finally { await new Promise(resolve => server.close(resolve)) }
     const v = first ? intake.view(first.unifiedTask.taskId, { principal: 'owner', surface: 'main' }) : null, record = v?.executionRef ? reads.get(v.executionRef.id) : null, e = record?.result?.taskEvidence
     const allReads = reads.all().filter(r => r.unifiedTask?.taskId === v?.taskId), detail = f.calls.filter(r => r.source === 'aroma_system' && r.operation === 'get')
+    const initialRead = allReads.find(r => r.unifiedTask?.attemptId === states[0]?.unifiedIntake.attempts.at(-1).id)
     const checks = { sameTaskGoal: !!first && states.every(t => t.id === v.taskId && JSON.stringify(t.ownerGoal) === JSON.stringify(states[0].ownerGoal)),
       boundedReads: f.calls.length === (c.multiple ? 5 : c.missing ? 3 : 4), queryGrounded: f.calls.filter(r => r.source === 'aroma_system' && r.operation === 'search').every(r => r.input.query === c.ref) && e?.execution?.handoff?.value === c.ref,
       expectedDetailIdentity: c.missing ? detail.length === 0 : detail.length === 1 && detail[0].input.sourceId === invoiceIds[c.multiple ? 1 : 0],
@@ -68,7 +69,8 @@ async function main() {
       noVerifiedRelationship: e?.execution?.handoff?.transactionRelationship === 'not_established', synthesisReviewed: e?.synthesis?.state === 'reviewed' && e.synthesis.claims.length > 0,
       combinedSources: c.missing || new Set(e?.synthesis?.claims.flatMap(cl => cl.references.map(r => r.sourceId))).size >= 2,
       noGoalCompletion: v?.goalStatus !== 'GOAL_COMPLETED', explicitLimits: answer?.reply.includes('不計算或宣稱金額差額'), replayNoReads, historySaved: answer?.historySaved === true,
-      clarificationState: !c.multiple || v?.executionState === 'CLARIFICATION_COMPLETED' }
+      clarificationState: !c.multiple || v?.executionState === 'CLARIFICATION_COMPLETED',
+      waitingNoSynthesis: !c.multiple || initialRead?.result?.taskEvidence?.synthesis === null && initialRead.timeline.filter(e => e.stage === 'u2_synthesis_started').length === 0 }
     const result = { ...source, case: c.id, model, effort, billing: 'chatgpt-subscription', data: 'synthetic_disposable_only', liveExternalActions: false, goal: c.goal, dialogue, checks,
       structuralPass: !error && Object.values(checks).every(Boolean), error, invocations, sourcePacks: packs, actualAdapterCalls: f.calls, gatewayAudit: f.audit, taskSnapshots: states,
       readRecords: allReads, finalEvidence: e || null, finalProjection: v, transcript: conversations.get(f.context.conversationId) }

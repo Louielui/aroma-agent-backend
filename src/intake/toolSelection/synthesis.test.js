@@ -33,6 +33,14 @@ test('U3-C unsupported numeric variance is rejected without adding a calculation
   assert.equal(result.claims.length, 0); assert.doesNotMatch(result.text, /999/)
   assert.match(result.text, /不計算或宣稱金額差額/)
 })
+for (const kind of ['observation', 'limitation', 'recommendation']) test('U3-C rejects multi-record ' + kind + ' even within one source and with a supportive reviewer', async () => {
+  const f = await setup(), pack = f.execution.packs[0]
+  pack.content.push({ ...structuredClone(pack.content[0]), sourceId: 'fixture_second_invoice', content: 'A different candidate invoice record.' })
+  const claim = { ...f.claim, text: 'The records conflict.', kind, evidenceState: kind === 'observation' ? 'supported' : 'not_established', temporalScope: kind === 'observation' ? 'historical' : 'unknown',
+    references: [{ sourceId: 'S1', recordId: 'r1', field: 'content', value: pack.content[0].content }, { sourceId: 'S1', recordId: 'r2', field: 'content', value: pack.content[1].content }] }
+  const result = await run(f, modelFor([claim]), { crossSource: true })
+  assert.equal(result.claims.length, 0); assert.doesNotMatch(result.text, /The records conflict/)
+})
 async function run(f, model, overrides = {}) {
   return synthesize({ question: 'What does the invoice record say?', selection: f.selection, execution: f.execution, model, record: f.record, check() {}, ...overrides })
 }

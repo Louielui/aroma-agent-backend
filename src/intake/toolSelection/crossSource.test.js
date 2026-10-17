@@ -51,6 +51,13 @@ test('U3-C persists Source B ambiguity, resumes through U3-B with one freshness 
   assert.equal(r.result.taskEvidence.execution.packs[0].source, 'drive')
   await f.browser.handleMain(b); assert.equal(f.calls.length, 5)
 })
+test('U3-C waiting candidates cannot enter synthesis or become an inferred conflict before Owner selection', async () => {
+  const f = setup({ multiple: true }), first = await f.browser.handleMain(f.start)
+  assert.equal(f.view(first.unifiedTask.taskId).executionState, 'WAITING_CLARIFICATION')
+  assert.equal(f.prompts.filter(p => p.phase === 'result_synthesis').length, 0)
+  assert.equal(first.result.taskEvidence.synthesis, null)
+  assert.doesNotMatch(first.result.text, /126|128|conflict|衝突/)
+})
 for (const option of ['missing', 'unavailable', 'partial']) test('U3-C preserves Source A with honest Source B ' + option, async () => {
   const f = setup({ [option]: true }), r = await f.browser.handleMain(f.start)
   assert.equal(r.state, 'completed'); assert.equal(f.calls.length, 3)

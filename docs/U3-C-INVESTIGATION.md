@@ -62,8 +62,11 @@ Only Source A detail and the last actual Source B pack feed the existing U2-B sy
 No extra synthesis source-count allowance is needed: at most two sources use the
 unchanged six-record/18k scalar catalog and 12k report budget. Omitted content cannot
 support facts. The existing subscription semantic review and scalar binder are retained.
-Cross-source observation claims must cite only one section; mixed-source observations
-are withheld. Separate supported source observations can form one useful answer.
+In cross-source mode every claim kind must cite only one record. Cross-record
+observations, limitations and recommendations are withheld even if a semantic reviewer
+supports them; the host supplies the unresolved relationship statement. Waiting for
+clarification skips synthesis entirely, so unselected candidates cannot become a
+comparison or conflict judgment. Separate source observations form one useful answer.
 
 The host always states that search leads are possible relationships, not verified
 transactions, and that currency/tax/scope/linkage are not fully verified. No arithmetic
