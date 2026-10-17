@@ -515,7 +515,7 @@ function checkUnifiedClarification(binding,tool=null){
   return{task,c}
  }
  if(tool===null)return structuredClone(check(load()).c)
- return withLock(()=>{const db=load(),{task,c}=check(db),expected=c.reads===1?c.discovery.id:c.reads===2?c.dependency.id:null
+ return withLock(()=>{const db=load(),{task,c}=check(db),base=c.crossSource?3:1,expected=c.reads===base?c.discovery.id:c.reads===base+1?c.dependency.id:null
   if(tool!==expected)throw Error('clarification_read_budget_exhausted')
   c.reads++;clarificationEvent(db,task,'task.clarification_read_attempt',{attemptId:binding.attemptId,tool,ordinal:c.reads});save(db)
  })
@@ -528,9 +528,9 @@ function finishUnifiedClarification(binding,record){
   if(c.state!=='PROCESSING_CLARIFICATION'||u.revision!==binding.revision)throw Error('revision_conflict')
   const x=record.result?.taskEvidence?.execution
   c.lastExecutionRef=structuredClone(a.executionRef);c.lastRecordHash=proof.hash(record)
-  if(record.state==='completed'&&record.result?.taskEvidence?.selection?.status==='ambiguous_goal'&&c.reads===1){
+  if(record.state==='completed'&&record.result?.taskEvidence?.selection?.status==='ambiguous_goal'&&c.reads===(c.crossSource?3:1)){
    c.previousId=c.id;c.id=uuidv4();c.state='WAITING_CLARIFICATION';c.reason='ambiguous_owner_response'
-  }else{c.state=record.state==='completed'&&x?.status==='read_completed'&&c.reads===3?'CLARIFICATION_COMPLETED':record.state==='cancelled'?'CLARIFICATION_CANCELLED':record.state==='interrupted'?'CLARIFICATION_INTERRUPTED':'CLARIFICATION_FAILED';c.reason=x?.dependency?.reason||record.error||x?.status||'continuation_not_completed'}
+  }else{c.state=record.state==='completed'&&x?.status==='read_completed'&&c.reads===(c.crossSource?5:3)?'CLARIFICATION_COMPLETED':record.state==='cancelled'?'CLARIFICATION_CANCELLED':record.state==='interrupted'?'CLARIFICATION_INTERRUPTED':'CLARIFICATION_FAILED';c.reason=x?.dependency?.reason||record.error||x?.status||'continuation_not_completed'}
   u.revision++;clarificationEvent(db,task,'task.clarification_terminal',{attemptId:a.id,state:c.state,reads:c.reads,recordHash:c.lastRecordHash});save(db)
  })
 }

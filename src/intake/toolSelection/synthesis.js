@@ -66,7 +66,7 @@ function buildEvidence(selection, execution) {
   return report
 }
 
-async function synthesize({ question, selection, execution, model, check, record }) {
+async function synthesize({ question, selection, execution, model, check, record, crossSource = false }) {
   if (typeof check !== 'function' || typeof record !== 'function') throw Error('synthesis_host_required')
   check()
   if (!['claude-subscription', 'chatgpt-subscription'].includes(model?.billing) || typeof model.model !== 'string' || !model.model || typeof model.complete !== 'function') throw Error('subscription_synthesis_required')
@@ -87,7 +87,7 @@ async function synthesize({ question, selection, execution, model, check, record
     emit({ stage: 'u2_synthesis_started', inputSha256: digest(input), catalogSha256: digest(catalog) })
     check()
     let response
-    try { response = await model.complete(input, { system: SYSTEM, invocationPhase: 'result_synthesis', responseFormat: { type: 'json_schema', name: 'u2_synthesis', schema: draftSchema } }) }
+    try { response = await model.complete(input, { system: SYSTEM + (crossSource ? '\nThis is an evidence-aware cross-source investigation, not a verified transaction match. Report each source observation and amount SEPARATELY with exact attribution. Do not claim identity, payment, current price, financial variance, difference, currency conversion or compatible tax/unit/document basis. Those conclusions are unsupported. Search relevance establishes only a possible lead. State missing transaction linkage and tax/scope information. Every observation must cite records from only ONE source; combine separate observations in the answer without inventing a relationship.' : ''), invocationPhase: 'result_synthesis', responseFormat: { type: 'json_schema', name: 'u2_synthesis', schema: draftSchema } }) }
     catch (_) { result.state = 'model_unavailable' }
     check()
     if (response) {
@@ -109,6 +109,11 @@ async function synthesize({ question, selection, execution, model, check, record
         if (fatal) throw fatal
         check()
         result.state = reviewed.state; result.claims = reviewed.accepted; result.withheld = reviewed.withheld
+        if (crossSource) {
+          const unsupported = result.claims.filter(c => c.kind === 'observation' && new Set(c.references.map(r => r.sourceId)).size !== 1)
+          result.claims = result.claims.filter(c => !unsupported.includes(c))
+          result.withheld.push(...unsupported.map(c => ({ id: c.id, reason: 'cross_source_relationship_not_established' })))
+        }
         result.review = { model: reviewed.reviewModel, billing: reviewed.reviewBilling, calls: reviewed.calls, method: reviewed.method }
       }
     }
@@ -123,6 +128,7 @@ async function synthesize({ question, selection, execution, model, check, record
   const gaps = result.sources.filter(s => s.state !== 'ok')
   if (gaps.length) paragraphs.push('資料限制：' + gaps.map(s => s.id + ' ' + ({ partial: '部分內容／覆蓋未知', unavailable: '來源不可用', not_read: '未讀取', content_omitted: '內容過大或僅有收據，未用於事實綜合' }[s.state] || s.state)).join('；'))
   if (result.withheld.length) paragraphs.push('部分候選說法未獲證據支持，已保留不呈現。')
+  if (crossSource) paragraphs.push('跨來源調查限制：搜尋關鍵字只構成可能線索；未建立同一交易、付款完成或目前價格。幣別、稅務口徑、文件範圍及交易關聯未全部驗證，因此不計算或宣稱金額差額。各來源金額僅代表各自的紀錄。')
   paragraphs.push('來源引用：' + result.sources.map(s => s.id + ' = ' + (s.source || s.tool)).join('；'))
   paragraphs.push('以上以本次來源快照為依據；模型語意審核仍可能出錯，並不代表整體目標已完成。')
   result.text = paragraphs.join('\n\n')

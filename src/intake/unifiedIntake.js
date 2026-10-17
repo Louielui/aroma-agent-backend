@@ -39,11 +39,13 @@ function createUnifiedIntake({store,enabled=()=>false,reads=null}){
   const c=store.checkUnifiedClarification(binding),task=store.getTask(binding.taskId),origin=task.unifiedIntake.attempts.find(a=>a.id===c.originAttemptId)
   const proof=require('./toolSelection/clarification'),actual=proof.fromRecord(reads.get(c.originExecutionRef.id),origin)
   for(const k of ['authorizationHash','scopeHash','discovery','dependency','source','resource','candidates','discoveryPackHash','originEvidenceHash','originalSelectionId'])if(proof.hash(actual[k])!==proof.hash(c[k]))throw Error('clarification_evidence_changed')
+  if(proof.hash(actual.crossSource??null)!==proof.hash(c.crossSource??null))throw Error('clarification_evidence_changed')
   if(c.lastExecutionRef&&proof.hash(reads.get(c.lastExecutionRef.id))!==c.lastRecordHash)throw Error('clarification_evidence_changed')
   if(tool!==null)store.checkUnifiedClarification(binding,tool)
   return c
  }
  function cancelClarification(id,revision,attemptId,h){host(h);if(h.surface!=='main'||!enabled())throw Error('owner_session_required');return store.cancelUnifiedClarification(id,revision,attemptId)}
- return{enabled,reserve,link,abortResponse:b=>store.abortUnifiedClarification(b),verifyClarification,cancelClarification,publishClarification:(binding,r)=>store.publishUnifiedClarification(binding,r),finishClarification:(binding,r)=>store.finishUnifiedClarification(binding,r),reconcileClarifications:()=>store.reconcileUnifiedClarifications(reads),view:(id,h)=>view(id,h),viewAttempt:(id,attemptId,h)=>view(id,h,attemptId),browserProjection}
+ function clarificationEvidence(binding){const c=verifyClarification(binding);return structuredClone(reads.get(c.originExecutionRef.id).result.taskEvidence)}
+ return{enabled,reserve,link,abortResponse:b=>store.abortUnifiedClarification(b),verifyClarification,clarificationEvidence,cancelClarification,publishClarification:(binding,r)=>store.publishUnifiedClarification(binding,r),finishClarification:(binding,r)=>store.finishUnifiedClarification(binding,r),reconcileClarifications:()=>store.reconcileUnifiedClarifications(reads),view:(id,h)=>view(id,h),viewAttempt:(id,attemptId,h)=>view(id,h,attemptId),browserProjection}
 }
 module.exports={createUnifiedIntake}

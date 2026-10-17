@@ -19,6 +19,20 @@ function modelFor(claims, decision = 'supported') {
       ? { reviews: claims.map(c => ({ id: c.id, decision, reason: decision === 'supported' ? 'matches_reference' : 'unsupported_inference' })) } : { claims }) }
   } }
 }
+test('U3-C withholds a mixed-source observation even if the semantic reviewer supports it', async () => {
+  const f = await setup({ proposal: { kind: 'read', outcome: 'Read both sources', capability: null, tools: [read('aroma.invoices.list').tools[0], read('drive.company_files.list').tools[0]] } })
+  const a = f.report.sections[0].records[0].content, b = f.report.sections[1].records[0].content
+  const claim = { ...f.claim, text: 'The records belong to one transaction.', references: [{ sourceId: 'S1', recordId: 'r1', field: 'content', value: a }, { sourceId: 'S2', recordId: 'r1', field: 'content', value: b }] }
+  const result = await run(f, modelFor([claim]), { crossSource: true })
+  assert.equal(result.claims.length, 0)
+  assert.match(result.text, /未建立同一交易/)
+})
+test('U3-C unsupported numeric variance is rejected without adding a calculation source', async () => {
+  const f = await setup(); f.claim.text = 'The financial variance is CAD 999.'
+  const result = await run(f, modelFor([f.claim]), { crossSource: true })
+  assert.equal(result.claims.length, 0); assert.doesNotMatch(result.text, /999/)
+  assert.match(result.text, /不計算或宣稱金額差額/)
+})
 async function run(f, model, overrides = {}) {
   return synthesize({ question: 'What does the invoice record say?', selection: f.selection, execution: f.execution, model, record: f.record, check() {}, ...overrides })
 }
