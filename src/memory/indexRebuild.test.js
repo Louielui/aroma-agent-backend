@@ -5,6 +5,7 @@ const { createGateway, OWNER } = require('./governed')
 const { createTestStore } = require('./structuredStore')
 const { createRuntime } = require('./runtime')
 const { spawnSync } = require('node:child_process')
+const { python, skip } = require('../../scripts/r1/offlinePython.cjs').resolveTestPython()
 const source = { kind: 'conversation', id: 'rebuild-fixture', at: '2026-09-29T00:00:00.000Z', attribution: 'owner_statement' }
 test('Owner rebuild preserves approval and raw source while excluding source-bound, expired and nonactive rows', async () => {
   const store = createTestStore(), engine = { forScope: () => ({ retain: async () => ({ facts: 1 }), recall: async () => [] }) }
@@ -58,9 +59,9 @@ test('rebuild survives a new runtime and reconstructs only lost semantic origina
   await resumed.gateway.rebuildIndex(OWNER); await resumed.gateway.index(OWNER, row.id)
   assert.equal(writes, 2, 'matching originals reconcile without repeated extraction')
 })
-test('SQL metadata queue is transaction-safe, source-bound, scope-bound and preserves Unicode', { skip: !fs.existsSync('C:/Aroma/hindsight-runtime/Scripts/python.exe') }, () => {
+test('SQL metadata queue is transaction-safe, source-bound, scope-bound and preserves Unicode', { skip }, () => {
   const script = path.resolve(__dirname, '../../scripts/memory/indexRebuild.fixture.py')
-  const result = spawnSync('C:/Aroma/hindsight-runtime/Scripts/python.exe', ['-B', '-X', 'utf8', script], { encoding: 'utf8', windowsHide: true, timeout: 10000 })
+  const result = spawnSync(python, ['-B', '-X', 'utf8', script], { encoding: 'utf8', windowsHide: true, timeout: 10000 })
   assert.equal(result.status, 0, result.stderr)
   const proof = JSON.parse(result.stdout)
   assert.equal(proof.passed, true); assert.equal(proof.queued, 1); assert.equal(proof.sourceOnly, 2)

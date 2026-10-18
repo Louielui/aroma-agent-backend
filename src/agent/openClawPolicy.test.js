@@ -175,3 +175,23 @@ test('B2. maxTokens and the request timeout are pinned to fixed trusted values',
   assert.strictEqual(P.RUN_RETRY_CEILING * P.MAX_OUTPUT_TOKENS, 24 * 8000,
     'one turn cannot emit more than ceiling x maxTokens output tokens')
 })
+
+test('B3b. LIVE. the WALL-CLOCK bound is NOT claimed, because it is not established', () => {
+  // Honest negative result, pinned so nobody later "remembers" it as proven.
+  //
+  // models.providers.<p>.timeoutSeconds is documented as covering total request abort
+  // handling. Tracing its consumers in the installed build found the web-search path and the
+  // cron agent-turn payload — NOT the openai/codex model request path this installation uses.
+  // The per-request wall-clock bound is therefore unverified, and so is any turn-level
+  // wall-clock statement derived from it.
+  //
+  // What IS established is the request-COUNT bound (B3) and the per-request output-token cap.
+  const policy = require('../agent/openClawPolicy')
+  assert.ok(Number.isInteger(policy.RUN_RETRY_CEILING) && policy.RUN_RETRY_CEILING > 0)
+  assert.ok(Number.isInteger(policy.MAX_OUTPUT_TOKENS) && policy.MAX_OUTPUT_TOKENS > 0)
+
+  const src = fs.readFileSync(path.join(__dirname, 'openClawPolicy.js'), 'utf8')
+  assert.ok(!/wall[- ]?clock (bound|guarantee) (is )?(proven|established)/i.test(src),
+    'no wall-clock guarantee may be asserted in the policy module')
+})
+

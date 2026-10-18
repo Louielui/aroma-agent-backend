@@ -4,6 +4,7 @@ const assert = require('node:assert/strict')
 const fs = require('node:fs')
 const path = require('node:path')
 const { spawnSync } = require('node:child_process')
+const { python, skip } = require('../../scripts/r1/offlinePython.cjs').resolveTestPython()
 const { createStructuredStore } = require('./structuredStore')
 const row = (id, mailbox = 'adm@example.test', kind = 'admin_mail_message') => ({ id,
   text: 'Private source 中文 😀', source: { kind }, details: { mailbox } })
@@ -71,8 +72,8 @@ test('the larger manifest page bound never enlarges full-original or general-mem
   assert.equal((await build(make(1, 'conversation', false)).generalRows()).length, 1)
   await assert.rejects(build(make(2001, 'conversation', false)).generalRows(), /memory_database_unavailable/)
 })
-test('Python source pages are bounded, Unicode-exact and parameterized', { skip: !fs.existsSync('C:/Aroma/hindsight-runtime/Scripts/python.exe') }, () => {
-  const result = spawnSync('C:/Aroma/hindsight-runtime/Scripts/python.exe', ['-B','-X','utf8',path.resolve(__dirname,'../../scripts/memory/mailRows.fixture.py')], {encoding:'utf8',windowsHide:true,timeout:10000})
+test('Python source pages are bounded, Unicode-exact and parameterized', { skip }, () => {
+  const result = spawnSync(python, ['-B','-X','utf8',path.resolve(__dirname,'../../scripts/memory/mailRows.fixture.py')], {encoding:'utf8',windowsHide:true,timeout:10000})
   assert.equal(result.status,0,result.stderr)
   assert.deepEqual(JSON.parse(result.stdout), { passed:true, sourceIsolation:true, fixedSnapshot:true, byteBound:true, unicode:true })
 })
