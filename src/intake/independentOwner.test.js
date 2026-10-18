@@ -56,6 +56,13 @@ test('persisted synthetic provenance cannot assert real subscription verificatio
     assert(!JSON.stringify(saved).includes('"billing":"chatgpt-subscription"'))
     assert.equal(saved.result.executionProvenance.sourceReadVerification, 'synthetic_adapter_observed')
     assert.equal(saved.result.taskEvidence.run.executionProvenance.billingVerified, false)
+    for (const event of saved.timeline.filter(e => /^u[23]_|^r1_/.test(e.stage))) {
+      assert.equal(event.requestedModel, 'gpt-6-astra', event.stage)
+      assert.equal(event.executionMode, 'synthetic_fixture', event.stage)
+      assert.equal(event.verifiedActualModel, null, event.stage)
+      assert.equal(event.modelInvocationVerified, false, event.stage)
+      if (Object.hasOwn(event, 'actualModel')) assert.equal(event.actualModel, 'synthetic_fixture', event.stage)
+    }
     assert.equal(result.body.unifiedTask.investigation.executionProvenance.synthetic, true)
     const sameTask = (await f.snapshot()).tasks[0]
     assert(!JSON.stringify(sameTask).includes('"billing":"chatgpt-subscription"'))
@@ -179,7 +186,8 @@ test('sharing defaults deny and no selected tool confers content authority', asy
   const root = rootFixture(), f = await child(root, { sharing: {} })
   try {
     const cookie = await f.login(), result = await f.request(route, { cookie, body: goal() })
-    assert.equal(result.status, 503)
+    assert.equal(result.status, 403); assert.equal(result.body.error, 'synthesis_not_authorized')
+    assert.equal(fs.readdirSync(path.join(root, 'logs')).length, 0)
     assert.equal((await f.snapshot()).calls.length, 0)
     assert(!result.body.reply.includes('four minutes'))
   } finally { await f.close() }

@@ -80,8 +80,8 @@ function createIndependentOwner(options = {}) {
     TEMP: roots.temp, TMP: roots.temp, XIANGXIANG_LAB_ROOT: roots.lab, XIANGXIANG_LOCALE: 'en' })
   configured = true
   const express = require('express'), auth = require('../governance/ownerAuth')
-  let store
-  try { store = require('../store/store'); store.listTasks() } catch (_) { throw Error('independent_storage_corrupt') }
+  const { loadTaskStore, createFailureBoundary } = require('./independentErrors')
+  const store = loadTaskStore(path.join(roots.data, 'aroma-truth.json'), () => { const value = require('../store/store'); value.listTasks(); return value })
   const sharedConversations = require('../store/conversationStore'), originalConversations = sharedConversations.createConversationStore({ dataDir: roots.data })
   // Strict private-instance scan; do not change the shared store's lenient list contract.
   const conversations = { ...originalConversations, list() {
@@ -122,9 +122,10 @@ function createIndependentOwner(options = {}) {
       CONTEXT_DRIVE_OPENAI: sharing.source === true && manifest.sharing.source === true ? 'on' : 'off',
       CONTEXT_DRIVE_CLAUDE: 'off'
     }) })
-  const browserRead = require('../browserRead/service').createBrowserRead({ store: reads, selection: () => choice,
-    provider: () => { throw Error('native_transport_disabled') }, mainTaskRunner: integration.runner,
+  const browserService = require('../browserRead/service').createBrowserRead({ store: reads, selection: () => choice,
+    provider: () => { throw Error('native_transport_disabled') }, mainTaskRunner: { ...integration.runner, run: input => failures.observe(() => integration.runner.run(input), input.onEvent) },
     mainTaskEnabled: () => enabled, mainProvider: integration.provider, unifiedIntake: intake })
+  const browserRead = { ...browserService, async handleMain(...args) { return failures.projectResult(await browserService.handleMain(...args)) } }
   const sessions = auth.createSessionStore(), app = express()
   let closing = false, diagnosticFailed = false, activeRequests = 0
   const idleWaiters = new Set(), DIAGNOSTIC_LIMIT = 64
@@ -140,14 +141,10 @@ function createIndependentOwner(options = {}) {
   }
   app.disable('x-powered-by'); app.locals.ownerSessions = sessions; app.locals.conversationDemo = enabled
   const authenticated = req => sessions.valid(auth.readCookie(req, cookieName)) === true
-  const reportFailure = (res, error, projection = {}) => {
-    const code = error?.message === 'audit_unavailable' ? 'audit_unavailable' : 'independent_unavailable'
-    try { return res.status(503).json({ ...projection, error: code, correlationId: diagnostic(code) }) }
-    catch (_) { return res.status(503).json({ error: 'diagnostic_unavailable' }) }
-  }
+  const failures = createFailureBoundary(diagnostic), reportFailure = failures.reportFailure
   const operation = async (req, res, execute) => {
     res.locals.independentOperation.running = true
-    try { return await execute() } finally { res.locals.independentOperation.release() }
+    try { return await failures.within(execute) } finally { res.locals.independentOperation.release() }
   }
   app.use((req, res, next) => {
     if (closing || diagnosticFailed) return res.status(503).json({ error: 'independent_closed' })
@@ -185,8 +182,7 @@ function createIndependentOwner(options = {}) {
   app.use((error, req, res, _next) => {
     const invalid = error?.type === 'entity.parse.failed' || error?.type === 'entity.too.large'
     if (!authenticated(req) || invalid) return res.status(invalid ? 400 : 503).json({ error: invalid ? 'independent_request_invalid' : 'independent_unavailable' })
-    try { res.status(invalid ? 400 : 503).json({ error: invalid ? 'independent_request_invalid' : 'independent_unavailable', correlationId: diagnostic(invalid ? 'invalid_input' : 'internal_unavailable') }) }
-    catch (_) { res.status(503).json({ error: 'diagnostic_unavailable' }) }
+    return reportFailure(res, error)
   })
   return Object.freeze({ app, roots: Object.freeze(roots), choice, cookieName, releaseOwnership, sessions, reads, store, conversations, registry,
     ...adapters, beginClose: () => { closing = true }, activeRequests: () => activeRequests,
