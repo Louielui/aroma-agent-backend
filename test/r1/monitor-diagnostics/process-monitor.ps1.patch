@@ -1,17 +1,20 @@
 diff --git a/process-monitor.ps1 b/process-monitor.ps1
-index 34dff60..b4adaf1 100644
 --- a/process-monitor.ps1
 +++ b/process-monitor.ps1
-@@ -1,11 +1,16 @@
+@@ -1,11 +1,20 @@
 -param([Parameter(Mandatory=$true)][string]$PrivateRoot)
 +param([Parameter(Mandatory=$true)][string]$PrivateRoot,[Parameter(Mandatory=$true)][guid]$RunId,[Parameter(Mandatory=$true)][guid]$LaunchId)
  $ErrorActionPreference='Stop'
  $eventsList=[System.Collections.Generic.List[object]]::new()
++$ownedSources=[System.Collections.Generic.List[string]]::new()
  $started=Get-Date
  try {
++  if(@(Get-Event -ErrorAction Stop | Where-Object SourceIdentifier -in @('r1-start','r1-stop')).Count){throw 'monitor_source_event_preexisting'}
    Register-CimIndicationEvent -Namespace root/cimv2 -Query 'SELECT * FROM Win32_ProcessStartTrace' -SourceIdentifier r1-start | Out-Null
++  $ownedSources.Add('r1-start')
    Register-CimIndicationEvent -Namespace root/cimv2 -Query 'SELECT * FROM Win32_ProcessStopTrace' -SourceIdentifier r1-stop | Out-Null
 -  @{pid=$PID;at=(Get-Date).ToUniversalTime().ToString('o');subscriptions=2} | ConvertTo-Json -Compress | Set-Content -LiteralPath (Join-Path $PrivateRoot 'monitor-ready.json') -Encoding UTF8
++  $ownedSources.Add('r1-stop')
 +  $self=Get-Process -Id $PID -ErrorAction Stop
 +  $ready=@{schema=1;runId=$RunId.ToString();launchId=$LaunchId.ToString();pid=$PID;processStartedAt=$self.StartTime.ToUniversalTime().ToString('o');readyAt=(Get-Date).ToUniversalTime().ToString('o');scriptSha256=(Get-FileHash -LiteralPath $PSCommandPath -Algorithm SHA256).Hash.ToLowerInvariant();executableSha256=(Get-FileHash -LiteralPath $self.Path -Algorithm SHA256).Hash.ToLowerInvariant();subscriptions=2;handshake='process-trace-subscribed'}
 +  $readyTmp=Join-Path $PrivateRoot 'monitor-ready.tmp'
@@ -21,7 +24,7 @@ index 34dff60..b4adaf1 100644
    while (-not (Test-Path -LiteralPath (Join-Path $PrivateRoot 'monitor.stop'))) {
      foreach ($event in @(Get-Event -ErrorAction SilentlyContinue | Where-Object SourceIdentifier -in @('r1-start','r1-stop'))) {
        $n=$event.SourceEventArgs.NewEvent
-@@ -30,6 +35,7 @@ try {
+@@ -30,10 +39,23 @@ try {
    }
    @{pid=$PID;events=@($eventsList.ToArray());terminal=$true;at=(Get-Date).ToUniversalTime().ToString('o')} | ConvertTo-Json -Depth 6 -Compress | Set-Content -LiteralPath (Join-Path $PrivateRoot 'process-events.json') -Encoding UTF8
  } catch {
@@ -29,3 +32,22 @@ index 34dff60..b4adaf1 100644
    @{pid=$PID;error=$_.Exception.Message;terminal=$true} | ConvertTo-Json -Compress | Set-Content -LiteralPath (Join-Path $PrivateRoot 'monitor-failure.json') -Encoding UTF8
    exit 1
  } finally {
+-  Unregister-Event -SourceIdentifier r1-start -ErrorAction SilentlyContinue
+-  Unregister-Event -SourceIdentifier r1-stop -ErrorAction SilentlyContinue
+-  Get-Job | Remove-Job -ErrorAction SilentlyContinue
++  $cleanupFailures=[System.Collections.Generic.List[string]]::new()
++  foreach($source in $ownedSources) {
++    try {Unregister-Event -SourceIdentifier $source -ErrorAction Stop}
++    catch {$cleanupFailures.Add('unsubscribe:'+ $source +':'+ $_.Exception.Message)}
++  }
++  if($ownedSources.Count -gt 0) {
++    $queuedEvents=@()
++    try {$queuedEvents=@(Get-Event -ErrorAction Stop | Where-Object {$ownedSources.Contains($_.SourceIdentifier)})}
++    catch {$cleanupFailures.Add('event_queue:'+ $_.Exception.Message)}
++    foreach($event in $queuedEvents) {
++      try {Remove-Event -EventIdentifier $event.EventIdentifier -ErrorAction Stop}
++      catch {$cleanupFailures.Add('remove_event:'+ $event.EventIdentifier +':'+ $_.Exception.Message)}
++    }
++  }
++  if($cleanupFailures.Count -gt 0){throw ('monitor_cleanup_failed:'+ ($cleanupFailures -join '; '))}
+ }
