@@ -1,0 +1,56 @@
+{
+  "schema": 1,
+  "purpose": "External V2 driver diagnostic-only patches; NOT a Sandbox execution authorization",
+  "applicationCommit": "d951dfc6fc39146b2098355b1936a1516a5c6420",
+  "applicationTree": "01812b9d3886c7f5867bc52e80a563d6009dbc95",
+  "originalRunId": "498019d4-c022-46ad-bba9-18d34871ba80",
+  "originalRunIdMustNotBeReused": true,
+  "files": [
+    {
+      "file": "guest.cjs",
+      "original": "C:\\Users\\louis\\Documents\\Codex\\2026-09-06\\xiangxiang-development\\work/independent-r1-sandbox-mandatory-v2-20261018-498019d4/tools/guest.cjs",
+      "originalSha256": "9eeed0e3a49d2c110c73857e5a2fafb7e41fdb4c56d54d9a7157fb74c5997251",
+      "correctedSha256": "3697548840081dd2662fce99d02fb76bb13b00019924c4786ccf7230c0416752",
+      "patch": "guest.cjs.patch",
+      "patchSha256": "d97985081965cf5bcc46dab8c52703fe33a58305cef1f10ff92bcbc5a8b98678"
+    },
+    {
+      "file": "process-monitor.ps1",
+      "original": "C:\\Users\\louis\\Documents\\Codex\\2026-09-06\\xiangxiang-development\\work/independent-r1-sandbox-mandatory-v2-20261018-498019d4/tools/process-monitor.ps1",
+      "originalSha256": "f03cf951b73ed14c807a41b44c536d02b1c6d8218d533909e1949d36cf4e418c",
+      "correctedSha256": "6594e176816617408020bd3f6338a7b7e843fd5b7229dd72bc9b1382d586c56b",
+      "patch": "process-monitor.ps1.patch",
+      "patchSha256": "aa90ee525f04fa1816eb0e850d1e441921cdfb7e70631971895cda3ce7491d6f"
+    },
+    {
+      "file": "attempt.cjs",
+      "original": "C:\\Users\\louis\\Documents\\Codex\\2026-09-06\\xiangxiang-development\\work/independent-r1-sandbox-mandatory-v2-20261018-498019d4/attempt.cjs",
+      "originalSha256": "a91cd3101a33c68cf3c99809471de3b7d6b57d09f9135cc0be7500acef2fee01",
+      "correctedSha256": "088b567cc9569ec1561e56dc1428968f122d2960b72360ae11d3c5060040dc31",
+      "patch": "attempt.cjs.patch",
+      "patchSha256": "4d6f1a76819f993642c388bd011861a29afb98110b76dbb205d8989a2468af84"
+    },
+    {
+      "file": "prepare.cjs",
+      "original": "C:\\Users\\louis\\Documents\\Codex\\2026-09-06\\xiangxiang-development\\work/independent-r1-sandbox-mandatory-v2-20261018-498019d4/prepare.cjs",
+      "originalSha256": "690769f585dc9a97bb78301501f7445ebc571e47d013040456289dd6853b7dec",
+      "correctedSha256": "e6e417045ebf96393edef4f1bc747c9aacf864302b318f77ea207daeae7525a1",
+      "patch": "prepare.cjs.patch",
+      "patchSha256": "ec2a11c3b99833a97a5cd5d3370fc8963dc4da65f148e6d47212a1d41835794f"
+    }
+  ],
+  "helper": {
+    "path": "scripts/r1/monitorDiagnostics.cjs",
+    "sha256": "3794fcbf9fc68867b9368b99e75008ee93b18b5c71f373b80471fde2c32bf032"
+  },
+  "unchanged": [
+    "terminal.ps1",
+    "WMI start/stop queries",
+    "monitor 5000 event and 180 second limits",
+    "monitor.stop shutdown",
+    "execution policy",
+    "network and mapping controls",
+    "seven tests and application source"
+  ],
+  "installation": "Apply each patch to its exact original hash, verify corrected hash, stage the helper beside guest.cjs. New run ID and new mapped input/tools/output require separate approval. Do not execute these retained V2 run-ID copies."
+}

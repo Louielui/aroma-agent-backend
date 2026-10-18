@@ -1,0 +1,31 @@
+diff --git a/process-monitor.ps1 b/process-monitor.ps1
+index 34dff60..b4adaf1 100644
+--- a/process-monitor.ps1
++++ b/process-monitor.ps1
+@@ -1,11 +1,16 @@
+-param([Parameter(Mandatory=$true)][string]$PrivateRoot)
++param([Parameter(Mandatory=$true)][string]$PrivateRoot,[Parameter(Mandatory=$true)][guid]$RunId,[Parameter(Mandatory=$true)][guid]$LaunchId)
+ $ErrorActionPreference='Stop'
+ $eventsList=[System.Collections.Generic.List[object]]::new()
+ $started=Get-Date
+ try {
+   Register-CimIndicationEvent -Namespace root/cimv2 -Query 'SELECT * FROM Win32_ProcessStartTrace' -SourceIdentifier r1-start | Out-Null
+   Register-CimIndicationEvent -Namespace root/cimv2 -Query 'SELECT * FROM Win32_ProcessStopTrace' -SourceIdentifier r1-stop | Out-Null
+-  @{pid=$PID;at=(Get-Date).ToUniversalTime().ToString('o');subscriptions=2} | ConvertTo-Json -Compress | Set-Content -LiteralPath (Join-Path $PrivateRoot 'monitor-ready.json') -Encoding UTF8
++  $self=Get-Process -Id $PID -ErrorAction Stop
++  $ready=@{schema=1;runId=$RunId.ToString();launchId=$LaunchId.ToString();pid=$PID;processStartedAt=$self.StartTime.ToUniversalTime().ToString('o');readyAt=(Get-Date).ToUniversalTime().ToString('o');scriptSha256=(Get-FileHash -LiteralPath $PSCommandPath -Algorithm SHA256).Hash.ToLowerInvariant();executableSha256=(Get-FileHash -LiteralPath $self.Path -Algorithm SHA256).Hash.ToLowerInvariant();subscriptions=2;handshake='process-trace-subscribed'}
++  $readyTmp=Join-Path $PrivateRoot 'monitor-ready.tmp'
++  [IO.File]::WriteAllText($readyTmp,($ready|ConvertTo-Json -Compress),[Text.UTF8Encoding]::new($false))
++  [IO.File]::Move($readyTmp,(Join-Path $PrivateRoot 'monitor-ready.json'))
++  [Console]::Out.WriteLine('process-trace-subscribed')
+   while (-not (Test-Path -LiteralPath (Join-Path $PrivateRoot 'monitor.stop'))) {
+     foreach ($event in @(Get-Event -ErrorAction SilentlyContinue | Where-Object SourceIdentifier -in @('r1-start','r1-stop'))) {
+       $n=$event.SourceEventArgs.NewEvent
+@@ -30,6 +35,7 @@ try {
+   }
+   @{pid=$PID;events=@($eventsList.ToArray());terminal=$true;at=(Get-Date).ToUniversalTime().ToString('o')} | ConvertTo-Json -Depth 6 -Compress | Set-Content -LiteralPath (Join-Path $PrivateRoot 'process-events.json') -Encoding UTF8
+ } catch {
++  [Console]::Error.WriteLine($_.Exception.Message)
+   @{pid=$PID;error=$_.Exception.Message;terminal=$true} | ConvertTo-Json -Compress | Set-Content -LiteralPath (Join-Path $PrivateRoot 'monitor-failure.json') -Encoding UTF8
+   exit 1
+ } finally {

@@ -1,0 +1,13 @@
+diff --git a/prepare.cjs b/prepare.cjs
+index 85a3d16..98d9ca3 100644
+--- a/prepare.cjs
++++ b/prepare.cjs
+@@ -28,7 +28,7 @@ async function main(){
+  assert.equal(hash(fs.readFileSync(E+'/tools/git/cmd/git.exe')),'22fead8244ef3a7225fb800099a4e43eca8bcec0466774917669599c2f19a05a')
+  const g=cp.spawnSync(E+'/tools/git/cmd/git.exe',['--version'],{env,encoding:'utf8',windowsHide:true});save('packaged-git-control.json',{argv:['--version'],exit:g.status,stdout:g.stdout,stderr:g.stderr});assert.equal(g.status,0)
+  fs.cpSync(python.root,E+'/tools/python',{recursive:true,errorOnExist:true,force:false});for(const w of wheels){fs.mkdirSync(E+'/tools/wheels',{recursive:true});fs.copyFileSync(D+'/python-artifacts/wheels/'+w.filename,E+'/tools/wheels/'+w.filename)}
+- for(const n of ['guest.cjs','process-monitor.ps1','terminal.ps1'])fs.copyFileSync(E+'/'+n,E+'/tools/'+n)
++ for(const n of ['guest.cjs','process-monitor.ps1','terminal.ps1','monitorDiagnostics.cjs'])fs.copyFileSync(E+'/'+n,E+'/tools/'+n)
+  fs.writeFileSync(E+'/tools/readonly-canary.txt','synthetic tools mapping '+runId,{flag:'wx'})
+  const m={runId,commit:id.commit,tree:id.tree,source:copied,tools:C.inventory(E+'/tools'),pythonFiles:python.files,wheels,pythonExeSha256:'b847bb9f4e48c19f585c8bf7d8b355f3f8c6d2125717ece9c9d7e16fb9f09de8',history:read(D+'/historical-object-availability.json').checks,tests:matrix.tests.map(x=>({name:x.name,source:x.source})),hostAddress:null,hostPort:null}
+  save('prepared.json',{runId,candidate:id,manifestBase:m,authoritySnapshot:current,pythonBundleManifestSha256:hash(fs.readFileSync(D+'/python-artifacts/bundle-manifest.json')),previousAttemptVerified:true,preparationOnly:true,vmStarted:false})
