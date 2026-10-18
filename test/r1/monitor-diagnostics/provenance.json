@@ -10,9 +10,9 @@
       "file": "guest.cjs",
       "original": "C:\\Users\\louis\\Documents\\Codex\\2026-09-06\\xiangxiang-development\\work/independent-r1-sandbox-mandatory-v2-20261018-498019d4/tools/guest.cjs",
       "originalSha256": "9eeed0e3a49d2c110c73857e5a2fafb7e41fdb4c56d54d9a7157fb74c5997251",
-      "correctedSha256": "3697548840081dd2662fce99d02fb76bb13b00019924c4786ccf7230c0416752",
+      "correctedSha256": "4abafb2a99f047118f0d55eb9d11865ea9c29bf82d71f49fe607f2d809f6acd5",
       "patch": "guest.cjs.patch",
-      "patchSha256": "d97985081965cf5bcc46dab8c52703fe33a58305cef1f10ff92bcbc5a8b98678"
+      "patchSha256": "bdfed2d0202e2b176f71503c44ff7c89c4b63071376fcc3ad970b5755bf1587a"
     },
     {
       "file": "process-monitor.ps1",
@@ -26,9 +26,9 @@
       "file": "attempt.cjs",
       "original": "C:\\Users\\louis\\Documents\\Codex\\2026-09-06\\xiangxiang-development\\work/independent-r1-sandbox-mandatory-v2-20261018-498019d4/attempt.cjs",
       "originalSha256": "a91cd3101a33c68cf3c99809471de3b7d6b57d09f9135cc0be7500acef2fee01",
-      "correctedSha256": "304b89050307766d0cdb4bfb1bd307d983928ec682f3c9d80ff8c84d276858a8",
+      "correctedSha256": "37d5a5697d202ff3092a62331f572686ac5f2ba7315bfc91619e4d43206b867a",
       "patch": "attempt.cjs.patch",
-      "patchSha256": "d937a349432d9e2fac89cb1c23d117e705a580321020684377aa86fe3c8ed909"
+      "patchSha256": "3aabb243c7e2ff2171cf9ee15c282817bab78f563f4ea21fdcbd4b48614291d0"
     },
     {
       "file": "prepare.cjs",
@@ -48,9 +48,16 @@
     "WMI start/stop queries",
     "monitor 5000 event and 180 second limits",
     "monitor.stop shutdown",
-    "execution policy",
     "network and mapping controls",
     "seven tests and application source"
   ],
-  "installation": "Apply each patch to its exact original hash, verify corrected hash, stage the helper beside guest.cjs. New run ID and new mapped input/tools/output require separate approval. Do not execute these retained V2 run-ID copies."
+  "installation": "Apply each patch to its exact original hash, verify corrected hash, stage the helper beside guest.cjs. New run ID and new mapped input/tools/output require separate approval. Do not execute these retained V2 run-ID copies.",
+  "monitorLaunchPolicy": {
+    "scope": "Guest process only",
+    "policy": "RemoteSigned",
+    "noFallback": true,
+    "observation": "monitor-policy-observation.json",
+    "unobservedGuestMappingOrigin": "UNKNOWN until separately authorized Guest observation; native signature/origin enforcement retained",
+    "hostAndPersistentPolicyUnchanged": true
+  }
 }
