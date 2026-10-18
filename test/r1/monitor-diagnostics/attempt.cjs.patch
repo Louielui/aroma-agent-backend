@@ -1,5 +1,5 @@
 diff --git a/attempt.cjs b/attempt.cjs
-index 431094e..c63cbe5 100644
+index 431094e..a5dbe89 100644
 --- a/attempt.cjs
 +++ b/attempt.cjs
 @@ -9,7 +9,7 @@ function regular(file,max=3000000){const s=fs.lstatSync(file);if(!s.isFile()||s.
@@ -18,7 +18,7 @@ index 431094e..c63cbe5 100644
 - for(const n of ['guest.cjs','process-monitor.ps1','terminal.ps1'])assert.equal(hash(fs.readFileSync(E+'/'+n)),hash(fs.readFileSync(E+'/tools/'+n)))
 - for(const n of ['guest.cjs']){const r=await command(process.execPath,['--check',E+'/tools/'+n],'driver-syntax');if(r.exit!==0)throw Error('driver_syntax')}
 + for(const n of ['guest.cjs','process-monitor.ps1','terminal.ps1','monitorDiagnostics.cjs'])assert.equal(hash(fs.readFileSync(E+'/'+n)),hash(fs.readFileSync(E+'/tools/'+n)))
-+ for(const n of ['guest.cjs','monitorDiagnostics.cjs']){const r=await command(process.execPath,['--check',E+'/tools/'+n],'driver-syntax');if(r.exit!==0)throw Error('driver_syntax')}
++ for(const [n,label] of [['guest.cjs','driver-syntax-guest'],['monitorDiagnostics.cjs','driver-syntax-monitor']]){const r=await command(process.execPath,['--check',E+'/tools/'+n],label);if(r.exit!==0)throw Error('driver_syntax')}
   const syntax=await command(ps,['-NoProfile','-NonInteractive','-Command',"$ErrorActionPreference='Stop';foreach($p in @('"+(E+'/tools/process-monitor.ps1').replaceAll("'","''")+"','"+(E+'/tools/terminal.ps1').replaceAll("'","''")+"')){$t=$null;$e=$null;[System.Management.Automation.Language.Parser]::ParseFile($p,[ref]$t,[ref]$e)|Out-Null;if($e.Count){throw ($e|Out-String)}};'PARSE_OK'"],'powershell-syntax');if(syntax.exit!==0)throw Error('powershell_driver_syntax')
   const readiness=await command(ps,['-NoProfile','-NonInteractive','-Command',"$f=Get-CimInstance Win32_OptionalFeature|Where-Object Name -eq 'Containers-DisposableClientVM';$c=Get-CimInstance Win32_ComputerSystem;[PSCustomObject]@{featureInstalled=($f.InstallState -eq 1);hypervisorPresent=$c.HypervisorPresent}|ConvertTo-Json -Compress"],'sandbox-readiness');const ready=parse(readiness.stdout);if(readiness.exit!==0||!ready.featureInstalled||!ready.hypervisorPresent)throw Error('sandbox_unavailable')
   const address=Object.values(os.networkInterfaces()).flat().find(x=>!x.internal&&x.family==='IPv4')?.address;if(!address)throw Error('host_canary_address_missing')

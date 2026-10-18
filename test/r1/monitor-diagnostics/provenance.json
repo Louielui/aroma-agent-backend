@@ -26,9 +26,9 @@
       "file": "attempt.cjs",
       "original": "C:\\Users\\louis\\Documents\\Codex\\2026-09-06\\xiangxiang-development\\work/independent-r1-sandbox-mandatory-v2-20261018-498019d4/attempt.cjs",
       "originalSha256": "a91cd3101a33c68cf3c99809471de3b7d6b57d09f9135cc0be7500acef2fee01",
-      "correctedSha256": "088b567cc9569ec1561e56dc1428968f122d2960b72360ae11d3c5060040dc31",
+      "correctedSha256": "304b89050307766d0cdb4bfb1bd307d983928ec682f3c9d80ff8c84d276858a8",
       "patch": "attempt.cjs.patch",
-      "patchSha256": "4d6f1a76819f993642c388bd011861a29afb98110b76dbb205d8989a2468af84"
+      "patchSha256": "d937a349432d9e2fac89cb1c23d117e705a580321020684377aa86fe3c8ed909"
     },
     {
       "file": "prepare.cjs",
