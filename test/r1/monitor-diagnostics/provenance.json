@@ -18,9 +18,9 @@
       "file": "process-monitor.ps1",
       "original": "C:\\Users\\louis\\Documents\\Codex\\2026-09-06\\xiangxiang-development\\work/independent-r1-sandbox-mandatory-v2-20261018-498019d4/tools/process-monitor.ps1",
       "originalSha256": "f03cf951b73ed14c807a41b44c536d02b1c6d8218d533909e1949d36cf4e418c",
-      "correctedSha256": "7d281299d22ad7726e85831af350157252aa6637b92fa67fc9f041d64b8758b2",
+      "correctedSha256": "b18cc1c410133a0afa923886020f8217c915782544b3491418d26957b852af40",
       "patch": "process-monitor.ps1.patch",
-      "patchSha256": "0d0acb3d3df61cc254b7e54d229ab1a171273d981352875e5481a01ac59ea084"
+      "patchSha256": "8e422ccf99a8192064c324301dd5960a47d0844530ce77715565ee16d3ed6ede"
     },
     {
       "file": "attempt.cjs",
@@ -71,5 +71,12 @@
     "jobs": "no Action/Start-Job/workflow; no Get-Job or Remove-Job",
     "failure": "aggregate genuine owned-resource cleanup failures and throw; nonzero exit retained",
     "runtimeVerification": "not established by offline fragment tests"
+  },
+  "monitorEventLifecycle": {
+    "trace": "Unsubscribe owned sources, record/remove remaining owned events, verify queue, then exclusively persist complete trace; any earlier failure prohibits successful sealing",
+    "failureReceipt": "Existing monitor-failure.json; original pid/error/terminal plus phase/callSite/eventId/sourceIdentifier/recordAppended/removeAcknowledged/priorRecordAppended/priorRemoveAcknowledged/traceIntegrity and optional cleanupErrors",
+    "acknowledgements": "true only after observed operation return; unobserved stays null; no retry or missing-event suppression",
+    "history": "Bounded in-memory per-event observed acknowledgements only; never execution authority or durable-completion proof",
+    "nativeCIMTiming": "UNKNOWN until separately authorized VM verification"
   }
 }

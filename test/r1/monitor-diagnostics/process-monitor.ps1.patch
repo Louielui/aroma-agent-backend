@@ -1,20 +1,77 @@
 diff --git a/process-monitor.ps1 b/process-monitor.ps1
+index 34dff60..d14077c 100644
 --- a/process-monitor.ps1
 +++ b/process-monitor.ps1
-@@ -1,11 +1,20 @@
+@@ -1,19 +1,85 @@
 -param([Parameter(Mandatory=$true)][string]$PrivateRoot)
 +param([Parameter(Mandatory=$true)][string]$PrivateRoot,[Parameter(Mandatory=$true)][guid]$RunId,[Parameter(Mandatory=$true)][guid]$LaunchId)
  $ErrorActionPreference='Stop'
  $eventsList=[System.Collections.Generic.List[object]]::new()
 +$ownedSources=[System.Collections.Generic.List[string]]::new()
  $started=Get-Date
++$monitorFailure=$null
++$eventHistory=@{}
++$failedRemovals=[System.Collections.Generic.HashSet[string]]::new()
++$operation=@{phase='OTHER';callSite='initialization';eventId=$null;sourceIdentifier=$null;recordAppended=$null;removeAcknowledged=$null;priorRecordAppended=$null;priorRemoveAcknowledged=$null}
++function Set-MonitorOperation([string]$Phase,[string]$CallSite,$EventId=$null,$SourceIdentifier=$null) {
++  $script:operation=@{phase=$Phase;callSite=$CallSite;eventId=$EventId;sourceIdentifier=$SourceIdentifier;recordAppended=$null;removeAcknowledged=$null;priorRecordAppended=$null;priorRemoveAcknowledged=$null}
++}
++function Save-MonitorFailure($ErrorValue) {
++  if($null-eq $script:monitorFailure) {
++    $message=if($ErrorValue-is [System.Management.Automation.ErrorRecord]){$ErrorValue.Exception.Message}else{[string]$ErrorValue}
++    $script:monitorFailure=@{pid=$PID;error=$message;terminal=$true;traceIntegrity='NOT_ESTABLISHED'}
++    foreach($key in $script:operation.Keys){$script:monitorFailure[$key]=$script:operation[$key]}
++  }
++}
++function Write-MonitorReceipt([string]$Name,$Value) {
++  $bytes=[Text.UTF8Encoding]::new($false).GetBytes(($Value|ConvertTo-Json -Depth 6 -Compress))
++  if($bytes.Length-gt 3000000){throw 'monitor_receipt_size_exceeded'}
++  $tmp=Join-Path $PrivateRoot ($Name+'.tmp')
++  $stream=[IO.File]::Open($tmp,[IO.FileMode]::CreateNew,[IO.FileAccess]::Write,[IO.FileShare]::None)
++  try {$stream.Write($bytes,0,$bytes.Length);$stream.Flush($true)} finally {$stream.Dispose()}
++  [IO.File]::Move($tmp,(Join-Path $PrivateRoot $Name))
++}
++function Collect-MonitorEvent($QueuedEvent,[string]$Phase) {
++  $site=if($Phase-eq 'POLLING'){'polling'}elseif($Phase-eq 'POST_STOP_DRAIN'){'post_stop_drain'}else{'finally_cleanup'}
++  Set-MonitorOperation $Phase ($site+'.read_event_identity')
++  $id=[int]$QueuedEvent.EventIdentifier;$source=[string]$QueuedEvent.SourceIdentifier
++  $script:operation.eventId=$id;$script:operation.sourceIdentifier=$source
++  if($id-le 0-or -not $ownedSources.Contains($source)){throw 'monitor_event_not_owned'}
++  $script:operation.callSite=$site+'.read_payload'
++  $n=$QueuedEvent.SourceEventArgs.NewEvent
++  if($null-eq $n){throw 'monitor_event_payload_missing'}
++  $key=$source+':'+$id+':'+[string]$n.TIME_CREATED
++  if($eventHistory.ContainsKey($key)) {
++    $script:operation.priorRecordAppended=$eventHistory[$key].recordAppended
++    $script:operation.priorRemoveAcknowledged=$eventHistory[$key].removeAcknowledged
++  }
++  $script:operation.callSite=$site+'.append_trace'
++  if($eventsList.Count-ge 5000){throw 'process_trace_bound_exceeded'}
++  if(((Get-Date)-$started).TotalSeconds-gt 180){throw 'process_trace_window_expired'}
++  $eventsList.Add(@{kind=$source;pid=[int]$n.ProcessID;parent=if($source-eq 'r1-start'){[int]$n.ParentProcessID}else{$null};name=[string]$n.ProcessName;exit=if($source-eq 'r1-stop'){[uint32]$n.ExitStatus}else{$null};traceTime=[string]$n.TIME_CREATED;observedAt=(Get-Date).ToUniversalTime().ToString('o')})
++  $script:operation.recordAppended=$true
++  if(-not $eventHistory.ContainsKey($key)){$eventHistory[$key]=@{recordAppended=$null;removeAcknowledged=$null}}
++  $eventHistory[$key].recordAppended=$true
++  $script:operation.callSite=$site+'.remove_event'
++  if($failedRemovals.Contains($source+':'+$id)){throw 'monitor_event_removal_already_failed'}
++  try {Remove-Event -EventIdentifier $id -ErrorAction Stop}
++  catch {[void]$failedRemovals.Add($source+':'+$id);throw}
++  $script:operation.removeAcknowledged=$true
++  $eventHistory[$key].removeAcknowledged=$true
++}
++# Source fragments below are exercised with injected cmdlets in offline tests.
++try {
  try {
++  Set-MonitorOperation 'OTHER' 'registration.inspect_queue'
 +  if(@(Get-Event -ErrorAction Stop | Where-Object SourceIdentifier -in @('r1-start','r1-stop')).Count){throw 'monitor_source_event_preexisting'}
++  Set-MonitorOperation 'OTHER' 'registration.r1-start' $null 'r1-start'
    Register-CimIndicationEvent -Namespace root/cimv2 -Query 'SELECT * FROM Win32_ProcessStartTrace' -SourceIdentifier r1-start | Out-Null
 +  $ownedSources.Add('r1-start')
++  Set-MonitorOperation 'OTHER' 'registration.r1-stop' $null 'r1-stop'
    Register-CimIndicationEvent -Namespace root/cimv2 -Query 'SELECT * FROM Win32_ProcessStopTrace' -SourceIdentifier r1-stop | Out-Null
 -  @{pid=$PID;at=(Get-Date).ToUniversalTime().ToString('o');subscriptions=2} | ConvertTo-Json -Compress | Set-Content -LiteralPath (Join-Path $PrivateRoot 'monitor-ready.json') -Encoding UTF8
 +  $ownedSources.Add('r1-stop')
++  Set-MonitorOperation 'OTHER' 'UNKNOWN'
 +  $self=Get-Process -Id $PID -ErrorAction Stop
 +  $ready=@{schema=1;runId=$RunId.ToString();launchId=$LaunchId.ToString();pid=$PID;processStartedAt=$self.StartTime.ToUniversalTime().ToString('o');readyAt=(Get-Date).ToUniversalTime().ToString('o');scriptSha256=(Get-FileHash -LiteralPath $PSCommandPath -Algorithm SHA256).Hash.ToLowerInvariant();executableSha256=(Get-FileHash -LiteralPath $self.Path -Algorithm SHA256).Hash.ToLowerInvariant();subscriptions=2;handshake='process-trace-subscribed'}
 +  $readyTmp=Join-Path $PrivateRoot 'monitor-ready.tmp'
@@ -22,32 +79,87 @@ diff --git a/process-monitor.ps1 b/process-monitor.ps1
 +  [IO.File]::Move($readyTmp,(Join-Path $PrivateRoot 'monitor-ready.json'))
 +  [Console]::Out.WriteLine('process-trace-subscribed')
    while (-not (Test-Path -LiteralPath (Join-Path $PrivateRoot 'monitor.stop'))) {
-     foreach ($event in @(Get-Event -ErrorAction SilentlyContinue | Where-Object SourceIdentifier -in @('r1-start','r1-stop'))) {
-       $n=$event.SourceEventArgs.NewEvent
-@@ -30,10 +39,23 @@ try {
+-    foreach ($event in @(Get-Event -ErrorAction SilentlyContinue | Where-Object SourceIdentifier -in @('r1-start','r1-stop'))) {
+-      $n=$event.SourceEventArgs.NewEvent
+-      $eventsList.Add(@{kind=$event.SourceIdentifier;pid=[int]$n.ProcessID;parent=if($event.SourceIdentifier -eq 'r1-start'){[int]$n.ParentProcessID}else{$null};name=[string]$n.ProcessName;exit=if($event.SourceIdentifier -eq 'r1-stop'){[uint32]$n.ExitStatus}else{$null};traceTime=[string]$n.TIME_CREATED;observedAt=(Get-Date).ToUniversalTime().ToString('o')})
+-      Remove-Event -EventIdentifier $event.EventIdentifier
++    Set-MonitorOperation 'POLLING' 'polling.get_event'
++    foreach ($event in @(Get-Event -ErrorAction Stop | Where-Object SourceIdentifier -in @('r1-start','r1-stop'))) {
++      Collect-MonitorEvent $event 'POLLING'
+     }
++    Set-MonitorOperation 'POLLING' 'polling.bounds'
+     if ($eventsList.Count -gt 5000) {throw 'process_trace_bound_exceeded'}
+     if (((Get-Date)-$started).TotalSeconds -gt 180) {throw 'process_trace_window_expired'}
++    Set-MonitorOperation 'POLLING' 'UNKNOWN'
+     if((Test-Path -LiteralPath (Join-Path $PrivateRoot 'monitor.check')) -and -not (Test-Path -LiteralPath (Join-Path $PrivateRoot 'monitor-checkpoint.json'))) {
+       $positivePid=[int](Get-Content -LiteralPath (Join-Path $PrivateRoot 'monitor.check') -Raw)
+       if(@($eventsList | Where-Object {$_.pid -eq $positivePid -and $_.kind -eq 'r1-start'}).Count -gt 0 -and @($eventsList | Where-Object {$_.pid -eq $positivePid -and $_.kind -eq 'r1-stop'}).Count -gt 0){
+@@ -22,18 +88,58 @@ try {
+     }
+     Start-Sleep -Milliseconds 50
    }
-   @{pid=$PID;events=@($eventsList.ToArray());terminal=$true;at=(Get-Date).ToUniversalTime().ToString('o')} | ConvertTo-Json -Depth 6 -Compress | Set-Content -LiteralPath (Join-Path $PrivateRoot 'process-events.json') -Encoding UTF8
++  Set-MonitorOperation 'POST_STOP_DRAIN' 'UNKNOWN'
+   Start-Sleep -Milliseconds 200
+-  foreach ($event in @(Get-Event -ErrorAction SilentlyContinue | Where-Object SourceIdentifier -in @('r1-start','r1-stop'))) {
+-    $n=$event.SourceEventArgs.NewEvent
+-    $eventsList.Add(@{kind=$event.SourceIdentifier;pid=[int]$n.ProcessID;parent=if($event.SourceIdentifier -eq 'r1-start'){[int]$n.ParentProcessID}else{$null};name=[string]$n.ProcessName;exit=if($event.SourceIdentifier -eq 'r1-stop'){[uint32]$n.ExitStatus}else{$null};traceTime=[string]$n.TIME_CREATED;observedAt=(Get-Date).ToUniversalTime().ToString('o')})
+-    Remove-Event -EventIdentifier $event.EventIdentifier
++  Set-MonitorOperation 'POST_STOP_DRAIN' 'post_stop_drain.get_event'
++  foreach ($event in @(Get-Event -ErrorAction Stop | Where-Object SourceIdentifier -in @('r1-start','r1-stop'))) {
++    Collect-MonitorEvent $event 'POST_STOP_DRAIN'
+   }
+-  @{pid=$PID;events=@($eventsList.ToArray());terminal=$true;at=(Get-Date).ToUniversalTime().ToString('o')} | ConvertTo-Json -Depth 6 -Compress | Set-Content -LiteralPath (Join-Path $PrivateRoot 'process-events.json') -Encoding UTF8
  } catch {
-+  [Console]::Error.WriteLine($_.Exception.Message)
-   @{pid=$PID;error=$_.Exception.Message;terminal=$true} | ConvertTo-Json -Compress | Set-Content -LiteralPath (Join-Path $PrivateRoot 'monitor-failure.json') -Encoding UTF8
-   exit 1
+-  @{pid=$PID;error=$_.Exception.Message;terminal=$true} | ConvertTo-Json -Compress | Set-Content -LiteralPath (Join-Path $PrivateRoot 'monitor-failure.json') -Encoding UTF8
+-  exit 1
++  Save-MonitorFailure $_
  } finally {
 -  Unregister-Event -SourceIdentifier r1-start -ErrorAction SilentlyContinue
 -  Unregister-Event -SourceIdentifier r1-stop -ErrorAction SilentlyContinue
 -  Get-Job | Remove-Job -ErrorAction SilentlyContinue
 +  $cleanupFailures=[System.Collections.Generic.List[string]]::new()
++  $cleanupContext=$null
 +  foreach($source in $ownedSources) {
++    Set-MonitorOperation 'FINALLY_CLEANUP' 'finally_cleanup.unregister_event' $null $source
 +    try {Unregister-Event -SourceIdentifier $source -ErrorAction Stop}
-+    catch {$cleanupFailures.Add('unsubscribe:'+ $source +':'+ $_.Exception.Message)}
++    catch {if($null-eq $cleanupContext){$cleanupContext=$operation.Clone()};$cleanupFailures.Add('unsubscribe:'+ $source +':'+ $_.Exception.Message)}
 +  }
-+  if($ownedSources.Count -gt 0) {
++  if($ownedSources.Count-gt 0) {
 +    $queuedEvents=@()
++    Set-MonitorOperation 'FINALLY_CLEANUP' 'finally_cleanup.get_event'
 +    try {$queuedEvents=@(Get-Event -ErrorAction Stop | Where-Object {$ownedSources.Contains($_.SourceIdentifier)})}
-+    catch {$cleanupFailures.Add('event_queue:'+ $_.Exception.Message)}
++    catch {if($null-eq $cleanupContext){$cleanupContext=$operation.Clone()};$cleanupFailures.Add('event_queue:'+ $_.Exception.Message)}
 +    foreach($event in $queuedEvents) {
-+      try {Remove-Event -EventIdentifier $event.EventIdentifier -ErrorAction Stop}
-+      catch {$cleanupFailures.Add('remove_event:'+ $event.EventIdentifier +':'+ $_.Exception.Message)}
++      try {
++        if($null-ne $monitorFailure) {
++          Set-MonitorOperation 'FINALLY_CLEANUP' 'finally_cleanup.remove_event' ([int]$event.EventIdentifier) ([string]$event.SourceIdentifier)
++          if($failedRemovals.Contains(([string]$event.SourceIdentifier)+':'+[int]$event.EventIdentifier)){throw 'monitor_event_removal_already_failed'}
++          Remove-Event -EventIdentifier $event.EventIdentifier -ErrorAction Stop
++          $script:operation.removeAcknowledged=$true
++        } else {Collect-MonitorEvent $event 'FINALLY_CLEANUP'}
++      }
++      catch {if($null-eq $cleanupContext){$cleanupContext=$operation.Clone()};$cleanupFailures.Add('process_event:'+ $event.EventIdentifier +':'+ $_.Exception.Message)}
 +    }
++    Set-MonitorOperation 'FINALLY_CLEANUP' 'finally_cleanup.verify_queue'
++    try {if(@(Get-Event -ErrorAction Stop | Where-Object {$ownedSources.Contains($_.SourceIdentifier)}).Count){throw 'monitor_owned_events_unaccounted'}}
++    catch {if($null-eq $cleanupContext){$cleanupContext=$operation.Clone()};$cleanupFailures.Add('queue_verification:'+ $_.Exception.Message)}
 +  }
-+  if($cleanupFailures.Count -gt 0){throw ('monitor_cleanup_failed:'+ ($cleanupFailures -join '; '))}
++  if($cleanupFailures.Count-gt 0) {
++    if($null-eq $monitorFailure){$script:operation=$cleanupContext;Save-MonitorFailure ('monitor_cleanup_failed:'+ ($cleanupFailures -join '; '))}
++    $monitorFailure.cleanupErrors=@($cleanupFailures.ToArray())
++  }
++  if($null-eq $monitorFailure) {
++    Set-MonitorOperation 'OTHER' 'trace.persist'
++    try {Write-MonitorReceipt 'process-events.json' @{pid=$PID;events=@($eventsList.ToArray());terminal=$true;at=(Get-Date).ToUniversalTime().ToString('o')}}
++    catch {Save-MonitorFailure $_}
++  }
++  if($null-ne $monitorFailure) {
++    Write-MonitorReceipt 'monitor-failure.json' $monitorFailure
++    throw $monitorFailure.error
++  }
++}
++} catch {
++  if($null-ne $monitorFailure){[Console]::Error.WriteLine($monitorFailure.error)}
++  if($null-eq $monitorFailure-or $_.Exception.Message-ne $monitorFailure.error){[Console]::Error.WriteLine($_.Exception.Message)}
++  exit 1
  }
