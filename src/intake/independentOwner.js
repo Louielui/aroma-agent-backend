@@ -95,7 +95,7 @@ function createIndependentOwner(options = {}) {
       if (!s.isFile() || s.isSymbolicLink() || s.nlink !== 1) throw Error('independent_storage_corrupt')
       const c = originalConversations.get(name.slice(0, -5))
       if (!c || c.id !== name.slice(0, -5)) throw Error('independent_storage_corrupt')
-      out.push({ id: c.id, title: c.title || require('../i18n/t').t('store.newConversation'), createdAt: c.createdAt || null, updatedAt: c.updatedAt || c.createdAt || null, messageCount: c.messages.length })
+      out.push({ id: c.id, title: c.title || sharedConversations.titleFrom(''), createdAt: c.createdAt || null, updatedAt: c.updatedAt || c.createdAt || null, messageCount: c.messages.length })
     }
     return out.sort((a, b) => String(b.updatedAt || '').localeCompare(String(a.updatedAt || '')))
   } }
