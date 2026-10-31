@@ -41,6 +41,32 @@ function shouldReviewPath (name) {
   if(/^docs\//.test(name)&&/\.md$/.test(name)&&!['docs/HOUSE-RULES.md','docs/AUTONOMOUS-REPOSITORY-PROMOTION.md'].includes(name))return false
   return true
 }
+// A transport's already-existing method is not a newly introduced write merely
+// because its deadline changed on the same source line. Admit only a literal
+// method/redirect line, a side-effect-free request.op deadline expression, and
+// unchanged adjacent target + headers/body context. All other cases stay strict.
+function deadlineLine(line){
+  const match=line.match(/^(\s*method:\s*['"](?:POST|PUT|PATCH|DELETE)['"],\s*redirect:\s*['"]error['"],\s*signal:\s*AbortSignal\.timeout\()(.+)(\),?\s*)$/)
+  if(!match)return null
+  const expression=match[2].replace(/'[^'\\]*'|"[^"\\]*"/g,'').replace(/\brequest\.op\b|\.includes\b/g,'')
+  if(/[^\s\d\[\](),?:=!<>]/.test(expression)||/(^|[^=!<>])=([^=]|$)/.test(expression))return null
+  return match[1]+'<pure-deadline>'+match[3]
+}
+function contentRiskText(pieces){
+  const added=[],adjustments=[]
+  for(const piece of pieces){const lines=piece.split('\n')
+    for(let i=0;i<lines.length;i++)if(lines[i].startsWith('+')&&!lines[i].startsWith('+++')){
+      let value=lines[i].slice(1),previous=lines[i-1],before=lines[i-2],after=lines[i+1]
+      const normalized=deadlineLine(value)
+      if(normalized&&previous?.startsWith('-')&&!previous.startsWith('---')&&deadlineLine(previous.slice(1))===normalized&&before?.startsWith(' ')&&/,\s*\{\s*$/.test(before)&&after?.startsWith(' ')&&/\bheaders\s*:/.test(after)&&/\bbody\s*:/.test(after)){
+        value=value.replace(/\bmethod:\s*['"](?:POST|PUT|PATCH|DELETE)['"]/,'previously_reviewed_transport_method')
+        adjustments.push({file:diffPath(piece),reason:'identical_transport_pure_deadline_change'})
+      }
+      added.push(value)
+    }
+  }
+  return{addedText:added.join('\n'),adjustments}
+}
 function reviewPacket ({root,commit,base,tests,maxBytes=700000}) {
   const raw=command(root,['diff','--binary','--no-ext-diff',base,commit],{buffer:true}).toString('utf8')
   const changed=command(root,['diff','--name-only','-z',base,commit],{buffer:true}).toString('utf8').split('\0').filter(Boolean)
@@ -54,7 +80,7 @@ function reviewPacket ({root,commit,base,tests,maxBytes=700000}) {
   // the Owner's security exception and independent executable-code review.
   const repositoryProtocolPaths=['src/repositoryPromotion/github.js','src/repositoryPromotion/runtime.js']
   const contentPieces=code.filter(part=>!repositoryProtocolPaths.includes(diffPath(part))&&!/^docs\//.test(diffPath(part)||''))
-  const addedText=contentPieces.flatMap(part=>part.split('\n').filter(line=>line.startsWith('+')&&!line.startsWith('+++')).map(line=>line.slice(1))).join('\n')
+  const {addedText,adjustments:contentAdjustments}=contentRiskText(contentPieces)
   const baseTree=command(root,['rev-parse',base+'^{tree}']),tree=command(root,['rev-parse',commit+'^{tree}'])
   const batches=[];let current=[]
   for(const piece of code){
@@ -64,7 +90,7 @@ function reviewPacket ({root,commit,base,tests,maxBytes=700000}) {
   }
   if(current.length||!batches.length)batches.push(current.join('\n'))
   if(batches.length>8)throw Error('review_scope_too_large')
-  return {commit,tree,base,baseTree,reviewedDiffHash:digest(raw),changedPaths:changed,addedText,contentGateHash:digest(addedText),repositoryProtocolPaths,scope:'all executable changes relative to the preserved running-source checkpoint; tests and documentation inventoried, not silently called reviewed',tests:{exitCode:tests.exitCode,total:tests.total,passed:tests.passed,failed:tests.failed,skipped:tests.skipped,logHash:tests.logHash},batches}
+  return {commit,tree,base,baseTree,reviewedDiffHash:digest(raw),changedPaths:changed,addedText,contentAdjustments,contentGateHash:digest(addedText),repositoryProtocolPaths,scope:'all executable changes relative to the preserved running-source checkpoint; tests and documentation inventoried, not silently called reviewed',tests:{exitCode:tests.exitCode,total:tests.total,passed:tests.passed,failed:tests.failed,skipped:tests.skipped,logHash:tests.logHash},batches}
 }
 function readReview (envelope,packet) {
   if(envelope?.type!=='result'||envelope.subtype!=='success'||envelope.is_error===true||typeof envelope.result!=='string')throw Error('review_unavailable')
@@ -102,4 +128,4 @@ async function runReview ({packet,directory,cwd,provider=require('../core/worker
   fs.writeFileSync(path.join(directory,'review.json'),JSON.stringify(result,null,2)+'\n')
   return result
 }
-module.exports={AUTHORIZED_SKIP_NAMES,parseTests,cleanTestEnv,runTests,diffPath,shouldReviewPath,reviewPacket,readReview,runReview}
+module.exports={AUTHORIZED_SKIP_NAMES,parseTests,cleanTestEnv,runTests,diffPath,shouldReviewPath,contentRiskText,reviewPacket,readReview,runReview}

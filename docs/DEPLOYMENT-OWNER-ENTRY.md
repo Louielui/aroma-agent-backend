@@ -98,6 +98,16 @@ queue indexing and model deadlines remain unchanged. A safe `memory_backup_timeo
 reason is retained across the bridge/scheduler. Audit validation, destination
 refusal, credential exclusion and full isolated table/file comparison are unchanged.
 
+The first reviewed control commit still failed inspect because changing the
+deadline on an existing POST line was classified as a new business write. The
+subsequent content-risk fix recognizes only an identical literal method/redirect,
+pure request.op deadline expression, and unchanged adjacent destination plus
+headers/body context. It masks only the already-reviewed method in risk text;
+the complete source diff remains in independent review. New methods, destinations,
+payloads, new transports and side-effectful expressions keep the write gate.
+There is no new path allowlist or inferred business-write exception. The earlier
+run and its failed classification remain unchanged historical evidence.
+
 The fixed candidate worker completed a new successful backup and isolated restore
 with 682 required files. The maintenance job uses a new receipt directory. The
 existing production scheduler's failed history and the running source are not
