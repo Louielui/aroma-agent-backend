@@ -115,9 +115,9 @@ function createCoordinator ({root,runtimeRoot,artifacts,privateRefs=[],invocatio
         if(repository.git(['rev-parse',result.commit+'^{tree}'])!==row.evidence.tree)throw Error('merged_tree_mismatch')
         return result
       },
-      deploy:row=>{authorize('deploy');return runtime.deploy(row)},
+      deploy:row=>{authorize('deploy');return runtime.deploy(row,{guard:()=>authority?.assertForward(material)})},
       verify:async row=>{
-        const verified=await runtime.verify(row)
+        const verified=await runtime.verify(row,{guard:()=>authority?.assertForward(material)})
         if(verified.verified){
           const final={...row.evidence,pr:{...row.evidence.pr,state:'merged',mergeCommit:row.merge.commit},runtime:{...verified,state:'verified'}}
           verified.verified=complete(final).complete;row.completionEvidence=final
@@ -128,26 +128,29 @@ function createCoordinator ({root,runtimeRoot,artifacts,privateRefs=[],invocatio
       recheckPending:async row=>repository.runtimeGit(['rev-parse','HEAD'])===row.runtimeSnapshot.head&&await github.main()===row.merge.commit&&(await runtime.health()).bootCommit===row.preflight.runtimeExpected,
       restartPending:async row=>{
         if((await runtime.idle()).state!=='idle_verified')return{state:'idle_required',applied:false}
-        return runtime.restart(row.merge.commit)
+        return runtime.restart(row.merge.commit,{guard:()=>authority?.assertForward(material)})
       },
       rollback:async row=>{
         if(authority){authority.assertRecovery(material);authority.note('rollback')}
+        const guard=()=>authority?.assertRecovery(material)
         if(await github.main()!==row.merge.commit)throw Error('rollback_ref_drift')
         const before=row.runtimeSnapshot.head,tree=repository.git(['rev-parse',before+'^{tree}'])
+        guard()
         const commit=repository.git(['commit-tree',tree,'-p',row.merge.commit,'-m','Restore verified pre-promotion source after failed runtime verification'])
         const branch='rollback/promotion-'+row.id
-        repository.git(['update-ref','refs/heads/'+branch,commit]);repository.git(['push','origin',commit+':refs/heads/'+branch])
+        guard();repository.git(['update-ref','refs/heads/'+branch,commit]);guard();repository.git(['push','origin',commit+':refs/heads/'+branch])
+        guard()
         const pr=await github.pullRequest({branch,head:commit,title:'Rollback failed Imagine promotion '+row.id,body:`Restore the exact pre-promotion tree \`${tree}\` from \`${before}\` using a forward commit. Failure evidence is retained. No database, credential or unrelated business state is restored.`})
-        const result=await github.rollbackMerge({pr:pr.number,head:commit,base:row.merge.commit,source:before,tree,failure:row.failure,runId:row.id})
+        const result=await github.rollbackMerge({pr:pr.number,head:commit,base:row.merge.commit,source:before,tree,failure:row.failure,runId:row.id,guard})
         repository.git(['fetch','--no-tags','origin',result.commit])
         const snapshot={...row.runtimeSnapshot,comparisonHead:row.runtimeSnapshot.head,head:repository.runtimeGit(['rev-parse','HEAD'])}
         // A rollback must restore only the original accounted overlays. The old
         // snapshot parent is retained so blob comparisons never infer a new grant.
-        require('./runtime').applyCheckout(repository,snapshot,result.commit)
-        await runtime.restart(result.commit,{controlCommit:row.merge.commit})
+        require('./runtime').applyCheckout(repository,snapshot,result.commit,guard)
+        await runtime.restart(result.commit,{controlCommit:row.merge.commit,guard})
         return{...result,restoredSource:before,tree,pr:pr.number}
       },
-      verifyRollback:row=>runtime.verify(row,{rollback:true})
+      verifyRollback:row=>runtime.verify(row,{rollback:true,guard:()=>authority?.assertRecovery(material)})
     }
   }
   async function finish (options) {

@@ -32,6 +32,11 @@ checked before status writes, exact-head merge, and deployment. A restarted proc
 cannot rehydrate authority from stored JSON; an uncertain or expired operation
 requires reconciliation and fresh explicit recovery authority, not a replay.
 
+Expiry is rechecked after idle inspection and long runtime regression checks,
+immediately before checkout/reload, managed-client publication and rollback merge.
+An already-started checkout finishes restoring its original private overlays as
+transaction cleanup; this does not start a new deployment or extend the grant.
+
 ## Readiness and evidence
 
 Only fixed UUIDs under the host promotion directory identify source evidence and

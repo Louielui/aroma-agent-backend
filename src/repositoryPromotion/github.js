@@ -80,10 +80,11 @@ function createGitHub ({root,fetchImpl=fetch,tokenProvider=tokenFromGit}) {
     if(result.merged!==true||!SHA.test(result.sha||''))throw Error('merge_unconfirmed')
     return{commit:result.sha,pr:number,head,base}
   }
-  async function rollbackMerge ({pr,head,base,source,tree,failure,runId}) {
+  async function rollbackMerge ({pr,head,base,source,tree,failure,runId,guard=()=>{}}) {
     if(!Number.isSafeInteger(pr)||![head,base,source,tree].every(s=>SHA.test(s||''))||!failure||!['runtime_mismatch','runtime_verification_failed','runtime_verification_unavailable'].includes(failure.reason)||!/^[a-f0-9-]{36}$/.test(runId||''))throw Error('rollback_not_authorized')
     const [candidate,original,pull]=await Promise.all([api(PREFIX+'/commits/'+head),api(PREFIX+'/commits/'+source),api(PREFIX+'/pulls/'+pr)])
     if(candidate.commit?.tree?.sha!==tree||original.commit?.tree?.sha!==tree||candidate.parents?.[0]?.sha!==base||pull.head?.sha!==head||pull.base?.sha!==base||await main()!==base)throw Error('rollback_source_mismatch')
+    guard()
     const result=await api(PREFIX+'/pulls/'+pr+'/merge',{method:'PUT',body:{sha:head,merge_method:'merge',commit_title:'Restore exact verified Imagine rollback tree'}})
     if(result.merged!==true||!SHA.test(result.sha||''))throw Error('rollback_merge_unconfirmed')
     return{commit:result.sha,head,base,pr}
