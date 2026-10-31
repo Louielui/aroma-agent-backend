@@ -1,0 +1,21 @@
+'use strict'
+const test=require('node:test'),assert=require('node:assert/strict'),express=require('express'),http=require('node:http'),{randomUUID}=require('node:crypto'),fs=require('node:fs'),os=require('node:os'),path=require('node:path')
+const {classify,createChatTasks}=require('./chat'),{createDemoRouter}=require('../../routes/demoRouter'),{createTasks}=require('./service'),{createMemoryRunStore}=require('../operating/runStore'),{createConversationStore}=require('../../store/conversationStore')
+const HEAD='a'.repeat(40)
+test('whole general goal is retained; quotations/history cannot authorize a request or fixed replacement',()=>{
+ const goal='Please keep all constraints. Do not deploy or consume the paused acceptance allowance.',s='ask Codex to '+goal
+ assert.deepEqual(classify(s),{op:'request',goal:s});for(const m of ['Someone said: '+s,'"'+s+'"','What can Codex do?','Give me your website'])assert.equal(classify(m),null)
+ const id=randomUUID();assert.deepEqual(classify('continue task '+id),{op:'continue',id});assert.equal(classify('continue task '+id+' and change production'),null)
+})
+test('chat HTTP intake reaches the existing persisted task, keeps an actionable link after reload, and never calls a model',async t=>{
+ const dir=fs.mkdtempSync(path.join(os.tmpdir(),'repository-chat-'));t.after(()=>fs.rmSync(dir,{recursive:true,force:true}));const conversations=createConversationStore({dir}),store=createMemoryRunStore();let models=0,fixed=0
+ const tasks=createTasks({store,enabled:()=>true,repository:{lock:()=>()=>{}},sourceFor:()=>{throw Error('not authorized')},provider:{complete:()=>{models++;throw Error('not authorized')}},review:()=>{models++;throw Error('not authorized')}})
+ const chatTasks=createChatTasks({bootCommit:HEAD,env:{READ_ACCESS:'on'},request:async({op,...b})=>tasks[op]({id:'owner',role:'owner'},b)})
+ const app=express();app.locals.conversationDemo=true;app.use(express.json());app.use(createDemoRouter({conversationStore:conversations,chatTasks,chatWork:{prepare:()=>{fixed++;throw Error('wrong fixed task')}},taskPlanner:{prepare:()=>{throw Error('prior topic must not intercept')}},getAdapterFn:()=>{models++;throw Error('unexpected model')},processIntakeFn:()=>{models++;throw Error('unexpected model')}}));const server=app.listen(0,'127.0.0.1');await new Promise(r=>server.once('listening',r));t.after(()=>new Promise(r=>{server.closeAllConnections();server.close(r)}))
+ const send=(body,origin='http://127.0.0.1:8090')=>new Promise((resolve,reject)=>{const q=http.request({host:'127.0.0.1',port:server.address().port,path:'/api/v1/demo/intake',method:'POST',headers:{host:'127.0.0.1:8090',origin,'content-type':'application/json'}},r=>{let s='';r.on('data',b=>s+=b);r.on('end',()=>resolve({status:r.statusCode,body:JSON.parse(s)}))});q.on('error',reject);q.end(JSON.stringify(body))})
+ const message='請直接派工給 Codex，指定 GPT-6.1 Sol／High，因為需要跨模組程式調查與修正。目標：接續目前上下文理解修復，使用已保存的 POSTDEPLOYMENT-ACCEPTANCE-REPORT 真實輸出，修正 intakeService.js 空 sections.every() 導致呈現層覆蓋正確答案、記憶 opt-out 說明不準確，以及簡單問題 5–6 次 helper 的冗餘流程。已有同一進行中任務則附加指令，避免重複修改。只使用現有授權隔離修正能力，不部署、不擴權、不轉 API、不改 P02-C；原驗收 run 剩餘 7 輪／29 helper／2 網站保持暫停，不重置、不用於本次修復。如果目前只支援八檔唯讀診斷，請明確說明不能派出這個修正任務，不要以其他固定任務冒充。回報真正工作單 ID、接單狀態和限制。',body={message,conversationId:'repair-chat',workflowRequestId:randomUUID(),history:[{role:'user',text:'Old website topic'}]}
+ const first=await send(body);assert.equal(first.status,200);assert.ok(first.body.projectTaskRunId);assert.equal(first.body.servedBy,null);assert.match(first.body.reply,/project-tasks\?task=/);assert.equal(store.all()[0].input.goal,message);assert.equal(store.all()[0].state,'awaiting_scope')
+ const second=await send({...body,workflowRequestId:randomUUID()});assert.equal(second.body.projectTaskRunId,first.body.projectTaskRunId);assert.equal(store.all().length,1);assert.equal(models,0);assert.equal(fixed,0)
+ assert.equal(conversations.get('repair-chat').messages.at(-1).projectTaskRunId,first.body.projectTaskRunId);assert.equal(JSON.stringify(conversations.get('repair-chat')).includes('nonce'),false)
+ assert.equal((await send({...body,bootCommit:HEAD})).status,400);assert.equal((await send(body,'https://evil.invalid')).status,403);assert.equal(store.all().length,1)
+})

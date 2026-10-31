@@ -1329,6 +1329,7 @@ function createApp (options = {}) {
     codeDiagnosis,
     codeRepair,
     chatWork,
+    chatTasks:opts.chatTasks||require('./core/projectTasks/chat').createChatTasks({bootCommit:BOOT_COMMIT,...opts.projectWorkOptions}),
     mailChat: companyAccessEnabled ? require('./company/mailChat').createMailChat({ mailbox: companyMailbox, memory: companyMailMemory }) : null,
     operatingManager,
     memoryJournal: governedMemory,

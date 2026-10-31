@@ -10,9 +10,9 @@ function createRouter ({ bootCommit, env = process.env, request = input => local
   router.get(api + '/:id', (req, res) => { if (!ID.test(req.params.id)) return res.status(400).json({ error: 'invalid_request' }); call(res, { op: 'get', id: req.params.id }) })
   router.post(api, (req, res) => {
     if (!sameOrigin(req)) return res.status(403).json({ error: 'same_origin_required' })
-    const b = req.body, shapes = { start: ['op', 'requestId', 'goal', 'criteria', 'editable'], approve: ['op', 'id', 'hash', 'nonce'], prepare: ['op', 'id', 'requestId'], cancel: ['op', 'id'] }
-    if (!req.is('application/json') || !b || Array.isArray(b) || !Object.hasOwn(shapes, b.op) || Object.keys(b).sort().join(',') !== shapes[b.op].sort().join(',') || !ID.test((b.op === 'start' ? b.requestId : b.id) || '') || (['start', 'prepare'].includes(b.op) && !ID.test(b.requestId || '')) || (b.op === 'approve' && (!/^[a-f0-9]{64}$/.test(b.hash || '') || !/^[a-f0-9]{48}$/.test(b.nonce || '')))) return res.status(400).json({ error: 'invalid_request' })
-    call(res, b.op === 'start' ? { ...b, bootCommit } : b)
+    const b = req.body, shapes = { renew:['op','id'], request:['op','requestId','goal'], continue:['op','id','requestId'], inventory:['op','id'], scope:['op','id','criteria','editable','readonly'], authorize:['op','id','hash','nonce'], start: ['op', 'requestId', 'goal', 'criteria', 'editable'], approve: ['op', 'id', 'hash', 'nonce'], prepare: ['op', 'id', 'requestId'], cancel: ['op', 'id'] }
+    if (!req.is('application/json') || !b || Array.isArray(b) || !Object.hasOwn(shapes, b.op) || Object.keys(b).sort().join(',') !== shapes[b.op].sort().join(',') || !ID.test((['start','request'].includes(b.op) ? b.requestId : b.id) || '') || (['start','request','continue','prepare'].includes(b.op) && !ID.test(b.requestId || '')) || (['approve','authorize'].includes(b.op) && (!/^[a-f0-9]{64}$/.test(b.hash || '') || !/^[a-f0-9]{48}$/.test(b.nonce || '')))) return res.status(400).json({ error: 'invalid_request' })
+    call(res, ['start','request','scope'].includes(b.op) ? { ...b, bootCommit } : b)
   })
   return router
 }

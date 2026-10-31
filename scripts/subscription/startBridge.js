@@ -41,6 +41,9 @@ function main () {
   const taskStore = require('../../src/core/operating/runStore').createRunStore({ dir: path.join(workerRoot, 'project-tasks'), workflow: 'project_task' })
   const taskRegistry = require('../../src/core/projectTasks/contract').createRegistry(taskStore)
   const resolveRecipe = taskRegistry.resolve
+  const repositoryBudget=require('../../src/core/projectTasks/repositoryBudget').createRepositoryBudget({dir:path.join(workerRoot,'project-task-usage')})
+  const repositoryLocks=require('../../src/actions/store').createStore({dir:path.join(workerRoot,'project-task-locks')})
+  const repositoryInventory=require('../../src/core/projectTasks/repositoryScope').createInventory({root:repo})
   const projectSource = require('../../src/core/projectWork/source').createSource({ root: repo, resolveRecipe })
   const isolatedReceipt = id => {
     if (!/^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/.test(id || '')) throw Error('accepted_evidence_changed')
@@ -53,7 +56,7 @@ function main () {
     privateRefs: ['refs/heads/backup/imagine-20261012-dirty-checkpoint'], resolveRecipe, isolated: isolatedReceipt, invocationLedger })
   const observeLive = require('../../src/core/projectWork/liveVerification').createClient({token:env.HUB_TOKEN || process.env.HUB_TOKEN})
   const projectWork = require('../../src/core/projectWork/service').createProjectWork({
-    source: projectSource, providers: workerProviders, enabled, invocationLedger, observeLive, resolveRecipe, catalogueRecipes: taskRegistry.catalogue,
+    source: projectSource, providers: workerProviders, enabled, invocationLedger, repositoryBudget, observeLive, resolveRecipe, catalogueRecipes: taskRegistry.catalogue,
     repositoryPreflight: () => repositoryPromotion.begin(), onAccepted: run => repositoryPromotion.enqueue(run),
     store: require('../../src/core/operating/runStore').createRunStore({ dir: path.join(workerRoot, 'project-runs'), workflow: 'project_work' }),
     onEvent: value => memoryRuntime && memoryRuntime.event('worker', 'project-work:' + value.id + ':' + value.stage + ':' + value.at, JSON.stringify(value), 'measured_result', value.at) })
@@ -66,6 +69,7 @@ function main () {
     onEvent: value => memoryRuntime && memoryRuntime.event('worker', 'project-adoption:' + value.id + ':' + value.stage + ':' + value.at, JSON.stringify(value), 'measured_result', value.at) })
   const codexClient = require('../../src/subscription/codexClient')
   const projectTasks = require('../../src/core/projectTasks/service').createTasks({ store: taskStore, enabled, invocationLedger,
+    repository:{inventory:repositoryInventory,budget:repositoryBudget,otherActive:()=>projectWork.isActive()||projectAdoption.isActive()||workerFlow.isActive(),lock:()=>repositoryLocks.lockRun('d970a642-61b1-47a1-8baf-6b33e910ac05'),provider:require('../../src/core/projectTasks/provider').createDraftProvider({client:codexClient,options:{...repairClient,allowCredits:false},effort:'high'})},
     sourceFor: definition => require('../../src/core/projectWork/source').createSource({ root: repo, resolveRecipe: id => { if (id !== definition.workOrder.recipe) throw Error('invalid_request'); return definition } }),
     provider: require('../../src/core/projectTasks/provider').createDraftProvider({ client: codexClient, options: repairClient }),
     review: (packet, options) => workerProviders.reviewAcceptance(packet, options), prepareWork: input => projectWork.prepare({ id: 'owner', role: 'owner' }, input),

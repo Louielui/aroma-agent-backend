@@ -214,7 +214,7 @@ function buildWorkRequestResolution ({ req, message, offerDecision, conversation
   return null
 }
 
-function createDemoRouter ({ getAdapterFn = getAdapterForLane, processIntakeFn = processIntake, conversationStore = INERT_CONVERSATION_STORE, readBacklogFn = null, backlogTimeoutMs = 2500, errandStoreFn = null, operatingManager = null, memoryJournal = null, mailChat = null, liveContext = null, sevenShiftsReport = null, hrRechecks = null, developmentPlan = null, codeDiagnosis = null, codeRepair = null, chatWork = null, taskPlanner = null, taskDialogue = null, schedulerChat = null, procurementChat = null, capabilityGaps = null, publicCompletion = require('../topics/publicAnswerFollowups').createService(), imageAdapterFn = selection => {
+function createDemoRouter ({ getAdapterFn = getAdapterForLane, processIntakeFn = processIntake, conversationStore = INERT_CONVERSATION_STORE, readBacklogFn = null, backlogTimeoutMs = 2500, errandStoreFn = null, operatingManager = null, memoryJournal = null, mailChat = null, liveContext = null, sevenShiftsReport = null, hrRechecks = null, developmentPlan = null, codeDiagnosis = null, codeRepair = null, chatWork = null, chatTasks = null, taskPlanner = null, taskDialogue = null, schedulerChat = null, procurementChat = null, capabilityGaps = null, publicCompletion = require('../topics/publicAnswerFollowups').createService(), imageAdapterFn = selection => {
   if (process.env.CHAT_BACKEND !== 'codex-subscription') throw Error('image_chat_unavailable')
   return new (require('../adapters/CodexSubscriptionAdapter').CodexSubscriptionAdapter)(selection)
 }, modelCenter = null, planningRevision = require('../governance/bootCommit').BOOT_COMMIT, modelsFn = async () => new (require('../adapters/CodexSubscriptionAdapter').CodexSubscriptionAdapter)().models() } = {}) {
@@ -634,6 +634,19 @@ function createDemoRouter ({ getAdapterFn = getAdapterForLane, processIntakeFn =
           emit('project_work_prepared', 200, historySaved ? null : 'conversation_write_failed')
           return res.set('Cache-Control', 'no-store').json({ lane: 'chat', mode: 'chat', reply, projectWorkRunId: prepared.run.id, projectWork: prepared, historySaved, servedBy: null })
         } catch (e) { return res.status(e.message === 'worker_busy' ? 409 : 503).json({ error: { message: t('chatWork.error'), retryable: false } }) }
+      }
+      const repairTask = planningLane && require('../core/codeDiagnosis/chat').parseRequest(message)!=='dispatch' ? require('../core/projectTasks/chat').classify(message) : null
+      if(repairTask&&chatTasks){
+        if(!require('../core/operating/chatRequest').sameOrigin(req))return res.status(403).json({error:'same_origin_required'})
+        if(Object.keys(req.body).some(k=>!['message','conversationId','workflowRequestId','websiteRequestId','history','providerHint','previousLane','chatLevel','chatModel','interactionMode'].includes(k))||!isValidConversationId(req.body.conversationId)||!require('../core/operating/runStore').ID.test(req.body.workflowRequestId||''))return res.status(400).json({error:'invalid_request'})
+        try{
+          const value=await chatTasks.prepare({id:'owner',role:'owner'},{message,requestId:req.body.workflowRequestId})
+          const reply=t('projectTask.chatPrepared',{id:value.run.id})+'\n\n'+'['+t('projectTask.chatLink')+'](/project-tasks?task='+value.run.id+')'
+          let historySaved=true
+          const prior=conversationStore.get(req.body.conversationId)?.messages?.some(m=>m.role==='assistant'&&m.content===reply)
+          if(!prior)try{conversationStore.appendTurn({id:req.body.conversationId,userText:message,replyText:reply,projectTaskRunId:value.run.id})}catch{historySaved=false}
+          return res.set('Cache-Control','no-store').json({lane:'chat',mode:'chat',reply,servedBy:null,historySaved,projectTaskRunId:value.run.id,reused:value.reused})
+        }catch(e){return res.status(409).json({error:{message:t('projectTask.chatError',{reason:/^[a-z_]+$/.test(e.message)?e.message:'registration_unavailable'}),retryable:false}})}
       }
       const dispatchChat = require('../core/codeDiagnosis/chat'), dispatchView = require('../core/codeDiagnosis/chatView')
       const dispatchKind = planningLane ? dispatchChat.parseRequest(message) : null

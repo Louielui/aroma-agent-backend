@@ -90,7 +90,9 @@ function createAdoption ({ source, repository, executor, work, isolated, store, 
     if (existing) { if (existing.workRunId !== input.runId || existing.action !== input.action || existing.source.evidence.bootCommit !== input.bootCommit) throw Error('request_conflict'); return { run: existing, approval: null } }
     busy = true
     try {
-      const original = work.get(actor, input.runId), accepted = validateAccepted(original, await isolated(original?.result?.isolatedRunId), resolveRecipe)
+      const original = work.get(actor, input.runId)
+      if(original?.workOrder?.delivery==='owner_deployment_package_required')throw Error('approval_unavailable')
+      const accepted = validateAccepted(original, await isolated(original?.result?.isolatedRunId), resolveRecipe)
       const recipeId = accepted.recipe || RECIPE, snapshot = await source.read(input.bootCommit, undefined, recipeId)
       const before = input.action === 'adopt' ? accepted.before : accepted.after, after = input.action === 'adopt' ? accepted.after : accepted.before
       if (Object.entries(sourceValues(recipeId, before, resolveRecipe)).some(([name, text]) => snapshot.order.files[name] !== text)) throw Error('source_changed')
