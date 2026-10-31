@@ -3,7 +3,7 @@ const { t } = require('../i18n/t')
 const { candidate } = require('./websiteIntent')
 const { publicUrl, validTarget } = require('../subscription/websitePolicy')
 
-async function runWebsiteFlow ({ message, history = [], classify, search, record = () => {}, readEnabled = true }) {
+async function runWebsiteFlow ({ message, history = [], classify, search, record = () => {}, readEnabled = true, onClassification = () => {} }) {
   if (!candidate(message)) return null
   const previous = (Array.isArray(history) ? history : []).filter(h => h && h.role === 'user').map(h => h.text || h.content).filter(s => typeof s === 'string' && s !== message).slice(-4).map(s => s.slice(0, 450))
   const owner = [...previous, message]
@@ -18,6 +18,7 @@ async function runWebsiteFlow ({ message, history = [], classify, search, record
       step('needs_input', { reason: 'sensitive_context' }); return answer(t('website.sensitiveContext'))
     }
     const plan = await classify(JSON.stringify({ previousOwnerTurn: previous.at(-1) || null, previousOwnerTurns: previous, latestOwnerTurn: message }))
+    onClassification(plan)
     // Navigation is a link deliverable, not a shortcut around factual retrieval.
     // Conflicting/missing output evidence falls through to the existing query chain.
     if(plan?.intent==='navigate' && plan.requestedOutput!=='website_url'){step('not_applicable');return null}

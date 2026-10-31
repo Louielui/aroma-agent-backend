@@ -33,7 +33,7 @@ const { logLLMCall, logRedLineBlock } = require('../utils/metricsLogger')
 const { PHASE, ROLE, OUTCOME, emitPhase, timePhase, timePhaseSync, startTimer } = require('../utils/phaseTiming')
 // L2-A — pure-chat eligibility. SHADOW: observed and logged, never branched on.
 const { classifyPureChatEligibility } = require('./pureChatEligibility')
-const { profileFor, canUseSocialFastPath } = require('./chatSpeed')
+const { profileFor, canUseSocialFastPath,canUseGeneralFastPath } = require('./chatSpeed')
 const { persistIntake, recordLLMUsage } = require('../utils/hubClient')
 const { classifyDemoOutcome } = require('./demoOutcome')          // B2-2 slice 1 (pure)
 const { buildGroundedReply } = require('./groundedReply')         // B2-2 reply grounding — action prose from the REAL outcome
@@ -515,11 +515,12 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
   const subscriptionAdapter = subscriptionMode ? ((opts && opts.openaiAdapter) || new CodexSubscriptionAdapter({ effort: chatProfile.effort, model: opts && opts.chatModel })) : null
   if (subscriptionAdapter) await subscriptionAdapter.preflight()
 
+  let websiteBusinessOpinion
   // Public navigation is a bounded read workflow, before business-world classification.
   // It cannot inherit memory, attached records, file access or general execution powers.
   if (subscriptionMode && process.env.XIANGXIANG_WEBSITE_FLOW === 'on' &&
       !opts.contextCard && !opts.sectionPreamble && !opts.attachSection &&
-      require('./websiteIntent').candidate(message)) {
+      !require('./generalKnowledge').generalRequestKind(message) && require('./websiteIntent').candidate(message)) {
     const { SCHEMA, SYSTEM } = require('./websiteIntent')
     const { localRequest } = require('../adapters/CodexSubscriptionAdapter')
     const store = require('../store/websiteRunStore')
@@ -533,6 +534,7 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
         plannerModel = result.model; return JSON.parse(result.text)
       }),
       search: deps.search || (target => localRequest('/website', { target }, process.env)),
+      onClassification: plan => { websiteBusinessOpinion = plan?.businessIntent },
       record: deps.record || (run => store.save(id, run))
     })
     if (website) {
@@ -561,6 +563,7 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
     : routeTurn(message, { previousLane: (opts && opts.previousLane) || null })
   const routeGoverns = routerMode === 'on' && routeDecision !== null
   const socialFastPath = subscriptionMode && routeGoverns && canUseSocialFastPath(message, routeDecision, history, opts)
+  const simpleFastPath = socialFastPath || (subscriptionMode && routeGoverns && canUseGeneralFastPath(message,routeDecision,history,opts))
 
   /**
    * ── O1: THE ONE LIVE SEMANTIC CALL SITE ─────────────────────────────────────
@@ -618,7 +621,8 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
         ? async ({ system, prompt, signal }) => (await subscriptionAdapter.complete(prompt, { invocationPhase:'intent', system, maxTokens: 128, signal })).text
         : defaultSemanticCallModel()
     const sem = await resolveSemanticFallback({
-      message, deterministicRoute: 'CONVERSATION', callModel, system: SEMANTIC_SYSTEM, signal: semanticSignal
+      message, deterministicRoute: 'CONVERSATION', callModel, system: SEMANTIC_SYSTEM, signal: semanticSignal,
+      firstOpinion: websiteBusinessOpinion
     })
     semanticTel = sem.telemetry || null
     if (sem.decision === SEMANTIC.AUTO_READ && Array.isArray(sem.sources) && sem.sources.length > 0) {
@@ -1113,7 +1117,8 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
            * words. Recall answers 「what is he talking about」; it never becomes a row, a
            * source, a trust level or a citable id.
            */
-          contextBlocks: [convRecallBlockCache, recallBlockCache, hindsightCache?.block, require('../governance/selfDescription').runtimeSelfBlock(opts.runtimeSelf), opts.ownerInvestigation === true ? require('../investigation/continuity').referenceContext(opts.previousInvestigation) : null].filter(Boolean),
+          contextBlocks: [convRecallBlockCache, recallBlockCache, hindsightCache?.block, opts.ownerInvestigation === true ? require('../investigation/continuity').referenceContext(opts.previousInvestigation) : null].filter(Boolean),
+          hostContext:require('../governance/selfDescription').runtimeSelfBlock(opts.runtimeSelf,{message}),
           // Provider-neutral by construction: B is handed a closure and never learns what is
           // behind it — the same arrangement reasoningLoop uses.
           callModel: async ({ prompt, responseFormat }) => {
@@ -1254,7 +1259,7 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
   async function buildPromptForUncached (providerName, composeOnly = false) {
     // A proven standalone social turn needs persona + its current message only.
     // It still goes through parsing, language, honesty and ordinary finalisation.
-    if (socialFastPath) return baseEffPrompt
+    if (simpleFastPath) return baseEffPrompt
     // ⛔ THE CACHE KEY CARRIES THE OBSERVATION COUNT. Without it, step 2 would be handed
     // step 1's prompt and the loop would ask the same question forever — the read would
     // happen and the model would never see it.
@@ -1333,7 +1338,7 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
       }
     }
 
-    if (isChat) effPrompt = require('../governance/selfDescription').runtimeSelfBlock(opts.runtimeSelf) + '\n\n' + effPrompt
+    if (isChat) effPrompt = require('../governance/selfDescription').runtimeSelfBlock(opts.runtimeSelf,{message}) + '\n\n' + effPrompt
 
     // READ CONTEXT v1 — chat-lane only, flag-gated, FAIL-SOFT. Injected ONLY when
     // READ_ACCESS==='on' AND at least one per-source flag is 'on' AND the lane is chat.
@@ -2036,7 +2041,7 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
         await recordProviderUsage(gptResult)
         try {
           distilled = parseDistillResponse(gptResult.text, tel)
-          if (socialFastPath && (distilled.mode !== 'chat' || distilled.nextRead || distilled.answerPlan ||
+          if (simpleFastPath && (distilled.mode !== 'chat' || distilled.nextRead || distilled.answerPlan ||
             (Array.isArray(distilled.tasks) && distilled.tasks.length))) throw new SubscriptionError('subscription_invalid_output')
           llmResult = gptResult
           activeProvider = gpt.providerName === 'claude' ? CLAUDE : OPENAI // its envelope PARSED — this is the accepted provider
@@ -2282,7 +2287,7 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
   const initialTerminalMode = (distilled && typeof distilled.mode === 'string') ? distilled.mode : null
   const initialIsAsk = initialTerminalMode === 'ask'
 
-  const initialFinalGate = !socialFastPath && interactionMode === 'chat' && distilled && !distilled.nextRead &&
+  const initialFinalGate = !simpleFastPath && interactionMode === 'chat' && distilled && !distilled.nextRead &&
     a4SemanticRoutingEnabled(process.env) && initialTerminalMode !== 'commit'
 
   /**
@@ -3713,12 +3718,14 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
     if(opts.ownerGoal)opts.onOwnerReadView?.(view.reply)
     // ⛔ E2: same single outcome as the commit path — judged against the bytes he receives.
     leadWithJudgment(view, distilled, requestId, 'chat', operationalInvestigation)
-    const operationalBrief = require('../investigation/operationalBrief').renderOperationalBrief(operationalInvestigation, { message })
+    const preservesOrdinaryAnswer = require('../investigation/generalizationView').preservesOrdinaryAnswer(operationalInvestigation,llmResult?.text,{route:routeDecision?.route})
+    if(preservesOrdinaryAnswer)operationalInvestigation.answerPresentation={kind:'guarded_answer_without_observations',modelProseUsed:true,claimsValidated:false,remainingGapsRetained:true}
+    const operationalBrief = preservesOrdinaryAnswer ? null : require('../investigation/operationalBrief').renderOperationalBrief(operationalInvestigation, { message })
     if (operationalBrief && classifyDemoOutcome({ mode: distilled.mode, intent: distilled.intent }).outcome !== 'clarification') {
       view.reply = operationalBrief
       operationalInvestigation.answerPresentation = { kind: 'source_bound_operational_brief', locale: /[\u3400-\u9fff]/.test(message) ? 'zh' : 'en', modelProseUsed: false }
     }
-    if (opts.ownerInvestigation === true && subscriptionMode && operationalInvestigation?.readOnly === true && classifyDemoOutcome({ mode: distilled.mode, intent: distilled.intent }).outcome !== 'clarification') {
+    if (!preservesOrdinaryAnswer && opts.ownerInvestigation === true && subscriptionMode && operationalInvestigation?.readOnly === true && classifyDemoOutcome({ mode: distilled.mode, intent: distilled.intent }).outcome !== 'clarification') {
       const semanticView = require('../investigation/semanticView')
       const findings = require('../investigation/sourceBoundFindings').renderSourceBoundFindings(operationalInvestigation, { message, plan: goalPlanObserved })
       const crossSource = operationalInvestigation.crossSourceReads?.length > 0
@@ -3778,16 +3785,16 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
         operationalInvestigation.answerPresentation={...(operationalInvestigation.answerPresentation||{}),invocationSummary:{...invocationSummary,text:undefined}}
       }
     }
-    const generalizationSummary = require('../investigation/generalizationView').renderGeneralization(operationalInvestigation, message)
+    const generalizationSummary = preservesOrdinaryAnswer ? null : require('../investigation/generalizationView').renderGeneralization(operationalInvestigation, message)
     if (generalizationSummary) view.reply = operationalInvestigation.evidenceModel.contradictions.length ||
-      (distilled.mode !== 'ask' && operationalInvestigation.sections.every(s => s.section.startsWith('external_') && !s.records?.length))
+      (distilled.mode !== 'ask' && operationalInvestigation.sections.length>0 && operationalInvestigation.sections.every(s => s.section.startsWith('external_') && !s.records?.length))
       ? generalizationSummary : view.reply + '\n\n' + generalizationSummary
-    const followupSummary = require('../investigation/followupReads').renderFollowupReads(operationalInvestigation?.followupReads, message)
+    const followupSummary = preservesOrdinaryAnswer ? null : require('../investigation/followupReads').renderFollowupReads(operationalInvestigation?.followupReads, message)
     if (followupSummary) view.reply += '\n\n' + followupSummary
     if (operationalInvestigation?.readOnly === true) {
       const findings = require('../investigation/sourceBoundFindings').renderSourceBoundFindings(operationalInvestigation, { message, plan: goalPlanObserved })
       const brief = require('../investigation/ownerBrief').ownerBrief(operationalInvestigation, { message, findings })
-      if (brief) {
+      if (brief && !preservesOrdinaryAnswer) {
         operationalInvestigation.answerDetails = view.reply
         operationalInvestigation.answerPresentation = { ...operationalInvestigation.answerPresentation, ownerBrief: { ...brief, text: undefined } }
         view.reply = brief.text
@@ -3805,7 +3812,7 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
         operationalInvestigation.routing.unmappedFacts.length === 0 && operationalInvestigation.routing.requirements.every(n=>['configuration','enablement','execution_history','live_runtime','memory_failures'].includes(n)) &&
         !operationalInvestigation.sections.some(s=>s.section.startsWith('external_'))
       const purpose = operationalInvestigation.focus === 'background' || memoryFailuresRequested ? require('../investigation/workPurpose').renderWorkPurpose(operationalInvestigation.workPurpose, { message, failuresOnly: memoryFailuresRequested }) : null
-      if (purpose) {
+      if (purpose && !preservesOrdinaryAnswer) {
         // Keep the detailed prior answer for inspection; canonical progress is
         // the concise answer for this registered background-work investigation.
         operationalInvestigation.answerDetails = operationalInvestigation.answerDetails || view.reply
@@ -3813,7 +3820,7 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
         operationalInvestigation.answerPresentation = { ...operationalInvestigation.answerPresentation, workPurpose: { ...purpose, text: undefined } }
       }
       const advice = require('../investigation/decisionAdviceView').renderDecisionAdvice(operationalInvestigation.decisionAdvice, { message })
-      if (advice && !memoryFailureOnly && classifyDemoOutcome({ mode: distilled.mode, intent: distilled.intent }).outcome !== 'clarification') {
+      if (advice && !preservesOrdinaryAnswer && !memoryFailureOnly && classifyDemoOutcome({ mode: distilled.mode, intent: distilled.intent }).outcome !== 'clarification') {
         view.reply += '\n\n' + advice.text
         operationalInvestigation.answerPresentation = { ...operationalInvestigation.answerPresentation, decisionAdvice: { ...advice, text: undefined } }
       }
@@ -3824,6 +3831,7 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
         attemptedSources: [...new Set(operationalInvestigation.crossSourceReads?.map(r => r.source) || [])], remainingGaps: operationalInvestigation.gaps?.map(g => g.section) || [],
         meaning: 'available_bound_reached_not_all_facts_proven' }
     }
+    view.reply=require('../memory/recallReply').enforceCapturePolicyReply(view.reply,message).reply
     const chatClaim = view.readClaim || { corrected: false, sources: [], kind: null }
     if (chatClaim.corrected) logReadClaimCorrection(chatClaim, requestId)
     return { blocked: false, mode: distilled.mode, intent: distilled.intent,

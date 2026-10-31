@@ -52,7 +52,7 @@ function buildDecisionAdvice(report){
   const gaps=coverage.slice(0,3)
   add('resolve_source_gaps',gaps.some(c=>c.state==='UNAVAILABLE')?'UNAVAILABLE':'UNKNOWN',gaps.filter(c=>c.sourceId).map(c=>({sourceId:c.sourceId,recordId:null,fields:{state:c.state}})),[],['no_supported_remedy'])
  }
- return{version:1,readOnly:true,executionAllowed:false,preferred:options[0].kind,options:options.slice(0,2),
+ return{version:1,focus:report.focus,readOnly:true,executionAllowed:false,preferred:options[0].kind,options:options.slice(0,2),
   evidenceCounts:e.counts,coverageComplete:false,scope:'bounded_evidence_to_read_only_decision_support_no_savings_or_charge_inference'}
 }
 module.exports={buildDecisionAdvice}

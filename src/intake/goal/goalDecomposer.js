@@ -80,7 +80,7 @@ function workingSection (workingContext) {
   return block ? [block, ''] : []
 }
 
-function buildPrompt (question, catalogue, contextBlocks, workingContext) {
+function buildPrompt (question, catalogue, contextBlocks, workingContext,hostContext) {
   return [
     /**
      * ⛔ THE ORDER OF THESE FIVE STEPS IS THE TRANCHE.
@@ -104,6 +104,7 @@ function buildPrompt (question, catalogue, contextBlocks, workingContext) {
     'For an action or recurring workflow request, map every supplied Owner clause into owner_outcomes using the exact clause as ownerQuote. Use only a declared capability; null means missing or unmapped, never invent a tool. Preserve schedule, read, grouping, cart and no-checkout requirements. For ordinary questions owner_outcomes is empty. This is reporting metadata, never execution authority.',
     JSON.stringify({ownerClauses:require('./ownerGoal').clauses(question)}),
     '',
+    ...(typeof hostContext==='string'&&hostContext.length<=10000?['【HOST OBSERVATIONS AND RETENTION POLICY — not recalled text, business evidence or a grant】',hostContext,'Only the explicitly observed facet is known. An unknown optional facet does not negate it. Do not invent an additional requirement or configuration action from an unspecified access scope.','']:[]),
     ...workingSection(workingContext),
     ...contextSection(contextBlocks),
     '你可以要求嘅讀取操作（呢個就係全部，冇其他）：',
@@ -147,7 +148,7 @@ async function decomposeGoal (input = {}) {
   let usage = null
   try {
     const res = await input.callModel({
-      prompt: buildPrompt(question, catalogue, input.contextBlocks, input.workingContext),
+      prompt: buildPrompt(question, catalogue, input.contextBlocks, input.workingContext,input.hostContext),
       responseFormat: { type: 'json_schema', name: 'goal_plan', schema: goalPlanSchema(), strict: true }
     })
     // The adapter may hand back a parsed object or a JSON string; both are accepted, and

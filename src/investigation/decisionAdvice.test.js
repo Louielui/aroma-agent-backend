@@ -63,6 +63,8 @@ test('bilingual decisions escape identifiers and do not use source prose as inst
   assert.match(v.text,/代價|Tradeoff/)
   assert.match(v.text,/預期效果|Expected benefit/)
   assert.match(v.text,/依據|Evidence/)
-  assert.match(v.text,/沒有停|没有停|No job was stopped/)
+  assert.match(v.text,/沒有執行管理動作|no management action was executed/i)
+  assert.doesNotMatch(v.text,/扣款原因|charge attribution/)
  }
+ const cost=evaluateInvestigation({focus:'cost',sections:[section('billing',[],'unconnected')]});assert.match(renderDecisionAdvice(cost.decisionAdvice,{message:'Why was I charged?'}).text,/charge attribution/)
 })

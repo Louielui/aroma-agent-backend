@@ -29,7 +29,7 @@ function renderDecisionAdvice(a,{message=''}={}){
   if(sources.length)lines.push(t('investigation.adviceSources',{sources:sources.join('; ')},locale))
   references.push(...o.references)
  }
- lines.push(t('investigation.adviceBoundary',{},locale))
+ lines.push(a.focus==='cost'?t('investigation.adviceBoundary',{},locale):t('investigation.adviceReadOnlyBoundary',{},locale))
  return{text:lines.join('\n\n'),references,modelProseUsed:false}
 }
 module.exports={renderDecisionAdvice}

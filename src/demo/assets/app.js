@@ -1351,6 +1351,7 @@
       records.appendChild(el('pre', '', JSON.stringify({ sourceId: section.sourceId, retrievedAt: section.retrievedAt, sha256: section.sha256, records: section.records, coverage: section.coverage, selection: section.selection, omitted: section.omitted, note: section.note }, null, 2)))
       row.appendChild(records); details.appendChild(row)
     })
+    if (report.answerPresentation && report.answerPresentation.kind === 'guarded_answer_without_observations') { turnEl.body.appendChild(details); return }
     if (!report.focus || report.focus === 'cost') turnEl.body.appendChild(el('p', 'wait-note', t('investigation.boundary')))
     turnEl.body.appendChild(details)
     turnEl.body.appendChild(el('p', 'wait-note', t('investigation.readOnly')))
