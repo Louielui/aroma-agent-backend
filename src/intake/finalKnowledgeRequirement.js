@@ -44,7 +44,8 @@
 const { ownerAuthoredContext } = require('./publicQueryEgressPlanner')
 
 /**
- * ⛔ SIX OUTCOMES, AND `question` IS ONLY EVER POPULATED BY ONE.
+ * Six outcomes. A meaning clarification or conditional missing-memory question
+ * carries no authority to read or execute anything.
  *
  * There is no `reason`, `rationale`, `confidence`, `analysis`, `thinking`, `tool`,
  * `capability`, `provider`, `query`, `source` or `readKey` field, and there will not be one —
@@ -67,7 +68,7 @@ const FINAL_SCHEMA = Object.freeze({
     },
     question: {
       type: ['string', 'null'],
-      description: 'Only clarify carries a short meaning question. Every other decision must return null.'
+      description: 'clarify carries a short meaning question. require_memory may carry a minimal question identifying the past subject if recall is missing. Other decisions must return null.'
     }
   }
 })
@@ -123,7 +124,7 @@ require_public —— 要出面公開世界嘅情況（市場、行情、外面�
 
 require_mixed —— 佢明確要兩邊一齊，例如要攞我哋自己嘅嘢同出面嘅嘢比較
 
-require_memory — the entire question asks only what the owner said, requested, preferred, or recorded in a past conversation. This requires historical dialogue recall, not a new live business read. Do not use this outcome for current operational facts, official business records, or a question combining past dialogue with a current fact check; those still require the relevant internal/public world. Classify from the owner's words alone, without assuming recall succeeded. The application separately checks whether that memory was retrieved. Return question: null.
+require_memory — the entire question asks only what the owner said, requested, preferred, or recorded in a past conversation. This requires historical dialogue recall, not a new live business read. Do not use this outcome for current operational facts, official business records, or a question combining past dialogue with a current fact check; those still require the relevant internal/public world. Classify from the owner's words alone, without assuming recall succeeded. The application separately checks whether that memory was retrieved. question may contain one minimal clarification to identify the past subject if recall is missing. Use only the Owner's supplied referents; do not suggest an unmentioned arrangement, person, fact or source. Do not answer the historical question or claim that recall succeeded.
 
 clarify —— 只喺以下情況：
 - 「我哋自己」同「出面」兩種意思都同樣講得通
@@ -136,7 +137,7 @@ clarify —— 只喺以下情況：
 - 唔好揀工具、來源或者操作，亦唔好提任何系統或功能名。
 - 唔好解釋你點諗。
 - 唔好因為某樣嘢查起上嚟麻煩就話唔使查。要攞就係要攞。
-- 除咗 clarify，question 一定要係 null。
+- question is null except for clarify or the conditional missing-memory clarification in require_memory.
 - clarify 嗰句只可以問真正未清楚的「意思」，沿用他當前討論的主題，一句。`
 
 /** A clarification may never leak implementation vocabulary to the Owner. */
@@ -173,7 +174,7 @@ function validateFinalDecision (raw) {
   if (!obj || typeof obj !== 'object' || Array.isArray(obj)) return null
   const d = obj.decision
   if (!Object.prototype.hasOwnProperty.call(WORLDS_FOR, d)) return null
-  if (d !== DECISION.CLARIFY) {
+  if (d !== DECISION.CLARIFY && d !== DECISION.MEMORY) {
     // ⛔ A non-clarify decision carrying a question is a CONTRACT BREACH, not a nuisance: it
     // would mean the model wants both to oblige a read AND to ask. The question is dropped
     // rather than the decision — the obligation is the part that protects the answer.
@@ -181,7 +182,7 @@ function validateFinalDecision (raw) {
   }
   const q = typeof obj.question === 'string' ? obj.question.trim() : ''
   const usable = q !== '' && q.length <= MAX_QUESTION_CHARS && !IMPLEMENTATION_TERMS.test(q)
-  return { decision: d, question: usable ? q : SAFE_FALLBACK_QUESTION }
+  return { decision: d, question: usable ? q : d === DECISION.MEMORY ? null : SAFE_FALLBACK_QUESTION }
 }
 
 /**

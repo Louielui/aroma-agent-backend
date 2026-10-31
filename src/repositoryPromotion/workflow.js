@@ -46,6 +46,11 @@ function createWorkflow ({adapter,save,id=randomUUID(),initial=null}) {
       row.preservation=await adapter.preserve(row);record('preserved',row.preservation)
       if(row.preservation?.verified!==true)throw Error('preservation_unconfirmed')
       if(before.next==='preserve_then_reconcile'){row.reconciliation=await adapter.reconcile(row);record('needs_reconciliation',row.reconciliation);return row}
+      if(adapter.acceptCommitted){
+        const accepted=await adapter.acceptCommitted(row)
+        for(const key of ['committed','tests','publication','pr','review','reviewPacket','runtimeSnapshot','evidenceSourceRunId','authorizationId','approvalMaterial'])row[key]=accepted[key]
+        record('accepted_committed',{commit:row.committed?.commit,evidenceSourceRunId:row.evidenceSourceRunId})
+      }else{
       row.prepared=await adapter.prepare(row);record('prepared',row.prepared)
       row.tests=await adapter.test(row);record('tested',row.tests)
       if(row.tests?.exitCode!==0)throw Error('tests_unresolved')
@@ -55,6 +60,7 @@ function createWorkflow ({adapter,save,id=randomUUID(),initial=null}) {
       row.pr=await adapter.pullRequest(row);record('pr_prepared',row.pr)
       row.review=await adapter.review(row);record('reviewed',row.review)
       if(row.review?.verdict!=='pass')throw Error('review_changes_requested')
+      }
       row.evidence=await adapter.evidence(row)
       row.gate=(adapter.decide || promotionDecision)(row.evidence);record('gated',row.gate)
       if(row.gate?.allowed!==true)throw Error('policy_exception')
@@ -62,7 +68,7 @@ function createWorkflow ({adapter,save,id=randomUUID(),initial=null}) {
       row.merge=await adapter.merge(row);record('merged',row.merge)
       return await deployAndVerify()
     }catch(error){
-      const known=['tests_unresolved','review_changes_requested','head_or_base_changed','policy_exception','preservation_unconfirmed','review_invalid_output','review_model_unavailable','review_scope_too_large','review_unavailable','claude_login_required','subscription_limit_reached','worker_timeout','claude_unavailable','material_runtime_overlay_conflict','credential_secret_change','merged_tree_mismatch','working_tree_changed','unaccounted_working_changes','accepted_commit_unconfirmed']
+      const known=['tests_unresolved','review_changes_requested','head_or_base_changed','policy_exception','preservation_unconfirmed','review_invalid_output','review_model_unavailable','review_scope_too_large','review_unavailable','claude_login_required','subscription_limit_reached','worker_timeout','claude_unavailable','material_runtime_overlay_conflict','credential_secret_change','merged_tree_mismatch','working_tree_changed','unaccounted_working_changes','accepted_commit_unconfirmed','deployment_authorization_expired','approval_material_changed','committed_candidate_changed','committed_evidence_unavailable','committed_tests_unconfirmed','committed_review_unconfirmed']
       row.reason=known.includes(error.message)?error.message:'promotion_unavailable'
       row.failure={stage:row.state,reason:row.reason,at:new Date().toISOString()}
       record('needs_attention',{reason:row.reason,failure:row.failure});return row

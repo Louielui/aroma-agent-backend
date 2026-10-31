@@ -43,6 +43,16 @@ The October reconciliation was reviewed with Claude Sonnet 5.5, 8,137 passed / z
 
 ## Exceptions and Windows control
 
+The exact-commit Owner entry is documented in `DEPLOYMENT-OWNER-ENTRY.md`. An
+already committed candidate can start a new workflow only after original exact
+test/review evidence and current readiness are revalidated, and separate sealed
+scope, Hold-release and deployment decisions are consumed through the existing
+Action Gateway. The interactive Owner-host entry cannot import an exception/pass
+receipt or accept a model response as consent. A plain exception callback is no
+longer a coordinator input. The default gateway remains disconnected; no model
+tool or bridge route is enabled. Failed runs remain immutable evidence, not
+resumable input. Inspect mode makes no approval or publication.
+
 Only Owner-bound exceptions can authorize material conflicts, unresolved test failures, security/permission changes, credentials, destructive migrations, business-data writes outside scope, failed rollback or contradictory runtime facts. CLI input cannot supply a shell command, pass receipt, model-selected service, repository or exception approval.
 
 Windows may deny service control independently of policy. The reload helper checks the effective start/stop access and does not bypass UAC, create an elevated scheduled task, copy credentials, grant rights or kill a broad process tree. A separately approved permission plan can add only `SERVICE_START|SERVICE_STOP` (`0x30`) for the interactive Owner SID on the existing `AromaXiangXiangBackend` service. It retains the original descriptor, reconstructs the exact change, compares before/read-back state and supports revocation. It grants no change-config, delete, write-DACL, other-service or global administrator right. Plans retain all descriptor sections; the elevated native setter explicitly writes only DACL_SECURITY_INFORMATION (0x4), preserving owner/group and audit/SACL even if sdshow omits hidden audit data. [Microsoft security-information flags](https://learn.microsoft.com/en-us/windows/win32/api/winsvc/nf-winsvc-setserviceobjectsecurity). [Microsoft service access rights](https://learn.microsoft.com/en-us/windows/win32/services/service-security-and-access-rights).

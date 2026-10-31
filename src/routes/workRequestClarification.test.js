@@ -301,7 +301,7 @@ test('*** it is bound to its own conversation ***', () => {
   const r = renderer()
   assert.ok(r.includes('lastOwnerMessage(conv)'), 'reads the originating conversation, not the active one')
   assert.ok(r.includes("turn('bot', conv)"), 'and renders into it')
-  assert.ok(APP_JS.includes('if (res.workRequestClarification) return renderWorkRequestClarification(res.workRequestClarification, conv)'),
+  assert.ok(APP_JS.includes('if (res.workRequestClarification && !terminalRead) return renderWorkRequestClarification(res.workRequestClarification, conv)'),
     'the dispatch passes that conversation through')
 })
 
@@ -319,5 +319,5 @@ test('*** P1-C1a result presentation is untouched ***', () => {
 test('*** the served page really contains all of this ***', () => {
   const html = buildDemoHtml()
   assert.ok(html.includes('function renderWorkRequestClarification ('), 'the renderer reaches the served page')
-  assert.ok(html.includes('if (res.workRequestClarification) return renderWorkRequestClarification('), 'and so does its dispatch')
+  assert.ok(html.includes('if (res.workRequestClarification && !terminalRead) return renderWorkRequestClarification('), 'and so does its dispatch')
 })

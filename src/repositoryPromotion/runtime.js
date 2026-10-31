@@ -10,11 +10,12 @@ function overlayPlan (repository,snapshot,target) {
     return{...file,beforeBlob:before,targetBlob:after,snapshotBlob:saved,absorbed:after===saved}
   })
 }
-function applyCheckout (repository,snapshot,target) {
+function applyCheckout (repository,snapshot,target,guard=()=>{}) {
   const plan=overlayPlan(repository,snapshot,target)
   if(repository.runtimeGit(['symbolic-ref','--quiet','--short','HEAD'])!=='main'||repository.runtimeGit(['rev-parse','HEAD'])!==snapshot.head)throw Error('runtime_mismatch')
   repository.runtimeGit(['merge-base','--is-ancestor',snapshot.head,target])
   for(const file of plan)if(!file.deleted&&digest(fs.readFileSync(path.join(repository.runtimeRoot,file.path)))!==file.sha256)throw Error('runtime_overlay_changed')
+  guard()
   let stash=null
   if(plan.length){
     let previous;try{previous=repository.runtimeGit(['rev-parse','refs/stash'])}catch{}
@@ -23,7 +24,7 @@ function applyCheckout (repository,snapshot,target) {
     stash=repository.runtimeGit(['rev-parse','refs/stash'])
     repository.runtimeGit(['update-ref','refs/preservation/stash/'+stash,stash])
   }
-  try{repository.runtimeGit(['merge','--ff-only',target])}
+  try{guard();repository.runtimeGit(['merge','--ff-only',target])}
   finally{
     const current=repository.runtimeGit(['rev-parse','HEAD'])
     if(current!==snapshot.head&&current!==target)throw Error('runtime_checkout_race')
@@ -68,29 +69,32 @@ function createRuntime ({repository,dependencies,restartImpl=null,readinessImpl=
     const values=await Promise.all(['/runtime-metadata','/work-metadata','/execution-health'].map(route=>localRequest(route,{},env,AbortSignal.timeout(7000))))
     return require('../../scripts/connections/setupReadiness.cjs').project(...values)
   }
-  async function restart (expected,{controlCommit=expected}={}) {
+  async function restart (expected,{controlCommit=expected,guard=()=>{}}={}) {
+    guard()
     if(restartImpl)return restartImpl(expected)
     const control=stageReloadControl(repository,controlCommit),full=control.file
     const executable=path.join(process.env.SystemRoot||'C:/Windows','System32/WindowsPowerShell/v1.0/powershell.exe')
+    guard()
     const result=cp.spawnSync(executable,['-NoProfile','-NonInteractive','-ExecutionPolicy','RemoteSigned','-File',full,'-ExpectedCommit',expected],{windowsHide:true,shell:false,encoding:'utf8',timeout:90000})
     if(result.status===5)return{state:'administrator_required',applied:false}
     if(result.status!==0){const error=Error('local_reload_failed');error.safeDiagnostics={exitCode:result.status,stdoutBytes:Buffer.byteLength(result.stdout||''),stderrBytes:Buffer.byteLength(result.stderr||''),stderrHash:digest(result.stderr||'')};throw error}
     return{state:'restarted',applied:true,control}
   }
-  async function deploy (row) {
+  async function deploy (row,{guard=()=>{}}={}) {
     const expected=row.merge.commit
     if(!SHA.test(expected||'')||repository.git(['rev-parse',expected+'^{tree}'])!==row.evidence.tree)throw Error('merged_tree_mismatch')
     const readiness=await idle()
     if(readiness.state!=='idle_verified')return{state:'idle_required',applied:false}
+    guard()
     let snapshot=row.runtimeSnapshot
     if(!snapshot){
       const before=await repository.inspect();snapshot=repository.preserve(before,root);row.runtimeSnapshot=snapshot
     }
-    row.checkout=applyCheckout(repository,snapshot,expected)
-    const reloaded=await restart(expected)
+    row.checkout=applyCheckout(repository,snapshot,expected,guard)
+    const reloaded=await restart(expected,{guard})
     return{...reloaded,expectedCommit:expected,checkout:row.checkout}
   }
-  async function verify (row,{rollback=false}={}) {
+  async function verify (row,{rollback=false,guard=()=>{}}={}) {
     const expected=rollback?row.rollbackResult.commit:row.merge.commit
     let source=repository.runtimeGit(['rev-parse','HEAD'])===expected
     const dirty=parseStatus(command(root,['status','--porcelain=v1','-z','--untracked-files=all'],{buffer:true}).toString('utf8'))
@@ -119,10 +123,13 @@ function createRuntime ({repository,dependencies,restartImpl=null,readinessImpl=
     // Opt-in only: the Owner installs the managed slot once. Future reviewed
     // deployments publish into it after runtime verification, never from chat.
     if(verified&&path.resolve(root).toLowerCase()===path.resolve('C:/Aroma/aroma-agent-backend').toLowerCase()&&fs.existsSync(path.join(process.env.USERPROFILE,'.imagine/browser-client/current.json'))){
+      guard()
       const script='scripts/browser/install-read-host.ps1',bytes=repository.runtimeGit(['show',expected+':'+script],{buffer:true})
       if(!sameInstallerSource(fs.readFileSync(path.join(root,script)),bytes))return{verified:false,reason:'client_installer_source_changed'}
       if(!bytes.toString('utf8').includes('[switch]$PublishClient'))return{verified:false,reason:'legacy_client_requires_explicit_restore',bootCommit:backend.bootCommit,bridgeCommit:bridge.bootCommit}
-      const executable=path.join(process.env.SystemRoot||'C:/Windows','System32/WindowsPowerShell/v1.0/powershell.exe'),result=cp.spawnSync(executable,['-NoProfile','-NonInteractive','-ExecutionPolicy','RemoteSigned','-File',path.join(root,script),'-PublishClient'],{windowsHide:true,shell:false,encoding:'utf8',timeout:90000})
+      const executable=path.join(process.env.SystemRoot||'C:/Windows','System32/WindowsPowerShell/v1.0/powershell.exe')
+      guard()
+      const result=cp.spawnSync(executable,['-NoProfile','-NonInteractive','-ExecutionPolicy','RemoteSigned','-File',path.join(root,script),'-PublishClient'],{windowsHide:true,shell:false,encoding:'utf8',timeout:90000})
       if(result.status!==0)return{verified:false,reason:'client_publication_failed',bootCommit:backend.bootCommit,bridgeCommit:bridge.bootCommit}
       try{clientPublication=JSON.parse(result.stdout);if(clientPublication.commit!==expected||clientPublication.registrationVerified!==true||require('../browserRead/clientUpdate').readInstallation({bootCommit:expected}).state!=='ready')throw Error('client_publication_unconfirmed')}catch{return{verified:false,reason:'client_publication_unconfirmed'}}
     }

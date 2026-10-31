@@ -571,9 +571,20 @@ function createDemoRouter ({ getAdapterFn = getAdapterForLane, processIntakeFn =
       const { message, contextCard, providerHint } = req.body
       // Browser history can still contain the immediately displayed mail answer.
       // Replace it before ordinary intake; the source-bound lane rechecks access.
-      const history = Array.isArray(req.body.history) ? req.body.history.map((entry, i, all) =>
+      let contextHistory = req.body.history
+      if (isValidConversationId(req.body.conversationId) && typeof conversationStore.get === 'function') {
+        try {
+          const saved = conversationStore.get(req.body.conversationId)
+          if (saved) contextHistory = saved.messages
+        } catch (_) {
+          emit('context_read_failed', 503, 'conversation_context_unavailable')
+          return res.status(503).json({ error: { code: 'conversation_context_unavailable', message: t('context.conversationUnavailable'), retryable: false } })
+        }
+      }
+      if (Array.isArray(contextHistory)) contextHistory = contextHistory.filter(entry => entry && ['user', 'assistant'].includes(entry.role)).map(entry => ({ ...entry, text: typeof entry.text === 'string' ? entry.text : entry.content }))
+      const history = Array.isArray(contextHistory) ? contextHistory.map((entry, i, all) =>
         entry?.role === 'assistant' && (entry.sourceBound === true || (all[i - 1]?.role === 'user' && (require('../company/mailIntent').parseMailRequest(all[i - 1].text || all[i - 1].content, all.slice(0, i - 1)) || require('../context/gmailContextService').gmailIntent(all[i - 1].text || all[i - 1].content) || require('../context/sevenShiftsReport').clockOutRequest(all[i - 1].text || all[i - 1].content) || require('../context/sevenShiftsAttendance').attendanceRequest(all[i - 1].text || all[i - 1].content) || require('../context/sevenShiftsComparison').comparisonRequest(all[i - 1].text || all[i - 1].content))))
-          ? { ...entry, text: t('company.mailHistoryReceipt'), content: t('company.mailHistoryReceipt') } : entry) : req.body.history
+          ? { ...entry, text: t('company.mailHistoryReceipt'), content: t('company.mailHistoryReceipt') } : entry) : contextHistory
       // Resolve a bounded development conversation before keyword-based mail lanes:
       // navigation labels and chat history are not requests to read a mailbox.
       // A semantic topic change returns null and preserves ordinary mail routing.
@@ -1004,6 +1015,7 @@ function createDemoRouter ({ getAdapterFn = getAdapterForLane, processIntakeFn =
             investigationReceipts.record(investigationId, event)
           } catch (_) { investigationSaveFailed = true }
         }
+        if (interactionMode === 'chat') opts.runtimeSelf = { address: req.socket.localAddress, port: req.socket.localPort }
         if (interactionMode === 'chat') opts.chatLevel = req.body.chatLevel || 'medium'
         if (interactionMode === 'chat' && req.body.chatModel !== undefined) opts.chatModel = req.body.chatModel
         if (interactionMode === 'chat' && require('../store/websiteRunStore').ID.test(req.body.websiteRequestId || '')) opts.websiteRequestId = req.body.websiteRequestId
@@ -1115,7 +1127,7 @@ function createDemoRouter ({ getAdapterFn = getAdapterForLane, processIntakeFn =
         // not instrumentation; it is a variable. (HR-8, second instance.)
         const hasProposalAlready = !!(result && typeof result === 'object' && !Array.isArray(result) &&
           Array.isArray(result.proposals) && result.proposals.length > 0)
-        const offerDecision = explainOffer({ message, hasProposal: hasProposalAlready })
+        const offerDecision = explainOffer({ message, hasProposal: hasProposalAlready, response: result })
         /**
          * ⛔ THE SETTINGS OFFER, computed from HIS WORDS. Nothing is written by computing it —
          * it carries before → after so he approves what he can see, and the button is what

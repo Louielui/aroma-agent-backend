@@ -2145,6 +2145,10 @@
     return { role: 'assistant', text: response.sourceBound === true ? t('company.mailHistoryReceipt') : response.reply, sourceBound: response.sourceBound === true }
   }
 
+  // Wire history contains completed prior turns only. Snapshot before displaying
+  // the pending turn; repeated historical text is intentionally preserved.
+  function priorHistoryForRequest (history) { return history.slice() }
+
   async function submit () {
     if (pending || brainSaving || (clientUpdates && clientUpdates.blocked())) return
     /**
@@ -2196,6 +2200,7 @@
     drawImages(addUser(text, conv), pictures)
     conv.pendingImages = []
     imageNotice('')
+    var priorHistory = priorHistoryForRequest(conv.history)
     conv.history.push({ role: 'user', text: text })
     msg.value = ''
     autoGrow()
@@ -2239,8 +2244,8 @@
       // name — the same discipline as workRequestRoute re-deriving the file from his words.
       body: JSON.stringify(pictures.length ? { message: text, images: pictures, conversationId: conv.cid, chatLevel: chatLevel.value, chatModel: chatModel } : Object.assign(
         forced
-          ? { message: text, interactionMode: forced, history: conv.history, providerHint: provider, previousLane: previousLane, conversationId: conv.cid }
-          : { message: text, history: conv.history, providerHint: provider, previousLane: previousLane, conversationId: conv.cid },
+          ? { message: text, interactionMode: forced, history: priorHistory, providerHint: provider, previousLane: previousLane, conversationId: conv.cid }
+          : { message: text, history: priorHistory, providerHint: provider, previousLane: previousLane, conversationId: conv.cid },
         carry ? { attachSection: carry } : {},
         websiteRequestId ? { websiteRequestId: websiteRequestId, workflowRequestId: websiteRequestId } : {},
         SUBSCRIPTION_CHAT && chatLevel ? { chatLevel: chatLevel.value, chatModel: chatModel } : {}))
@@ -2402,7 +2407,8 @@
      * rendered card invites a reflex approval, and he has said plainly that he had been
      * approving from memory rather than from what was on the screen. Nothing exists at this
      * point — no Task, no Proposal, no sealed order. Pressing the button is what creates. */
-    if (res.workRequestOffer) return renderOffer(res.workRequestOffer, conv)
+    var terminalRead = !!(res.website || res.investigation || res.error)
+    if (res.workRequestOffer && !terminalRead) return renderOffer(res.workRequestOffer, conv)
     /* ⛔ AND THE SETTINGS OFFER, HERE — BEFORE the clarification branch, for the same reason
        the work-order offer is. HR-7: the server computed this correctly and the browser threw
        it away, which is a whole failure however green the suite is. Caught at the served
@@ -2414,8 +2420,8 @@
        not understood him at all. It asks one question and creates nothing. */
     /* ⛔ BEFORE the generic question. When the server recognised the page he named, asking
        「你想改哪個檔？」 anyway would be pretending not to know. */
-    if (res.workRequestResolution) return renderTargetResolution(res.workRequestResolution, conv)
-    if (res.workRequestClarification) return renderWorkRequestClarification(res.workRequestClarification, conv)
+    if (res.workRequestResolution && !terminalRead) return renderTargetResolution(res.workRequestResolution, conv)
+    if (res.workRequestClarification && !terminalRead) return renderWorkRequestClarification(res.workRequestClarification, conv)
 
     if (res.demoOutcome === 'clarification') return renderProposal(res, conv)
     if (res.talkOnly === true || res.mode === 'chat' || res.mode === 'ask' || res.mode === 'recommend') {
