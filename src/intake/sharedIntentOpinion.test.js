@@ -1,0 +1,9 @@
+'use strict'
+const test=require('node:test'),assert=require('node:assert/strict'),{resolveSemanticFallback:resolve,DECISION}=require('./semanticFallback')
+const go=(firstOpinion,callModel)=>resolve({message:'Owner query',deterministicRoute:'CONVERSATION',firstOpinion,callModel,system:'existing business intent rules'})
+test('a valid reused abstention grants nothing and costs no redundant opinion; it is not a fabricated consensus',async()=>{let calls=0;const r=await go({intent:'NONE',confidence:'HIGH'},()=>{calls++;throw Error('unnecessary')});assert.equal(calls,0);assert.equal(r.decision,DECISION.ABSTAIN);assert.deepEqual(r.sources,[]);assert.equal(r.telemetry.consensus,false);assert.equal(r.telemetry.independentCalls,0)})
+test('a reused positive candidate still requires a fresh independent agreeing HIGH opinion',async()=>{let calls=0;const r=await go({intent:'inventory',confidence:'HIGH'},async({prompt})=>{calls++;assert.equal(prompt,'Owner query');return{intent:'inventory',confidence:'HIGH'}});assert.equal(calls,1);assert.equal(r.decision,DECISION.AUTO_READ);assert.deepEqual(r.sources,require('./semanticFallback').resolveSource('inventory'))})
+test('mismatch, provider error, insufficient confidence and authority-shaped first replies cannot grant a read',async()=>{
+ for(const second of [{intent:'invoice',confidence:'HIGH'},{intent:'inventory',confidence:'LOW'},null]){const r=await go({intent:'inventory',confidence:'HIGH'},async()=>{if(!second)throw Error('provider_failure');return second});assert.notEqual(r.decision,DECISION.AUTO_READ);assert.deepEqual(r.sources,[])}
+ for(const first of [{intent:'inventory',confidence:'HIGH',source:'aroma_system'},{intent:'bad',confidence:'HIGH'},{intent:'NONE',confidence:'wrong'},null]){let calls=0;const r=await go(first,async()=>{calls++;return{intent:'NONE',confidence:'LOW'}});assert.equal(calls,2);assert.equal(r.decision,DECISION.ABSTAIN)}
+})

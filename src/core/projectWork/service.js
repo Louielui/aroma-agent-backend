@@ -7,7 +7,7 @@ const browserEvidence = require('../../workers/execution/browserEvidence')
 const ACTIVE = new Set(['awaiting_approval', 'queued', 'checking', 'coding', 'reviewing'])
 const ERRORS = new Set(['source_changed', 'source_dirty', 'source_sensitive', 'source_unavailable', 'approval_unavailable', 'not_enabled', 'worker_busy', 'worker_cancelled', 'baseline_not_red', 'acceptance_failed', 'subscription_limit_reached', 'subscription_model_unavailable', 'subscription_unavailable', 'sandbox_stop_unconfirmed', 'sandbox_recovery_or_work_pending', 'provider_not_ready', 'invalid_worker_result', 'worker_no_changes', 'claude_unavailable', 'claude_max_turns', 'claude_invalid_structured_output', 'worker_timeout', 'visual_evidence_unavailable', 'invalid_visual_review', 'accepted_evidence_changed'])
 const owner = actor => { if (actor?.id !== 'owner' || actor.role !== 'owner') throw Error('permission_denied') }
-function createProjectWork ({ source, providers, store, enabled, invocationLedger, observeLive = null, onEvent = () => {}, repositoryPreflight = null, onAccepted = null, approvals = createOwnerApprovalStore(), resolveRecipe = recipe, catalogueRecipes = () => Object.values(RECIPES) }) {
+function createProjectWork ({ source, providers, store, enabled, invocationLedger, repositoryBudget = null, observeLive = null, onEvent = () => {}, repositoryPreflight = null, onAccepted = null, approvals = createOwnerApprovalStore(), resolveRecipe = recipe, catalogueRecipes = () => Object.values(RECIPES) }) {
   const sessions = new Map(), controllers = new Map()
   let busy = false, pending = Promise.resolve()
   const all = () => store.all()
@@ -28,6 +28,11 @@ function createProjectWork ({ source, providers, store, enabled, invocationLedge
     }
     const lineage = predecessor ? {repairOf:predecessor.id} : {}
     const WORK_ORDER = resolveRecipe(input.recipe).workOrder
+    if(WORK_ORDER.usageRoot){
+      if(!repositoryBudget||predecessor)throw Error('invalid_request')
+      const prior=all().find(r=>r.workOrder.recipe===input.recipe)
+      if(prior)return{run:prior,approval:null}
+    }
     if (WORK_ORDER.registeredRevision && WORK_ORDER.registeredRevision !== input.bootCommit) throw Error('source_changed')
     if (busy) throw Error('worker_busy')
     const old = all().find(r => r.requestId === input.requestId)
@@ -37,7 +42,7 @@ function createProjectWork ({ source, providers, store, enabled, invocationLedge
       if (repositoryPreflight) await repositoryPreflight()
       const snapshot = await source.read(input.bootCommit, undefined, input.recipe)
       const id = randomUUID(), session = approvals.createSession()
-      const observation = observeLive ? {liveBaseline:await observeLive({recipe:input.recipe,bootCommit:input.bootCommit,sourceHash:snapshot.evidence.sourceFiles?.find(f=>f.path===require('./contract').FILE)?.sha256,workRunId:id})} : {}
+      const observation = observeLive && !WORK_ORDER.usageRoot ? {liveBaseline:await observeLive({recipe:input.recipe,bootCommit:input.bootCommit,sourceHash:snapshot.evidence.sourceFiles?.find(f=>f.path===require('./contract').FILE)?.sha256,workRunId:id})} : {}
       const binding = {...lineage,...observation}
       const hash = digest(JSON.stringify({ workOrder: WORK_ORDER, snapshot, ...binding }))
       const sealed = approvals.seal({ workOrder: { approvalId: id, workOrderHash: hash, snapshot, definition: WORK_ORDER, ...binding }, proposalId: id })
@@ -52,9 +57,10 @@ function createProjectWork ({ source, providers, store, enabled, invocationLedge
     } finally { busy = false }
   }
   async function execute (r, snapshot, signal) {
-    try { return await require('../../investigation/workerInvocation').withWorkerRun({ ledger: invocationLedger, record: r, kind: 'project-runs', save: row => store.save(row) }, () => executeObserved(r, snapshot, signal)) } finally {
+    try { const run=()=>require('../../investigation/workerInvocation').withWorkerRun({ ledger: invocationLedger, record: r, kind: 'project-runs', save: row => store.save(row) }, () => executeObserved(r, snapshot, signal)); return await (r.workOrder.usageRoot?repositoryBudget.run(r.workOrder.usageRoot,run):run()) } catch(e){r.state='failed';r.reason=require('../../actions/usageBudget').ERRORS.has(e.message)?e.message:'worker_unavailable';record(r,'failed',{reason:r.reason})} finally {
       busy = false; controllers.delete(r.id)
-      if (r.state === 'completed' && onAccepted) {
+      if(r.workOrder.delivery==='owner_deployment_package_required'){r.repositoryPromotion={state:'held',reason:'owner_deployment_package_required',appliedToLive:false};record(r,'deployment_held',{appliedToLive:false})}
+      if (r.state === 'completed' && onAccepted && r.workOrder.delivery!=='owner_deployment_package_required') {
         r.repositoryPromotion = { state: 'queued', appliedToLive: false }
         record(r, 'repository_promotion_queued', { appliedToLive: false })
         setImmediate(() => Promise.resolve().then(() => onAccepted(structuredClone(r))).then(result => {
@@ -118,7 +124,7 @@ function createProjectWork ({ source, providers, store, enabled, invocationLedge
       if (e.safeDiagnostics) r.failureDiagnostic = { exitCode: Number.isInteger(e.safeDiagnostics.exitCode) ? e.safeDiagnostics.exitCode : null,
         parsedJson: e.safeDiagnostics.parsedJson === true, subtype: ['success', 'error_max_turns', 'error_during_execution', 'error_max_budget_usd', 'error_max_structured_output_retries'].includes(e.safeDiagnostics.subtype) ? e.safeDiagnostics.subtype : 'unknown',
         stdoutBytes: Number.isInteger(e.safeDiagnostics.stdoutBytes) ? e.safeDiagnostics.stdoutBytes : null, stderrBytes: Number.isInteger(e.safeDiagnostics.stderrBytes) ? e.safeDiagnostics.stderrBytes : null }
-      r.state = signal.aborted ? 'cancelled' : 'failed'; r.reason = ERRORS.has(e.code || e.message) ? (e.code || e.message) : 'worker_unavailable'; r.finishedAt = new Date().toISOString()
+      r.state = signal.aborted ? 'cancelled' : 'failed'; r.reason = (ERRORS.has(e.code || e.message)||require('../../actions/usageBudget').ERRORS.has(e.code||e.message)) ? (e.code || e.message) : 'worker_unavailable'; r.finishedAt = new Date().toISOString()
       record(r, r.state, { reason: r.reason, appliedToLive: false })
     }
   }
@@ -127,8 +133,8 @@ function createProjectWork ({ source, providers, store, enabled, invocationLedge
     if (!enabled()) throw Error('not_enabled')
     if (!input || Object.keys(input).sort().join(',') !== 'hash,id,nonce') throw Error('invalid_request')
     if (busy) throw Error('worker_busy')
-    const r = store.get(input.id), sealed = approvals.loadSealed(input.id), sessionId = sessions.get(input.id)
-    if (!r || r.state !== 'awaiting_approval' || !sealed.ok || !approvals.validSession(sessionId) || !approvals.consumeNonce({ nonce: input.nonce, approvalId: input.id, displayedHash: input.hash, sessionId }).ok) throw Error('approval_unavailable')
+    const r = store.get(input.id), sealed = approvals.loadSealed(r?.approvalTokenId||input.id), sessionId = sessions.get(input.id)
+    if (!r || r.state !== 'awaiting_approval' || !sealed.ok || !approvals.validSession(sessionId) || !approvals.consumeNonce({ nonce: input.nonce, approvalId: r.approvalTokenId||input.id, displayedHash: input.hash, sessionId }).ok) throw Error('approval_unavailable')
     const w = sealed.record.workOrder
     const binding = {...(w.repairOf ? {repairOf:r.repairOf} : {}),...(Object.hasOwn(w,'liveBaseline') ? {liveBaseline:r.liveBaseline} : {})}
     if (r.repairOf !== w.repairOf || JSON.stringify(r.liveBaseline) !== JSON.stringify(w.liveBaseline) || r.approvalHash !== input.hash || digest(JSON.stringify({ workOrder: r.workOrder, snapshot: w.snapshot, ...binding })) !== input.hash || JSON.stringify(r.source) !== JSON.stringify({ evidence: w.snapshot.evidence, hash: w.snapshot.hash })) throw Error('approval_unavailable')
@@ -138,6 +144,17 @@ function createProjectWork ({ source, providers, store, enabled, invocationLedge
     pending = Promise.resolve().then(() => execute(r, w.snapshot, controller.signal)).catch(() => { /* Audit persistence failed; no further work or implicit retry. */ })
     return r
   }
+  async function renew(actor,input){
+    owner(actor);if(!enabled())throw Error('not_enabled');if(!input||Object.keys(input).join(',')!=='id'||busy)throw Error('approval_unavailable')
+    const r=store.get(input.id)
+    if(!r||!['awaiting_approval','interrupted'].includes(r.state)||r.steps.some(s=>s.stage==='approved')||!r.workOrder.usageRoot)throw Error('approval_unavailable')
+    busy=true
+    try{const definition=resolveRecipe(r.workOrder.recipe).workOrder;if(JSON.stringify(definition)!==JSON.stringify(r.workOrder))throw Error('source_changed');const snapshot=await source.read(r.source.evidence.bootCommit,undefined,r.workOrder.recipe);if(JSON.stringify(r.source)!==JSON.stringify({evidence:snapshot.evidence,hash:snapshot.hash}))throw Error('source_changed')
+      const hash=digest(JSON.stringify({workOrder:r.workOrder,snapshot}));if(hash!==r.approvalHash)throw Error('source_changed')
+      const approvalId=randomUUID(),session=approvals.createSession(),sealed=approvals.seal({workOrder:{approvalId,workOrderHash:hash,snapshot,definition},proposalId:r.id});if(!sealed.ok)throw Error('approval_unavailable')
+      r.approvalTokenId=approvalId;r.expiresAt=sealed.record.expiresAt;r.state='awaiting_approval';r.reason=null;sessions.set(r.id,session);record(r,'coding_approval_renewed',{modelsSent:0,usageRoot:r.workOrder.usageRoot});return{run:r,approval:{id:r.id,hash,nonce:approvals.issueNonce({approvalId,workOrderHash:hash,sessionId:session}),expiresAt:r.expiresAt}}
+    }finally{busy=false}
+  }
   function cancel (actor, id) {
     owner(actor); const r = store.get(id)
     if (!r || !ACTIVE.has(r.state)) throw Error('invalid_request')
@@ -145,7 +162,7 @@ function createProjectWork ({ source, providers, store, enabled, invocationLedge
     if (controller) { controller.abort(); return r }
     r.state = 'cancelled'; r.finishedAt = new Date().toISOString(); sessions.delete(id); record(r, 'cancelled'); return r
   }
-  return { prepare, approve, cancel, list, get: (actor, id) => { owner(actor); return store.get(id) }, browser: (actor, id, name, phase = 'after') => { owner(actor); if (!['before','after'].includes(phase)) throw Error('invalid_request'); const result = store.get(id)?.result; return browserEvidence.screenshot(phase === 'before' ? result?.baseline : result?.tests, name) }, settled: () => pending,
+  return { prepare, approve, renew, cancel, list, get: (actor, id) => { owner(actor); return store.get(id) }, browser: (actor, id, name, phase = 'after') => { owner(actor); if (!['before','after'].includes(phase)) throw Error('invalid_request'); const result = store.get(id)?.result; return browserEvidence.screenshot(phase === 'before' ? result?.baseline : result?.tests, name) }, settled: () => pending,
     isActive: () => busy, catalogue: actor => { owner(actor); return { enabled: enabled(), workOrders: catalogueRecipes().map(r => r.workOrder), limits: ['other_projects', 'dependency_installation', 'general_chat_dispatch', 'automatic_live_application'] } } }
 }
 module.exports = { createProjectWork }

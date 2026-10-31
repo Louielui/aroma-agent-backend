@@ -1151,6 +1151,7 @@
             if (m[i] && m[i].taskPlanRunId) renderTaskPlan(tEl, m[i].taskPlanRunId)
             if (m[i] && m[i].capabilityGapRunId) renderCapabilityGap(tEl, m[i].capabilityGapRunId, null, c)
             if (m[i] && m[i].investigationRunId) loadInvestigation(tEl, m[i].investigationRunId)
+            if (m[i] && m[i].projectTaskRunId) renderRepositoryTaskLink(tEl, m[i].projectTaskRunId)
             if (m[i] && m[i].projectWorkRunId) renderProjectWork(tEl, m[i].projectWorkRunId, null)
             if (m[i] && m[i].operatingRunId) renderOperatingRun(tEl, m[i].operatingRunId)
             if (m[i] && m[i].developmentPlanRunId) renderDevelopmentPlanLink(tEl, m[i].developmentPlanRunId)
@@ -1351,6 +1352,7 @@
       records.appendChild(el('pre', '', JSON.stringify({ sourceId: section.sourceId, retrievedAt: section.retrievedAt, sha256: section.sha256, records: section.records, coverage: section.coverage, selection: section.selection, omitted: section.omitted, note: section.note }, null, 2)))
       row.appendChild(records); details.appendChild(row)
     })
+    if (report.answerPresentation && report.answerPresentation.kind === 'guarded_answer_without_observations') { turnEl.body.appendChild(details); return }
     if (!report.focus || report.focus === 'cost') turnEl.body.appendChild(el('p', 'wait-note', t('investigation.boundary')))
     turnEl.body.appendChild(details)
     turnEl.body.appendChild(el('p', 'wait-note', t('investigation.readOnly')))
@@ -1861,6 +1863,10 @@
     }
     read()
   }
+  function renderRepositoryTaskLink(turn,runId){
+    if(!/^[a-f0-9-]{36}$/i.test(runId||''))return
+    var link=el('a','',t('projectTask.chatLink'));link.href='/project-tasks?task='+encodeURIComponent(runId);turn.body.appendChild(link)
+  }
   function renderProjectTask (turn, runId) {
     if (!/^[a-f0-9-]{36}$/i.test(runId || '')) return
     var card = el('section', 'project-work-card'), content = el('div'), nested = el('div'); turn.body.appendChild(card); var activity = createWorkActivity(card); card.appendChild(content); card.appendChild(nested)
@@ -2369,6 +2375,7 @@
       renderTaskPlan(taskTurn, res.taskPlanRunId)
       return taskTurn
     }
+    if(res.projectTaskRunId){var repositoryTurn=addBot(res.reply,conv);if(res.historySaved===false)addMeta(repositoryTurn.body,t('workflow.historyFailed'));renderRepositoryTaskLink(repositoryTurn,res.projectTaskRunId);return repositoryTurn}
     if (res.projectWorkRunId) {
       var workTurn = addBot(res.reply, conv)
       if (res.historySaved === false) addMeta(workTurn.body, t('workflow.historyFailed'))

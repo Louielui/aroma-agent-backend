@@ -16,4 +16,8 @@ function canUseSocialFastPath (message, route, history, opts) {
   if (history.length && !(history.length === 1 && history[0] && history[0].role === 'user' && history[0].text === message)) return false
   return classifyPureChatEligibility(message, route).eligible === true
 }
-module.exports = { PROFILES, LEGACY_LEVELS, profileFor, canUseSocialFastPath }
+function canUseGeneralFastPath(message,route,history,opts){
+ return !!opts&&Array.isArray(history)&&history.length===0&&!opts.contextCard&&!opts.attachSection&&!opts.sectionPreamble&&
+   route?.route==='CONVERSATION'&&route.reason==='general_knowledge'&&require('./generalKnowledge').generalRequestKind(message)!==null
+}
+module.exports = { PROFILES, LEGACY_LEVELS, profileFor, canUseSocialFastPath,canUseGeneralFastPath }

@@ -134,6 +134,17 @@ async function resolveSemanticFallback (opts) {
   }
 
   const ambiguous = isAmbiguousWording(message)
+  // The optional first opinion is a separate structured field from the already
+  // completed website-intent call. NONE grants no read and needs no corroboration.
+  // An actual business candidate still requires another independent model call.
+  const first=opts?.firstOpinion===undefined?null:admit(opts.firstOpinion)
+  if(first&&!first.rejected){
+    const a={ok:true,...first}
+    if(a.candidate===NONE)return{applicable:true,decision:DECISION.ABSTAIN,intent:null,sources:[],clarifyQuestion:null,telemetry:{deterministicRoute:'CONVERSATION',semanticInvoked:false,firstOpinionReused:true,independentCalls:0,consensus:false,clarify:false,finalIntent:null,selectedSource:[],readExecuted:false}}
+    const b=await oneCall(callModel,message,system,signal)
+    const d=decideFromCalls(a,b,ambiguous)
+    return{applicable:true,...d,telemetry:{deterministicRoute:'CONVERSATION',semanticInvoked:true,firstOpinionReused:true,independentCalls:1,consensus:d.decision===DECISION.AUTO_READ,clarify:d.decision===DECISION.CLARIFY,finalIntent:d.intent,selectedSource:d.sources,readExecuted:false}}
+  }
   // Independent and parallel: latency is max(A,B), not A+B.
   const [a, b] = await Promise.all([oneCall(callModel, message, system, signal), oneCall(callModel, message, system, signal)])
 

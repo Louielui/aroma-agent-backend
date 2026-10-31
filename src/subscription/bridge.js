@@ -159,14 +159,14 @@ function createBridge ({ token, clientOptions, memoryClientOptions = clientOptio
         if (!reader) { reply(503, { code: 'context_unavailable' }); return }
         try { const metadata=await reader.read(); if(req.url==='/work-metadata'&&schedulerActions?.procurementActive&&Array.isArray(metadata.workflows))metadata.workflows.push({role:'daily_procurement',state:schedulerActions.procurementActive()?'occupied':'idle'}); reply(200,metadata) } catch (_) { reply(503, { code: 'context_unavailable' }) }
       } else if (req.url === '/project-tasks') {
-        const shapes = { list: ['op'], get: ['op', 'id'], find: ['op', 'requestId'], start: ['op', 'bootCommit', 'requestId', 'goal', 'criteria', 'editable'], approve: ['op', 'id', 'hash', 'nonce'], prepare: ['op', 'id', 'requestId'], cancel: ['op', 'id'] }
+        const shapes = { renew:['op','id'], request:['op','bootCommit','requestId','goal'], continue:['op','id','requestId'], inventory:['op','id'], scope:['op','id','bootCommit','criteria','editable','readonly'], authorize:['op','id','hash','nonce'], list: ['op'], get: ['op', 'id'], find: ['op', 'requestId'], start: ['op', 'bootCommit', 'requestId', 'goal', 'criteria', 'editable'], approve: ['op', 'id', 'hash', 'nonce'], prepare: ['op', 'id', 'requestId'], cancel: ['op', 'id'] }
         if (!projectTasks || !input || Array.isArray(input) || !Object.hasOwn(shapes, input.op) || Object.keys(input).sort().join(',') !== shapes[input.op].sort().join(',')) { reply(400, { error: 'invalid_request' }); return }
         const actor = { id: 'owner', role: 'owner' }, { op, ...body } = input
         try {
-          if (!['list', 'get', 'find', 'cancel'].includes(op) && (projectWork?.isActive() || projectAdoption?.isActive())) throw Error('worker_busy')
+          if (!['list','get','find','cancel','request','continue','inventory'].includes(op) && (projectWork?.isActive() || projectAdoption?.isActive())) throw Error('worker_busy')
           const value = op === 'list' ? projectTasks.list(actor) : op === 'get' ? projectTasks.get(actor, body.id) : op === 'cancel' ? projectTasks.cancel(actor, body.id) : await projectTasks[op](actor, body)
           reply(200, value)
-        } catch (e) { reply(200, { error: ['invalid_request', 'worker_busy', 'approval_unavailable', 'source_changed', 'source_dirty', 'source_sensitive', 'source_unavailable', 'not_enabled', 'request_conflict'].includes(e.message) ? e.message : 'registration_unavailable' }) }
+        } catch (e) { reply(200, { error: ['invalid_request', 'worker_busy', 'approval_unavailable', 'source_changed', 'source_dirty', 'source_sensitive', 'source_unavailable', 'not_enabled','request_conflict','repository_package_limit','scope_unavailable','task_not_found','task_selection_required','request_limit','target_locked','usage_attempt_replayed'].includes(e.message) ? e.message : 'registration_unavailable' }) }
       } else if (req.url === '/project-adoption') {
         const shapes = { list: ['op'], prepare: ['op', 'action', 'runId', 'requestId', 'bootCommit'], approve: ['op', 'id', 'hash', 'nonce'], cancel: ['op', 'id'], reload: ['op', 'id'] }
         if (!projectAdoption || !input || Array.isArray(input) || !Object.hasOwn(shapes, input.op) || Object.keys(input).sort().join(',') !== shapes[input.op].sort().join(',')) { reply(400, { error: 'invalid_request' }); return }
@@ -182,7 +182,7 @@ function createBridge ({ token, clientOptions, memoryClientOptions = clientOptio
           else reply(200, { run: adoptionView(projectAdoption[op](actor, op === 'cancel' ? body.id : body)) })
         } catch (e) { reply(200, { error: ['invalid_request', 'source_changed', 'source_dirty', 'accepted_evidence_changed', 'request_conflict', 'approval_unavailable', 'rollback_unavailable', 'worker_busy', 'reload_pending', 'not_enabled'].includes(e.message) ? e.message : 'adoption_unavailable' }) }
       } else if (req.url === '/project-work') {
-        const shapes = { list: ['op'], get: ['op', 'id'], browser: ['op', 'id', 'name'], prepare: ['op', 'projectId', 'recipe', 'requestId', 'bootCommit'], approve: ['op', 'id', 'hash', 'nonce'], cancel: ['op', 'id'] }
+        const shapes = { list: ['op'], get: ['op', 'id'], browser: ['op', 'id', 'name'], renew:['op','id'], prepare: ['op', 'projectId', 'recipe', 'requestId', 'bootCommit'], approve: ['op', 'id', 'hash', 'nonce'], cancel: ['op', 'id'] }
         if (input?.op === 'browser' && Object.hasOwn(input, 'phase')) { if (!['before','after'].includes(input.phase)) { reply(400, { error: 'invalid_request' }); return }; shapes.browser.push('phase') }
         if (!projectWork || !input || Array.isArray(input) || !Object.hasOwn(shapes, input.op) || Object.keys(input).sort().join(',') !== shapes[input.op].sort().join(',')) { reply(400, { error: 'invalid_request' }); return }
         const actor = { id: 'owner', role: 'owner' }, { op, ...body } = input
@@ -191,7 +191,7 @@ function createBridge ({ token, clientOptions, memoryClientOptions = clientOptio
           if (op === 'list') reply(200, { ...projectWork.catalogue(actor), runs: projectWork.list(actor) })
           else if (op === 'get') reply(200, { run: projectWork.get(actor, body.id) })
           else if (op === 'browser') reply(200, projectWork.browser(actor, body.id, body.name, body.phase))
-          else if (op === 'prepare') reply(200, await projectWork.prepare(actor, body))
+          else if (op === 'prepare' || op === 'renew') reply(200, await projectWork[op](actor, body))
           else reply(200, { run: projectWork[op](actor, op === 'cancel' ? body.id : body) })
         } catch (e) { reply(200, { error: ['invalid_request', 'worker_busy', 'approval_unavailable', 'source_changed', 'source_dirty', 'source_sensitive', 'source_unavailable', 'not_enabled', 'request_conflict'].includes(e.message) ? e.message : 'workflow_unavailable' }) }
       } else if (req.url === '/code-repair') {

@@ -2,7 +2,18 @@
 const fs = require('node:fs'), path = require('node:path'), { t, currentLocale } = require('../../i18n/t')
 function buildHtml () {
   const labels = {
+    renew:t('projectTask.renew'),
     title: t('projectTask.title'),
+    repositoryProfile:t('projectTask.repositoryProfile'),
+    repositoryLimits:t('projectTask.repositoryLimits'),
+    repositoryEditable:t('projectTask.repositoryEditable'),
+    repositoryReadonly:t('projectTask.repositoryReadonly'),
+    inventory:t('projectTask.inventory'),
+    scopePrepare:t('projectTask.scopePrepare'),
+    scopeAuthorize:t('projectTask.scopeAuthorize'),
+    scopeConfirm:t('projectTask.scopeConfirm'),
+    awaiting_scope:t('projectTask.state.awaitingScope'),
+    awaiting_scope_approval:t('projectTask.state.awaitingScopeApproval'),
     intro: t('projectTask.intro'),
     goal: t('projectTask.goal'),
     criteria: t('projectTask.criteria'),

@@ -18,7 +18,7 @@ function codingProvider (client, codexClient = require('../../subscription/codex
 }
 
 async function code ({ root, executable, allowCredits = false, executor, provider, emit = () => {}, order, verify, signal, reviewRepair }) {
-  const client = { executable, cwd: path.join(root, 'text-only-empty'), allowCredits }
+  const client = { executable, cwd: path.join(root, 'text-only-empty'), allowCredits:require('../../actions/usageBudget').currentScope()?false:allowCredits }
   fs.mkdirSync(client.cwd, { recursive: true })
   executor ||= require('../../workers/execution/windowsSandbox').createExecutor({ root: path.join(root, 'offline-execution') })
   provider ||= codingProvider(client)
@@ -124,6 +124,7 @@ function readReview (envelope, files = ['duration.js']) {
 }
 function textReviewArgs (files, purpose) {
   const args = claudeArgs(files), schemaIndex = args.indexOf('--json-schema'), schema = args[schemaIndex + 1]
+  if(require('../../actions/usageBudget').currentScope())args[args.indexOf('--model')+1]='claude-sonnet-5-5'
   args.splice(schemaIndex, 2)
   // Keep text-only review effort explicit rather than inheriting a changing CLI
   // default. Review verdict validation and the wall-clock deadline are unchanged.
@@ -160,7 +161,9 @@ function acceptanceReviewScope (packet) {
   const source = packet?.source
   if (!source || typeof source !== 'object' || Array.isArray(source)) throw Error('invalid_worker_result')
   const names = Object.keys(source).sort().join('\n')
-  const profile = Object.entries({ context: FILES, seven_shifts: filesFor({ editable: SEVEN_FILES }), interface: [...INTERFACE_FILES, 'src/workers/execution/chatBrowser.cjs'], chat: filesFor({ editable: CHAT_FILES }) })
+  const repository=packet.workOrder?.delivery==='owner_deployment_package_required'&&require('../operating/runStore').ID.test(packet.workOrder.usageRoot||'')&&packet.workOrder.recipe==='registered-task-'+packet.workOrder.usageRoot
+  if(repository&&(Object.keys(source).length>49||Object.keys(source).some(n=>!require('../projectTasks/repositoryScope').allowed(n))))throw Error('invalid_worker_result')
+  const profile = repository?'repository':Object.entries({ context: FILES, seven_shifts: filesFor({ editable: SEVEN_FILES }), interface: [...INTERFACE_FILES, 'src/workers/execution/chatBrowser.cjs'], chat: filesFor({ editable: CHAT_FILES }) })
     .find(([, files]) => files.slice().sort().join('\n') === names)?.[0] || (names === INTERFACE_FILES.slice().sort().join('\n') ? 'interface' : null)
   if (!profile) throw Error('invalid_worker_result')
   const files = ['acceptance/registered-task.test.cjs']
@@ -174,6 +177,7 @@ function acceptanceReviewArgs (packet) {
   // These rules describe packaged tests inside the offline executor, not reviewer tools.
   // The host selects a closed profile; packet prose cannot expand its capabilities.
   const limits = {
+    repository:'Tests may import only selected packaged source and Node built-ins. Every Owner criterion must be tested. Missing or dynamic dependencies must be disclosed; do not substitute mocked implementations or pass a partial goal. No host filesystem, network, process execution, installation or credentials. Candidate changes remain on Hold for a separate deployment package.',
     seven_shifts: 'Tests may import node:test, node:assert/strict and the supplied sevenShiftsRead.js only. Synthetic env and injected fetchFn responses exercise the real adapter offline. Fixed company-bound GET /time_punches and GET /users/{numeric_id} are permitted implementation paths; arbitrary URLs, writes, credentials and live fetch are forbidden. Clock-out filtering must retain overnight punches, validate returned bounds and company identity. Name lookup failures must retain verified punches with explicit unresolved names. Cursor completeness must not become a four-row report limit.',
     context: 'Tests may use node:test, node:assert/strict and the supplied contextResult/toolGateway modules only. No filesystem access.',
     interface: 'Tests may use node:test, node:assert/strict and the supplied sidebar.js module with a deterministic DOM double. node:fs and node:path may read only packaged sidebar.css inside the offline sandbox. No filesystem writes. DOM doubles cannot replace the implementation under test; CSS text assertions alone do not prove rendered geometry. If supplied, the immutable host browser tests and chatBrowser.cjs harness check actual navigation bounds, ancestor clipping and hit testing at desktop/mobile widths and low heights in the offline guest. Assess generated tests and host browser tests together. The four browser cases add to the generated count. Do not permit generated tests to launch processes or alter the harness; do not infer that these tests have already run.',

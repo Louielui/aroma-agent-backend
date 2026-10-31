@@ -59,4 +59,14 @@ function renderGeneralization(report,message='') {
  if(report.focus==='general'||e.contradictions.length) lines.push(zh?'建議：先核對上述缺口及矛盾來源，再決定處理方案。本次僅調查，沒有執行管理動作。':'Recommendation: verify the missing or conflicting evidence before deciding on a remedy. This investigation performed no management actions.')
  return lines.join('\n\n')||null
 }
-module.exports={evidencePrompt,renderGeneralization}
+// A judged need with no read receipts is not a completed investigation. Only an
+// explicitly empty claim draft can preserve the already guarded ordinary answer;
+// unreadable sources, contradictions and actual claimed observations keep the
+// existing evidence/withholding presentation.
+function preservesOrdinaryAnswer(report,raw,{route}={}){
+ if(route!=='CONVERSATION'||report?.focus!=='general'||report?.readOnly!==true||report.routing?.requiredSources?.length||!Array.isArray(report.sections)||report.sections.length||
+   !report.evidenceModel||report.evidenceModel.contradictions?.length||report.evidenceModel.assertions?.length)return false
+ let draft;try{draft=JSON.parse(raw).investigationAnswer}catch{return false}
+ return !!draft&&!Array.isArray(draft)&&Object.keys(draft).join(',')==='claims'&&Array.isArray(draft.claims)&&draft.claims.length===0
+}
+module.exports={evidencePrompt,renderGeneralization,preservesOrdinaryAnswer}
