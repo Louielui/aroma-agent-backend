@@ -28,7 +28,7 @@ async function withWorkerRun({ ledger, record, kind, save }, fn) {
   const attempt = Math.max(0, ...previous.map(r => r.trace.attempt)) + 1
   const trace = { workId: 'work:' + createHash('sha256').update(JSON.stringify(['worker/' + kind, record.id])).digest('hex'), runId: randomUUID(), recordId: record.id, kind, attempt }
   const usage=require('../actions/usageBudget'),parent=usage.currentScope()
-  if(parent)record.usageScope=usage.service().childScope(trace.runId)
+  const usageScope=parent?usage.service().childScope(trace.runId):null
   const run = { trace, startedAt: new Date().toISOString(), state: 'unknown', finishedAt: null }
   record.workerRuns = [...previous.slice(-19), run]
   save(record) // Fail closed before dispatch; no historical backfill.
@@ -46,7 +46,7 @@ async function withWorkerRun({ ledger, record, kind, save }, fn) {
       if (run.state !== 'unknown') state.ledger.workerOutcome(trace, { state: run.state, at: run.finishedAt })
     }
   })
-  if(record.usageScope)return usage.service().withScope(record.usageScope,async()=>{try{return await execute()}finally{usage.service().finishChild(record.usageScope)}})
+  if(usageScope)return usage.service().withScope(usageScope,async()=>{try{return await execute()}finally{usage.service().finishChild(usageScope)}})
   return execute()
 }
 function withWorkerPhase(phase, candidateAttempt, fn) {

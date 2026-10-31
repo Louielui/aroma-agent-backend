@@ -49,6 +49,13 @@ workers do not mint capacity. Unbound requests are refused during the active
 exclusive acceptance window. Interactive legacy coding workers, whose internal
 turns cannot be metered, and API model alternatives are refused in this window.
 Outside an active run, existing ordinary model behavior is retained.
+Child membership is durable in the root audit, linked to the existing worker-run
+trace. The scope used for a particular worker invocation is local to that call;
+it is not persisted as a reusable authorization on the worker record. A later
+ordinary run after acceptance cannot accidentally reuse a finished child scope.
+Every native Claude command is checked, including unpinned and alternate print
+syntax. Only the exact existing authentication-status argv and exact model-list
+control argv/input packet are metadata exemptions; neither can contain a task.
 
 ## Owner front door and evidence
 

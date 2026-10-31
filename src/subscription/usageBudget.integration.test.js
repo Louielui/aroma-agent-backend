@@ -86,3 +86,14 @@ test('activation cannot race an existing in-flight bridge completion into an unc
  const request=fetch('http://127.0.0.1:'+server.address().port+'/complete',{method:'POST',headers:{authorization:'Bearer '+token,'content-type':'application/json'},body:JSON.stringify({...MODEL,prompt:'fixture'})});await started
  assert.throws(()=>f.b.handle(OWNER,{op:'usage_activate'}),/usage_idle_required/);release();assert.equal((await request).status,200);f.b.handle(OWNER,{op:'usage_activate'});assert.equal(f.b.status().helper.reserved,0)
 })
+test('unpinned print calls and alternate print syntax cannot bypass the native budget; only exact metadata packets are exempt',async t=>{
+ const f=fixture(t);let starts=0
+ await f.b.withScope(f.s,async()=>{for(const args of [['-p','fixture'],['--print','fixture']])await assert.rejects(require('../core/workerFlow/providers').runClaude(args,{cwd:f.dir,input:'fixture',resolveCommand:()=>({ok:true,command:'fixture'}),spawnImpl:()=>{starts++;throw Error('unexpected_spawn')}}),/usage_model_not_allowed/)})
+ assert.equal(starts,0);assert.equal(f.b.status().helper.reserved,0)
+ const client=require('./claudeClient');await client.readCatalogue({run:async(args,options)=>{assert.equal(client.isMetadataOnly(args,options),true);assert.equal(client.isMetadataOnly([...args,'fixture'],options),false);assert.equal(client.isMetadataOnly(args,{...options,input:options.input+'fixture'}),false);return{models:[]}}})
+})
+test('completed child scope stays in the root audit, not a reusable worker record; a later ordinary run is unaffected',async t=>{
+ const f=fixture(t),record={id:crypto.randomUUID(),state:'completed'},file=path.join(f.dir,'worker.json'),ledger=require('../investigation/invocations').createInvocationLedger({file:path.join(f.dir,'invocations.json')}),save=r=>fs.writeFileSync(file,JSON.stringify(r)),worker=require('../investigation/workerInvocation')
+ await f.b.withScope(f.s,()=>worker.withWorkerRun({ledger,record,kind:'project-runs',save},async()=>{}));assert.equal(record.usageScope,undefined);const before=f.b.status().timeline.filter(e=>e.event==='child_bound').length;assert.equal(before,1)
+ f.b.finishTurn(f.s);f.b.handle(OWNER,{op:'usage_close'});const reloaded=JSON.parse(fs.readFileSync(file));await worker.withWorkerRun({ledger,record:reloaded,kind:'project-runs',save},async()=>{});assert.equal(reloaded.workerRuns.length,2);assert.equal(f.b.status().timeline.filter(e=>e.event==='child_bound').length,before);assert.equal(f.b.status().helper.reserved,0)
+})
