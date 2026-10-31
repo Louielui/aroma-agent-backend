@@ -22,7 +22,7 @@ test('remote rejects a mismatched or unavailable preparation instead of claiming
 })
 async function fixture(t,options={}){
  let prepares=0,models=0;const saved=[]
- const app=express();app.locals.conversationDemo=true;app.use(express.json());app.use(createDemoRouter({chatWork:{prepare:async(a,b)=>{prepares++;return options.prepare?options.prepare(a,b):prepared(b.requestId)}},conversationStore:{appendTurn:r=>saved.push(r)},getAdapterFn:()=>{models++;return{}},processIntakeFn:async()=>({reply:'ordinary'})}))
+ const app=express();app.locals.conversationDemo=true;app.use(express.json());app.use(createDemoRouter({...(options.routing||{}),chatWork:{prepare:async(a,b)=>{prepares++;return options.prepare?options.prepare(a,b):prepared(b.requestId)}},conversationStore:{appendTurn:r=>saved.push(r)},getAdapterFn:()=>{models++;return{}},processIntakeFn:async()=>({reply:'ordinary'})}))
  const server=app.listen(0,'127.0.0.1');await new Promise(r=>server.once('listening',r));t.after(()=>new Promise(r=>{server.closeAllConnections();server.close(r)}))
  const send=(body,origin='http://127.0.0.1:8090')=>new Promise((resolve,reject)=>{const req=http.request({host:'127.0.0.1',port:server.address().port,path:'/api/v1/demo/intake',method:'POST',headers:{host:'127.0.0.1:8090',origin,'content-type':'application/json'}},res=>{let s='';res.on('data',c=>s+=c);res.on('end',()=>resolve({status:res.statusCode,body:JSON.parse(s)}))});req.on('error',reject);req.end(JSON.stringify(body))})
  return{send,saved,counts:()=>({prepares,models}),body:{message:MESSAGE,conversationId:'chat-work-test',workflowRequestId:randomUUID()}}
@@ -31,6 +31,22 @@ test('normal intake prepares without model calls; persists only a reference; ded
  const f=await fixture(t),r=await f.send(f.body);assert.equal(r.status,200);assert.equal(r.body.projectWork.run.state,'awaiting_approval');assert.ok(r.body.projectWork.approval.nonce);assert.deepEqual(f.counts(),{prepares:1,models:0});assert.equal(f.saved[0].projectWorkRunId,r.body.projectWorkRunId);assert.equal(JSON.stringify(f.saved).includes('nonce'),false)
  const again=await f.send(f.body);assert.equal(again.body.projectWorkRunId,r.body.projectWorkRunId);assert.equal(again.body.projectWork,undefined);assert.equal(f.saved.length,1);assert.equal(f.counts().prepares,1)
  assert.equal((await f.send({...f.body,conversationId:'another-chat'})).status,409)
+})
+test('explicit Codex repair dispatch reaches the registered approval lane, preserving the complete request and replay identity',async t=>{
+ const unrelated=()=>{throw Error('A prior-topic planner or diagnosis must not replace the registered repair')}
+ const f=await fixture(t,{routing:{taskDialogue:{candidate:unrelated},codeDiagnosis:{start:unrelated},schedulerChat:{candidate:unrelated}}}),message='請直接派工給 Codex，指定 GPT-6.1 Sol／High：修正 Live Context 查詢範圍快照',body={...f.body,message}
+ const r=await f.send(body);assert.equal(r.status,200);assert.equal(r.body.projectWork?.run.state,'awaiting_approval');assert.equal(f.counts().prepares,1);assert.equal(f.counts().models,0);assert.equal(f.saved[0].userText,message)
+ assert.equal((await f.send(body)).body.projectWorkRunId,r.body.projectWorkRunId);assert.equal(f.counts().prepares,1)
+ assert.equal((await f.send({...body,message:MESSAGE})).status,409)
+})
+test('unsupported cross-module dispatch cannot become a different diagnosis or registered repair',async t=>{
+ const f=await fixture(t,{routing:{codeDiagnosis:{start:()=>{throw Error('wrong task')}},taskPlanner:{start:()=>{throw Error('wrong profile')}}}})
+ const message='請直接派工給 Codex，指定 GPT-6.1 Sol／High，因為需要跨模組程式調查與修正。目標：接續目前上下文理解修復，使用已保存的 POSTDEPLOYMENT-ACCEPTANCE-REPORT 真實輸出，修正 intakeService.js 空 sections.every() 導致呈現層覆蓋正確答案、記憶 opt-out 說明不準確，以及簡單問題 5–6 次 helper 的冗餘流程。已有同一進行中任務則附加指令，避免重複修改。只使用現有授權隔離修正能力，不部署、不擴權、不轉 API、不改 P02-C；原驗收 run 剩餘 7 輪／29 helper／2 網站保持暫停，不重置、不用於本次修復。如果目前只支援八檔唯讀診斷，請明確說明不能派出這個修正任務，不要以其他固定任務冒充。回報真正工作單 ID、接單狀態和限制。'
+ const r=await f.send({...f.body,message});assert.equal(r.status,200);assert.match(r.body.reply,/沒有建立工作單/);assert.match(r.body.reply,/已登記隔離修正/);assert.equal(r.body.projectWorkRunId,undefined);assert.equal(r.body.codeDiagnosisRunId,undefined);assert.deepEqual(f.counts(),{prepares:0,models:0});assert.equal(f.saved[0].userText,message)
+})
+test('delegation syntax cannot strip additional goals, change the worker or turn a quotation into authority',()=>{
+ for(const message of ['請 Codex 修正 Live Context 查詢範圍快照','派工給 Codex：Fix Xiangxiang Live Context query scope snapshot'])assert.equal(classify(message)?.recipe,COVERAGE_RECIPE)
+ for(const message of ['不要派 Codex 修正 Live Context 查詢範圍快照','「請 Codex 修正 Live Context 查詢範圍快照」','請派工給 Codex，指定 GPT-6-Astra／High：修正 Live Context 查詢範圍快照','請派工給 Codex，指定 GPT-6.1 Sol／Low：修正 Live Context 查詢範圍快照','請 Codex 修正 Live Context 查詢範圍快照，並部署','請 Codex 修正 intakeService.js','請 Codex 修正 Live Context 查詢範圍快照\n另外寄信'])assert.equal(classify(message),null,message)
 })
 test('cross origin and extra authority are rejected before preparing work',async t=>{
  const f=await fixture(t);assert.equal((await f.send(f.body,'https://evil.invalid')).status,403)
