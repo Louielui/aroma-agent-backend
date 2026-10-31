@@ -142,6 +142,7 @@ const FILE_CLASS = Object.freeze({
   'core/projectTasks/view.js': CLASS.INTERFACE, // Owner-facing registration labels only
   'core/projectWork/resultLabels.js': 'INTERFACE',
   'core/projectWork/view.js': CLASS.INTERFACE, // Owner-facing source work order labels; no source or model text is translated
+  'core/codeDiagnosis/chatView.js': CLASS.INTERFACE, // Receipt-bound display only; no command matching or model instructions.
   'core/developmentPlan/view.js': CLASS.INTERFACE, // Owner-facing proposal and work-order labels
   'agent/workOrderView.js': CLASS.INTERFACE,          //  39
   'agent/agentResultView.js': CLASS.INTERFACE,        //  33

@@ -1095,7 +1095,7 @@ function createApp (options = {}) {
   app.use(require('./core/developmentPlan/routes').createDevelopmentPlanRouter({ service: developmentPlan }))
   const codeDiagnosis = opts.codeDiagnosis || require('./core/codeDiagnosis/service').createCodeDiagnosis({
     source: require('./core/codeDiagnosis/remoteSource').createRemoteCodeSource({ bootCommit: BOOT_COMMIT }),
-    provider: new (require('./adapters/CodexSubscriptionAdapter').CodexSubscriptionAdapter)({ effort: 'medium', model: 'gpt-6.1-sol' }),
+    provider: new (require('./adapters/CodexSubscriptionAdapter').CodexSubscriptionAdapter)({ effort: 'high', model: 'gpt-6.1-sol' }),
     store: require('./core/operating/runStore').createRunStore({ dir: require('node:path').join(require('./store/dataDir').resolveDataDir(), 'code-diagnosis-runs'), workflow: 'code_diagnosis' }),
     onFinish: run => governedMemory?.event('worker', 'code-diagnosis:' + run.id,
       JSON.stringify({ runId: run.id, state: run.state, reason: run.reason, capability: run.workOrder.capability, worker: run.workOrder.worker || null, model: run.workOrder.model || null, evidenceHash: run.evidenceHash || null, sourceVerified: run.verification?.matched === true, findings: run.result?.findings.length ?? null, testsExecuted: false, filesChanged: false }), 'measured_result', run.finishedAt)
@@ -1273,7 +1273,7 @@ function createApp (options = {}) {
   app.use('/action-center', requireOwner)
   app.use('/api/v1/scheduler-actions', requireOwner)
   app.use('/api/v1/execution-health', requireOwner)
-  app.use(require('./actions/routes').createRouter())
+  app.use(require('./actions/routes').createRouter({health:()=>require('./core/codeDiagnosis/status').readDispatchStatus({diagnosis:codeDiagnosis})}))
   const schedulerChat = require('./actions/chat').createChatGateway({
     request: b => require('./adapters/CodexSubscriptionAdapter').localRequest('/scheduler-action', b, process.env, AbortSignal.timeout(60000)),
     ...(process.env.CHAT_BACKEND === 'codex-subscription' ? { providerFor: settings => new (require('./adapters/CodexSubscriptionAdapter').CodexSubscriptionAdapter)(settings) } : {}),

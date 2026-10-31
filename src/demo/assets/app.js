@@ -2118,6 +2118,20 @@
     var link = el('a', 'briefing-link', t('work.open'))
     link.href = '/code-diagnosis?run=' + encodeURIComponent(runId)
     turn.body.appendChild(link)
+    var receipt = el('p', 'dispatch-live-receipt', '')
+    turn.body.appendChild(receipt)
+    // Poll persisted host events. Never advance a stage on a timer or retry work.
+    function readReceipt () {
+      if (!document.contains(receipt)) return
+      fetch('/api/v1/code-diagnosis/' + encodeURIComponent(runId), {credentials:'same-origin',cache:'no-store',signal:AbortSignal.timeout(7000)})
+        .then(function (r) { if (!r.ok) throw Error('unavailable'); return r.json() })
+        .then(function (r) {
+          if (!document.contains(receipt) || !r.run || r.run.id !== runId || typeof r.report !== 'string') return
+          receipt.textContent = r.report
+          if (['queued','running'].indexOf(r.run.state) !== -1) setTimeout(readReceipt, 1500)
+        }).catch(function () { receipt.textContent = t('dispatchChat.readUnavailable') })
+    }
+    readReceipt()
   }
 
   /** What the server says the turn actually became — shown after the fact, never before. */

@@ -590,6 +590,45 @@ function createDemoRouter ({ getAdapterFn = getAdapterForLane, processIntakeFn =
       // A semantic topic change returns null and preserves ordinary mail routing.
       const generalRequest = require('../intake/generalKnowledge').generalRequestKind(message)
       const planningLane = !generalRequest && !contextCard && !req.body.attachSection && (!req.body.interactionMode || req.body.interactionMode === 'chat')
+      const dispatchChat = require('../core/codeDiagnosis/chat'), dispatchView = require('../core/codeDiagnosis/chatView')
+      const dispatchKind = planningLane ? dispatchChat.parseRequest(message) : null
+      if (dispatchKind && dispatchKind !== 'dispatch') {
+        if (!require('../core/operating/chatRequest').sameOrigin(req)) return res.status(403).json({error:'same_origin_required'})
+        if (!isValidConversationId(req.body.conversationId)) return res.status(400).json({error:'invalid_request_id'})
+        let reply, run = null
+        if (dispatchKind === 'health') reply = dispatchView.healthReply(await require('../core/codeDiagnosis/status').readDispatchStatus({diagnosis:codeDiagnosis}))
+        else if (dispatchKind === 'unsupported') reply = t('dispatchChat.unsupported')
+        else {
+          try {
+            const prior = conversationStore.get?.(req.body.conversationId)?.messages?.filter(m => m.role === 'assistant' && m.codeDiagnosisRunId).at(-1)
+            run = prior ? codeDiagnosis?.get({id:'owner',role:'owner'},prior.codeDiagnosisRunId) : null
+            // Even a saved reference cannot read another conversation's result.
+            if (run && run.conversationId !== req.body.conversationId) run = null
+            reply = dispatchView.report(run)
+          } catch (_) { return res.status(503).json({error:'diagnosis_status_unavailable'}) }
+        }
+        let historySaved = true
+        try { conversationStore.appendTurn({id:req.body.conversationId,userText:message,replyText:reply,...(run ? {codeDiagnosisRunId:run.id}: {})}) } catch (_) { historySaved = false }
+        emit('dispatch_status',200,null)
+        return res.set('Cache-Control','no-store').json({lane:'chat',mode:'chat',reply,servedBy:null,sourceBound:true,historySaved,...(run?{codeDiagnosisRunId:run.id}:{})})
+      }
+      const workRoute = !contextCard && !req.body.attachSection && (!req.body.interactionMode || req.body.interactionMode === 'chat') ? require('../capability/requestRouter').routeWorkRequest(message) : null
+      const workService = workRoute?.service === 'developmentPlan' ? developmentPlan : workRoute?.service === 'codeDiagnosis' ? codeDiagnosis : workRoute?.service === 'codeRepair' ? codeRepair : null
+      if (workRoute && workService) {
+        if (['codeDiagnosis','codeRepair'].includes(workRoute.service) && Object.keys(req.body).some(key => !['message', 'conversationId', 'workflowRequestId', 'websiteRequestId', 'history', 'providerHint', 'previousLane', 'chatLevel', 'chatModel', 'interactionMode'].includes(key))) return res.status(400).json({ error: 'invalid_request' })
+        if (!require('../core/operating/chatRequest').sameOrigin(req)) return res.status(403).json({ error: 'same_origin_required' })
+        if (!isValidConversationId(req.body.conversationId) || !require('../core/operating/runStore').ID.test(req.body.workflowRequestId || '')) return res.status(400).json({ error: 'invalid_request_id' })
+        try {
+          const routeAndContextMs=Date.now()-t0, enqueueStarted=Date.now()
+          const run = await workService.start({ id: 'owner', role: 'owner' }, { recipe: workRoute.recipe, requestId: req.body.workflowRequestId, conversationId: req.body.conversationId })
+          const enqueueMs=Date.now()-enqueueStarted, historyStarted=Date.now()
+          const reply = workRoute.service === 'codeRepair' ? t('repair.accepted', { url: workRoute.url + '?run=' + run.id }) : workRoute.service === 'codeDiagnosis' ? (dispatchKind === 'dispatch' ? t('dispatchChat.accepted',{id:run.id,url:workRoute.url+'?run='+run.id}) : t('work.accepted', { url: workRoute.url + '?run=' + run.id })) : t('plan.accepted', { url: workRoute.url + '?run=' + run.id }); let historySaved = true
+          const field = workRoute.service === 'codeRepair' ? 'codeRepairRunId' : workRoute.service === 'codeDiagnosis' ? 'codeDiagnosisRunId' : 'developmentPlanRunId'
+          if (!run.reused) { try { conversationStore.appendTurn({ id: req.body.conversationId, userText: message, replyText: reply, [field]: run.id }) } catch (_) { historySaved = false } }
+          emit('development_plan_started', 200, historySaved ? null : 'conversation_write_failed')
+          return res.set('Cache-Control', 'no-store').json({ lane: 'chat', mode: 'chat', reply, [field]: run.id, historySaved, servedBy: null, requestId:correlationId, performance:{routeAndContextMs,enqueueMs,historyWriteMs:Date.now()-historyStarted,totalMs:Date.now()-t0,modelCalls:0} })
+        } catch (e) { return res.status(e.message === 'worker_busy' ? 409 : 503).json({ error: { message: t('plan.error'), retryable: false } }) }
+      }
       const clockOutRequest = planningLane && sevenShiftsReport ? require('../context/sevenShiftsReport').clockOutRequest(message) : null
       const attendanceRequest = planningLane && sevenShiftsReport ? require('../context/sevenShiftsAttendance').attendanceRequest(message) : null
       const comparisonRequest = planningLane && sevenShiftsReport ? require('../context/sevenShiftsComparison').comparisonRequest(message) : null
@@ -855,21 +894,6 @@ function createDemoRouter ({ getAdapterFn = getAdapterForLane, processIntakeFn =
           emit('project_work_prepared', 200, historySaved ? null : 'conversation_write_failed')
           return res.set('Cache-Control', 'no-store').json({ lane: 'chat', mode: 'chat', reply, projectWorkRunId: prepared.run.id, projectWork: prepared, historySaved, servedBy: null })
         } catch (e) { return res.status(e.message === 'worker_busy' ? 409 : 503).json({ error: { message: t('chatWork.error'), retryable: false } }) }
-      }
-      const workRoute = !contextCard && !req.body.attachSection && (!req.body.interactionMode || req.body.interactionMode === 'chat') ? require('../capability/requestRouter').routeWorkRequest(message) : null
-      const workService = workRoute?.service === 'developmentPlan' ? developmentPlan : workRoute?.service === 'codeDiagnosis' ? codeDiagnosis : workRoute?.service === 'codeRepair' ? codeRepair : null
-      if (workRoute && workService) {
-        if (['codeDiagnosis','codeRepair'].includes(workRoute.service) && Object.keys(req.body).some(key => !['message', 'conversationId', 'workflowRequestId', 'websiteRequestId', 'history', 'providerHint', 'previousLane', 'chatLevel', 'chatModel', 'interactionMode'].includes(key))) return res.status(400).json({ error: 'invalid_request' })
-        if (!require('../core/operating/chatRequest').sameOrigin(req)) return res.status(403).json({ error: 'same_origin_required' })
-        if (!isValidConversationId(req.body.conversationId) || !require('../core/operating/runStore').ID.test(req.body.workflowRequestId || '')) return res.status(400).json({ error: 'invalid_request_id' })
-        try {
-          const run = await workService.start({ id: 'owner', role: 'owner' }, { recipe: workRoute.recipe, requestId: req.body.workflowRequestId, conversationId: req.body.conversationId })
-          const reply = workRoute.service === 'codeRepair' ? t('repair.accepted', { url: workRoute.url + '?run=' + run.id }) : workRoute.service === 'codeDiagnosis' ? t('work.accepted', { url: workRoute.url + '?run=' + run.id }) : t('plan.accepted', { url: workRoute.url + '?run=' + run.id }); let historySaved = true
-          const field = workRoute.service === 'codeRepair' ? 'codeRepairRunId' : workRoute.service === 'codeDiagnosis' ? 'codeDiagnosisRunId' : 'developmentPlanRunId'
-          if (!run.reused) { try { conversationStore.appendTurn({ id: req.body.conversationId, userText: message, replyText: reply, [field]: run.id }) } catch (_) { historySaved = false } }
-          emit('development_plan_started', 200, historySaved ? null : 'conversation_write_failed')
-          return res.set('Cache-Control', 'no-store').json({ lane: 'chat', mode: 'chat', reply, [field]: run.id, historySaved, servedBy: null })
-        } catch (e) { return res.status(e.message === 'worker_busy' ? 409 : 503).json({ error: { message: t('plan.error'), retryable: false } }) }
       }
       // Persist receipt before any model call. A failed generation is still an observed event.
       if (memoryJournal) {
