@@ -13,7 +13,7 @@ function createDevelopmentPlanRouter ({ service, diagnosis = false }) {
   })
   router.get(api + '/:id', (req, res) => {
     if (!ID.test(req.params.id || '')) return res.status(400).json({ error: 'invalid_run_id' })
-    try { const run = service.get(owner, req.params.id); res.set('Cache-Control', 'no-store').status(run ? 200 : 404).json({ run }) }
+    try { const run = service.get(owner, req.params.id); res.set('Cache-Control', 'no-store').status(run ? 200 : 404).json({ run, ...(diagnosis && run ? {report:require('../codeDiagnosis/chatView').report(run)}:{}) }) }
     catch (_) { res.status(503).json({ error: 'status_unavailable' }) }
   })
   router.post(api, async (req, res) => {

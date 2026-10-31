@@ -170,7 +170,16 @@ const CATALOGUE = Object.freeze({
   'actions.rollback': {zh:'可還原：對同一排程重新讀取，另行批准相反操作。目標或定義改變時不自動還原。',en:'Rollback: reread the same task and separately approve the inverse action. Changed targets or definitions cannot be automatically restored.'},
   'actions.history': {zh:'工作與稽核紀錄',en:'Runs and audit history'},
   'actions.reconcile': {zh:'重新核對目前狀態（不重試）',en:'Check current state (no retry)'},
-  'actions.bridgeReady': {zh:'執行橋接可用',en:'Execution bridge available'},
+  'dispatchChat.readUnavailable': {zh:'工作單狀態暫時讀不到；未當成完成，也不會自動重送派工。請開啟工作單核對。',en:'Work-order status is unavailable; completion is unconfirmed and work is never resent automatically. Open the work order to check.'},
+  'dispatchChat.accepted': {zh:'已建立 Codex 唯讀工作單 {id}；正在核對訂閱及來源，尚未完成。範圍是既有八個派工程式檔案，通用任務及任意檔案調查仍未接通。接單事件、結果與引用核驗會顯示於下方；完整證據：{url}',en:'Created Codex read-only work order {id}; checking subscription and sources, not completed. Scope is the existing eight dispatch files; general tasks and arbitrary files remain unconnected. Recorded progress, result and citation checks appear below; evidence: {url}'},
+  'dispatchChat.noRun': {zh:'這個對話尚未建立 Codex 唯讀工作單。',en:'No Codex read-only work order is recorded in this conversation.'},
+  'dispatchChat.progress': {zh:'Codex 工作單 {id}：{state}。最新實際事件：{stage}。尚未完成核驗。',en:'Codex work order {id}: {state}. Latest recorded event: {stage}. Verification is pending.'},
+  'dispatchChat.completed': {zh:'Codex 工作單 {id} 已回傳結果；香香已核對前後來源雜湊及逐行引用。\n\n{summary}\n\n限既有八個派工程式檔案；發現屬待驗證診斷，未執行測試或修改。完整證據可展開工作單。',en:'Codex work order {id} returned; Imagine matched the before/after source hashes and line citations.\n\n{summary}\n\nLimited to the existing eight dispatch files. Findings are unverified diagnoses; no tests or edits were executed. Open the work order for evidence.'},
+  'dispatchChat.failed': {zh:'Codex 工作單 {id}：{state}。具體阻塞：{reason}；最新事件：{stage}。未當成完成，沒有自動重試或轉 API。',en:'Codex work order {id}: {state}. Blocker: {reason}; latest event: {stage}. No completion claim, automatic retry or API fallback.'},
+  'dispatchChat.unsupported': {zh:'目前可直接派 Codex 唯讀檢查香香既有的派工程式快照（CodeDiagnosis v1，八個固定檔案），透過訂閱回傳並核對引用。通用任務或任意檔案調查尚未接通；這次沒有派工。可說「請 Codex 唯讀調查香香派工流程」。',en:'Direct Codex read-only dispatch supports the existing eight-file Imagine dispatch snapshot (CodeDiagnosis v1), with subscription results and citation checks. General tasks and arbitrary files are not connected; no work was dispatched. Say: 請 Codex 唯讀調查香香派工流程.'},
+  'dispatchChat.health': {zh:'橋接連線：{transport}。既有唯讀派工已啟用：{enabled}（{reason}）。\n能力：{capability}，僅八個固定程式檔案；GitHub 不是必要依賴。Worker：{worker}，接單時才核對訂閱可用性。\n舊 {legacyLane} 開關：{legacy}，屬另一條執行路徑。\n後端版本：{backend}；橋接版本：{bridge}。',en:'Bridge transport: {transport}. Existing read-only dispatch enabled: {enabled} ({reason}).\nCapability: {capability}, eight fixed source files; GitHub is not required. Worker: {worker}; subscription readiness is checked on dispatch.\nLegacy {legacyLane} enabled: {legacy}, a separate execution lane.\nBackend: {backend}; bridge: {bridge}.'},
+  'dispatchChat.architecture': {zh:'既有 CodeDiagnosis v1 透過聊天直接建立工作單、交由訂閱制 Codex 6.1 Sol High 接單，記錄真實階段並核對來源及引用。健康查詢分開顯示連線、啟用、能力及接單核對；通用唯讀任務尚未接通，候選版待交付及現場驗收。',en:'Existing CodeDiagnosis v1 accepts chat work orders for subscription Codex 6.1 Sol High, records real stages and checks sources and citations. Health separates transport, enablement, capability and dispatch-time readiness. General read-only tasks remain unconnected; candidate delivery and live acceptance remain pending.'},
+  'actions.bridgeReady': {zh:'執行橋接已連線（派工能力另行核對）',en:'Execution bridge connected (dispatch capabilities checked separately)'},
   'actions.bridgeOffline': {zh:'執行橋接離線或無法確認；不會自動重送操作',en:'Execution bridge offline or unconfirmed; actions are never automatically resent'},
   'actions.bridgeChecking': {zh:'正在核對執行橋接…',en:'Checking execution bridge…'},
   'actions.bridgeRecovering': {zh:'執行橋接已連線，常駐管理程式正在確認恢復',en:'Execution bridge connected; supervisor is confirming recovery'},
@@ -3696,6 +3705,10 @@ const CATALOGUE = Object.freeze({
   'procurement.approve': { zh: '批准此排程方案', en: 'Approve this schedule proposal' },
   'procurement.presentFailed': { zh: '未能核對方案展示；沒有執行。請重新提出方案。', en: 'Proposal display could not be verified. Nothing executed; prepare a fresh proposal.' },
   'procurement.blocked': { zh: '每日採購排程尚未完成：{reason}。沒有宣稱已建立或執行；可查詢狀態。', en: 'Daily procurement scheduling is incomplete: {reason}. Creation or execution is not claimed; its status can be inspected.' },
+  'usage.blocked': { zh: '本次驗收已停止：{reason}。沒有自行增加或重發額度。', en: 'Acceptance stopped: {reason}. No allowance was increased or reissued.' },
+  'usage.title': { zh: '正式驗收用量保護', en: 'Production acceptance usage protection' },
+  'usage.current': { zh: '候選加入同一次 9 輪／40 helper／2 網站的持久預留及發送前拒絕；重試、並行、子工作及重啟共用原 run。離線證據不代表正式環境保護或真實對話驗收。', en: 'The candidate adds durable reservations and pre-dispatch refusal for the same 9-turn/40-helper/2-website acceptance. Retries, concurrency, descendants and restart share the original run. Offline evidence is not production protection or live-dialogue acceptance.' },
+  'usage.next': { zh: '通過新版本審查及批准、共享服務窗口交付後，核對正式計數與硬截停，再於原剩餘用量內完成對話驗收。', en: 'Review and authorize the exact new version, deliver in one shared service window, verify production counters and hard stops, then complete dialogue acceptance within the original remaining allowance.' },
   'punct.colon': { zh: '：', en: ': ' }
 })
 

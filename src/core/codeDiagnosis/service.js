@@ -48,6 +48,9 @@ function createCodeDiagnosis ({ source, provider, workers = [{ id: 'codex-code-d
     return { workOrder: WORK_ORDER, workers: configured.map(w => ({ id: w.id, name: w.name, capability: CAPABILITY, version: 1, model: w.model, billing: w.billing, state: 'configured', permissions: WORK_ORDER.permissions })), unconnected: ['Claude diagnosis/review', 'Browser/Computer execution', 'patch application'] }
   }
   async function execute (run, control) {
+    const began=performance.now()
+    run.performance={version:1,phases:[],modelCalls:0,totalMs:null,retries:0,followupReads:0,semanticReviewCalls:0}
+    run.modelReceipts=[]
     const check = () => { if (control.abort.signal.aborted) throw Error(control.reason); owner(OWNER) }
     const awaitStep = async call => {
       check()
@@ -57,6 +60,11 @@ function createCodeDiagnosis ({ source, provider, workers = [{ id: 'codex-code-d
         control.abort.signal.addEventListener('abort', listener, { once: true })
       })
       try { const value = await Promise.race([Promise.resolve().then(() => { check(); return call() }), stopped]); check(); return value } finally { control.abort.signal.removeEventListener('abort', listener) }
+    }
+    const measured=async(phase,call)=>{
+      const started=performance.now();let outcome='error'
+      try{const value=await awaitStep(call);outcome='ok';return value}
+      finally{run.performance.phases.push({phase,durationMs:Math.round(performance.now()-started),outcome})}
     }
     try {
       check(); run.state = 'running'
@@ -69,9 +77,9 @@ function createCodeDiagnosis ({ source, provider, workers = [{ id: 'codex-code-d
       if (!worker) throw Error('no_worker_available')
       run.workOrder = { ...WORK_ORDER, worker: worker.id, model: worker.model, billing: worker.billing }
       record(run, 'worker_selected', { worker: worker.id, basis: 'exact_contract_and_existing_health_ranking', cost: null })
-      record(run, 'subscription_check'); const ready = await awaitStep(() => worker.provider.preflight({ signal: control.abort.signal }))
+      record(run, 'subscription_check'); const ready = await measured('subscription_preflight',() => worker.provider.preflight({ signal: control.abort.signal }))
       if (ready?.model !== worker.model || ready?.billing !== worker.billing) throw Error('invalid_worker_result')
-      record(run, 'context_read'); const before = await awaitStep(() => source.read(OWNER, { signal: control.abort.signal }))
+      record(run, 'context_read'); const before = await measured('context_read',() => source.read(OWNER, { signal: control.abort.signal }))
       const evidence = validateEvidence(before); run.evidence = evidence; run.evidenceHash = before.hash; run.retrievedAt = before.retrievedAt; record(run, 'context_received')
       const dispatcher = createDispatcher({ allowedAgentIds: [worker.id], fallback: false, runContext: { appendStage: (stage, facts) => { check(); record(run, stage, facts) } }, adapters: { [worker.id]: {
         health: () => ({ availability: 'up', latencyMs: 0 }),
@@ -79,7 +87,14 @@ function createCodeDiagnosis ({ source, provider, workers = [{ id: 'codex-code-d
           try {
             check(); if (capability !== CAPABILITY || version !== 1 || input.evidence !== evidence) throw Error('invalid_worker_result')
             const numbered = { ...evidence, files: evidence.files.map(({ content, ...meta }) => ({ ...meta, source: content.split('\n').map((line, i) => (i + 1) + ' | ' + line).join('\n') })) }
-            const reply = await awaitStep(() => worker.provider.complete(JSON.stringify({ workOrder: run.workOrder, evidence: numbered }), { system: SYSTEM, signal: control.abort.signal, responseFormat: { type: 'json_schema', name: 'code_diagnosis', schema: SCHEMA } }))
+            run.performance.modelCalls++
+            const receipt={requestId:run.id,state:'started',requestedModel:worker.model,effort:worker.provider.effort||null,actualModel:null,usage:null,billing:null}
+            run.modelReceipts.push(receipt);record(run,'model_requested',{requestId:run.id})
+            let reply
+            try{
+              reply=await measured('model_call',()=>require('../../investigation/invocationContext').withInvocationContext(run.id,()=>worker.provider.complete(JSON.stringify({ workOrder: run.workOrder, evidence: numbered }), { system: SYSTEM, signal: control.abort.signal, invocationPhase:'answer', responseFormat: { type: 'json_schema', name: 'code_diagnosis', schema: SCHEMA } })))
+              receipt.state='returned';receipt.actualModel=reply.actualModel||reply.model;receipt.billing=reply.billing;receipt.usage=require('../../investigation/invocations').projectUsage(reply.usage)
+            }catch(error){receipt.state='failed';receipt.reason=safe(error);throw error}
             if (reply?.billing !== worker.billing || reply.model !== worker.model || typeof reply.text !== 'string' || reply.text.length > 40000) throw Error('invalid_worker_result')
             let result; try { result = JSON.parse(reply.text) } catch (_) { throw Error('invalid_worker_result') }
             if (!validateResult(result, evidence)) throw Error('invalid_worker_result')
@@ -90,13 +105,14 @@ function createCodeDiagnosis ({ source, provider, workers = [{ id: 'codex-code-d
       const dispatched = await awaitStep(() => dispatcher.dispatch({ ...request, input: { evidence } }))
       run.dispatch = { status: dispatched.status, worker: dispatched.agentId || null, latencyMs: dispatched.latencyMs ?? null, cost: null }
       if (dispatched.status !== 'ok' || dispatched.agentId !== worker.id) throw Error(dispatched.error || 'invalid_worker_result')
-      record(run, 'source_verifying'); const after = await awaitStep(() => source.read(OWNER, { signal: control.abort.signal })); validateEvidence(after)
+      record(run, 'source_verifying'); const after = await measured('source_verify',() => source.read(OWNER, { signal: control.abort.signal })); validateEvidence(after)
       run.verification = { at: clock(), matched: after.hash === run.evidenceHash, citationsVerified: true, factualClaimsVerified: false, testsExecuted: false, filesChanged: false, scope: 'exact_committed_blobs_revision_boot_and_line_quotes' }
       if (!run.verification.matched) { run.state = 'needs_attention'; run.reason = 'evidence_changed'; record(run, 'evidence_changed') }
       else { run.result = { ...dispatched.output, attribution: 'worker_diagnosis_proposal', factualClaimsVerified: false, model: worker.model, billing: worker.billing }; run.state = 'completed'; record(run, 'source_verified') }
     } catch (error) {
       run.result = null; run.reason = safe(error); run.state = run.reason === 'cancelled' ? 'cancelled' : run.reason === 'timed_out' ? 'timed_out' : 'failed'
     } finally {
+      run.performance.totalMs=Math.round(performance.now()-began)
       run.finishedAt = clock()
       try { record(run, run.state) } catch (_) { run.state = 'failed'; run.reason = 'run_store_unavailable'; run.result = null; rows.set(run.id, structuredClone(run)); return }
       let receiptTimer
@@ -120,6 +136,6 @@ function createCodeDiagnosis ({ source, provider, workers = [{ id: 'codex-code-d
     return structuredClone(rows.get(run.id))
   }
   function cancel (actor, id) { const run = get(actor, id); if (!run) throw Error('run_not_found'); const control = controls.get(id); if (control) { control.reason = 'cancelled'; control.abort.abort() } return run }
-  return { start, cancel, get, list, catalogue, wait: id => controls.get(id)?.promise || Promise.resolve(), workOrder: WORK_ORDER }
+  return { start, cancel, get, list, catalogue, isActive: () => activeId !== null, wait: id => controls.get(id)?.promise || Promise.resolve(), workOrder: WORK_ORDER }
 }
 module.exports = { createCodeDiagnosis, validateEvidence }

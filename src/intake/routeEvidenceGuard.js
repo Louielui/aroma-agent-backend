@@ -198,4 +198,4 @@ function enforceRouteEvidence (input) {
     }
   }
   
-  module.exports = { enforceRouteEvidence, ROUTE_EVIDENCE_NOTE_RE, ENTITY_NOUNS }
+  module.exports = { enforceRouteEvidence: input=>{const result=enforceRouteEvidence(input),usage=require('../actions/usageBudget');if(usage.currentScope())usage.service().capture('route_guard',{input,result});return result}, ROUTE_EVIDENCE_NOTE_RE, ENTITY_NOUNS }

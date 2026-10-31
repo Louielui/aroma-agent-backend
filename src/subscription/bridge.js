@@ -30,10 +30,11 @@ function validateInput (input) {
   return input
 }
 
-function createBridge ({ token, clientOptions, memoryClientOptions = clientOptions, completeFn = complete, claudeFn = require('./claudeClient').complete, claudeCheckFn = require('./claudeClient').checkSubscription, claudeModelsFn = require('./claudeClient').listModels, backgroundModel = null, checkFn = checkSubscription, modelsFn = listSubscriptionModels, subscriptionFn = require('./subscriptionEvidence').readCodexEvidence, workerFlow = null, workerProviders = null, websiteEnabled = false, memoryEnabled = false, memoryStore = null, codeSourceFactory = null, taskPlanSource = null, codeRepair = null, projectWork = null, projectAdoption = null, projectTasks = null, schedulerActions = null, executionReader = null, workReader = null, schedulerReader = null, invocationLedger = null, publicSearchEnabled = false, publicSearchFn = require('./publicSearch').search, findWebsiteFn = require('./websiteClient').findWebsite }) {
+function createBridge ({ token, clientOptions, memoryClientOptions = clientOptions, completeFn = complete, claudeFn = require('./claudeClient').complete, claudeCheckFn = require('./claudeClient').checkSubscription, claudeModelsFn = require('./claudeClient').listModels, backgroundModel = null, checkFn = checkSubscription, modelsFn = listSubscriptionModels, subscriptionFn = require('./subscriptionEvidence').readCodexEvidence, workerFlow = null, workerProviders = null, websiteEnabled = false, memoryEnabled = false, memoryStore = null, codeSourceFactory = null, taskPlanSource = null, codeRepair = null, projectWork = null, projectAdoption = null, projectTasks = null, schedulerActions = null, executionReader = null, workReader = null, schedulerReader = null, invocationLedger = null, publicSearchEnabled = false, publicSearchFn = require('./publicSearch').search, findWebsiteFn = require('./websiteClient').findWebsite, usageBudget = require('../actions/usageBudget').owner() }) {
   if (!validToken(token)) throw new Error('bridge requires a 256-bit local token')
   let busy = false; let memoryBusy = false
   const activeCalls = new Map()
+  usageBudget.setActivationWitness(()=>!busy&&!memoryBusy&&activeCalls.size===0&&![projectTasks,codeRepair,projectWork,projectAdoption,workerFlow].some(w=>w?.isActive?.()))
   const publicSearch = require('./publicSearch').createSearchCache(async input => {
     const role='public_search',model=require('./publicSearch').MODEL
     activeCalls.set(role,{model,effort:'low',startedAt:new Date().toISOString()})
@@ -50,7 +51,7 @@ function createBridge ({ token, clientOptions, memoryClientOptions = clientOptio
     const id=invocationLedger?.begin({role,model:body.model,effort:body.effort,trace:body.trace,workTrace:body.workTrace})
     const {trace,workTrace,...providerBody}=body
     try {
-      const result=await fn({...options,onDispatch:()=>invocationLedger?.dispatched(id)},providerBody)
+      const result=await require('../actions/usageBudget').observe('helper',providerBody,()=>fn({...options,onDispatch:()=>invocationLedger?.dispatched(id)},providerBody),providerBody)
       invocationLedger?.finish(id,result)
       return result
     } catch(error) { invocationLedger?.finish(id,null,error);throw error }
@@ -99,7 +100,7 @@ function createBridge ({ token, clientOptions, memoryClientOptions = clientOptio
     }
     return cataloguePending
   }
-  const server = http.createServer(async (req, res) => {
+  const handleRequest = async (req, res) => {
     const reply = (status, body) => {
       if (!res.destroyed) { res.writeHead(status, { 'content-type': 'application/json', 'cache-control': 'no-store' }); res.end(JSON.stringify(body)) }
     }
@@ -131,8 +132,8 @@ function createBridge ({ token, clientOptions, memoryClientOptions = clientOptio
         if(busy || workerFlow?.isActive?.() || projectTasks?.isActive() || projectWork?.isActive() || projectAdoption?.isActive() || codeRepair?.isActive()) {reply(503,{code:'subscription_unavailable'});return}
         reply(200,await publicSearch(input))
       }else if(req.url==='/scheduler-action'){
-        if(!schedulerActions || !(require('../actions/contract').validInput(input)||require('../actions/procurementContract').validInput(input)&&input.op!=='procurement_tick')){reply(400,{error:'invalid_request'});return}
-        try{reply(200,await schedulerActions.handle({id:'owner',role:'owner'},input))}catch(e){const allowed=['target_not_allowed','investigation_stale','task_not_idle','target_changed','already_in_requested_state','approval_unavailable','rollback_unavailable','target_locked','audit_unavailable','procurement_not_enabled','schedule_already_exists','schedule_context_mismatch','schedule_definition_changed','presentation_required','scheduled_authorization_unavailable'];reply(200,{error:allowed.includes(e.message)?e.message:'action_unavailable'})}
+        if(!schedulerActions || !(require('../actions/contract').validInput(input)||require('../actions/usageBudget').validInput(input)||require('../actions/procurementContract').validInput(input)&&input.op!=='procurement_tick')){reply(400,{error:'invalid_request'});return}
+        try{reply(200,await schedulerActions.handle({id:'owner',role:'owner'},input))}catch(e){const allowed=['target_not_allowed','investigation_stale','task_not_idle','target_changed','already_in_requested_state','approval_unavailable','rollback_unavailable','target_locked','audit_unavailable','procurement_not_enabled','schedule_already_exists','schedule_context_mismatch','schedule_definition_changed','presentation_required','scheduled_authorization_unavailable',...require('../actions/usageBudget').ERRORS];reply(200,{error:allowed.includes(e.message)?e.message:'action_unavailable'})}
       }else if(req.url==='/procurement-tick'){
         if(!schedulerActions||!input||Array.isArray(input)||Object.keys(input).length){reply(400,{error:'invalid_request'});return}
         try{reply(200,await schedulerActions.scheduledProcurement())}catch{reply(200,{error:'scheduled_procurement_unavailable'})}
@@ -223,7 +224,7 @@ function createBridge ({ token, clientOptions, memoryClientOptions = clientOptio
         }))
       } else if (req.url === '/website') {
         if (!websiteEnabled) { reply(503, { code: 'subscription_unavailable' }); return }
-        reply(200, await findWebsiteFn(options, input))
+        reply(200, await require('../actions/usageBudget').observe('website',{},()=>findWebsiteFn(options,input),input))
       } else if (req.url === '/workers') {
         if (!workerFlow || !workerProviders) { reply(503, { code: 'subscription_unavailable' }); return }
         const allowed = { list: ['op'], status: ['op'], get: ['op', 'id'], start: ['op', 'recipe', 'approved'], review: ['op', 'id', 'approved'] }
@@ -243,9 +244,13 @@ function createBridge ({ token, clientOptions, memoryClientOptions = clientOptio
         reply(200, await readCatalogue())
       } else reply(200, await observedCall('chat_completion',isClaudeModel(input?.model) ? claudeFn : completeFn,options,validateInput(input)))
     } catch (error) {
-      const safe = error instanceof SubscriptionError ? error : new SubscriptionError()
+      const safe = error instanceof SubscriptionError ? error : new SubscriptionError(error.code||error.message)
       reply(safe.code === 'subscription_limit_reached' ? 429 : 503, { code: safe.code })
     } finally { if (isMemory) memoryBusy = false; else if (!isStore && !isCatalogue) busy = false }
+  }
+  const server=http.createServer((req,res)=>{
+    if(!authenticated(req.headers.authorization,token)||req.headers.origin)return void handleRequest(req,res)
+    try{Promise.resolve(usageBudget.withHeader(req.headers['x-xiangxiang-usage'],token,()=>handleRequest(req,res))).catch(()=>{if(!res.headersSent){res.writeHead(503,{'content-type':'application/json'});res.end(JSON.stringify({code:'usage_audit_unavailable'}))}})}catch(e){res.writeHead(409,{'content-type':'application/json'});res.end(JSON.stringify({code:require('../actions/usageBudget').ERRORS.has(e.code)?e.code:'usage_scope_required'}));req.resume()}
   })
   server.requestTimeout = 150000
   server.on('close', () => { subscriptionController?.abort(); subscriptionSession.close(); catalogueController?.abort(); catalogueSession.close(); session.close(); memorySession.close() })

@@ -196,4 +196,4 @@ function offerFor (input = {}) {
   return explainOffer(input).offer
 }
 
-module.exports = { offerFor, explainOffer, refusesChange, WORK_REQUEST_STATE: STATE }
+module.exports = { offerFor, explainOffer: input=>{const result=explainOffer(input),usage=require('../actions/usageBudget');if(usage.currentScope())usage.service().capture('offer_guard',{input,result});return result}, refusesChange, WORK_REQUEST_STATE: STATE }

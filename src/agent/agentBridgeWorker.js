@@ -196,6 +196,7 @@ function buildArgs (workOrder, cloneDir, permissionMode) {
  * parent's environment, so no credential reaches the agent through process.env.
  */
 function defaultRunner (command, args, opts = {}) {
+  require('../actions/usageBudget').blockInteractiveWorker()
   return new Promise((resolve) => {
     const spawnOpts = { shell: false, cwd: opts.cwd, stdio: ['ignore', 'pipe', 'pipe'] }
     if (opts.env && typeof opts.env === 'object') spawnOpts.env = opts.env
@@ -256,6 +257,7 @@ function createAgentBridgeWorker (options = {}) {
    * @param {{ workOrder, workspace, cloneDir, branch }} input
    */
   async function invoke (capabilityId, version, input = {}) {
+    require('../actions/usageBudget').blockInteractiveWorker()
     if (!SUPPORTED[capabilityId]) throw new Error(`agentBridgeWorker does not support capability: ${capabilityId}`)
     if (!SUPPORTED[capabilityId].includes(version)) throw new Error(`agentBridgeWorker does not support ${capabilityId} v${version}`)
 

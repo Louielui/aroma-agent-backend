@@ -19,19 +19,23 @@ function createCodeSource ({ root = path.resolve(__dirname, '../../..'), env = p
     if (fs.realpathSync(top).toLowerCase() !== fs.realpathSync(root).toLowerCase()) throw Error('context_unavailable')
     const revision = (await readGit(root, ['rev-parse', 'HEAD'], signal)).trim()
     if (!SHA.test(revision) || !SHA.test(bootCommit || '')) throw Error('context_unavailable')
-    const files = []; let bytes = 0
-    for (const file of FILES) {
+    const settled = await Promise.allSettled(FILES.map(async (file,index) => {
       verify(actor)
       const objectType = (await readGit(root, ['cat-file', '-t', revision + ':' + file], signal)).trim()
       if (objectType !== 'blob') throw Error('context_unavailable')
       // No working tree, arbitrary paths, .env, logs, credentials, business data,
       // submodules or symlink traversal. git show reads exact committed blobs.
       const content = (await readGit(root, ['show', revision + ':' + file], signal)).replace(/\r\n/g, '\n')
-      bytes += Buffer.byteLength(content)
-      if (!content || content.includes('\0') || Buffer.byteLength(content) > 70000 || bytes > 170000) throw Error('context_unavailable')
+      if (!content || content.includes('\0') || Buffer.byteLength(content) > 70000) throw Error('context_unavailable')
       if (SECRET.test(content)) throw Error('source_sensitive')
-      files.push({ evidenceId: 'code-' + files.length, path: file, sha256: digest(content), lineCount: content.split('\n').length, content })
-    }
+      return { evidenceId: 'code-' + index, path: file, sha256: digest(content), lineCount: content.split('\n').length, content }
+    }))
+    // Join every child read before returning a failure; no Git process may keep
+    // using a snapshot after its caller starts cancellation/cleanup.
+    const failure=settled.find(row=>row.status==='rejected')
+    if(failure)throw failure.reason
+    const files=settled.map(row=>row.value)
+    if(files.reduce((total,file)=>total+Buffer.byteLength(file.content),0)>170000)throw Error('context_unavailable')
     if ((await readGit(root, ['rev-parse', 'HEAD'], signal)).trim() !== revision) throw Error('evidence_changed')
     const evidence = { project: 'xiangxiang-backend', profile: 'dispatch-v1', revision, bootCommit, committedOnly: true, scope: 'eight fixed committed dispatch source/test files; no whole-repository, working-tree, runtime, business or credential access', files }
     return { state: 'ok', retrievedAt: clock(), evidence, hash: digest(JSON.stringify(evidence)) }

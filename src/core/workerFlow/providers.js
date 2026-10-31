@@ -59,13 +59,15 @@ function runClaudeUnobserved (args, { cwd, timeoutMs = 90000, signal, input = ''
   if (spawnImpl === spawn) assertLiveEgressAllowed('claude-code-subscription')
   const resolved = resolveCommand(process.env)
   if (!resolved.ok) return Promise.reject(Error('claude_unavailable'))
+  let budget
+  try{if(!require('../../subscription/claudeClient').isMetadataOnly(args,{controlRequestId,input}))budget=require('../../actions/usageBudget').nativePermit('helper',{model:args.includes('--model')?args[args.indexOf('--model')+1]:null,effort:args.includes('--effort')?args[args.indexOf('--effort')+1]:'auto'})}catch(e){return Promise.reject(e)}
   return new Promise((resolve, reject) => {
     if (signal?.aborted) { reject(Error('worker_cancelled')); return }
     const child = spawnImpl(resolved.command, args, { cwd, env: buildChildEnv(process.env), windowsHide: true, shell: false, stdio: ['pipe', 'pipe', 'pipe'] })
-    child.once('spawn', () => onDispatch?.())
+    child.once('spawn', () => {try{budget?.permit?.dispatched('cli_process_started',child.pid);onDispatch?.()}catch(e){child.kill();finish(e)}})
     let stdout = ''; let stderrBytes = 0; let finished = false
     const cancelled = () => { child.kill(); finish(Error('worker_cancelled')) }
-    const finish = (err, value) => { if (finished) return; finished = true; clearTimeout(timer); signal?.removeEventListener('abort', cancelled); err ? reject(err) : resolve(value) }
+    const finish = (err, value) => { if (finished) return; finished = true; clearTimeout(timer); signal?.removeEventListener('abort', cancelled);try{if(budget?.permit){if(value)budget.permit.capture('native_result',value);if(budget.owned||err)budget.permit.finish(err,value)}}catch(e){err=e};err ? reject(err) : resolve(value) }
     const timer = setTimeout(() => { const error = Error('worker_timeout'); error.safeDiagnostics = { exitCode: null, parsedJson: false, subtype: 'unknown', stdoutBytes: Buffer.byteLength(stdout), stderrBytes }; child.kill(); finish(error) }, timeoutMs)
     signal?.addEventListener('abort', cancelled, { once: true })
     child.stdout.on('data', d => {

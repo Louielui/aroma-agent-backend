@@ -77,7 +77,7 @@ function main () {
   const procurementEnv={...process.env,...env};let procurement
   const procurementGateway=require('../../src/context/procurementContext').createRuntime({env:procurementEnv,store:schedulerActionStore,controller:()=>procurement})
   procurement=require('../../src/actions/procurement').createProcurement({store:schedulerActionStore,scheduler:require('../../src/actions/procurementWindows').createScheduler(),gateway:procurementGateway,enabled:()=>procurementEnv.XIANGXIANG_PROCUREMENT_SCHEDULER==='on'})
-  const schedulerActions = require('../../src/actions/service').createGateway({store:schedulerActionStore,procurement})
+  const schedulerActions = require('../../src/actions/service').createGateway({store:schedulerActionStore,procurement,usageBudget:require('../../src/actions/usageBudget').owner()})
   const server = createBridge({ schedulerActions, backgroundModel: require('../../src/subscription/chatModels').DEFAULT_BRAIN_MODEL, token: env.CODEX_CHAT_BRIDGE_TOKEN, clientOptions: { executable: chatExecutable, cwd, allowCredits: env.CODEX_CHAT_ALLOW_CREDITS === 'true' }, memoryClientOptions: { executable, cwd, allowCredits: env.CODEX_CHAT_ALLOW_CREDITS === 'true' }, workerFlow, workerProviders, websiteEnabled: env.XIANGXIANG_WEBSITE_FLOW === 'on', memoryEnabled: env.XIANGXIANG_MEMORY === 'on',
     publicSearchEnabled: env.PUBLIC_SEARCH_PROVIDER === 'claude-subscription',
     memoryStore: require('../../src/memory/structuredStore').createStructuredStore({ local: true }),

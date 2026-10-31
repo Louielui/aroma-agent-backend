@@ -30,6 +30,20 @@ test('real routing, policy-first, quoted-source verification and async terminal 
   assert.equal(receiptRun.state, 'completed'); assert.equal(run.memoryReceipt, 'queued')
   assert.match(h.observed[0].opts.system, /untrusted/); assert.match(h.observed[0].prompt, /1 \| const answer = 1/)
 })
+
+test('diagnosis preserves actual model, usage, trace and measured phases without inventing absent counters',async()=>{
+ const usage={inputTokens:41,outputTokens:23,totalTokens:64}
+ const h=setup({provider:{complete:async()=>{
+  const trace=require('../../investigation/invocationContext').currentInvocationTrace('answer')
+  assert.ok(trace?.requestId);assert.equal(trace.phase,'answer')
+  return {text:JSON.stringify(output()),model:'gpt-6.1-sol',actualModel:'gpt-6.1-sol',billing:'chatgpt-subscription',usage,latencyMs:12}
+ }}})
+ const run=await finish(h)
+ assert.equal(run.performance.modelCalls,1);assert.equal(run.modelReceipts[0].actualModel,'gpt-6.1-sol');assert.deepEqual(run.modelReceipts[0].usage,usage)
+ assert.equal(run.modelReceipts[0].requestId,run.id)
+ for(const name of ['subscription_preflight','context_read','model_call','source_verify'])assert.ok(run.performance.phases.some(p=>p.phase===name&&p.durationMs>=0),name)
+ assert.equal((await finish(setup())).modelReceipts[0].usage,null)
+})
 test('model self-attribution, fabricated lines/quotes, altered shape and unsupported IDs fail closed', async () => {
   for (const modify of [r => { r.findings[0].citations[0].quote = 'invented' }, r => { r.findings[0].citations[0].endLine = 99 }, r => { r.findings[0].citations[0].evidenceId = 'code-80' }, r => { r.tools = ['shell'] }]) {
     const value = output(); modify(value); assert.equal(validateResult(value, packet().evidence), false)

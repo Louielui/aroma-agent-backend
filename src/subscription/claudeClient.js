@@ -4,6 +4,14 @@ const { runClaude } = require('../core/workerFlow/providers')
 const { REASONING_EFFORTS, isClaudeModel } = require('./chatModels')
 const MODEL = 'claude-sonnet'
 const BASE = ['--restricted', '--setting-sources', '', '--settings', '{"disableAllHooks":true,"switchModelsOnFlag":false}', '--strict-mcp-config', '--mcp-config', '{"mcpServers":{}}']
+const CATALOGUE_ID = 'xiangxiang-model-catalogue'
+const catalogueArgs = () => [...BASE, '-p', '--input-format', 'stream-json', '--output-format', 'stream-json', '--verbose', '--tools', '', '--no-session-persistence']
+const catalogueInput = () => JSON.stringify({ type: 'control_request', request_id: CATALOGUE_ID, request: { subtype: 'initialize', hooks: {} } }) + '\n'
+function isMetadataOnly (args, { controlRequestId, input } = {}) {
+  const auth = ['--restricted', '--setting-sources', '', 'auth', 'status', '--json']
+  return JSON.stringify(args) === JSON.stringify(auth) ||
+    controlRequestId === CATALOGUE_ID && input === catalogueInput() && JSON.stringify(args) === JSON.stringify(catalogueArgs())
+}
 function selection (input = {}) {
   if (!isClaudeModel(input.model || MODEL) || !REASONING_EFFORTS.includes(input.effort || 'medium')) throw new SubscriptionError('subscription_model_unavailable')
 }
@@ -29,10 +37,10 @@ function catalogueRows (rows) {
 }
 async function readCatalogue (options = {}) {
   if (options.catalogue) return catalogueRows(await options.catalogue())
-  const controlRequestId = 'xiangxiang-model-catalogue'
-  const result = await (options.run || runClaude)([...BASE, '-p', '--input-format', 'stream-json', '--output-format', 'stream-json', '--verbose', '--tools', '', '--no-session-persistence'], {
+  const controlRequestId = CATALOGUE_ID
+  const result = await (options.run || runClaude)(catalogueArgs(), {
     ...options, timeoutMs: 15000, controlRequestId,
-    input: JSON.stringify({ type: 'control_request', request_id: controlRequestId, request: { subtype: 'initialize', hooks: {} } }) + '\n'
+    input: catalogueInput()
   })
   if (!Array.isArray(result.models)) throw new SubscriptionError('subscription_unavailable')
   return catalogueRows(result.models)
@@ -66,7 +74,7 @@ async function complete (options = {}, input) {
   }
   let result; const start = Date.now()
   try { options.onDispatch?.(); result = await (options.run || runClaude)(args, { ...options, timeoutMs: options.timeoutMs || 110000, input: wire, maxInputBytes: 9 * 1024 * 1024 }) }
-  catch (error) { throw new SubscriptionError(error.message === 'subscription_limit_reached' ? 'subscription_limit_reached' : 'subscription_unavailable') }
+  catch (error) { throw new SubscriptionError(require('../actions/usageBudget').ERRORS.has(error.code||error.message)?error.code||error.message:error.message === 'subscription_limit_reached' ? 'subscription_limit_reached' : 'subscription_unavailable') }
   if (result?.api_error_status === 429 || (result?.is_error === true && /(?:hit (?:your|the) limit|usage limit|rate.limit|out of.*usage)/i.test(result?.result || ''))) throw new SubscriptionError('subscription_limit_reached')
   const used = Object.keys(result?.modelUsage || {})
   // Claude Code may account for its own Haiku helper alongside the selected model.
@@ -88,4 +96,4 @@ async function complete (options = {}, input) {
     usage: projectUsage(result.modelUsage[actual[0]]), usageBasis:'provider_result_model_usage',
     usageByModel:used.map(model=>({model,usage:projectUsage(result.modelUsage[model])})) }
 }
-module.exports = { MODEL, complete, checkSubscription, listModels, catalogueRows, readCatalogue }
+module.exports = { MODEL, complete, checkSubscription, listModels, catalogueRows, readCatalogue, isMetadataOnly }

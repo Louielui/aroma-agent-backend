@@ -354,6 +354,7 @@ function createClaudeCodeWorker (options = {}) {
   }
 
   async function dispatch ({ goal, sessionId, resume, signal, maxTurns: requestedTurns } = {}) {
+    require('../actions/usageBudget').blockInteractiveWorker()
     // ⛔ AN ALREADY-ABORTED SIGNAL MUST NOT REACH A SPAWN. Starting a process in order to kill
     // it immediately is not cancellation.
     if (signal && signal.aborted) {
