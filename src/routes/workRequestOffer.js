@@ -134,6 +134,14 @@ function refusesChange (message) {
  * @returns {{ offer: object|null, reason: string|null }}
  */
 function explainOffer (input = {}) {
+  // This fallback cannot reinterpret a typed read/error result or an ordinary
+  // answer as a file operation. A currently named file still permits the existing
+  // deterministic offer when the model missed that explicit development request.
+  const response = input.response
+  if (response && (response.website || response.investigation || response.error)) return { offer: null, reason: 'response_owns_turn', state: STATE.NOT_A_WORK_REQUEST }
+  if (response && ['chat', 'ask', 'recommend'].includes(response.mode) &&
+      ['question', 'unclear', 'context', 'chit_chat', 'greeting', 'advisory', 'brainstorm'].includes(response.intent) &&
+      require('../agent/workOrderProducer').mentionedFilesFrom(input.message || '').length === 0) return { offer: null, reason: 'response_owns_turn', state: STATE.NOT_A_WORK_REQUEST }
   // The model path owns the turn when it worked. Not two offers for one sentence.
   if (input.hasProposal === true) return { offer: null, reason: 'model_path_owns_turn', state: STATE.NOT_A_WORK_REQUEST }
 

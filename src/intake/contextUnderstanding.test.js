@@ -63,6 +63,29 @@ test('HTTP self follow-up reaches the ordinary brain with persisted context and 
   assert.doesNotMatch(answer.prompt, /forged\.example/)
 })
 
+test('HTTP prior history retains intentional repetitions and appends the current turn once', async t => {
+  const message = 'repeat-owner-turn-marker'
+  const history = [{ role: 'user', text: message }, { role: 'assistant', text: 'first acknowledgement' }, { role: 'user', text: message }, { role: 'assistant', text: 'second acknowledgement' }]
+  const chat = await withChat(t, { conversationStore: { get: () => null, appendTurn: () => {} } })
+  const response = await chat.send({ message, conversationId: 'repeat-history-case', history })
+  assert.equal(response.status, 200)
+  const prompt = chat.calls.find(c => c.opts.invocationPhase === 'answer').prompt
+  assert.equal(prompt.split(message).length - 1, 3)
+  assert.ok(prompt.indexOf('first acknowledgement') < prompt.indexOf('second acknowledgement'))
+})
+
+test('HTTP completed website result owns topic-switch rendering without a file clarification', async t => {
+  const fixture = require('./fixtures/contextIntegrationReplay.json').topicSwitch
+  const { workRequestClarification, ...response } = fixture.response
+  assert.ok(workRequestClarification, 'the retained failing envelope includes the masking card')
+  const chat = await withChat(t, { process: async () => response })
+  const result = await (await chat.send({ message: fixture.message })).json()
+  assert.equal(result.website.url, response.website.url)
+  assert.ok(result.reply.includes(response.website.url))
+  assert.equal(result.workRequestClarification, undefined)
+  assert.equal(result.workRequestOffer, undefined)
+})
+
 test('unreadable persisted context is a visible failure before models, not fabricated empty history', async t => {
   const chat = await withChat(t, { conversationStore: { get: () => { throw Error('private-path-secret') } } })
   const response = await chat.send({ message: '這三位呢？', conversationId: 'context-case-002' })

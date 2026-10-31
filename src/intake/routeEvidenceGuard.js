@@ -111,6 +111,16 @@ function entityIn (sentence) {
   return null
 }
 
+// Numeric and entity predicates must concern the same clause. A later negative
+// statement about code changes cannot turn an earlier proposal count into a
+// business claim. Retain an explicit subject for elliptical status clauses.
+function assertionClauses (sentence) {
+  const parts = String(sentence).split(/([，；;—]+|,(?!\d))/u)
+  const clauses = []
+  for (let i = 0; i < parts.length; i += 2) if (parts[i]) clauses.push(parts[i] + (parts[i + 1] || ''))
+  return clauses
+}
+
 /**
  * @param {{reply:string, message:string, evidenceSets?:Array}} input
  * @returns {{reply:string, violated:boolean, withheld:string[], sources:string[]}}
@@ -141,46 +151,51 @@ function enforceRouteEvidence (input) {
   const withheld = []
   const sources = new Set()
   for (const sentence of splitSentences(reply)) {
-    const s = String(sentence)
-    if (!s.trim() || ASKING.test(s.trim()) || OWN_OFFER.test(s) || ROUTE_EVIDENCE_NOTE_RE.test(s)) { kept.push(s); continue }
-    if (definition && !BUSINESS_REFERENT.test(s)) { kept.push(s); continue }
-
-    const noun = entityIn(s)
-    // (a) THE NUMERIC HALF — precise, and not ours to reimplement. A bare number is not
-    // enough on its own: it must sit in an operational sentence, which is either an entity
-    // noun or a state word. 「今日有 3 樣貨要補。」 names NO entity the intent table knows —
-    // 要補 is not 補貨, which is exactly why the turn fell to CONVERSATION — so requiring a
-    // noun here would have made the guard miss the very case it was built for.
-    const numeric = !sentenceIsSupported(s, EMPTY_INDEX) && !onlyEchoesTheOwner(s, message) &&
-      (noun !== null || STATUS_WORD.test(s))
-    // (b) THE ENTITY-PLUS-STATUS HALF — no number at all. Porous by construction; see header.
-    const asserted = noun !== null && STATUS_WORD.test(s)
-
-    if (numeric || asserted) {
-      withheld.push(s)
-      const src = noun ? SOURCES_BY_NOUN.get(noun) : (entityIn(message) ? SOURCES_BY_NOUN.get(entityIn(message)) : null)
-      if (src) sources.add(src)
-      continue
+    let subject = null
+    for (const clause of assertionClauses(sentence)) {
+      const s = String(clause)
+      const explicitNoun = entityIn(s)
+      if (explicitNoun) subject = explicitNoun
+      if (!s.trim() || ASKING.test(s.trim()) || OWN_OFFER.test(s) || ROUTE_EVIDENCE_NOTE_RE.test(s)) { kept.push(s); continue }
+      if (definition && !BUSINESS_REFERENT.test(s)) { kept.push(s); continue }
+  
+      const noun = explicitNoun || subject
+      // (a) THE NUMERIC HALF — precise, and not ours to reimplement. A bare number is not
+      // enough on its own: it must sit in an operational sentence, which is either an entity
+      // noun or a state word. 「今日有 3 樣貨要補。」 names NO entity the intent table knows —
+      // 要補 is not 補貨, which is exactly why the turn fell to CONVERSATION — so requiring a
+      // noun here would have made the guard miss the very case it was built for.
+      const numeric = !sentenceIsSupported(s, EMPTY_INDEX) && !onlyEchoesTheOwner(s, message) &&
+        (noun !== null || STATUS_WORD.test(s))
+      // (b) THE ENTITY-PLUS-STATUS HALF — no number at all. Porous by construction; see header.
+      const asserted = noun !== null && STATUS_WORD.test(s)
+  
+      if (numeric || asserted) {
+        withheld.push(s)
+        const src = noun ? SOURCES_BY_NOUN.get(noun) : (entityIn(message) ? SOURCES_BY_NOUN.get(entityIn(message)) : null)
+        if (src) sources.add(src)
+        continue
+      }
+      kept.push(s)
+      }
     }
-    kept.push(s)
+  
+    if (withheld.length === 0) return none
+  
+    // SOURCE_LABELS holds thunks now (see answerPlan.js) — a key string there would be a
+    // dynamic key at the call site.
+    const named = [...sources].map((s) => (SOURCE_LABELS[s] ? SOURCE_LABELS[s]() : s))
+    const note = named.length
+      ? `有 ${withheld.length} 句講到營運狀況，但這一輪沒有查任何來源，所以我沒有顯示它。這個問題要查${named.join('、')}才答得準，要我現在查嗎？`
+      : `有 ${withheld.length} 句講到營運狀況，但這一輪沒有查任何來源，所以我沒有顯示它。要我查過再答嗎？`
+  
+    return {
+      // The note NEVER stands in for the answer silently, and never leaves an empty reply.
+      reply: (kept.join('').trim() ? kept.join('').trim() + '\n\n' : '') + note,
+      violated: true,
+      withheld,
+      sources: [...sources]
+    }
   }
-
-  if (withheld.length === 0) return none
-
-  // SOURCE_LABELS holds thunks now (see answerPlan.js) — a key string there would be a
-  // dynamic key at the call site.
-  const named = [...sources].map((s) => (SOURCE_LABELS[s] ? SOURCE_LABELS[s]() : s))
-  const note = named.length
-    ? `有 ${withheld.length} 句講到營運狀況，但這一輪沒有查任何來源，所以我沒有顯示它。這個問題要查${named.join('、')}才答得準，要我現在查嗎？`
-    : `有 ${withheld.length} 句講到營運狀況，但這一輪沒有查任何來源，所以我沒有顯示它。要我查過再答嗎？`
-
-  return {
-    // The note NEVER stands in for the answer silently, and never leaves an empty reply.
-    reply: (kept.join('').trim() ? kept.join('').trim() + '\n\n' : '') + note,
-    violated: true,
-    withheld,
-    sources: [...sources]
-  }
-}
-
-module.exports = { enforceRouteEvidence, ROUTE_EVIDENCE_NOTE_RE, ENTITY_NOUNS }
+  
+  module.exports = { enforceRouteEvidence, ROUTE_EVIDENCE_NOTE_RE, ENTITY_NOUNS }

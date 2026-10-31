@@ -2420,7 +2420,7 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
       // The verifier sees only owner-authored intent, never recalled content. A memory-only
       // question cannot create a live-business obligation; a business/mixed question still can.
       // Unavailable and measured-empty recall replace an unsupported answer distinctly.
-      const missingReply = operationalInvestigation ? null : missingRecallReply(hindsightCache)
+      const missingReply = operationalInvestigation ? null : missingRecallReply(hindsightCache, verdict.question)
       if (missingReply) distilled = Object.assign({}, distilled, { reply: missingReply, answerPlan: null, nextRead: null })
     } else if (verdict.decision === 'clarify' && !clarifyRestrained) {
       // The ASK is legitimate — either the model already asked, or its FINAL was premature and

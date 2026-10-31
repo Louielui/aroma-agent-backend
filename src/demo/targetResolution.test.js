@@ -143,8 +143,8 @@ test('*** all four states are rendered, and completion rejoins the existing chai
 })
 
 test('*** the resolution is offered BEFORE the generic question ***', () => {
-  const iRes = APP_JS.indexOf('if (res.workRequestResolution) return renderTargetResolution(')
-  const iClar = APP_JS.indexOf('if (res.workRequestClarification) return renderWorkRequestClarification(')
+  const iRes = APP_JS.indexOf('if (res.workRequestResolution && !terminalRead) return renderTargetResolution(')
+  const iClar = APP_JS.indexOf('if (res.workRequestClarification && !terminalRead) return renderWorkRequestClarification(')
   assert.ok(iRes > -1 && iClar > -1)
   assert.ok(iRes < iClar, '⛔ 「你想改哪個檔？」 would be asked about a page the server already named')
 })
@@ -160,5 +160,5 @@ test('*** P1-C1a and C1b1 renderers are untouched ***', () => {
 test('*** the served page really carries all of this ***', () => {
   const html = buildDemoHtml()
   assert.ok(html.includes('function renderTargetResolution ('))
-  assert.ok(html.includes('if (res.workRequestResolution) return renderTargetResolution('))
+  assert.ok(html.includes('if (res.workRequestResolution && !terminalRead) return renderTargetResolution('))
 })

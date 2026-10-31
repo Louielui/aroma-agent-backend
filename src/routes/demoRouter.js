@@ -1127,7 +1127,7 @@ function createDemoRouter ({ getAdapterFn = getAdapterForLane, processIntakeFn =
         // not instrumentation; it is a variable. (HR-8, second instance.)
         const hasProposalAlready = !!(result && typeof result === 'object' && !Array.isArray(result) &&
           Array.isArray(result.proposals) && result.proposals.length > 0)
-        const offerDecision = explainOffer({ message, hasProposal: hasProposalAlready })
+        const offerDecision = explainOffer({ message, hasProposal: hasProposalAlready, response: result })
         /**
          * ⛔ THE SETTINGS OFFER, computed from HIS WORDS. Nothing is written by computing it —
          * it carries before → after so he approves what he can see, and the button is what

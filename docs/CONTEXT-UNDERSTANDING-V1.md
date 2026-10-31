@@ -1,5 +1,30 @@
 # Context understanding v1 — isolated candidate and integration plan
 
+## PR 109 integration repair (2026-10-31)
+
+The first real subscription/interface acceptance of commit `4c1875d` failed.
+It is preserved under `local-candidates/context-understanding-v1-20261031/acceptance`.
+The current repair stays on Hold: no merge, deployment, API fallback or P02-C change.
+The previous `needs_attention` promotion run is not replayed or relabelled.
+
+The browser snapshots completed history before appending the pending current turn;
+it does not deduplicate equal message text. The evidence guard binds quantities and
+entities within clauses, retaining subjects for elliptical business assertions.
+Memory-miss rendering retains the accurate notice and a minimal clarification from
+the existing final verifier, with an honest host fallback when absent; it never
+passes through the raw answer's invented historical alternative. The verifier still
+cannot grant a read or execution capability. Typed website/investigation outcomes
+and errors own their response, ahead of heuristic file cards. An ordinary answered
+question without a current file target cannot become a file-edit request from a
+change verb alone. Explicit file requests keep the existing approval path.
+
+Retained real prompts, raw outputs and tool results supply regression fixtures with
+SHA256 provenance. Offline replay is separate from a fresh exact-commit independent
+subscription review, full suite, bounded Opus 5.5/medium UI acceptance, and PR gates.
+The repair evidence directory records those later outcomes and usage without
+overwriting the failed candidate's evidence. Production memory and business writers
+remain outside the isolated interface acceptance.
+
 Date: 2026-10-31, America/Winnipeg. Development requested: GPT-6.1 Sol,
 High reasoning. The assistant's runtime brain selection is a separate setting;
 this tranche does not change it. No new framework, runtime dependency, execution
@@ -16,7 +41,8 @@ actual-model receipt for those failed turns.
 - Original working checkout and Shadow v0 baseline: `1aad4a3`. They are not the
   observed running version. This candidate starts from the observed main, `4fff4bf`.
 - Isolated candidate: `work/context-understanding-v1`, branch
-  `codex/context-understanding-v1`. No merge, push, service restart or deployment.
+  `codex/context-understanding-v1`. Feature-branch publication only; no merge,
+  service restart or deployment.
 - `repo:begin` verified main/remote/runtime identity and preserved the pre-existing
   launcher overlay under
   `C:\Users\louis\.imagine\repository-promotion\20261031045719679-1e7969`.
