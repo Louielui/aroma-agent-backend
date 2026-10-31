@@ -5,6 +5,13 @@ const fs = require('node:fs')
 const path = require('node:path')
 const os = require('node:os')
 const { createBackupScheduler } = require('./backupScheduler')
+test('backup deadline failures keep a safe reason without disclosing worker details', async t => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'xx-backup-deadline-'))
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }))
+  const scheduler = createBackupScheduler({ dir, backup: async () => { throw Error('memory_backup_timeout') } })
+  const result = await scheduler.run()
+  assert.equal(result.state, 'failed'); assert.equal(result.reason, 'memory_backup_timeout'); assert.equal(result.lastSucceededAt, null)
+})
 function fixture (t) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'xx-backup-schedule-')); t.after(() => fs.rmSync(dir, { recursive: true, force: true }))
   let now = Date.parse('2026-10-01T12:00:00Z'); let runs = 0; let fail = false

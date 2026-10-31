@@ -8,7 +8,7 @@ function atomic (file,value) {
   fs.mkdirSync(path.dirname(file),{recursive:true});const tmp=file+'.'+crypto.randomUUID()+'.tmp'
   fs.writeFileSync(tmp,JSON.stringify(value,null,2)+'\n',{flag:'wx'});fs.renameSync(tmp,file)
 }
-function createCoordinator ({root,runtimeRoot,artifacts,privateRefs=[],ownerAuthorization=()=>[],invocationLedger=null}) {
+function createCoordinator ({root,runtimeRoot,artifacts,privateRefs=[],invocationLedger=null}) {
   const dependencies=path.join(runtimeRoot,'node_modules')
   let runtime
   const repository=createRepository({root,runtimeRoot,artifacts,privateRefs,runtimeReader:()=>runtime.health()})
@@ -16,6 +16,7 @@ function createCoordinator ({root,runtimeRoot,artifacts,privateRefs=[],ownerAuth
   const github=createGitHub({root}),runs=path.join(artifacts,'runs'),lockFile=path.join(artifacts,'promotion.lock')
   fs.mkdirSync(runs,{recursive:true})
   let active=false
+  const activeAuthorities=new Map()
   function acquire () {
     if(active)throw Error('promotion_busy')
     try{fs.writeFileSync(lockFile,JSON.stringify({pid:process.pid,at:new Date().toISOString()}),{flag:'wx'})}catch{throw Error('promotion_lock_requires_inspection')}
@@ -37,6 +38,9 @@ function createCoordinator ({root,runtimeRoot,artifacts,privateRefs=[],ownerAuth
   }
   function adapter (options={}) {
     const {files,message='Accepted Imagine development tranche'}=options
+    const authority=options.authority,material=options.material
+    const authorize=stage=>{if(authority){authority.assertForward(material);authority.note(stage)}}
+    const exceptions=(commit,paths)=>authority?authority.exceptions(commit,paths):[]
     return {
       inspect:()=>repository.inspect(),
       preserve:row=>repository.preserve(row.preflight),reconcile:row=>repository.reconcile(row.preflight),
@@ -75,7 +79,7 @@ function createCoordinator ({root,runtimeRoot,artifacts,privateRefs=[],ownerAuth
       pullRequest:row=>github.pullRequest({branch:row.committed.branch,head:row.committed.commit,title:message,body:body(row)}),
       review:async row=>{
         const packet=checks.reviewPacket({root,commit:row.committed.commit,base:row.runtimeSnapshot.checkpoint,tests:row.tests})
-        packet.ownerAuthorization=ownerAuthorization(row.committed.commit,packet.changedPaths)
+        packet.ownerAuthorization=exceptions(row.committed.commit,packet.changedPaths)
         packet.runtimeOverlays=require('./runtime').overlayPlan(repository,row.runtimeSnapshot,row.committed.commit).map(f=>({path:f.path,sha256:f.sha256,absorbed:f.absorbed,retained:true,beforeBlob:f.beforeBlob,targetBlob:f.targetBlob,snapshotBlob:f.snapshotBlob}))
         packet.overlayExplanation='The pre-existing uncommitted CLAUDE_CHAT_MODEL launcher line remains a private machine-local override. The canonical launcher targetBlob equals beforeBlob, so this promotion does not change the shared launcher. Diff relative to the dirty checkpoint shows the local line absent in canonical Git only; applyCheckout restores its exact saved bytes before restart. Owner asked to preserve existing modifications, not publish this local model override as a shared default.'
         packet.authorityModel='The authenticated Owner pre-authorized ordinary low-risk accepted work through tests, independent subscription review, local host evidence gates, PR merge and local deployment. Windows ACL changes are NOT pre-authorized. GitHub statuses mirror locally measured evidence; GitHub Actions independently checks policy contracts, not the full Windows suite. Host credentials and evidence are trusted host authority, not sandbox/model-supplied receipts.'
@@ -85,13 +89,13 @@ function createCoordinator ({root,runtimeRoot,artifacts,privateRefs=[],ownerAuth
       },
       evidence:async row=>{
         const pre=await repository.inspect(),pr=await github.inspectPR(row.pr.number)
-        const exceptions=ownerAuthorization(row.committed.commit,row.reviewPacket.changedPaths)
+        const authorizedExceptions=exceptions(row.committed.commit,row.reviewPacket.changedPaths)
         const e={policyVersion:VERSION,commit:row.committed.commit,tree:row.committed.tree,base:row.preflight.remoteMain,
           workingTree:{accounted:repository.git(['status','--porcelain=v1'])==='',snapshotHash:row.preservation.snapshotHash},preservation:row.publication,
           rollback:{commit:row.runtimeSnapshot.head,checkpoint:row.runtimeSnapshot.checkpoint,remoteVerified:repository.remoteRefs().refs.some(r=>r.sha===row.runtimeSnapshot.head)},
-          tests:row.tests,review:row.review,conflicts:[],changes:row.reviewPacket.changedPaths,addedText:row.reviewPacket.addedText,authorizedExceptions:exceptions,pr:{...pr,checksState:'success'},runtimeImpact:'local_assistant_only',expectedRuntime:row.preflight.runtimeExpected,observedRuntime:pre.runtimeObserved}
+          tests:row.tests,review:row.review,conflicts:[],changes:row.reviewPacket.changedPaths,addedText:row.reviewPacket.addedText,authorizedExceptions,pr:{...pr,checksState:'success'},runtimeImpact:'local_assistant_only',expectedRuntime:row.preflight.runtimeExpected,observedRuntime:pre.runtimeObserved}
         const localGate=promotionDecision(e)
-        if(localGate.allowed)await github.recordChecks(pr.number,e.commit,e)
+        if(localGate.allowed){authorize('checks');await github.recordChecks(pr.number,e.commit,e,()=>authority?.assertForward(material))}
         for(let i=0;i<12;i++){
           e.pr=await github.inspectPR(pr.number)
           if(e.pr.mergeable!==null&&e.pr.checksState!=='pending')break
@@ -105,12 +109,13 @@ function createCoordinator ({root,runtimeRoot,artifacts,privateRefs=[],ownerAuth
         return pr.head===row.evidence.commit&&pr.base===row.evidence.base&&await github.main()===row.evidence.base&&pr.checksState==='success'&&pr.unresolvedThreads===0&&live.bootCommit===row.evidence.expectedRuntime
       },
       merge:async row=>{
-        const result=await github.merge({number:row.pr.number,head:row.evidence.commit,base:row.evidence.base})
+        authorize('merge')
+        const result=await github.merge({number:row.pr.number,head:row.evidence.commit,base:row.evidence.base,guard:()=>authority?.assertForward(material)})
         repository.git(['fetch','--no-tags','origin',result.commit])
         if(repository.git(['rev-parse',result.commit+'^{tree}'])!==row.evidence.tree)throw Error('merged_tree_mismatch')
         return result
       },
-      deploy:row=>runtime.deploy(row),
+      deploy:row=>{authorize('deploy');return runtime.deploy(row)},
       verify:async row=>{
         const verified=await runtime.verify(row)
         if(verified.verified){
@@ -126,6 +131,7 @@ function createCoordinator ({root,runtimeRoot,artifacts,privateRefs=[],ownerAuth
         return runtime.restart(row.merge.commit)
       },
       rollback:async row=>{
+        if(authority){authority.assertRecovery(material);authority.note('rollback')}
         if(await github.main()!==row.merge.commit)throw Error('rollback_ref_drift')
         const before=row.runtimeSnapshot.head,tree=repository.git(['rev-parse',before+'^{tree}'])
         const commit=repository.git(['commit-tree',tree,'-p',row.merge.commit,'-m','Restore verified pre-promotion source after failed runtime verification'])
@@ -156,10 +162,40 @@ function createCoordinator ({root,runtimeRoot,artifacts,privateRefs=[],ownerAuth
     if(!/^[a-f0-9-]{36}$/.test(id||''))throw Error('invalid_promotion_id')
     acquire();const file=path.join(runs,id+'.json')
     try{
-      const initial=JSON.parse(fs.readFileSync(file,'utf8')),workflow=createWorkflow({id,initial,adapter:adapter(),save:row=>atomic(file,row)})
+      const initial=JSON.parse(fs.readFileSync(file,'utf8'))
+      const authority=initial.authorizationId?activeAuthorities.get(id):null
+      if(initial.authorizationId&&!authority)throw Error('deployment_authorization_unavailable')
+      if(authority)authority.assertForward(initial.approvalMaterial)
+      const workflow=createWorkflow({id,initial,adapter:adapter({authority,material:initial.approvalMaterial}),save:row=>atomic(file,row)})
       const result=await workflow.resume();atomic(path.join(artifacts,'latest.json'),{id,state:result.state,record:file});return result
     }finally{release()}
   }
-  return{begin,finish,resume,repository,runtime,github,isActive:()=>active,artifacts}
+  async function inspectCommitted(options){
+    const accepted=require('./committedCandidate').verifiedCandidate({root,artifacts,commit:options.commit,pr:options.pr,evidenceRunId:options.evidenceRunId})
+    const pre=await repository.inspect(),pr=await github.inspectPR(options.pr)
+    if(path.resolve(root).toLowerCase()===path.resolve(runtimeRoot).toLowerCase()||repository.git(['branch','--show-current'])==='main'||!['develop','preserve_then_develop'].includes(pre.next)||pre.dirty.length||pr.state!=='open'||pr.head!==options.commit||pr.base!==pre.remoteMain||pre.remoteMain!==accepted.runtimeSnapshot.head||pre.runtimeObserved!==accepted.runtimeSnapshot.head)throw Error('committed_candidate_changed')
+    const refs=repository.remoteRefs()
+    if(!refs.refs.some(r=>r.ref===accepted.publication.remoteRef&&r.sha===options.commit)||!refs.refs.some(r=>r.sha===accepted.runtimeSnapshot.head))throw Error('preservation_unconfirmed')
+    const overlays=require('./runtime').overlayPlan(repository,accepted.runtimeSnapshot,options.commit)
+    for(const file of overlays)if(!file.deleted&&digest(fs.readFileSync(path.join(runtimeRoot,file.path)))!==file.sha256)throw Error('runtime_overlay_changed')
+    const readiness=await require('./readiness').validateReadiness({artifacts,readinessId:options.readinessId,commit:options.commit,tree:accepted.committed.tree})
+    const material={commit:options.commit,tree:accepted.committed.tree,base:pre.remoteMain,pr:options.pr,paths:accepted.reviewPacket.changedPaths.slice().sort(),operations:require('./authorization').OPERATIONS.slice(),evidenceRunId:options.evidenceRunId,testLogHash:accepted.tests.logHash,reviewedDiffHash:accepted.review.reviewedDiffHash,runtimeExpected:pre.runtimeObserved,overlays:overlays.map(f=>({path:f.path,sha256:f.sha256,deleted:f.deleted===true})),readiness}
+    return{accepted,pre,pr,material}
+  }
+  async function promoteCommitted(options,authority){
+    if(!require('./authorization').isPromotionAuthority(authority))throw Error('deployment_authorization_required')
+    const inspected=await inspectCommitted(options);authority.assertForward(inspected.material)
+    acquire();const id=crypto.randomUUID(),file=path.join(runs,id+'.json');activeAuthorities.set(id,authority)
+    try{
+      const adapted=adapter({authority,material:inspected.material})
+      adapted.acceptCommitted=async row=>{
+        const fresh=await inspectCommitted(options);authority.assertForward(fresh.material)
+        return{...fresh.accepted,pr:fresh.pr,runtimeSnapshot:repository.preserve(row.preflight,runtimeRoot),authorizationId:authority.id,approvalMaterial:fresh.material}
+      }
+      const workflow=createWorkflow({id,adapter:adapted,save:row=>atomic(file,row)})
+      const result=await workflow.finish();atomic(path.join(artifacts,'latest.json'),{id,state:result.state,record:file});return result
+    }finally{release()}
+  }
+  return{begin,finish,resume,inspectCommitted,promoteCommitted,repository,runtime,github,isActive:()=>active,artifacts}
 }
 module.exports={atomic,createCoordinator}

@@ -16,7 +16,10 @@ function createStructuredStore({ invoke, local = false, env = process.env } = {}
       : ['-B', '-X', 'utf8', path.join(__dirname, '../../scripts/memory/structured.py')]
     const child = spawn('C:/Aroma/hindsight-runtime/Scripts/python.exe', args, { windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'] })
     let raw = ''; let failed = false
-    const timeout = setTimeout(() => { failed = true; child.kill(); reject(Error('memory_database_unavailable')) }, slow ? 60000 : 15000)
+    // Canonical backup validates/restores the complete audit and file snapshot.
+    // A measured ~1 GB snapshot takes longer than the old shared 60-second bound.
+    // This extends only backup maintenance, never indexing or model-call budgets.
+    const timeout = setTimeout(() => { failed = true; child.kill(); reject(Error(backup ? 'memory_backup_timeout' : 'memory_database_unavailable')) }, backup ? 240000 : slow ? 60000 : 15000)
     readUtf8(child.stdout, chunk => { raw += chunk; if (raw.length > 64000000) { failed = true; child.kill() } })
     child.stderr.resume()
     child.on('error', () => { clearTimeout(timeout); reject(Error('memory_database_unavailable')) })
@@ -30,11 +33,11 @@ function createStructuredStore({ invoke, local = false, env = process.env } = {}
   const remote = async request => {
     if (!/^[a-f0-9]{64}$/.test(env.CODEX_CHAT_BRIDGE_TOKEN || '')) throw Error('memory_database_unavailable')
     const res = await require('../adapters/liveEgressFence').fencedFetch('memory_gateway')('http://127.0.0.1:8091/memory-store', {
-      method: 'POST', redirect: 'error', signal: AbortSignal.timeout(['backup', 'queue_index'].includes(request.op) ? 65000 : 20000),
+      method: 'POST', redirect: 'error', signal: AbortSignal.timeout(request.op === 'backup' ? 270000 : request.op === 'queue_index' ? 65000 : 20000),
       headers: { authorization: 'Bearer ' + env.CODEX_CHAT_BRIDGE_TOKEN, 'content-type': 'application/json' }, body: JSON.stringify(request) })
     if (!res.ok) throw Error('memory_database_unavailable')
     const value = await res.json()
-    if (value.error) throw Error(['revision_conflict', 'decision_conflict'].includes(value.error) ? value.error : 'memory_database_unavailable')
+    if (value.error) throw Error(['revision_conflict', 'decision_conflict', 'memory_backup_timeout'].includes(value.error) ? value.error : 'memory_database_unavailable')
     return value.result
   }
   const run = invoke || (local ? runLocal : remote)

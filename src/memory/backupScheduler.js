@@ -42,9 +42,9 @@ function createBackupScheduler ({ backup, dir = path.join(resolveDataDir(), 'mem
         lastAttemptAt: new Date(clock()).toISOString(), nextAt: new Date(clock() + 86400000).toISOString(),
         path: result.path, sha256: result.restored.sha256, filesRestored: result.filesRestored.files,
         reason: null })
-    } catch (_) {
+    } catch (error) {
       try { save({ ...previous, state: 'failed', trigger, lastSucceededTrigger: knownTrigger(previous.lastSucceededTrigger), lastAttemptAt: new Date(clock()).toISOString(),
-        nextAt: new Date(clock() + 1800000).toISOString(), reason: 'backup_unavailable' }) } catch (_) {}
+        nextAt: new Date(clock() + 1800000).toISOString(), reason: error?.message === 'memory_backup_timeout' ? 'memory_backup_timeout' : 'backup_unavailable' }) } catch (_) {}
     } finally { busy = false }
   }
   const tick = () => perform(false)

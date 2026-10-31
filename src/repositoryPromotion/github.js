@@ -28,10 +28,10 @@ function createGitHub ({root,fetchImpl=fetch,tokenProvider=tokenFromGit}) {
     if(r.head?.sha!==head||r.base?.ref!=='main'||r.head?.repo?.full_name!==REPOSITORY)throw Error('pr_identity_mismatch')
     return{number:r.number,url:r.html_url,head:r.head.sha,base:r.base.sha,state:r.state}
   }
-  async function recordChecks (number,head,proof) {
+  async function recordChecks (number,head,proof,guard=()=>{}) {
     if(!Number.isSafeInteger(number)||!SHA.test(head||'')||proof.commit!==head||require('./policy').promotionDecision({...proof,pr:{...proof.pr,checksState:'success'}}).allowed!==true)throw Error('invalid_status_proof')
     const descriptions=['Full isolated Node suite passed','Independent Claude subscription review passed','Exact SHA and rollback history preserved','Promotion policy evidence gates passed']
-    for(let i=0;i<CONTEXTS.length;i++)await api(PREFIX+'/statuses/'+head,{method:'POST',body:{state:'success',context:CONTEXTS[i],description:descriptions[i],target_url:'https://github.com/'+REPOSITORY+'/pull/'+number}})
+    for(let i=0;i<CONTEXTS.length;i++){guard();await api(PREFIX+'/statuses/'+head,{method:'POST',body:{state:'success',context:CONTEXTS[i],description:descriptions[i],target_url:'https://github.com/'+REPOSITORY+'/pull/'+number}})}
   }
   async function inspectPR (number) {
     if(!Number.isSafeInteger(number))throw Error('invalid_pr_request')
@@ -72,9 +72,10 @@ function createGitHub ({root,fetchImpl=fetch,tokenProvider=tokenFromGit}) {
     const checksOk=completeEvidence&&ownPresent&&allStatuses.every(s=>s.state==='success')&&allChecks.every(c=>c.status==='completed'&&['success','neutral','skipped'].includes(c.conclusion))&&!requestedChanges
     return{number,url:pr.html_url,head:pr.head.sha,base:pr.base.sha,state:pr.merged?'merged':pr.state,mergeable:pr.mergeable,mergeCommit:pr.merge_commit_sha,unresolvedThreads:reviewThreads.nodes.filter(x=>x.isResolved!==true).length+(requestedChanges?1:0),checksState:checksOk?'success':(allStatuses.some(s=>s.state==='failure'||s.state==='error')||allChecks.some(c=>c.conclusion==='failure')?'failure':'pending'),checkContexts:allStatuses.map(s=>({context:s.context,state:s.state})),checks:allChecks.map(c=>({name:c.name,state:c.status,conclusion:c.conclusion}))}
   }
-  async function merge ({number,head,base}) {
+  async function merge ({number,head,base,guard=()=>{}}) {
     const current=await inspectPR(number)
     if(current.head!==head||current.base!==base||current.state!=='open'||current.mergeable!==true||current.unresolvedThreads!==0||current.checksState!=='success'||await main()!==base)throw Error('head_or_base_changed')
+    guard()
     const result=await api(PREFIX+'/pulls/'+number+'/merge',{method:'PUT',body:{sha:head,merge_method:'merge',commit_title:'Promote reviewed Imagine tranche #'+number}})
     if(result.merged!==true||!SHA.test(result.sha||''))throw Error('merge_unconfirmed')
     return{commit:result.sha,pr:number,head,base}
