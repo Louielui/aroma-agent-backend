@@ -35,7 +35,7 @@ test('read switches and sensitive previous context stop before classification or
   const never = async () => { throw Error('must not call') }
   const base = { message: 'Open Costco website', classify: never, search: never }
   const disabled = await runWebsiteFlow({ ...base, readEnabled: false })
-  assert.equal(disabled.website.reason, 'read_disabled')
+  assert.equal(disabled, null)
   const sensitive = await runWebsiteFlow({ ...base, history: [{ role: 'user', text: 'my password is secret' }] })
   assert.equal(sensitive.website.state, 'needs_input'); assert.equal(sensitive.website.reason, 'sensitive_context')
 })

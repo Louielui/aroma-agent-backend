@@ -7,4 +7,10 @@ function missingRecallReply(context) {
   if (context.count === 0) return t('memory.noMatchingRecall')
   return null
 }
-module.exports = { missingRecallReply }
+function withMemoryFailureNotice(result, failures) {
+  if (!result || result.blocked || !failures?.size) return result
+  const prefix = t('context.memoryUnavailable') + '\n\n'
+  return { ...result, contextFailures: [...failures], reply: prefix + (result.reply || ''),
+    ...(typeof result.replyForArchive === 'string' ? { replyForArchive: prefix + result.replyForArchive } : {}) }
+}
+module.exports = { missingRecallReply, withMemoryFailureNotice }

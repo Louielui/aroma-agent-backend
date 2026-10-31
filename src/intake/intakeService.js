@@ -389,12 +389,14 @@ async function processIntake (message, adapter, history = [], opts = {}) {
     const goals=require('./goal/ownerGoal')
     let ownerGoal=opts.interactionMode==='chat'&&goals.isTaskRequest(message)?goals.createGoal({objective:message,requestId}):null
     let ownerReadReply='',ownerHostReply=''
-    const pipelineOpts={...opts,onOwnerUnderstanding:understanding=>{
+    const contextFailures = new Set()
+    const pipelineOpts={...opts,contextFailures,onOwnerUnderstanding:understanding=>{
       const outcomes=understanding?.ownerOutcomes
       if(ownerGoal&&Array.isArray(outcomes)&&outcomes.length){ownerGoal=goals.refineGoal(ownerGoal,outcomes);pipelineOpts.ownerGoal=ownerGoal}
     },onOwnerRead:observations=>{if(ownerGoal){ownerGoal=goals.observeReads(ownerGoal,observations);pipelineOpts.ownerGoal=ownerGoal}},onOwnerReadView:reply=>{ownerReadReply=reply},onOwnerClarification:reply=>{ownerHostReply=reply},ownerGoal}
-    const result=await require('../investigation/invocationContext').withInvocationContext(requestId,()=>runIntakePipeline(message, adapter, history, pipelineOpts, requestId))
-    return ownerGoal&&result?(result.blocked?{...result,ownerGoal}:goals.attachResult(result,ownerGoal,{readReply:ownerReadReply,hostReply:ownerHostReply})):result
+    let result=await require('../investigation/invocationContext').withInvocationContext(requestId,()=>runIntakePipeline(message, adapter, history, pipelineOpts, requestId))
+    result = ownerGoal&&result?(result.blocked?{...result,ownerGoal}:goals.attachResult(result,ownerGoal,{readReply:ownerReadReply,hostReply:ownerHostReply})):result
+    return require('../memory/recallReply').withMemoryFailureNotice(result, contextFailures)
   } catch (err) {
     // Slice B: every error leaving intake carries the correlationId (== requestId).
     // IntakeUpstreamError sets it in its constructor; DistillParseError and any
@@ -1111,7 +1113,7 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
            * words. Recall answers 「what is he talking about」; it never becomes a row, a
            * source, a trust level or a citable id.
            */
-          contextBlocks: [convRecallBlockCache, recallBlockCache, opts.ownerInvestigation === true ? require('../investigation/continuity').referenceContext(opts.previousInvestigation) : null].filter(Boolean),
+          contextBlocks: [convRecallBlockCache, recallBlockCache, hindsightCache?.block, require('../governance/selfDescription').runtimeSelfBlock(opts.runtimeSelf), opts.ownerInvestigation === true ? require('../investigation/continuity').referenceContext(opts.previousInvestigation) : null].filter(Boolean),
           // Provider-neutral by construction: B is handed a closure and never learns what is
           // behind it — the same arrangement reasoningLoop uses.
           callModel: async ({ prompt, responseFormat }) => {
@@ -1275,6 +1277,7 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
             () => buildDecisionRecallContext(deps),
             { clock: latencyClock, sink: latencySink })
           recallBlockCache = (recall && recall.block) ? recall.block : null
+          if (recall?.status === 'SOURCE_UNAVAILABLE') opts.contextFailures.add('decision_memory_unavailable')
         }
         if (recallBlockCache) effPrompt = recallBlockCache + '\n\n' + baseEffPrompt
       } catch (err) {
@@ -1282,6 +1285,7 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
         // failure used to be invisible, so 心燈 answering without past decisions looked
         // identical to there being none.
         recallBlockCache = null
+        opts.contextFailures.add('decision_memory_unavailable')
         logReadSource({ source: 'decisions', trust: 'unavailable', count: 0, usedFallback: false, error: (err && err.message) || String(err), durationMs: null })
       }
     }
@@ -1305,12 +1309,14 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
             () => buildConversationRecall(Object.assign({ currentConversationId: opts && opts.conversationId }, deps)),
             { clock: latencyClock, sink: latencySink })
           convRecallBlockCache = (cr && cr.block) ? cr.block : null
+          if (cr?.status === 'SOURCE_UNAVAILABLE') opts.contextFailures.add('conversation_memory_unavailable')
         }
         if (convRecallBlockCache) effPrompt = convRecallBlockCache + '\n\n' + effPrompt
       } catch (err) {
         // Fail soft, never silently — the same rule as the two blocks around it. Losing
         // memory must not look identical to having none.
         convRecallBlockCache = null
+        opts.contextFailures.add('conversation_memory_unavailable')
         logReadSource({ source: 'conversation-archive', trust: 'unavailable', count: 0, usedFallback: false, error: (err && err.message) || String(err), durationMs: null })
       }
     }
@@ -1321,8 +1327,13 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
         hindsightCache = await require('../memory/context').recallContext({ enabled: true, memory, mailMemory: opts.mailMemoryClient || null, query: message, history })
         logReadSource({ source: 'hindsight', trust: hindsightCache.state === 'ok' ? 'advisory' : 'unavailable', count: hindsightCache.count, usedFallback: false, error: hindsightCache.state === 'ok' ? null : 'memory_unavailable', durationMs: null })
       }
-      if (hindsightCache) { effPrompt = hindsightCache.block + '\n\n' + effPrompt; hindsightUsed = hindsightCache.count > 0 }
+      if (hindsightCache) {
+        if (hindsightCache.state === 'unavailable' || hindsightCache.retrieval?.general === 'unavailable') opts.contextFailures.add('memory_unavailable')
+        effPrompt = hindsightCache.block + '\n\n' + effPrompt; hindsightUsed = hindsightCache.count > 0
+      }
     }
+
+    if (isChat) effPrompt = require('../governance/selfDescription').runtimeSelfBlock(opts.runtimeSelf) + '\n\n' + effPrompt
 
     // READ CONTEXT v1 — chat-lane only, flag-gated, FAIL-SOFT. Injected ONLY when
     // READ_ACCESS==='on' AND at least one per-source flag is 'on' AND the lane is chat.

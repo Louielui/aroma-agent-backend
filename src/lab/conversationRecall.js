@@ -98,7 +98,10 @@ function cap (s, n) {
 /** Read the archive file into records. Never throws: an unreadable archive is no memory. */
 function readRecords (archivePath) {
   let raw
-  try { raw = fs.readFileSync(archivePath, 'utf8') } catch (_) { return [] }
+  try { raw = fs.readFileSync(archivePath, 'utf8') } catch (error) {
+    if (error.code === 'ENOENT') return []
+    throw Error('conversation_archive_unavailable')
+  }
   const out = []
   for (const line of raw.split('\n')) {
     if (!line.trim()) continue
