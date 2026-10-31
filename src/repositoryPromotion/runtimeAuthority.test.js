@@ -15,7 +15,10 @@ function fixture(){
   if(name==='../browserRead/clientUpdate')return{readInstallation:()=>({state:'ready'})}
   return require(name)
  }
- vm.runInNewContext(fs.readFileSync(path.join(__dirname,'runtime.js'),'utf8'),{module,require:fakeRequire,Buffer,process,setTimeout,AbortSignal})
+ // The fixture models the Windows runtime on every runner, without borrowing
+ // credentials, profile paths or environment assumptions from the host.
+ const fixtureProcess={env:{USERPROFILE:'C:/Users/fixture',SystemRoot:'C:/Windows'}}
+ vm.runInNewContext(fs.readFileSync(path.join(__dirname,'runtime.js'),'utf8'),{module,require:fakeRequire,Buffer,process:fixtureProcess,setTimeout,AbortSignal})
  const repository={runtimeRoot:'C:/Aroma/aroma-agent-backend',artifacts:'fixture',runtimeGit:args=>args[0]==='show'?installer:args[1]?.endsWith('^{tree}')?TREE:COMMIT,git:()=>TREE}
  const guard=()=>{if(expired)throw Error('deployment_authorization_expired')}
  const runtime=module.exports.createRuntime({repository,readinessImpl:async()=>{expired=true;return{state:'idle_verified'}},fetchImpl:async url=>({ok:true,status:401,json:async()=>({status:'ok',service:'aroma-hub',bootCommit:COMMIT})})})
