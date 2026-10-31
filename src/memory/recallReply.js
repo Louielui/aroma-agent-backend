@@ -14,4 +14,4 @@ function withMemoryFailureNotice(result, failures) {
   return { ...result, contextFailures: [...failures], reply: prefix + (result.reply || ''),
     ...(typeof result.replyForArchive === 'string' ? { replyForArchive: prefix + result.replyForArchive } : {}) }
 }
-module.exports = { missingRecallReply, withMemoryFailureNotice }
+module.exports = { missingRecallReply: (...args)=>{const result=missingRecallReply(...args),usage=require('../actions/usageBudget');if(usage.currentScope())usage.service().capture('recall_guard',{input:args,result});return result}, withMemoryFailureNotice }

@@ -3705,6 +3705,10 @@ const CATALOGUE = Object.freeze({
   'procurement.approve': { zh: '批准此排程方案', en: 'Approve this schedule proposal' },
   'procurement.presentFailed': { zh: '未能核對方案展示；沒有執行。請重新提出方案。', en: 'Proposal display could not be verified. Nothing executed; prepare a fresh proposal.' },
   'procurement.blocked': { zh: '每日採購排程尚未完成：{reason}。沒有宣稱已建立或執行；可查詢狀態。', en: 'Daily procurement scheduling is incomplete: {reason}. Creation or execution is not claimed; its status can be inspected.' },
+  'usage.blocked': { zh: '本次驗收已停止：{reason}。沒有自行增加或重發額度。', en: 'Acceptance stopped: {reason}. No allowance was increased or reissued.' },
+  'usage.title': { zh: '正式驗收用量保護', en: 'Production acceptance usage protection' },
+  'usage.current': { zh: '候選加入同一次 9 輪／40 helper／2 網站的持久預留及發送前拒絕；重試、並行、子工作及重啟共用原 run。離線證據不代表正式環境保護或真實對話驗收。', en: 'The candidate adds durable reservations and pre-dispatch refusal for the same 9-turn/40-helper/2-website acceptance. Retries, concurrency, descendants and restart share the original run. Offline evidence is not production protection or live-dialogue acceptance.' },
+  'usage.next': { zh: '通過新版本審查及批准、共享服務窗口交付後，核對正式計數與硬截停，再於原剩餘用量內完成對話驗收。', en: 'Review and authorize the exact new version, deliver in one shared service window, verify production counters and hard stops, then complete dialogue acceptance within the original remaining allowance.' },
   'punct.colon': { zh: '：', en: ': ' }
 })
 

@@ -66,7 +66,7 @@ async function complete (options = {}, input) {
   }
   let result; const start = Date.now()
   try { options.onDispatch?.(); result = await (options.run || runClaude)(args, { ...options, timeoutMs: options.timeoutMs || 110000, input: wire, maxInputBytes: 9 * 1024 * 1024 }) }
-  catch (error) { throw new SubscriptionError(error.message === 'subscription_limit_reached' ? 'subscription_limit_reached' : 'subscription_unavailable') }
+  catch (error) { throw new SubscriptionError(require('../actions/usageBudget').ERRORS.has(error.code||error.message)?error.code||error.message:error.message === 'subscription_limit_reached' ? 'subscription_limit_reached' : 'subscription_unavailable') }
   if (result?.api_error_status === 429 || (result?.is_error === true && /(?:hit (?:your|the) limit|usage limit|rate.limit|out of.*usage)/i.test(result?.result || ''))) throw new SubscriptionError('subscription_limit_reached')
   const used = Object.keys(result?.modelUsage || {})
   // Claude Code may account for its own Haiku helper alongside the selected model.

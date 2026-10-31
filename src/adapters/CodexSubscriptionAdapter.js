@@ -18,8 +18,9 @@ function localRequest (route, input, env, signal) {
   if (!validToken(env.CODEX_CHAT_BRIDGE_TOKEN)) return Promise.reject(new SubscriptionError())
   return new Promise((resolve, reject) => {
     const bytes = JSON.stringify(input)
+    const scope=require('../actions/usageBudget').currentHeader(env.CODEX_CHAT_BRIDGE_TOKEN)
     const req = http.request({ hostname: '127.0.0.1', port: DEFAULT_PORT, path: route, method: 'POST', signal,
-      headers: { authorization: 'Bearer ' + env.CODEX_CHAT_BRIDGE_TOKEN, 'content-type': 'application/json', 'content-length': Buffer.byteLength(bytes) } }, res => {
+      headers: { authorization: 'Bearer ' + env.CODEX_CHAT_BRIDGE_TOKEN, 'content-type': 'application/json', 'content-length': Buffer.byteLength(bytes),...(scope?{'x-xiangxiang-usage':scope}:{}) } }, res => {
       let data = ''
       res.setEncoding('utf8')
       res.on('data', chunk => { data += chunk; if (data.length > (['/workers', '/code-diagnosis-source', '/task-plan-source', '/code-repair', '/project-work', '/project-adoption', '/project-tasks'].includes(route) ? 2000000 : 200000)) req.destroy(new SubscriptionError()) })

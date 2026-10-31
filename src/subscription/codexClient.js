@@ -8,7 +8,7 @@ const { assertLiveEgressAllowed } = require('../adapters/liveEgressFence')
 const { DEFAULT_MODEL, REASONING_EFFORTS, CHAT_MODELS, isChatModel } = require('./chatModels')
 // Existing non-chat workloads keep their transport default; chat binds its own model.
 const MODEL = 'gpt-6-astra'
-const CODES = new Set(['subscription_login_required', 'subscription_limit_reached', 'subscription_unavailable', 'subscription_model_unavailable', 'subscription_invalid_output'])
+const CODES = new Set(['subscription_login_required', 'subscription_limit_reached', 'subscription_unavailable', 'subscription_model_unavailable', 'subscription_invalid_output',...require('../actions/usageBudget').ERRORS])
 class SubscriptionError extends Error {
   constructor (code = 'subscription_unavailable') {
     const safe = CODES.has(code) ? code : 'subscription_unavailable'
@@ -192,7 +192,8 @@ async function preflight (rpc, { allowCredits = false, model = MODEL, effort } =
 }
 
 async function withClient (options, operation) {
-  if (options.session) return options.session.run(operation, options.signal)
+  const guarded=rpc=>require('../actions/usageBudget').withRPCBudget(rpc,operation)
+  if (options.session) return options.session.run(guarded, options.signal)
   const rpc = (options.connect || connect)(options)
   const abort = () => rpc.close()
   if (options.signal) {
@@ -202,7 +203,7 @@ async function withClient (options, operation) {
   try {
     await rpc.request('initialize', { clientInfo: { name: 'xiangxiang_subscription_chat', version: '1.0.0' }, capabilities: { experimentalApi: true } })
     rpc.notify('initialized')
-    return await operation(rpc)
+    return await guarded(rpc)
   } finally {
     if (options.signal) options.signal.removeEventListener('abort', abort)
     rpc.close()

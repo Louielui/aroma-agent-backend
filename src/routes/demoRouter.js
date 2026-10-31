@@ -516,6 +516,23 @@ function createDemoRouter ({ getAdapterFn = getAdapterForLane, processIntakeFn =
     if(locked)intakeTurns.add(id)
     try{return await handler(req,res)}finally{if(locked)intakeTurns.delete(id)}
   }
+  // Owner-bound acceptance is exclusive while active. A turn id is only a
+  // reference to a prior Action Gateway binding, never a client-supplied grant.
+  const usageIntake=handler=>async(req,res)=>{
+    const usage=require('../actions/usageBudget'),budget=usage.service(),turnId=req.get('x-xiangxiang-usage-turn')
+    let s;const original=res.json.bind(res)
+    try{
+      if(!turnId&&!budget.isActive())return await handler(req,res)
+      if(!turnId)throw Object.assign(Error('usage_scope_required'),{code:'usage_scope_required'})
+      s=budget.enterTurn(turnId,req.body?.conversationId,uuidv4())
+      return await budget.withScope(s,async()=>{
+        budget.capture('turn_input',{message:req.body?.message,history:req.body?.history,conversationId:req.body?.conversationId,chatModel:req.body?.chatModel,chatLevel:req.body?.chatLevel})
+        res.json=value=>{const blocked=budget.turnFailure(s);if(blocked){res.status(409);value={error:{code:blocked,message:t('usage.blocked',{reason:blocked}),retryable:false}}}budget.capture('turn_output',{status:res.statusCode,result:value});return original(value)}
+        return handler(req,res)
+      })
+    }catch(e){res.json=original;if(!res.headersSent){const code=usage.ERRORS.has(e.code)?e.code:'usage_audit_unavailable';return res.status(409).json({error:{code,message:t('usage.blocked',{reason:code}),retryable:false}})}}
+    finally{res.json=original;if(s)try{budget.finishTurn(s)}catch(_){/* Persisted unresolved work prevents pause/replay. */}}
+  }
   // POST /api/v1/demo/intake — deterministic-mode intake (guarded).
   router.post(
     '/api/v1/demo/intake',
@@ -538,9 +555,9 @@ function createDemoRouter ({ getAdapterFn = getAdapterForLane, processIntakeFn =
       body('chatLevel').optional().isString().bail().isIn(['auto', 'none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra', 'fast', 'standard', 'deep']),
       body('chatModel').optional().custom(require('../subscription/chatModels').isBrainModel)
     ],
-    serializedIntake(async (req, res) => {
+    usageIntake(serializedIntake(async (req, res) => {
       // Server-owned correlation id. A browser-supplied requestId is IGNORED.
-      const correlationId = uuidv4()
+      const correlationId = require('../actions/usageBudget').currentScope()?.requestId || uuidv4()
       // OBSERVABILITY v1: exactly ONE outcome line per request — success, handled
       // failure, or a failure BEFORE the model call (which used to be invisible).
       // `telemetry` is filled by the pipeline with numbers/short enums only; it is
@@ -1453,7 +1470,7 @@ function createDemoRouter ({ getAdapterFn = getAdapterForLane, processIntakeFn =
         emit(telemetry.provider ? 'handled_error' : 'early_error', mapped.status, mapped.body && mapped.body.error && mapped.body.error.code)
         return res.status(mapped.status).json(mapped.body)
       }
-    })
+    }))
   )
 
   return router

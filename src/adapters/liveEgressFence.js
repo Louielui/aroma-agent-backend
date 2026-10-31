@@ -140,6 +140,7 @@ function assertLiveEgressAllowed (provider, url) {
 function fencedAxiosPost (provider) {
   return (url, data, cfg) => {
     assertLiveEgressAllowed(provider, url)
+    require('../actions/usageBudget').blockAPI()
     return require('axios').post(url, data, cfg)
   }
 }
@@ -148,6 +149,7 @@ function fencedAxiosPost (provider) {
 function fencedFetch (provider) {
   return (url, init) => {
     assertLiveEgressAllowed(provider, url)
+    if(['openai','anthropic','openai_web_search'].includes(provider))require('../actions/usageBudget').blockAPI()
     return fetch(url, init)
   }
 }

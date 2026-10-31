@@ -47,6 +47,7 @@ const NO_RELAY = { toUser: 0, fromUser: 0, manual: 0 }
  * input — non-interactivity by mechanism, not by claim.
  */
 function defaultRunner (command, argsArray, opts = {}) {
+  require('../actions/usageBudget').blockInteractiveWorker()
   return new Promise((resolve, reject) => {
     const child = childProcess.spawn(command, argsArray, {
       shell: false,
@@ -123,6 +124,7 @@ function createClaudeWorker (options = {}) {
    * @returns {Promise<import('../capability/adapter')>} normalized Result
    */
   async function invoke (capabilityId, version, input = {}) {
+    require('../actions/usageBudget').blockInteractiveWorker()
     if (!SUPPORTED[capabilityId]) {
       throw new Error(`claudeWorker does not support capability: ${capabilityId}`)
     }
