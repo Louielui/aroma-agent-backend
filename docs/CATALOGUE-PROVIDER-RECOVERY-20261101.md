@@ -1,5 +1,11 @@
 # Catalogue provider failure: isolated recovery
 
+Historical receipt for candidate `24ff4f217f415042f026efa02e8b400e35e96d27`.
+The subsequent same-work recovery infrastructure candidate separates the copy
+change from deployment; see `SAME-WORK-CODING-RECOVERY-20261101.md`. Its new source
+must receive a new independent review; the review of this earlier commit is not
+reused. The earlier copy candidate and acceptance evidence remain preserved.
+
 Work run: `ceb79374-ecc1-4ae0-be42-290bb72e63da`.
 Existing task and unchanged allowance root: `bce88bcd-5660-43b5-b418-02c13e40e62e`.
 Baseline source: `226fbd6518b3128d2154c5c99ac7b87a97e6bce3`.

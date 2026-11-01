@@ -57,6 +57,9 @@ function main () {
   const observeLive = require('../../src/core/projectWork/liveVerification').createClient({token:env.HUB_TOKEN || process.env.HUB_TOKEN})
   const projectWork = require('../../src/core/projectWork/service').createProjectWork({
     source: projectSource, providers: workerProviders, enabled, invocationLedger, repositoryBudget, observeLive, resolveRecipe, catalogueRecipes: taskRegistry.catalogue,
+    // Recovery cannot enqueue extra indexing calls outside its original budget.
+    // The existing Owner setting must already be paused; this never changes it.
+    recoveryReady: () => {if(!memoryRuntime)return true;const capture=memoryRuntime.status(),consolidation=memoryRuntime.consolidation.status();return capture.enabled===false && capture.active===false && consolidation.busy===false},
     repositoryPreflight: () => repositoryPromotion.begin(), onAccepted: run => repositoryPromotion.enqueue(run),
     store: require('../../src/core/operating/runStore').createRunStore({ dir: path.join(workerRoot, 'project-runs'), workflow: 'project_work' }),
     onEvent: value => memoryRuntime && memoryRuntime.event('worker', 'project-work:' + value.id + ':' + value.stage + ':' + value.at, JSON.stringify(value), 'measured_result', value.at) })
