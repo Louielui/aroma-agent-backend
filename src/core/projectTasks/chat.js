@@ -6,6 +6,7 @@ function classify(message){
  if(typeof message!=='string'||message.length>12000)return null
  const s=message.trim(),continued=s.match(/^(?:請)?(?:接續|繼續|查看)(?:工作單|任務)\s*([a-f0-9-]{36})[。.!！]?$/i)||s.match(/^(?:continue|resume|view) task ([a-f0-9-]{36})[.!]?$/i)
  if(continued&&ID.test(continued[1]))return{op:'continue',id:continued[1]}
+ if(require('../codeDiagnosis/chat').isReadonlyRequest(s))return null
  if(/^(?:請)?(?:直接)?(?:派工給|派|交給)\s*Codex(?:[，,：:\s]|$)/iu.test(s)||/^ask Codex to /i.test(s))return{op:'request',goal:s}
  return null
 }
