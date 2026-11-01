@@ -2971,6 +2971,7 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 3. non-terminal excluded — running (exec, no result) and pending (proposal, no exec) absent
 4. ROUTE ORDER — /proposals/results (alias) hits the list, NOT the :id handler; /return-ready works
 4. changing ONLY expectedSha changes the Work Order hash
+41st helper and third website are refused before the fake provider, including parallel attempts
 5 of 6 clean → the blocked one is NOT absorbed into the calm sentence
 5. projectId / repoFullName behaviour is unchanged
 5. zero dispatch on read — hitting the endpoint calls dispatcher/runner 0 times
@@ -3022,10 +3023,12 @@ AGENT_BRIDGE OFF: a full EXECUTE triple is NOT authorized and no runner exists
 AND AT RUNTIME: a data-derived key cannot resolve
 ANTHROPIC_API_KEY is deliberately NOT in the allowlist (subscription, not API billing)
 API authentication and changed accounts withhold all account snapshots, without fallback or inference
+API web search is refused before fetch even with the existing paid-test opt-in
 API-key authentication is refused before a model can run
 APPLYING without a prior PENDING_APPROVAL and approval throws
 AUTHORIZED dispatch: DISPATCH_CLAIMED written AFTER auth and BEFORE the spawn, with linkage, durable
 Access changing during provider I/O makes the whole result unavailable
+Action Gateway keeps promotion disconnected by default and delegates only explicit promotion operations
 Actual mail UI renders hostile titles and originals as text, preserving partial-body and source dates
 Administrative retrieval constructs OAuth from a fixture grant without any consent probe or credential writes
 Apply returns ok false when the fake stdout carries no backup reference
@@ -3084,6 +3087,65 @@ BL6. ⛔ the CURRENT reading is held to the same rules: a gateway whose MainPID 
 BOTH outcomes are audited — success and failure — through the real store
 Bounded original reads preserve unknown dates, mark UTF8/body/attachment limits, and never return executable HTML
 Bounty resolves to the Bounty button, and it is not the first on the page
+Browser work audit reader fails visibly on malformed files and accounts for its bounded operation history
+Browser work exposes only authenticated Owner GET routes and observes the same source without executing jobs
+Browser work groups saved parent chains into independent topics and projects real phases without dispatch
+Browser work never assigns terminal duration from an earlier or missing audit event
+Browser work observes the real native service without exposing input authority or mutating its jobs
+Browser work omits snapshots secrets tickets request hashes and private action data from both projections
+Browser work retains native audit status after restart without inventing lost questions or answers
+Browser work terminal clocks remain fixed and unknown or malformed evidence cannot claim active progress
+Browser work visibly reports unavailable stores and refuses broken parent chains instead of empty success
+Business Scheduler Owner can revoke the existing task after deleting its creating conversation
+Business Scheduler Windows adapter accepts no command, path or arbitrary operation
+Business Scheduler admission holds occupancy through Windows inspection and releases it on inspection failure
+Business Scheduler approval, exact delegated identity and daily deduplication form one evidence chain
+Business Scheduler authorization can be revoked even when Windows is unavailable and can never be resumed through pause
+Business Scheduler backend timer route is service-authenticated, parameterless and rejects browser-origin approval forgery
+Business Scheduler bridge routes delegated triggers separately from Owner management and model traffic
+Business Scheduler contradictory source counts and ambiguous supplier mappings remain unresolved
+Business Scheduler cross-conversation reduction cannot resume or change the original task scope
+Business Scheduler delayed runs do not claim on-time execution even with an earlier time event
+Business Scheduler dialogue approval is not inferred from another conversation or changed topic
+Business Scheduler disables on revoke and discards a read completed after revocation
+Business Scheduler duplicate concurrent delivery performs exactly one daily read sequence
+Business Scheduler durable recovery refuses live lock holders and checks orphan bytes
+Business Scheduler expired proposals and restarted approval sessions cannot execute
+Business Scheduler explicit spaced hours bare times and alternate cadences stay outside the fixed workflow
+Business Scheduler explicitly approved orphan recovery closes interrupted evidence and retains daily duplicate protection
+Business Scheduler failed lock initialization leaves no published lock and cannot strand recovery
+Business Scheduler failed source envelopes and discarded rows cannot masquerade as complete reads
+Business Scheduler full ToolGateway adapter path retains all rows and exact scheduled authorization in durable source audit
+Business Scheduler groups every retrieved item and never promotes missing coverage or stale stock to COMPLETE
+Business Scheduler meridiem alternative hour units and foreign zones cannot authorize fixed morning work
+Business Scheduler minute and fractional-hour requests never become fixed 08:00 proposals
+Business Scheduler missing activation is disclosed with the original Owner goal, without any scheduling or read
+Business Scheduler missing, future and stale source timestamps remain PARTIAL
+Business Scheduler no run is admitted before the Winnipeg morning slot
+Business Scheduler partial API failure and numeric zero are not a complete empty purchasing report
+Business Scheduler partial run persists missing mappings without inventing supplier identities
+Business Scheduler pause followed by resume cannot revive a cancelled in-flight read
+Business Scheduler pending registration is occupied until the Windows approval operation finishes
+Business Scheduler preserves the real daily procurement request without admitting arbitrary work
+Business Scheduler process death before atomic lock publication cannot leave an empty execution lock
+Business Scheduler production app connects the fixed conversation handler behind Owner authentication
+Business Scheduler proposal remains valid while the clock advances before approval
+Business Scheduler real conversation persistence preserves the whole goal through approval, pause and resume
+Business Scheduler reducing from another Owner goal cannot borrow or overwrite that goal
+Business Scheduler refuses scope or definition drift before source access
+Business Scheduler registration interrupted before grant persistence requires a fresh bounded recovery and stays paused
+Business Scheduler rejects mixed times, malformed approval ids and injected source instructions
+Business Scheduler rejects stale task and tool scopes instead of inheriting new authority
+Business Scheduler rendered approval stays inert until presentation and double click submits once
+Business Scheduler requires exact actor, conversation and displayed proposal hash
+Business Scheduler restart retains daily execution identity and never repeats a persisted run
+Business Scheduler source adapter preserves all 100 capped rows and every uncapped supplier
+Business Scheduler source gateway preserves scheduled identity and rechecks revocation after a read
+Business Scheduler status keeps the latest attempt separate from the last complete success
+Business Scheduler transient conversation and receipt reads release the dialogue lock for a safe retry
+Business Scheduler unsupported source pagination is disclosed instead of followed or hidden
+Business Scheduler unsupported times and zones never select the fixed 08:00 workflow silently
+Business Scheduler uses Winnipeg calendar days across both DST transitions
 C — BLOCKED says so plainly and fabricates no position
 C. an unmatched dispatch is never executed, even if something tries
 C. expectedSha === observedBaseSha: the worker runs
@@ -3166,6 +3228,7 @@ ClaudeAdapter WITHOUT responseFormat => legacy body (no output_config) + exact l
 ClaudeAdapter maps responseFormat -> output_config.format {type,schema} with NO name, NO beta header
 ClaudeAdapter maps stop_reason → stopReason (and null when absent)
 ClaudeAdapter rejects malformed responseFormat BEFORE any network access
+Context intent contract treats Browser evidence as optional data and binds queries to direct Owner requests
 D. LEGITIMATE routing is unchanged — this fix must not orphan real work
 D. case- and whitespace-equivalent duplicates fail closed
 D. expectedSha !== observedBaseSha: the run fails with revision_moved
@@ -3216,10 +3279,25 @@ Drive Context uses the shared Gateway with Owner-only knowledge scope and source
 Drive commands require a complete request, not a quote, negation or compound action
 Drive list/search declare bounded coverage, shared-drive scope and omitted shortcuts
 Drive reader exposes only fixed Google read calls and keeps credentials inside the closure
+Drive selection sees source MIME types and existing body-read support without trusting titles
 E. MUTATION GUARD — no unmatched capability may EVER reach a connected worker
 E. a duplicate declared twice inside ONE worker fails closed
 E. a mismatch invokes the worker exactly ZERO times
+E1 Gmail collector uses one visible expanded message and account marker, never decodes URL tokens into API identity
+E1 account mismatch, missing thread identity and expired Browser capture cannot reach the model
+E1 actual sidepanel conversation obtains bounded consent, renders contextual preview and restores without Gmail replay
+E1 cancellation and retrieval of saved results do not replay reads or save late model output
+E1 intent accepts ordinary contextual replies but not negation, quoted examples or unrelated mail questions
 E1 malformed JSON rejected
+E1 mismatched, duplicate or missing API message/thread identities fail closed without drafting
+E1 normal Browser conversation resolves the exact authorized Gmail thread into an unsaved reply preview
+E1 omitted older messages and excluded attachments never claim complete context
+E1 provider sharing and legacy task versions never inherit Gmail reads
+E1 revocation during a thread read, expired consent and tampered capability block delivery
+E1 tab, route and authorization changes invalidate the prepared read
+E1 truncated messages remain visibly incomplete and prompt injection cannot select tools or recipients
+E1 worker rechecks exact Gmail locator before native dispatch and never upgrades legacy snapshots
+E1 write-capable OAuth, same-account legacy consent and changed source ancestry cannot widen the read
 E1. only AgentBridge@1 is supported
 E1. prepare returns <envelope>/repo, and the envelope is derived, not supplied
 E1. ⛔ ANY value thrown BEFORE the callback is a zero-effect coordinator refusal — never DID_NOT_RUN
@@ -3402,8 +3480,13 @@ HR rechecks use authenticated real routes and bilingual chat/buttons, require se
 HTML control
 HTML is converted to inert text; oversized and unsupported bodies are visible
 HTTP advice reaches the main model with its purpose contract and creates no work
+HTTP completed website result owns topic-switch rendering without a file clarification
 HTTP general transformations bypass operational adapters and reach the chat brain
+HTTP prior history retains intentional repetitions and appends the current turn once
+HTTP recovery binds the host SHA, uses existing Bridge authentication and returns one same-ID completion
+HTTP references retain assistant-listed entities, owner corrections and prior scope without dispatch
 HTTP replay uses one interpretation and one job; repeat start reads back that same job
+HTTP self follow-up reaches the ordinary brain with persisted context and observed deployment
 HTTP validates levels before model acquisition and passes them only to chat
 HTTP workflow rejects forged plans, roles and cross-origin calls before reads
 HTTP: OFF success unchanged — 200 with requestId, no top-level detail/error
@@ -3654,10 +3737,14 @@ Owner and fixed recipe prevent reads, arbitrary prompts or tools from being disp
 Owner and origin gates protect the reusable workflow UI/API; opening/status never invokes worker
 Owner bridge host composition grants only its fixed reader, independent of absent service-launcher flags
 Owner can inspect a database outage without receiving a false empty catalogue; anonymous access denied
+Owner cancellation and revoked access discard partial wage results
 Owner composition uses Documents rather than virtualized packaged-app LocalAppData
 Owner cost profile searches provider billing candidates without unrelated recent fallback
+Owner goal completion needs current host-verified evidence for every mandatory outcome; investigation completion is insufficient
+Owner goal discovery refuses invented capabilities and page text and binds exact task scope
 Owner identity and read-only scope are measured before file retrieval
 Owner permission and read-access switch fail before Git is invoked
+Owner procurement goal retains every original outcome recurrence and no-checkout constraint without new actions
 Owner rebuild preserves approval and raw source while excluding source-bound, expired and nonactive rows
 Owner source lease ignores mail read receipts but fails on grant, flag, credentials or root change
 Owner status and scoped lists use general rows and preserve decision counts
@@ -3854,6 +3941,7 @@ REFUSED — a technical noun does not launder a repair claim:
 REFUSED — an agent with no frame of its own
 REFUSED — and an issue noun still decides first
 REFUSED — legitimate description does not launder a claim beside it:
+RPC acknowledgement is not success; a later failed operation records the dispatched attempt as failed
 Readonly scope, mailbox identity and credential/source revocation fail before data can escape
 Rollback to production returns require_approval
 S0. a directory prepare() never created has NO baseline and fails closed
@@ -4010,6 +4098,8 @@ V16. ⛔ a missing evidence source is UNKNOWN, never "assume clean"
 V17. wrong identity is UNKNOWN
 V18. an unreadable instance store is UNKNOWN
 V19. ⛔ the port can neither create nor destroy a verdict on its own
+V2 permission hashes bind the exact task, version, context and disclosed source scope before dispatch
+V2 saved wage follow-ups perform a fresh legacy read and numeric filtering without Drive routing
 V2. the view preserves MATCHED revision evidence and the patch digest
 V2. ⛔ Result=timeout with clean OS evidence MUST be accepted
 V20. ⛔ a cgroup reader that does not state exists is UNKNOWN, never "absent"
@@ -4232,6 +4322,7 @@ a clear desired change prepares a real plan before confirmation, with no executi
 a clear line is SHORTER than a waiting line — lighter when clear, heavier when something waits
 a clear result SPEAKS, and proves it looked by naming the time
 a code_change order can never reach this lane
+a combined navigation/abstention opinion removes duplicate intent requests while preserving the same real main answer
 a complete read supports a claim about its own contents
 a completed enquiry reports CONCLUDED and the real cost
 a completed operational read satisfies an internal obligation without repeat reasoning or duplicate reads
@@ -4271,11 +4362,13 @@ a dry-run changes nothing on disk — the approved root is untouched
 a due date is never used as the row date
 a fact value that is not a real value is dropped
 a failed dispatch cannot become a completed enquiry
+a failed goal-history append stays visible to the Owner instead of claiming durable task tracking
 a failed load can be retried
 a failed manual attempt reports its own trigger without relabeling the earlier scheduled proof
 a failed operational read is not counted as a fulfilled internal obligation
 a failed read SPEAKS — silence would read as "nothing waiting"
 a failed read-back retains the earlier observed page with a stale label instead of erasing it
+a failed startup clear cannot revive stale tab bindings when Chrome later recreates the worker
 a failed turn leaves no half-conversation behind
 a failing apply appends ROLLED_BACK with the error and never COMPLETED
 a failing runner status yields ok false with an error
@@ -4347,7 +4440,9 @@ a malformed id cannot become a file path
 a malformed or hostile model reply abstains rather than guessing
 a malformed or misdirected frame is refused at the boundary
 a malformed timezone makes startOfLocalDay and formatLocal throw too
+a manifest change invalidates panel-only reload even when all worker scripts are unchanged
 a matched message still yields the same plan it always did
+a measured 75-second backup completes inside its bounded worker deadline; ordinary reads retain short bounds
 a met condition and a timed-out one are distinguishable outcomes
 a metric the ROW does not carry is still dropped — nothing is invented
 a mismatched quote cannot be delivered as a successful investigation
@@ -4358,14 +4453,19 @@ a missing mode is coercion too — absent and unrecognised both end as chat
 a missing or mismatched separator leaves the entire input literal
 a missing or unreadable Preferences file is unsafe, not fine
 a missing order blocks — an absent fence is not an open one
+a missing verifier question still yields an honest minimal recall clarification
 a mix: one comparable and clean, one with no history → BOTH stated, neither hidden
+a mixed roster caps the final page to remaining capacity and returns an explicitly partial read
 a mixed-language follow-up uses a saved context reference but must perform a fresh authorized read
 a model start classification cannot turn negated, quoted or changed instructions into execution consent
 a money value matches the bare number the row carries
 a month or an invoice number is not an expression
 a name that was ONLY a glyph becomes empty, not a ghost string
 a named mechanism turns a refusal into BOUNDED
+a narrow website classifier cannot terminate unresolved self or contextual requests
+a new committed-candidate workflow references verified evidence without replaying commit/test/review effects
 a new conversation turn during loaded-state verification prevents resuming an old request
+a new legacy interactive child worker cannot escape the read-only acceptance window
 a new packaged issue uses baseline, text-only coding, fresh after execution and retained evidence
 a non-ENOENT realpath error refuses rather than climbing to a computed path
 a non-browser caller gets a plain 401 it can act on, not a redirect
@@ -4386,6 +4486,7 @@ a parent is not inside its child
 a pass requires all screenshots inspected; visual findings cannot be hidden by a pass
 a path climbing out of the copy is refused
 a payment-named control is REFUSED by click itself
+a pending consent cannot be updated into a new executable task
 a per-dispatch turn bound may TIGHTEN but never widen
 a phase is one of a fixed set — anything else is refused, never passed through
 a pid that cannot exist is definitely gone (ESRCH), not unknown
@@ -4399,6 +4500,7 @@ a positive claim from a set the source called a SAMPLE is refused
 a predicate cannot be smuggled in — there is no code path for it
 a prefix match does not pass — costco.ca.evil.com is blocked
 a prepared final cannot bypass a terminal refusal
+a prepared proposal retains its usable conversation context when goal refresh fails
 a present-but-malformed Authorization header (missing Bearer prefix) responds 401
 a preview exists for reading, and never replaces the evidence
 a previously approved unregistered task refreshes into a new bound proposal; old approval never authorises the reader scope
@@ -4406,6 +4508,7 @@ a primary investigation request does not become correspondence because it mentio
 a process noun is never an addressee, so it keeps its full design signal
 a promoted Proposal brief no longer leaks Title:/Details: into the goal
 a public-only answer preserves the observed excerpt, units, uncertainty and age without releasing the model draft
+a pure deadline change on the identical transport has no new write verb; full diff remains reviewable
 a question about a ruling plans a RECORD read, not a commit list
 a question or an offer is not a claim
 a quote that is NOT at those lines is a mismatch, not a pass
@@ -4439,10 +4542,14 @@ a report gap seals the original Winnipeg day and passes it to continuation after
 a report with NO applied changes says so explicitly rather than staying silent
 a report with method caveats but no answer caveats still says so, rather than going quiet
 a restart marks unfinished work interrupted and never repeats execution
+a restart retains unresolved reservations; retry uses another slot, replay uses none
+a restarted approval process cannot restore consumed or unsealed approval from JSON
 a restarted process does not advertise an abandoned investigation as still working
 a restored gap displays its verified replacement plan rather than the failed original card
 a result with NO patch fields keeps the section absent rather than printing "null"
 a retained slice does not hold its oversized source buffer alive
+a retry inside one logical provider call reserves a new slot rather than reusing its native ticket
+a reused positive candidate still requires a fresh independent agreeing HIGH opinion
 a reviewer cannot rescue invented values or another record identity
 a role cannot send a message that belongs to the other direction
 a row carrying its own nextRunAt is judged against THAT, not against a recomputed one
@@ -4460,6 +4567,7 @@ a saved investigation prepares the registered enquiry without asking for a file;
 a schedule is not a clock
 a schedule question shows the calendar and nothing else
 a scope quote cannot become a false closure; other withheld facts have counted reasons
+a scoped panel cannot capture another active tab or another window and rejects extra scope parameters
 a second knock inside the window is TOO_SOON
 a second pixel rejection stops without adoption, repeated dispatch or a passing verdict
 a section is capped at five items and says how many more
@@ -4520,6 +4628,7 @@ a throwing dispatch reports FAILED rather than an empty conclusion
 a throwing read → trust:unavailable + plain reason (no guessing)
 a throwing worker still records a failed Result (no unhandled rejection)
 a timezone that cannot be trusted makes the clock question fall through too
+a transient conversation read failure releases the existing gateway lock and permits a safe prepare retry
 a true claim about aroma_system is still NOT corrected
 a truncated excerpt is disclosed on the card
 a turn that already has a proposal declines with its own reason
@@ -4528,9 +4637,12 @@ a turn that read NOTHING is still not asked for a plan at all
 a turn with no conversationId still answers, and writes nothing
 a unit code with no declared label renders as itself, never guessed
 a valid hint chooses the provider for a CHAT turn
+a valid reused abstention grants nothing and costs no redundant opinion; it is not a fabricated consensus
 a valid service token is accepted as an alternative credential
 a validator refusal still says refused — the two phases keep their own wording
+a verified scheduler effect cannot complete an attached cart step or ambiguous compound objective
 a visibility wait without a ref is refused rather than widened
+a wage timeout is visible in the answer and retained evidence while unsafe errors stay private
 a warning is emitted so the redirect is never silent
 a well-formed envelope passes
 a well-formed order validates, and is fail-closed on anything malformed
@@ -4559,12 +4671,16 @@ access disabled, forged scope, redirects and malformed settings cannot cause ext
 access revoked while Gateway completes its audit cannot return private content
 account choices expose availability without spending quota or exposing account details
 acting before ANY read is refused
+activation cannot race an existing in-flight bridge completion into an uncounted run
 activity animates confirmed work only and keeps its drawer open across reads
+actual Browser worker crosses compiled Native Host to a synthetic Backend and prepares an unsaved Gmail reply
 actual Calendar page renders nonempty linked events as text and preserves all-day dates
 actual HTTP dialogue, planner and registration services retain the design and produce a reviewed draft without coding
 actual HTTP intake produces a saved proposal, reload restores it and natural confirmation creates one bounded handoff
 actual Owner credit answer and archive retain source-bound call evidence with no billing inference
 actual app composition protects and mounts the read route with central selection and no provider fallback
+actual app employee profile is authenticated and refuses other routes without dispatching native or model work
+actual app serves only the synthetic operator fixture without login while every operator API remains authenticated
 actual application owner gate, read switch and closed probe route reject unauthorised, query and arbitrary paths
 actual assembled bilingual mobile/desktop model controls follow the catalogue without model calls
 actual bridge adoption receipts enable continuation even when backend adoption store is empty
@@ -4572,7 +4688,10 @@ actual central settings and independent bilingual topic controls persist, follow
 actual component observations bind failure -> explicit correction -> tests -> adoption -> same loaded process; bilingual report states precise scope
 actual event detail chat includes source description, location and updated date
 actual fixed PowerShell projection preserves definitions and handles empty or unsupported triggers without touching Windows tasks
+actual native browser input compiles and rejects an unapproved site before any desktop observation or input
 actual native launcher compiles and refuses a different extension before opening the broker
+actual offline Native Host package resolves E1 and legacy requests without repository dependencies
+actual per-turn memory exclusion is described as policy, without claiming deletion or a completed save receipt
 actual planner and task services bind edited criteria, protected tests and distinct approval stages without automatic coding
 actual read adapter continues other authorized sources after runtime source failure
 actual single-file commit and rollback preserve unrelated staged, unstaged and untracked bytes
@@ -4613,7 +4732,9 @@ all repository promotion entry points share the canonical path and permission pl
 all sources failing + flags ON → reply NOT blocked (fail-soft)
 all subscription investigation helper roles stay on the selected subscription without API keys
 all three bindings are now real, and the register says so
+all-status wage filtering labels inactive matches separately from unresolved users while retaining complete selected output
 allowed reads are NOT logged — a record of everything is a record of nothing
+altered persisted failure and completed/candidate work cannot receive recovery authority
 ambient Git root redirection cannot select another repository
 ambiguous committed outcome is retained for inspection rather than reset
 ambiguous, failed and uncited rows never become cost findings
@@ -4683,6 +4804,7 @@ an evidenced change is unaffected — the same sentences pass with appliedChange
 an exact shared request ID is only a possible lead and retains both receipt identities
 an exhausted operational scope reports the gap without repeated subscription answers or reads
 an existing settings file without the field keeps working untouched
+an expired authority stops an exact-head merge immediately before PUT
 an expired order stops blocking, and stops being live
 an expired session is refused
 an explicit AROMA_DATA_DIR is used verbatim, test process or not
@@ -4700,6 +4822,7 @@ an initial requirement classified as refinement still creates a source-backed pl
 an injected save still saves
 an insufficient result cannot expose unverified figures as its leading answer
 an intent that asks nothing of Aroma System also returns null
+an internal deadline retains verified wages and labels unfinished employees without claiming completeness
 an interrupted manual job is retried as a scheduled attempt while retaining the prior manual proof until success
 an invalid or absent flag value can never open the gate
 an invalid order is refused before any step is resolved
@@ -4715,6 +4838,7 @@ an opaque timeout becomes a named cause, and says what covered it
 an openable section renders a control that opens it
 an operational answer does not prepend an unchecked auxiliary judgment over its evidence answer
 an ordinary Traditional reply passes untouched
+an ordinary answered question cannot become a file request just because it contains a change verb
 an ordinary conversational reply is untouched, byte for byte
 an ordinary field is not refused
 an ordinary file is still allowed — the rule is not just refusing everything
@@ -4758,6 +4882,7 @@ an unnamed origin is BLOCKED, and the reason names the origin
 an unnamed 讀唔到 with a genuinely failed source is left alone
 an unreadable database is NOT clean — unsafe unless proven safe
 an unreadable error yields the FIXED text, not a crash and not an empty string
+an unreadable legacy archive is unavailable rather than an empty memory
 an unreadable outbox stays unavailable without hiding readable canonical memory counters
 an unreadable values file is also defaults, not a crash
 an unreadable witness claims NEITHER — 「I could not look」 is its own state
@@ -4791,6 +4916,7 @@ approveRun on a Run that is not pending approval is rejected and dispatches noth
 approveRun on a backend Run is rejected with a clear error and dispatches nothing
 approveRun on a frontend Run dispatches Apply@1 (approved:true) and reaches COMPLETED with a backupRef
 approveRun on an unknown run id rejects with a 404
+approved Browser context plans from the active environment and searches then retrieves actual Drive contents
 approved adoption tests once, preserves original evidence and completes only on verified boot
 approved enquiry copies only exact regular files from the sealed commit, with hashes
 approved hash !== executed hash -> REFUSED, audited, ZERO workspace prep and ZERO worker call
@@ -4837,6 +4963,7 @@ authorization, attempted reads and sufficient evidence prevent follow-up; source
 authorizeExecution: all off → not_authorized (default dormant)
 authorizeExecution: any two-of-three on → configuration_conflict → zero
 authorizeExecution: single-lane, needs its runner configured
+automatic Browser context uses the real Drive Context Gateway after confirmation and restores without replay
 automatic consolidation is bounded, pausable, restart-aware and independent of receipt indexing
 automatic retain labels attribution and timestamp, and requires exact document read-back
 automatic semantic indexing stops after three failures and explicit retry queues only current source
@@ -4847,12 +4974,15 @@ background answer includes configured automation with unknown activity and a con
 background extraction has a separate session and cannot reject foreground chat as busy
 background index warms original eligibility once and uses body-free manifests thereafter
 background investigation separates current definitions, historical models and unknown live activity
+background memory must already be paused and idle; recovery never changes its setting
 background recommendations require fresh current witnesses, not historic running status
 background reference budget preserves the registered component models and live values, with bounded history
 background route reads history and current witnesses while omitting unrelated mail and billing
 background rows use the same bounded source-bound answer shape
 background summaries name the observed components and distinguish configured models from active inference
+backup deadline failures keep a safe reason without disclosing worker details
 backup failure is visible and backs off instead of printing provider errors or repeatedly retrying
+backup transport outlives the worker while queue indexing keeps its existing deadline
 bad company, range, filters and source responses cannot become live payroll evidence or leak upstream errors
 bad input degrades to keeping everything, never to throwing
 batch folders are read CONCURRENTLY, not one after another
@@ -4877,9 +5007,12 @@ blocked:
 body truncation cannot appear as full-document coverage and metadata never downloads body
 bootstrap never routes the URL through a shell (no cmd/start usage)
 both entry points reach the runner through the SAME service (one hash check, one gate)
+both live route families are composed: full and short readonly requests never create editing tasks
 both providers receive the SAME assembled context, from ONE fetch
 bounded advisory context preserves source, reports outages and does no read when disabled
 bounded batch works beyond the first twenty threads and enforces owner access
+bounded deterministic wage reports fit native frames while generated answers retain their smaller limit
+bounded edits reject stale, missing or ambiguous anchors, out-of-scope files and oversized packets
 bounded investigation findings retain the requested failure or background evidence before unrelated execution history
 bounded local classification drains twenty originals per tick before eligible provider work, without rereading the full store
 bounded roster pagination reports partial coverage and an abort-unaware transport still terminates
@@ -4914,6 +5047,14 @@ browser context persisted records cannot contain raw page content or prompts
 browser history and assistant approval prose cannot create a planning receipt
 browser image reads accept only a registered run and fixed screenshot name
 browser model history retains ordinary replies exactly but never retains a source-bound mail body
+browser operator cancellation during inference refuses all later native input
+browser operator consumes input before execution and never retries an unknown native outcome
+browser operator participates in execution mutual exclusion and rejects native window movement
+browser operator refuses an unverified actual model and expires native tickets without input
+browser operator rejects foreign tabs, stale frames, write routes, free clicks and live typing
+browser operator route refuses unauthenticated requests and browser origins before parsing screenshots
+browser operator seals a single action to the observed window, frame and central model
+browser operator stop aborts and invalidates input even when its audit write fails
 browser proof rejects foreign routes, unbounded metadata and bad hashes
 browser read needs explicit egress consent and cannot infer on prepare or status
 browser read route requires existing service auth and refuses browser Origins before dispatch
@@ -4953,6 +5094,8 @@ builder: tasks max 3 by id asc + omission count + TRUNCATED
 builder: valid productionReleaseReference recorded (REFERENCE_ONLY)
 builder: verbatim safety header is the first line inside the wrapper tags
 builds the EXACT spike command: -p <task> --add-dir <sandbox> --permission-mode bypassPermissions --output-format json
+business facts remain withheld inside mixed advice and elliptical clauses
+busy or unavailable legacy migration preserves archived topics and still opens a fresh conversation
 but naming the LIVE source while another failed is still caught
 by default every source is shared with both providers — the Owner said so
 cached eligibility never bypasses current archive, expiry, revocation or original hash checks
@@ -4969,9 +5112,12 @@ cancel → restart → status/cancelledBy/cancelledAt persist
 cancellation during review stops before any visual correction
 cancellation stops the owned job and cannot trigger review or repeat execution
 cancellation, permission, extra inputs and restart remain closed
+cancelled and restarted context tasks cannot save late results or repeat source reads
 cancelled confirmation, topic change and restored history never approve or execute automatically
 cancelled model work cannot apply a late enum decision or duplicate a receipt
+cancelling a queued recovery records a separate outcome without dispatch or erasing the original failure
 candidate source and tests cannot certify a currently loaded repair; prompt excludes raw objects
+canonical goal reporting preserves deterministic read rows and purges false completion from every narrative field
 canonical mail analysis saves the same work/run identity as the actual adapter receipt across a failure and retry
 canonical memory failure evidence preserves reason, retry policy and observed success without reading contents or performing work
 canonical memory indexing transports signed work context to Hindsight and retains receipt identity after reload
@@ -4993,14 +5139,17 @@ central chat uses the same task reader and keeps unrelated or proposal turns on 
 central defaults, topic overrides and conversation overrides survive reload independently
 central task planner selects a registered wage read from the Owner goal and returns every grounded wage
 central wage chat with no registered source preserves existing intake and cannot label generated text source-bound
+changed candidate, altered backup objects, damaged restored files or stale memory fail before authority
 changed hash and changed enabled state refuse after approval
 changed live revision withholds the proposal rather than accepting stale evidence
 changed original is read and checked again; an approved Owner decision is preserved
 changed snapshot is refused before consuming the subscription
+changed source, protected tests or registration never reaches a recovery model call
 changed survivor before prepare or approval, forged assessment and model prose cannot turn into an action
 changed tab, document, origin or content refuses before any model dispatch
 changing a saved proposal context cannot change its sealed authority
 changing it changes what the server renders, at use time
+chat HTTP intake reaches the existing persisted task, keeps an actionable link after reload, and never calls a model
 chat PNG artifacts are retained, hashed and refused when missing, altered or foreign
 chat briefing dispatch uses owner words and zero model calls, persists a run link, and rejects cross-origin starts
 chat capability routing persists exactly one diagnosis link and cannot change worker scope or claim completion
@@ -5027,6 +5176,7 @@ citesEvidence:true with nothing provable still falls back exactly as before
 claim FLUSH failure → dispatch_claim_failed (fail-closed)
 claim FLUSH failure → dispatch_claim_failed (fail-closed); NO spawn
 claimDispatch back-to-back (no event-loop yield) → one dispatched, one already_dispatched (no interleave); count stays 1
+claimed material tampering and interrupted consumption remain fail closed
 clarification / multiple_tasks_narrow_to_one → ask to narrow; NO proposal claim
 clarification / no_actionable_task → NO proposal claim
 clarification answers replan with retained requirements instead of asking again
@@ -5040,8 +5190,12 @@ claudeWorker re-exports the SAME brake function (back-compat)
 cleanup is a NO-OP — returns undefined and does not remove the dir (B2-1 preserved sandboxes)
 cleanup: remove the disposable directories this suite created
 client body never carries detail / raw / message / stack
+client metadata route refuses browser origins and command-shaped payloads and returns only job occupancy
+client publication refuses a foreign package, extra Chrome permissions and a mismatched runtime
+client status refuses active and unknown jobs without returning task contents or granting operations
 closed authenticated model metadata stays readable during every active worker lane
 closed grammar refuses quotes, negation, pasted prompts and generic approval
+closed or corrupt roots, turn replay, and failure to persist prevent dispatch
 closed topics, cross-topic membership, forged commands and damaged stores fail without writes
 closing the live order lets the next one in
 cloud policy contract checks are read-only, pinned and never receive production credentials
@@ -5051,15 +5205,21 @@ colloquial Chinese and English resolve the saved job, prepare only and use the s
 combined background backlog makes both canonical indexing and analysis progress without cancellation or model overlap
 committed symlink mode and credential-like content fail closed
 compact navigation closes other menus and returns focus on Escape
+compact worker repairs against the current hash while retaining protected tests and original before evidence
 company boundary denies all legacy owner paths, including anonymous callers and direct IDs
+company-scoped role responses may omit company_id but an explicit foreign company is rejected
 comparison intent is bilingual, date bounded and excludes quoted, negated and write requests
 comparison is over fixed-length digests, so a length mismatch cannot throw
 comparison real HTTP path is bilingual, Owner-origin bounded, idempotent, durable and model-free
+compatible envelope fields compose independently of clause order and punctuation
+compiled native URL matching accepts the fixed fixture Chrome display and refuses neighboring HTTP destinations
 compiled native launcher returns each small frame before the persistent input pipe closes
+compiled native link guard requires the actual URI to match the sealed employee destination
 complete Drive search chat uses measured context and saves once without model execution
 complete page boots visible labels and model controls in
 complete requires a known merge and verified live commit, never only tests or worker success
 complete threads retain more than one hundred messages without dropping the newest source
+completed child scope stays in the root audit, not a reusable worker record; a later ordinary run is unaffected
 completed plan hands off its criteria and fixed files only on explicit draft intent
 completed plan reads verified adoption and shows applied without repeating execution
 completed work requires separate adoption preparation and approval, then displays verified boot
@@ -5072,17 +5232,21 @@ composer exposes exactly five localized options with Medium selected and a Claud
 composer shows current work without opening a log and can reveal its actual drawer
 composition order is Persona → Guard → frozen Distill; classifier preserved at the END
 computeWritePath: base for first; unique supersede path under <gen>/supersedes
+concurrent approvals and disabled execution cannot duplicate or start a recovery
+concurrent button evidence survives in-flight status and refused prepare replies without replaying the action
 concurrent catalogue reads coalesce on a separate session and never release the execution lock
 concurrent change to the second source restores only the first transaction write
 concurrent confirmations cannot issue two starts; uncertain dispatch is not replayed
 concurrent edits, expired proposals and company changes refuse updates; empty scope makes zero reads
 concurrent execution is rejected and restart cannot blindly replay a spent merge or deploy
+concurrent explicit resume cannot duplicate the review; restart at reviewing is inspection-only
 concurrent source checks do not revoke each other, while an actual grant change does
 concurrent ticks invoke one backup and interrupted persisted running state retries after restart
 concurrent use is refused and a timeout discards the connection
 config is fail-closed: no model or no key -> adapter unavailable, never a default id
 configuration exposes only job copies and disables all host sharing and external networking
 configuration, stale runtime and previous execution remain independent
+configured midnights prove a difference from process-local arithmetic without assuming a host zone name
 configured, enabled, historical requested/executed and live models are independent assertions
 confirm remains TOKEN-GATED: no token -> 401 and no hand-off
 confirm → restart → status/confirmedBy/confirmedAt/runId persist
@@ -5121,6 +5285,7 @@ contradictory supported assessments and invented write authority are rejected
 conversation archive retains the run reference after reopen without any ticket
 conversation changes during interpretation invalidate the result before starting work
 conversation deletion, forged evidence and stale saved report never grant action authority
+conversation goal index survives ordinary topics and preserves independently scoped unfinished requests
 conversation hook runs only after archive success and a run records measured state, not raw tool content
 conversation limit and restart recovery do not trigger extra model calls
 conversation-contract rollback and non-chat callers keep the previous system bytes
@@ -5160,6 +5325,7 @@ credits never override actual spend controls, depleted balance, individual caps 
 cross origin and extra authority are rejected before preparing work
 cross-source enrichment keeps the main answer call and discloses the omitted source scope
 cumulative session snapshots keep latest value, not sum; context model cannot receive session totals
+current Drive locator verification uses metadata only and an out-of-scope locator cannot trigger search
 current natural language selects only registered scope; history text and expanded authority do not
 current-source work order needs a bound single-use approval and returns one terminal result
 cwd passed to the runner is always the brake-validated sandbox (never outside tmpdir)
@@ -5175,6 +5341,7 @@ dedicated indexing request can be cancelled for foreground owner conversation
 dedup changes ONLY the patch section — order and the other sections are untouched
 default drops echoes
 defaults written at creation disable card, address and password saving
+delegation syntax cannot strip additional goals, change the worker or turn a quotation into authority
 deleted mail, excluded sensitive evidence and partial bodies remain explicit in coverage
 deletes ONLY aged aroma-sandbox-* dirs; keeps fresh; never touches .aroma / data / other names
 deletion is by file age, so a lost index cannot retain evidence forever
@@ -5192,14 +5359,18 @@ deterministic cost answer omits the unused scalar review catalog and oversized r
 deterministic output — same seed + same generatedAt -> identical hash and gen
 deterministic — same input yields identical output across calls
 development Chinese and English share evidence route, same-failure checks and no dispatch
+development and acceptance use different immutable profiles and persistent caps
 development failure supplements GitHub without claiming the current failure is repaired
 development paraphrases stop after one exact revision probe, retain unknown repair, and skip unused prose calls
 development plan page/API require Owner; GET never dispatches; cross-origin and arbitrary scope refuse
 development report separates remote, deployed and running commits and empty test coverage
+diagnosis preserves actual model, usage, trace and measured phases without inventing absent counters
 diagnosis view and architecture remain readable in English with exact scoped limits
 diagnostic entry is metadata-only — no raw text, no err.message
+diagnostics never copy raw stderr, provider bodies, credentials or arbitrary fields
 different ids still coexist
 direct IDs require live source access and ancestry; shortcuts and foreign folders fail closed
+direct RPC and API alternatives cannot escape the active root; child scopes retain its remaining capacity
 direct file evidence: createRun writes { order, runs } with the timeline
 directory navigation follows one explicitly named branch within the existing fallback budget
 dirty or staged affected source is rejected
@@ -5276,6 +5447,7 @@ eligible provider failures still retry and can become verified instead of being 
 email_draft → 4-arg with u1DraftShadow:true, NO demo, NO promoteToProposal
 embedded JSON-LD and same-publisher alternate JSON are read as data, with subject binding and no context egress
 emitting never throws and never returns a decision
+employee live profile admits only the exact Owner company employee landing and list URLs
 employee pagination continues and a denial for one wage remains missing rather than zero
 empty and non-string inputs refuse
 empty and unavailable revision follow-up finish without retry or manufactured repair proof
@@ -5304,6 +5476,7 @@ every advertised Claude family routes as Claude, only closed model identifiers a
 every captured shape maps to a usable id — snake_case included
 every class used is a real one
 every content field survives — only the four top-level keys leave
+every current subscription process boundary is inventoried; new unmetered CLI transports fail the survey
 every displayed value is a projection of the sealed canonical object
 every entry declares HOW a change takes effect
 every entry names the file it came from, so a claim can be checked
@@ -5343,17 +5516,27 @@ execution_proposal + real id → references THAT id, marks pending/not-executed
 exhausted and unknown quota stop; no paid fallback
 exhausted fallback budget does not loop; failed second composition retains every observed paid receipt
 exhausted quota is still readable and zero activity is a real receipt, with only official read RPCs
+existing Goal Decomposer carries whole Owner outcomes even when its read-fact plan has no facts
+existing Task Store keeps legacy state and stores a separate goal projection without dispatch
 existing approved adoption observes component only after verified load, stores receipt once and does not rewrite baseline
+existing button approval records exact-scope goal evidence without replacing another active goal or replaying execution
+existing conversation and investigation stores retain incomplete goals separately from completed read-only receipts
 existing dispatcher limits eligible adapters and refuses auto fallback without changing default callers
 existing health ranking chooses a qualified host adapter, excludes injected manifests, and never silently falls back
 expired approval and restart invalidate execution without auto-resume
+expired approvals and changed candidate SHA, scope or operation are rejected
 expired confirmation and unsupported explicit planning remain readable without starting a worker
 expired history performs a checkpointed full scan before replay and acknowledgement
+expired recovery authority prevents rollback merge immediately before PUT
 expired shared cooldown rechecks actual subscription before touching an original or provider
 expired, changed-version, malformed and prohibited receipts cannot start work
+expiry and service restart cannot renew or execute a stored recovery ticket
+expiry during idle inspection prevents checkout and reload
+expiry during regression prevents subsequent managed-client publication
 expiry, bridge restart and changed live definition refuse automatic approval
 expiry, cancellation and process restart never resume writes
 expiry, cancellation, restart and duplicate requests do not reissue authorization
+explicit Codex repair dispatch reaches the registered approval lane, preserving the complete request and replay identity
 explicit Owner work routes to exact versioned capabilities, never content-driven authority
 explicit chat dispatch persists work-order link and idempotency; no generic model fallback
 explicit chat preparation routes to the remote capability and retains one result link
@@ -5361,15 +5544,20 @@ explicit completion refresh bypasses a partial cache and concurrent repeats stil
 explicit continuation reaches the existing gateway rather than ordinary chat
 explicit development chat returns measured source values and saves history with zero model calls
 explicit disaster recovery rebuilds a lost dedicated bank while preserving originals and Owner decision
+explicit dispatch intent stays bounded and cannot silently substitute another task
+explicit general requests and unrelated pages do not cause company reads
 explicit injected token → privileged route ACCEPTED (201)
+explicit input limits remain validation errors rather than inferred quota exhaustion
 explicit local-operations plus mail investigation bypasses the single-mailbox recall shortcut
 explicit progress intent excludes negation, quotations, business scope and execution
 explicit retry renews Watch for a real provider test notification without resetting the history cursor
+explicit same-run review resumes only the review, records real adapter output and remains on Hold
 explicit sidebar improvement commands start planning without a prior discussion or file prompt
 explicit starts do not use other applications, arbitrary paths or history to infer a target
 explicit subscription provider works without OpenAI key and reports bridge presence instead of API credential
 exports are deep frozen, and mutating them cannot move the argv
 extension declares only the read-side permissions, one stable id and no site-wide content scripts
+extension reload preserves legacy topic bindings while a real browser startup discards only tab bindings
 extension source survey forbids network/model credentials, page actions and dynamic injected code
 extension-less requires are resolved — the case that broke the first walker
 external gap creates an exact saved proposal and approved development draft without new permissions or dispatch
@@ -5408,6 +5596,8 @@ failed tests are retained for review but never become a completed run
 failure choice binds the requested task and cannot borrow unrelated success
 failure in the middle of a page resumes the remaining messages without inflated coverage
 failure state is durable and sanitized; no extraction is a measured empty result
+failure to persist a reservation stops before provider work
+far-apart changes cannot be silently truncated to fit the reviewer
 fast indexing still hands an opportunity to background analysis under continuous backlog
 fast path refuses action intent, missing verification operation, continuity and unavailable evidence
 fence policy: bare / json / JSON / no-lang accepted; other lang + malformed rejected
@@ -5418,6 +5608,7 @@ filename is timestamped (sanitized createdAt) and id-suffixed
 finders scan robustly: match by field, count malformed, never throw
 first
 first dispatch → claim written once + spawn once
+first managed installation recovers a unique saved read topic from content-free host bindings after session storage was cleared
 first worker claim → WORKER_CLAIMED written once; DISPATCH_CLAIMED untouched (distinct track)
 five closed states and no sixth
 five source groups are queried once each, overflow stays visible, and one edited selection makes the whole update atomic
@@ -5445,11 +5636,13 @@ flag is fail-closed: unset/empty/invalid -> off
 flag revocation after retrieval and malformed receipts never release a completion
 flags ON + chat → exactly ONE bounded context block in the adapter input
 flags resolve fail-closed (invalid/wrong-case → off)
+folder-only Drive matches do not dispatch document selection or get and remain incomplete
 follow-central changes on the next resolution; captured running selection remains frozen
 follow-up recall includes bounded recent owner questions but never assistant claims or excluded history
 follow-up receives saved question/answer and current selected snapshot after fresh consent
 follow-up refuses changed document and unavailable parent without model dispatch
 follow-up rejects unknown or unfinished runs and cross-subject corrections
+follow-up scope and thresholds come from Owner text and saved read metadata rather than previous answers
 foreground cancellation aborts the request and never returns an analysis result
 foreground cancellation and runtime pause yield between local classifications without changing remaining retries
 foreground cancellation releases indexing without replacing canonical retry state
@@ -5463,6 +5656,7 @@ forged nonce cannot bind an identity
 forged target, expanded scope, extra schema authority and another actor cannot start work
 formal review failure retains safe diagnostics and cannot approve adoption or repeat work
 formatLocal renders in the configured zone
+forward authority expires and cannot change target
 forward slashes and mixed separators are handled, not a way around the check
 four kinds become grounded candidates atomically, never approved or executable
 fresh activity uses configured model; conflicts cannot confirm current activity
@@ -5480,6 +5674,7 @@ fresh witnessed activity confirms only observation time; stale/future/missing ti
 freshness comes from the NEWEST matching row, not the first in the file
 full chain (injected): enriched result returns; sandbox/prompt NEVER projected
 full history is snapshot bounded, paginated and durable across worker restart
+full intake replay preserves the retained valid answer when the judged investigation has no observations or claims
 full text prefers plain alternative and excludes attached files
 full-width digits are ordinary typing and must work
 future-start and unassigned shifts make no omission finding; page limits and opaque cursors never imply completeness
@@ -5491,6 +5686,7 @@ general English semantics reaches the actual final intake reply with visible sou
 general definitions do not select company sources, in Chinese and English
 general memory pages keep the first cutoff and never request complete mail bodies
 general memory rejects source-bound leaks, stalled cursors and changed cutoffs
+general repair intake persists the whole goal and deduplicates across request IDs and restarts without a model call
 generic contract is bound to source, tests, goal and execution boundary
 generic definition details are not company evidence claims on the real reply path
 generic second-person and demonstrative explanations are not business observations
@@ -5522,6 +5718,7 @@ headings scale with the body and can never end up smaller than it
 headless: false passed explicitly is fine — agreeing is not violating
 health requires a fresh authenticated live response; prior ready data cannot survive refusal, stale replies or missing config
 health returns up when the runner is callable
+health separates transport, authorization, capability and worker readiness; mismatch fails closed
 health verification rejects a foreign listener, missing boot SHA and failed HTTP response
 her section is bounded by the next heading, not by the end of the reply
 hiding uses visibility, so the row keeps its height and nothing jumps
@@ -5543,12 +5740,17 @@ history restores work without nonce and uncertain preparation offers only readba
 holding an Owner session grants nothing on the approval path
 host completion waits for dispatched cancellation to settle and blocks late provider calls
 host installer is restricted to one per-user registry key, reviewed blobs and fixed Node executable
+host policy is derived from the existing capture rule, cannot be overwritten by socket-like text, and remains distinct from a receipt
+host-enforced selection budgets reject four valid candidates before any document retrieval
+host-originated clarification stays visible and archived beside incomplete whole-goal status
+host-owned proposal clarification and recommendation outcomes survive canonical goal reporting without proving business completion
 hourly budget survives restarts and one in five attempts is reserved for historical mail
 humanDuration renders caps the way a person reads them
 idempotent — a second promote returns the same proposal, no duplicate created
 identical actions and complete exact calendar coverage recommend one exact target, never execution or savings
 identical siblings sharing an ancestor stay as separate entries
 identity binds verified Workspace subject, rejects substitutes and persists revocation
+idle activation is required and Owner reconciliation consumes uncertainty without refund
 if the fallback ALSO fails there is no third attempt, and the report says so plainly
 ignored nodes never survive
 image + link — the class that is NOT StaticText
@@ -5576,6 +5778,7 @@ inline syntax highlighting preserves technical command tokens instead of inserti
 input[type=password] is refused before anything is typed
 inspect and recommendation are inert; explicit approval reads back and inverse needs fresh approval
 insufficient evidence triggers bounded alternate reads and counts both composition calls
+insufficient or changed allowance refuses before dispatch without activation or refunds
 insufficient output still requires successful completion and observed approved model usage
 insufficient public evidence retains the reasoning path
 insufficient subject or period evidence yields an explicit incomplete state rather than unrelated numeric answers
@@ -5661,22 +5864,32 @@ keyword miss → recent-items FALLBACK, labelled "(recent items)"
 killing a writer mid-append leaves a complete, valid conversation
 killing a writer mid-write leaves a complete, valid file
 known invalid and empty coding results show a concrete failure instead of uncertain execution
+large admitted files use compact hash-bound edits rather than impossible full-file output
 large adoption receipts remain observable without transporting sealed source copies
 large corpus traverses every page and preserves source boundary after resume
 large decimal history IDs are not rounded and disconnected Pub/Sub never performs cloud calls
 large multi-file review is streamed through stdin, never expanded into command arguments
 large private message lines are sliced in linear time without exposing their contents
+large review retains every changed character/line, preserving both exact outer hashes
 large session sampling and malformed lines retain unknown coverage instead of claiming no activity
+large wage reports visibly bound rendered employee rows and retain every measured coverage count
 last-turn usage is not summed as complete invocation usage and cannot overlap cumulative sessions
 later host commit requires fresh loaded source hashes matching reviewed reader and protected dependency
 latest failure sample includes explicit linked work and adoption rather than declaring an unrelated success a fix
 ledger and session failures are isolated; actual tokens do not become billing or a named email
 legacy / unset interactionMode still requests 1024 (unchanged behaviour)
 legacy ambiguity remains terminal when the Owner operational read has no observed evidence
+legacy and already saved tasks never inherit newly available Drive tools
+legacy answer plans require no Owner-instruction migration and borrowed source text never becomes an Owner instruction
 legacy browser registrations keep their sealed definition while fresh tasks receive provider-aware checks
+legacy conversation memory failure reaches the owner without exception text
+legacy decision memory failure is reported without exposing exception text
+legacy migration refuses a reused tab identifier whose live URL hash differs from the saved source
 legacy page clients cannot silently acquire new company read authority
 legacy proof remains explicitly unknown until a newly verified attempt records its trigger
+legacy task projections remain unchanged and goal reports never turn a read-only result into an executed action
 legacy topic recovery never upgrades stale work receipts or forbidden targets into consent
+legacy topics recover separately when each tab receives its own activeTab grant
 length cap is observable: over-length field truncated AND warned (not silent)
 length rules are bounded by the server, not by the model behaving
 lexical source recall includes the actual matching original when its quote is beyond the first four thousand characters
@@ -5720,6 +5933,7 @@ logout clears with the SAME attributes, or it would not actually clear
 lookup failure retains the exact trace and normal later completion retains safe failure history
 losing the audit store is visible, not silent — AND the dry-run fails
 lost bridge reply after dispatch reports uncertainty rather than falsely saying nothing executed
+lost progress replies stop the spinner and recovery only observes the saved job without redispatch
 mail analyzer status check uses a bounded signal and never completes a model task
 mail chat uses an isolated read workflow and stores no email body in history or memory
 mail content cannot escape through generic memory, agents, audit, or revoked source reads
@@ -5743,15 +5957,30 @@ mailbox credential operations cannot use live secrets during tests
 mailbox grant does not connect the source or grant Drive access
 mailbox is registered but unconnected before its own Google consent
 mailbox migration preserves verified identities and later revocations on reload
+main Browser work panel shows measured progress saved results and errors through GET only while preserving the chat draft
+main Update discards expired foreign-scope and command-shaped history handoffs without sending
+main Update leaves current assets and draft intact on unavailable version and failed history persistence
+main Update loads new served assets while preserving exact conversation and literal unsent draft without replay
+main Update never moves a restored draft to a missing authorized conversation
+main Update preserves the home view and refuses prepared attachments without dropping them
+main Update refuses active reply and open confirmation controls instead of losing their state
+main Update restores a fresh chat draft with one greeting and removes it on the first explicit send
+main Update retains unsaved later turns in stored chats after failed persistence or transport
 main answer schema permits only fresh source and record identities without mutating shared schemas
 malformed and overflowing counters remain unknown with per-field coverage, never a numeric reset
 malformed calendar dates and repeated tokens fail visibly
+malformed canonical goal history fails closed without overwriting or hiding unfinished records
 malformed facts are skipped without throwing
 malformed file → construction throws a controlled error; file NOT overwritten, nothing fabricated
 malformed or overbroad context never reaches worker; source change withholds result
 malformed result artifact → controlled 500, no crash, no path leak
 malformed results and persistence failures never become successful runs
 malformed semantic result falls back to canonical lexical records rather than throwing or silently emptying
+managed client publication preserves the previous slot and refuses unaccounted local changes
+managed installer source pin accepts only CRLF equivalence and rejects all other byte changes
+managed publication rejects optional hosts and unexpected manifest capabilities
+managed update fails closed for a busy or unknown host and rejects page senders and extra update arguments
+managed update observes only client metadata, blocks concurrent dispatch, and chooses panel refresh for identical worker bytes
 manifest failure fails closed without reverting to a full body read or a model call
 manifest path preserves durable retry deadlines and the exhausted source budget
 manual analysis can immediately cancel an active semantic retain
@@ -5766,15 +5995,19 @@ member consent uses the shared live-Google fence before reading application cred
 memory adapter isolates the bank, proves retain, correction and deletion through document reads
 memory callback accepts only signed transported trace; missing or forged context remains unlinked
 memory completion route is token-protected and unavailable until explicitly enabled
+memory failures remain owner-visible even when the model ignores the advisory
 memory final obligation uses recall state: ${state}
 memory index reports substitute real raw-only and source-only counts in both languages
+memory miss preserves the separately validated clarification instead of the raw unsupported alternative
 memory page and mutations require owner authentication, same origin and explicit content
 memory progress separates saved facts, raw-only records, candidates and pending work without health or engine reads
 mentionedFilesFrom extracts only path-shaped tokens (never invents)
 merge rechecks exact PR head, base, checks and unresolved review threads
 merged events are chronological and unknown events cannot masquerade as progress
 metadata history is bounded, sanitized and cannot confirm recovery for a changed work identity
+metadata-only and truncated documents cannot claim a complete verified recipe
 migration proof fails closed when
+mismatch, provider error, insufficient confidence and authority-shaped first replies cannot grant a read
 mismatching boot, rollback, null/skipped tests, old adoption and duplicate records fail closed
 missing GITHUB_READ_TOKEN → github skipped, Google sources still registered
 missing Google scope fails before data access and hides token errors
@@ -5795,6 +6028,7 @@ missing links, changed tests, unbound inputs, review failure, skipped tests, old
 missing model, unsupported effort, exhausted capacity and provider substitution stop before a turn
 missing or inconsistent diagnostic evidence is unknown, never invented or a false zero
 missing or malformed provider timing remains unknown in the durable ledger
+missing pinned dependency is refused by the actual compiled launcher before broker startup
 missing provider stops before coding, concurrent work is refused, and errors are bounded
 missing requested model never silently substitutes another model
 missing result file (deleted) is handled safely — running, not a crash
@@ -5803,6 +6037,7 @@ missing source dates stay unknown while actual timestamps retain local display
 missing source, extra path and ambiguous commit never produce a successful partial adoption
 missing, duplicate and changed screenshots stop before any model call
 missing, malformed or expired quota never becomes zero remaining; bucket map overrides legacy
+missing, malformed or nonempty claim drafts and actual read sections retain evidence presentation
 mixed local-operations and email enquiry reaches investigation intake, not mailbox recall
 mixed script is the normal case, not an edge case
 mixed-language follow-ups show fresh evidence for the same record, not a newer unrelated failure
@@ -5813,8 +6048,10 @@ model cannot invent a referent, choose a different current job or fake a quotati
 model catalogue is guarded, subscription-only and never acquires a completion adapter
 model center writes require same origin, closed shape and expose no inference endpoint
 model picker saves the active conversation selection without changing legacy shared defaults
+model progress is durable status evidence and status reads never dispatch or resurrect cancelled work
 model self-attribution, fabricated lines/quotes, altered shape and unsupported IDs fail closed
 model version display and leading zeros are normalized only from the bound value
+model-selected Drive folders are rejected before get rather than treated as readable recipes
 multi-file independent evidence must bind both originals, protected tests, recipe and baseline
 multi-file sealed dispatch checks recipe, complete changes, hashes and effort before review
 multilingual discussion carries the actual proposal and Owner refinements into planning
@@ -5828,14 +6065,26 @@ named first request reaches the fixed catalogue; existing pending proposal is re
 named operational records retain their identity and cannot borrow facts from a sibling record
 names what was counted, how old, AND what was not looked at
 names, models, past execution, partial overlap, missing source, unsupported or stale XML cannot recommend stopping
+native CLI exposes an explicit preparation action without widening approval arguments
 native broker refuses arbitrary routes, shell, navigation and page-shaped action instructions
+native browser broker permits no input when scope, capture or single-use claim is refused
+native browser broker reports input uncertainty once and cannot accept extension-provided actions
+native browser executor refuses a replaced or unpinned executable before spawn
+native browser stop aborts the local helper before an unavailable backend can reject it
+native client status is an exact metadata-only operation and never forwards a client command as a browser read
 native framing handles partial messages and rejects oversized or malformed data
+native live admission rejects a changed source before capture and legacy live get cannot authorize a screenshot
+native preparation pauses before any review call and exposes the committed exact source
+native refusal preserves a closed diagnostic and consumed ticket without exposing an arbitrary exception
+native refusal reporting accepts legacy uncertainty but refuses arbitrary causes and causes on success
 native service-manager calls preserve null strings and capture access errors inside C# before PowerShell marshaling
 natural confirmations without a receipt clarify visibly rather than ask for arbitrary files
 natural historical mail intent and scoped follow-up stay in the transient source-bound lane
 natural recall renders current originals and approved decision with hash/date citations without another model
 navigation geometry rejects clipped, covered, hidden, duplicate and inert controls
+needs_attention is still not an admissible resumed initial state
 negation and discussion never dispatch; cancellation clears the continuation
+negative compound clauses and reminders never erase a positive mandatory outcome
 negative, quoted, informational and write-shaped wage goals cannot authorize a company read
 nested operational facts survive the real answer guard while invented and cross-section values are rejected
 never claims a number of invoices
@@ -5850,6 +6099,7 @@ new reply takes precedence over old completed work and pending input has no inve
 new secret-bearing blobs block publication without printing or pushing secret bytes
 new task draft is not executable; registration, coding preparation and adoption have distinct authority
 new topics do not inherit a previous action or business route
+new writes, changed methods, destination/payload changes and side-effectful deadline expressions retain business-write protection
 newest first, so the one he just ran is the one he opens
 no CORS header is ever emitted, and the session cookie is HttpOnly + SameSite=Strict
 no EvidenceSet, no Answer Plan, no responseFormat on a utility turn
@@ -5925,7 +6175,10 @@ null / non-object card → empty preamble, no warnings
 null or empty clears the field back to the default
 null remains an explicit unknown and cannot support an observation
 numbers stay numbers and junk becomes null — no smuggling through a field
+numeric recurring-intent input is bounded and cannot block the host event loop
 numeric repair supplies only an original exact quote and refuses an otherwise valid unrequested claim
+numeric wage filtering surfaces uncertain membership and weekly salary without asserting a complete zero
+numeric wage presentation separates verified matches from unresolved memberships without discarding salary details
 observed government, manufacturer and venue URLs are read without extending the static host catalogue
 observed official URLs with a contentless bibliography can be rescued by an actual publisher read
 observed passport translations cannot add Chinese age qualifiers absent from their exact quote
@@ -5933,6 +6186,7 @@ offerFor is unchanged — the thin wrapper the callers already use
 official Drive page and all operations are Owner-gated; scope expansion is refused before reads
 official page reads are closed HTTPS GETs, reject credentials, local hosts, ports and off-list redirects
 official quote summaries lead with requested-language facts, preserve time meanings and collapseable source detail
+offline integration: intake, exact source approval, restart continuation, coding and review use one persistent budget; deployment stays held
 old boundary-violating wording is gone and must not return
 old record missing status → normalized to controlled "unknown", never "pending" (not confirmable)
 one
@@ -5942,6 +6196,7 @@ one entry renders inline too
 one explicit plan confirmation runs real task approval and coding; reading or planning alone never executes
 one failed source leaves successful usage evidence while preserving unavailable coverage
 one final correlationId is shared by client body, Error, and diagnostic entry
+one missing assigned-role wage preserves other verified roles and never becomes a zero rate
 one multi-file commit and a complete-set rollback preserve unrelated index and bytes
 one numeric repair uses only the withheld exact quote, preserves valid facts and counts its usage
 one pixel rejection continues inside the same approved immutable task and retains both reviews
@@ -5966,19 +6221,26 @@ only dedicated Gmail consent can connect; Owner and granted verified member read
 only exact host request identity groups calls; equal time and similar names never link a schedule
 only exact source quotes survive; unrelated URLs, extra numbers and wrong-language answers are withheld
 only files this store wrote are listed — a stray file is not a conversation
+only source-returned candidate IDs and exact document quotations may become an answer
 only standalone social turns with no earlier conversation or attached context qualify
 only the image endpoint accepts a body above 50 KB and parse errors stay explicit without echoing input
 only the two exact strings survive; everything else is discarded
 opening ONE enquiry by id returns the turns
 opening a session routes every request through the fence
 operational workflow titles preserve exact role identity and cannot borrow another workflow model
+operator invalid action diagnostics record only closed reasons without model text page text or input tickets
+operator observation refuses an unavailable fixture before native capture or page text extraction
+operator vision contract uses normalized coordinates and empty non-result fields before a sealed fixture click
 opposing lifecycle records remain a conflict while a later dated state is a transition
 opt out, secret-like content and paused capture never reach Hindsight
 order is preserved when filtering
 order planning maps snake_case to id and title — the captured defect
 ordinary Cantonese prose is untouched — the check is about names, not language
 ordinary Chinese, English and mixed top-navigation requests reach semantic interpretation
+ordinary V2 page questions reach the page-grounded answer branch without a general keyword or company read
+ordinary acknowledgements accept the immediate unrelated offer rather than a persistent or completed goal cursor
 ordinary chat and self-description are not capability questions
+ordinary informational intake cannot acquire an action goal from invented decomposer mappings
 ordinary page answers stay available and incomplete data cannot become all employees or missing wage zero
 ordinary promotion preserves, tests, commits, publishes, reviews, merges, deploys and verifies in order
 ordinary read instructions and questions are all exempt
@@ -5992,17 +6254,25 @@ outside os.tmpdir(), and a missing directory, are refused
 outside the window it may run
 overlapping automatic and clicked mail-memory loads render only the newest response once
 oversized committed source and moving revisions fail closed
+oversized completed output is distinct from login/quota and does not retry
 owned VM stops after failure; a failed stop remains busy across restart until explicit recovery
+owned fixture focused input remains visually stable without weakening native pixel validation
+owned fixture keeps both admitted controls visible after a real wheel scroll for post-action observation
 owner briefing uses a fixed plan, preserves source limits and audits measured outcomes
 owner cannot be supplied by the caller — the store always sets it
 package denies traversal, ADS, case aliases, secrets, external commands and unbounded content
+package loading check detects an absent transitive module instead of falling back to repository code
+packaged Gmail contract and broker accept only the verified fixed request shape
+packaged local dependencies resolve in place and backend-only Express remains lazy
 packages exact current source and protected host tests, with provenance
+page injection, negative requests and fabricated search terms cannot authorize Drive execution
 page text alone cannot authorize wage reads, arbitrary model operations are rejected, and revoked scope stops dispatch
 pagination checks exact requested model; incomplete catalogues cannot imply availability
 pagination follows opaque cursors on the fixed endpoint and reports missing metadata and page bounds honestly
 pagination never promotes a partial history page to the final cursor
 parallel host contexts do not cross-link calls or allow prompt-supplied identities
 parallel preparation with one request key never issues two tickets
+parallel sends, native retries and child requests share the same durable cap
 parse failure propagates as DistillParseError (not upstream)
 parsePlan names why it failed, for every way a model can miss
 parses claude success JSON into a clean Result (ok, result text, cost, relay 0/0/0)
@@ -6043,12 +6313,29 @@ preflight distinguishes unpublished work, stale tracking refs and real divergenc
 prepare mints a sandbox under tmpdir and runs the injected init
 prepare performs no model calls; approval binds source/tests/plan and dispatches measured repair
 prepared reuse rejects unknown obligation, private evidence, wrong language and operational investigations
+prepared review re-reads exact committed tree and measured TAP; altered source, log or paths refuse
+presentation: actual browser conversation shape traverses HTTP, Bridge and Action Gateway before enabling approval
+presentation: browser or dialogue reload keeps the exact still-valid proposal binding
+presentation: canonical displayed text and durable proposal tampering remain blocked
+presentation: changed Owner login session blocks both presentation and approval
+presentation: changed conversation or detached panel cannot activate after an in-flight acknowledgment
+presentation: changed identity, hash and conversation remain blocked through the real HTTP path
+presentation: expiration after acknowledgment still blocks approval
+presentation: expired approval session or restarted Gateway never inherits an old ticket
+presentation: expired proposal cannot acknowledge or execute
+presentation: historical local UI ids and missing conversation ids fail the unchanged strict HTTP contract
+presentation: missing acknowledgment cannot itself authorize a direct approval attempt
+presentation: missing, false or malformed acknowledgments and failed transports keep approval disabled
+presentation: sequential and concurrent duplicate approvals never register twice
+presentation: unauthenticated, cross-origin and extra-scope requests stay blocked
+presentation: wrong nonce cannot execute through the existing Gateway
 preserved
 preserved CSS selector
 previous enquiry target cannot silently become a newer failure
 previous registered sidebar tasks remain resolvable without silently adding browser authority
 previousLane is a LANE NAME, and junk in it is ignored
 private and HR evidence never crosses a purchasing scope; proposals are not decisions
+private evidence hashes identify exact persisted bytes and never change quota
 private repository, foreign hash and query syntax are refused before exposing data
 private results cannot return after credentials change during a source read
 private, current, compound and genuine action requests retain their existing boundaries
@@ -6081,6 +6368,7 @@ provider effort vocabulary can cross the bridge; adapter binds it
 provider failure, malformed success and revoked reads never turn into empty business truth
 provider failures, blank answers and save failures remain visible and cannot retry inference
 provider rate-limit reset is respected without another network call
+provider sharing, failed audit and mid-read revocation stop content and further reads
 provider token fields preserve explicit zero, unknown and separate helper usage without inventing charges
 provider-aware evidence is versioned and cannot reuse the legacy assertions
 public URL and DNS checks reject local and reserved networks including mixed and mapped answers
@@ -6099,6 +6387,7 @@ rate limiting during identity verification suppresses subsequent provider attemp
 rawMeta: present sample → deterministic 12-hex hash; redactionHit reflects secret shapes
 rawMeta: undefined/empty rawSample is safe (rawPresent=false, length 0, hash null, no throw)
 read -> act -> read -> act is allowed
+read coverage and revocation stay distinct from verified whole-outcome completion
 read endpoints unaffected: /health and /proposals need no token even with HUB_TOKEN unset
 read gate is off by default and the normal read layer retains all section receipts including the billing gap
 read returns null for a missing id or an empty store
@@ -6116,8 +6405,10 @@ readableNow is REQUIRED only — an enriching fact is never a self-read obligati
 readback rejects mismatched scope and a concurrent registration cannot duplicate authority
 reader binds GET transport and evidence to the exact company and clock-in window, preserving clock-out offsets and excluding sensitive fields
 readiness requires an installed feature and supported CLI, not merely a permission flag
+readiness verifies backup and restored bytes independently and binds existing canonical memory revision
 reading an allowed source does not require metadata access above its configured root
 readonly is named
+readonly worker/model/goal/scope fields select diagnosis rather than an editing request
 reads only exact committed fixed blobs; never uncommitted files, outside paths or credentials
 real COMMANDS still COMMIT with a Decision/Task
 real Codex completion hook captures last-turn counters once and leaves auth calls uncounted
@@ -6131,15 +6422,21 @@ real atomic run store and conversation history retain this workflow across recon
 real atomic storage retains diagnosis source evidence and conversation link across reconstruction
 real bounded transport reads published shifts and adjacent-day punches, compares exact links and keeps uncertainty
 real browser matrix visits requested breakpoint, height and theme combinations and refuses a failed case
+real browser sites remain closed until native acceptance while the owned fixture remains available
 real chat card requires a checkbox and single click, then reads progress without retrying approval
 real chat panel carries follow-up history, restores without inference and fits narrow windows
 real chat route reports active website work, persists its outcome and never calls legacy models
 real fast-forward deployment preserves dirty bytes and all stash history without reset
 real intake carries only the host public receipt to the transcript persistence boundary
+real intake passes the preserved request to the existing service once, before unrelated helpers
+real intake preserves the failed procurement goal despite a data-only model answer and performs no business action
 real intake semantic request ignores forged history, pins selection and preserves Owner boundaries
 real intake uses verified public-only composition without an unused answer call
 real intake → saved investigation → inline approval route → read-back → durable reopening, with no model call
 real named attendance reader selects clock-in dates, retains open punches, proves pagination and projects only approved fields
+real offline browser restores the same generic work card and keeps scope approval behind an unchecked confirmation
+real operator panel requires screenshot consent, stops inference and restores only saved answers without replay
+real panels isolate topics, drafts and new-chat reset across tabs and windows without replaying inference
 real quota failure is retained with no fallback or automatic retry
 real read adapter feeds a distinct job, usage, account and billing assessment
 real registered planner retains the business goal as sealed context rather than misclassifying it as a production modification
@@ -6170,6 +6467,7 @@ reconcile skips already-terminal runs (no mark on a COMPLETED run)
 record tampering and incorrect displayed approval consume nonce without commit
 recording the same id twice REPLACES, it does not append
 recovery narrow window: WORKER_CLAIMED-only, no Execution + no Result → INTERRUPTED (mirrors DISPATCH_CLAIMED)
+recovery requires Owner, closed input shapes and a fresh nonce; original coding approval cannot replay
 recovery: interrupted worker (WORKER_CLAIMED + Execution artifact, no result) → INTERRUPTED (branch c)
 recurring hours cannot turn missing days or undated exceptions into confirmed closures
 recurring intervals use verified quoted fields in a weekday-ordered table, with critical gaps visible
@@ -6214,8 +6512,10 @@ repeated and overlapping requests share source reads but refresh local running e
 repeated display acknowledgement preserves the exact proposal and cannot refresh expired authority
 repeated identical questions do not crowd distinct original history out of recall
 repeated review refusal stops after one repair and retains the reason without authority
+replayed nonce, forged actor and a plain JSON exception cannot become authority
 reply languages have independent caches even when an upstream planner uses the same search words
 repository policy receipts and locks use the same Owner directory outside virtualized AppData
+repository scopes cannot nominate another repository, approval, source root, or acceptance budget
 request correlation is async scoped and phases are closed host vocabulary
 request id is durable and conflicts refuse rather than duplicating preparation
 request language is isolated from other concurrent dialogue replies
@@ -6246,15 +6546,19 @@ restart invalidates pending approval and never automatically replays approved wo
 restart marks all persisted active work interrupted without re-running a model
 restart preserves failure backoff and unchanged analyses, while manual retry remains available
 restart respects durable retry dates, then reconciles originals without rewriting
+restoring a verified child action retains every unresolved outcome of its compound Owner goal
+result report requires host verification and never upgrades a failed or running work order
 result-count cap truncates + reports truncatedCount
 resume cannot release executable outputs and interrupted read-back is never replayed
 resume is refused outright without allowResume
+retained real self reply survives the guard without an unrelated source request
 retains quote-bound diagnostics for rejected translations and mismatched quotes without publishing draft answers
 retry endpoint: token required, interrupted → 201 inert attempt, missing reason → 422, duplicate → 409
 retry guards: non-interrupted → 409; missing reason → 422; duplicate retry → 409 (no second attempt)
 retry reconciles stored originals without reinserting zero-fact documents
 retry status requires consistent attempts and timestamps and never infers a root cause from generic availability
 retry: INTERRUPTED → new attempt (linkage), original preserved, NO auto-dispatch, still gated
+returns increment
 review capacity, retry dates and interrupted jobs bound automatic model calls
 review deadline retains byte counts without retaining raw provider output
 review envelope requires actual model, exact closed result and no finding on a pass
@@ -6276,6 +6580,7 @@ revocation during store read fails closed and a source-bound ID cannot be adopte
 revocation during the new scheduler read fails closed before any provider contact
 revocation during the subscription status read cannot retain or change a source
 revocation while fetching a full message discards it
+revoked Drive scope and stale or changed Browser context prevent source dispatch
 revoked live read flag prevents all bridge calls
 revoked read access blocks start and saved result presentation
 revoked read access prevents verification without any bridge request
@@ -6314,24 +6619,30 @@ same names or times never attribute unlinked lane calls to a worker or schedule
 same request is idempotent and cannot issue a replacement nonce
 same run with foreign work/attempt identity or conflicting duplicate receipts is contradicted
 same work identity, complete passing tests and loaded commit prove adoption prerequisite recovery only
+same-ID recovery keeps original failure/source, reuses approved tests and exhausts only the original allowance
+same-conversation whole-goal status survives reload and reads back without a model call or action
 same-identity same-facet opposing current observations conflict; historical and different roles do not
+same-tab navigation preserves existing Operator jobs while contextual reads retain their navigation stop
 same-time conflicting account snapshots are withheld and quota cannot grant per-job charge evidence
 same-time conflicting claims are disclosed instead of presenting either as a conclusion
 same-time conflicts are contradicted; dated changes are transitions and cannot erase old evidence
 sampled Gmail does not become an omitted source because an enriching fact has no operation
 sampled host outcomes use exact work/run identities and do not change canonical backlog
-sanity: the machine really is America/Winnipeg, so the tests above prove a difference
 save is atomic: a pre-existing good file is replaced in place
 save is atomic: a pre-existing good file survives (rename replaces in place)
 save then load round-trips the envelope byte-identically
 save uses temp+rename: no .tmp remains and the file is valid JSON
 saved continuation replies use the same safe markdown renderer as normal chat without issuing work
 saved investigation → host evidence → recommended proposal → approval → independent read-back and separately approved rollback
+saved wage presentation survives get but is omitted from follow-up history and shares the result byte bound
 schedule witness failure stays visible beside usable automation definitions and no source exposes write methods
 scheduled and manual attempts retain their distinct verified proof provenance across restart
 scheduler persists pause, respects foreground activity, and quota failures back off across restart
 scheduler receipts must match exact registered task; tests cannot invoke real Windows by default
+scheduler refusal clarification unsupported and mixed-approval requests conserve every current outcome without granting authority
 schema rejects extra authority, invented quotes and tampered source hashes
+scope exception alone cannot release Hold, produce a deployment capability or dispatch
+scope expiry and a competing worker during source verification consume no approval or model allowance
 scope refresh recovers an interrupted history attachment but never overwrites a newer Owner turn
 scope rejects changed support files, symlinks and unlisted files
 scope revocation during retrieval and changed source revision withhold the whole result
@@ -6350,7 +6661,9 @@ security, secret, migration and external write changes are exceptions; fixture t
 selected Claude adapter checks provider billing as well as selected model
 selected evidence sections do not invoke unrelated readers and malformed selection never broadens scope
 selection capture passes only a fixed scope argument and changed selected content refuses native dispatch
+self location uses the observed socket, with explicit unknown remote access
 semantic hits resolve only current authorized originals, include citations, and lexical fallback reports outage
+semantic prepare cannot replace a compound Owner goal with an unbound follow-up goal
 semantic review cannot rescue stale or unavailable enablement and configured-model observations
 semantic schema is closed, required and isolated from ordinary schemas
 semantic status reads saved result and undo only prepares a separately approved inverse
@@ -6360,6 +6673,7 @@ served page includes standalone sidebar assets in its fingerprint, supports both
 server transcript receipt survives reopen; latest topic change invalidates it and forged receipts fail closed
 service delegation preserves all descriptor sections and the native write is explicitly DACL-only
 service identity seals the bound repository while unrelated ownership remains untrusted and dirty targets are refused
+service outages, truthful unobserved receipts, quoted transformations and historical recall are not overwritten
 service permission comparison accepts hidden audit visibility while rejecting any unapproved DACL change
 service source hands only the boot commit to the fixed Owner bridge route, with cancellation and deadline
 service source refuses revoked access, foreign actors, bad boot identity and mismatched/failed bridge before source acceptance
@@ -6373,6 +6687,10 @@ session same-time conflicts and source failures never produce zero-use or comple
 session totals and partial last-turn usage cannot establish full job or quota consumption
 set() then get() in the same process returns the new value
 setup: real directories in a disposable place
+shared numeric selection preserves unknown values and reports source coverage independently of matches
+shared numeric selection retains unresolved mixed rows and never converts null into zero
+shared read collection follows opaque cursors and records every page before proving exhaustion
+shared read collection reports budget coverage and refuses loops duplicates and revoked reads
 shell:false is preserved everywhere — no shell:true anywhere in the agent
 side-panel capture stays bound to its own window when another Chrome window has focus
 sidebar plan displays only its closed profile and requests no automatic coding
@@ -6384,9 +6702,11 @@ signature matching honours the declared tolerance in both directions
 silence is reserved for "the feature is off" and nothing else
 similar title, later success, same commit and shared task alone cannot prove same-work recovery
 single-flight and TTL reuse retain original evidence time, do not cache failures, and cap distinct concurrent work
+single-paragraph retained denial is corrected without removing the observed URL or inventing a deletion receipt
 sink failure is swallowed — handleIntakeError still returns a safe response
 skips require recorded exact test identities and cannot hide an unrun suite
 slow indexing cannot block persistence of the next conversation receipt
+small-file output contract is retained
 snapshot covers every current committed file; dirt in the second file invalidates the whole order
 snapshot in:anywhere scans explicitly include Spam and Trash while ordinary scans retain their scope
 source access changes after the Gateway audit cannot return private content
@@ -6401,6 +6721,7 @@ source drift and provider errors do not enter a visual repair
 source drift blocks registration and prevents coding preparation
 source drift consumes approval but dispatches neither model
 source drift fails before draft authority
+source drift, oversized packages and extra scope authority stop before any model or budget activation
 source failure is visible even when there are no execution receipts; never a zero balance
 source failure prevents model work, and never invents source state
 source presence, company setup and disabled reads are not live-connection proof and never make outbound requests
@@ -6424,7 +6745,9 @@ stale canonical progress does not create failure evidence and same-record later 
 stale concurrent settings refuse without losing another scope
 stale investigation, unknown targets and untrusted actor fail closed
 stale official observations cause one bounded read-back and page failures stay visible
+stale source blocks before review; provider failure and findings cannot be retried as a pending review
 stale, contradictory and unavailable failure snapshots retain uncertainty and never become current reasons
+standalone definitions and supplied-text transformations use one answer, with no planner, website classifier, recall or source-verifier call
 standalone navigation receipts do not infer unrelated applications or generic positioning
 standalone top navigation advice then start creates a visible bounded planning job
 startRun rejects a targetProject of production and never dispatches
@@ -6436,12 +6759,14 @@ state-distinguishability after restart: claimed vs never-claimed (evidence only,
 static safety: no markup-from-strings, no code-from-strings, no persistence, no token
 status and completion use the host credit policy, and recheck depleted credits before any turn
 status parsing accounts for spaces, Unicode, rename origins and deleted files
+status-only recovery shows a pending phase and finishes a saved answer without replaying read or model calls
 status: succeeded / failed / running / pending
 step.answer is
 steps cannot be consumed against the wrong order, or with no order live
 stopReason is propagated when the provider supplies it, and null-safe when not
 stopReason normalization is faithful and null-safe
 stopping on budget can never render as finishing
+stopping preparation before its reply arrives cancels only the orphan approval and preserves the next draft
 strict capture evidence reads canonical and scoped document without changing legacy get or writing
 strict evidence checks latest canonical after read when
 strict evidence refuses
@@ -6467,6 +6792,7 @@ subscription wait expires normally and unrelated or foreign scheduler deadlines 
 substring matching is still refused
 substring mention, failed read and non-owner report cannot manufacture a link
 success + full chain resolves + real confirmedBy/At + NO leak
+successful wage reads distinguish missing role records and no assignments from permission failures
 summaries cite only retrieved IDs and validate follow-up evidence; source content never acts
 summary-only fallback shows its unverified body warning before collapsed technical details
 supervisor ready evidence requires fresh heartbeat and both live processes, with closed exit facts
@@ -6474,6 +6800,7 @@ supplied text transformations cannot dispatch instructions within the supplied t
 supported complete requirements remain executable and do not start without confirmation
 sweeping an empty or absent directory is safe
 switching the shared content source during automation loading cannot append stale mail cards to Drive
+tab switches and navigation cancel an in-flight contextual read without capturing the new tab
 table cells retain safe inline formatting while HTML and executable links remain text
 tables in fenced code remain code and adjacent headings/lists retain their structure
 tampered durable approval content is rejected against sealed hash
@@ -6541,12 +6868,14 @@ the ablation that proved this is not a date defect
 the absent sentence still reads as the calm, normal, manual state
 the accent survives everywhere it was NOT asked to change
 the accepted-work driver is detached from the bridge it may restart and cannot accept arbitrary commands
+the actual Browser capture contract accepts its text limit and refuses oversized V2 payloads before planning
 the actual Owner composition wires tranche preflight and accepted-work promotion, not a dormant helper
 the actual PowerShell bridge guard survives disappearance and PID replacement, rejects foreign identity, and kills only the bound instance
 the actual acceptance reviewer accepts the closed 7shifts source packet
 the actual committed diff feeds content risk gates; authorized repository protocols remain protected by path
 the actual frontend rejects an untyped reply envelope
 the actual intake keeps general definitions off semantic business upgrades and connector reads
+the actual intake route preserves input, final response and precise budget refusal without replaying a turn
 the actual provider composition carries feedback to text-only coding without replacing original files or tests
 the adapter builds an arguments ARRAY, never a concatenated shell string
 the adapter self-describes through the {results, evidence} envelope
@@ -6562,6 +6891,7 @@ the attachment carries WHEN it was captured
 the attachment names the section and carries its conclusion lines
 the audit record now carries duration
 the author\
+the backend and bridge resolve the same existing data directory independently of Windows identity
 the bar is suppressed on 首頁, because the briefing is right there
 the bare noun still cannot clear it
 the bare row id keeps working — the ref is an addition, not a replacement
@@ -6579,6 +6909,7 @@ the business date beats the row insert timestamp
 the button reports the lock refusal instead of retrying
 the by-name entries were NOT removed during the move
 the calm summary counts only what was ACTUALLY checked
+the candidate browser renders the full replay result with its URL, accurate policy and collapsed evidence, without management controls
 the candidate is available and preserved in full
 the caps and the untrusted-data framing are unchanged for GPT
 the card is deterministic and model-free — same order in, byte-identical card out
@@ -6633,6 +6964,7 @@ the deduplicated patch section still carries the apply hint
 the default keeps the coverage grouping was costing
 the default output has no group lines
 the default runner is built with child_process.spawn, shell false, and an arguments ARRAY — no real process is spawned
+the default wage answer groups employees sharing an hourly rate and keeps salary and role-dependent rates distinct
 the demo boundary validates previousLane and only continues short replies
 the demo boundary validates the hint BEFORE it reaches the engine
 the destination has styles and does not reuse the thread layout
@@ -6726,6 +7058,7 @@ the link works at ANY age — 過期嘅係主張，唔係 access
 the list is trimmed and blanks dropped, and the result is what gets stored
 the list stays short enough to stay inside the pacing budget
 the live shim matches its pin
+the live work card measures elapsed time and host phases and remains visible in a narrow long conversation
 the locus is ONE line — the stack lives in the turns, not here
 the locus names the two sides and what was wrong between them
 the log carries counts, enums and drop IDENTITY — never a value
@@ -6745,6 +7078,7 @@ the model reply splits at 下一步, and its prose above is discarded
 the module is pure — building a record touches nothing
 the module requires no model client
 the mushroom line: data survives the frame changing language
+the native Claude boundary never spawns on the 41st reservation
 the negative threshold is low on purpose — a partly-visible owner window still trips it
 the never-list and the restricted list do not overlap
 the note and the locus agree, and the report line agrees with both
@@ -6789,11 +7123,13 @@ the real HTTP report returns all scoped rows and cached replies become unavailab
 the real Simplified sentence from 2026-08-07
 the real Wikipedia case is reported, not silently resolved
 the real app mounts the page and all operating endpoints behind owner authentication
+the real bridge refuses helper 41 and website 3; unbound requests and unsigned scopes never dispatch
 the real committed-profile planner can produce and register an external read task without granting coding or credentials
 the real page shrinks by an order of magnitude, and the number is stated
 the real reply formatter preserves links, original evidence time and unknown freshness in both languages
 the real store writes where the other audits write, under the artifact root
 the real subscription adapter accepts the enquiry response contract before the transport call
+the real wage panel groups active users by rate and keeps inactive rows, roles and models collapsed
 the reason distinguishes the failure modes
 the reason distinguishes the two, so a refusal can be argued with
 the reason is a short enum — never the message, never a path
@@ -6824,6 +7160,7 @@ the reply reports the provider that REALLY served it, from telemetry
 the report references the enquiry by id and does NOT inline the turns
 the report rejects wrong scope, duplicate rows, bad chronology and missing source clock-out fields rather than giving a false zero
 the report separates writes-the-order-permitted from writes-refused
+the reported Owner command reaches existing diagnosis before scheduler or general investigation
 the reported duration STOPS at completion instead of growing
 the request cannot name an action — runScheduledErrands takes no action parameter
 the resolver is reachable ONLY through the two named entrances
@@ -6853,6 +7190,7 @@ the run count is shown as a number, not as thirty lines
 the run interval cannot be set to zero either
 the run still returns its outcome, and says the record failed
 the runner and the sandbox worker share ONE artifact store instance
+the same approved profile is idempotent and children cannot mint a fresh allowance
 the same claim is still allowed once something really was applied
 the same close timing with an ISSUED verdict keeps ISSUED
 the same dry-run can be requested again only as a NEW order admission
@@ -6863,6 +7201,7 @@ the same protection in English
 the same slots appear in both languages
 the same tree read twice gives the same refs — a ref is not a position
 the sampling grid and its detection floor are declared values, not prose
+the saved full request and short request select the same bounded recipe
 the scanner reports what it does NOT cover
 the schema closes every object so nothing can be smuggled past the validator
 the schema still closes every object after the minItems change
@@ -6876,6 +7215,7 @@ the second-vendor disclosure survives the rewrite
 the send path captures its conversation BEFORE anything renders
 the serialized form carries the truncation notice, not just the flag
 the serialized form nests members under their group
+the served UI snapshots prior history before adding current input and retains intentional repeated history
 the served page carries the stamp it was built from
 the server never self-HTTPs and HUB_TOKEN never reaches the browser
 the session can say which layers are live, from itself
@@ -6933,6 +7273,8 @@ the two timeout bounds are declared and the wall clock is the larger
 the typed confirmation is checked on the SERVER — every near-miss is refused
 the unforced intake route carries a mail-work investigation into the read-only chat lane
 the untouched defects are NOT marked as anything resembling handled
+the update button loads a newly published panel without closing Chrome or replaying a saved task and keeps the draft
+the update button retains the current panel on busy, unknown or failed draft persistence
 the v2 card is a viewer: collapsed section is presentation only, payload unchanged
 the version route reports the stamp this process is serving
 the view reads output.filesChanged / output.diffSummary / cost / latencyMs
@@ -6954,6 +7296,7 @@ there is no exported way to render an entry WITHOUT its status
 there is no status setter and no stored status field
 third
 three
+three explicit decisions bind exact material and issue a single-use opaque authority
 three or four on is also a conflict, not a majority vote
 three or more entries render as a COUNT, not as the entries
 three states and no fourth
@@ -6977,14 +7320,17 @@ tokens: r.tokens.slice(0, 8),
 toolbar read uses the explicit action gesture and opens only its returned window without reading
 topic changes and multiple same-conversation proposals do not transfer approval
 topic changes invalidate the pending discussion rather than confirm an older goal
+topic context keys are unique per tab, survive concurrent restore, and never capture the page
 topic membership and Owner follow-ups survive reopening without mixing topics
 transient index failures retain diagnostic state and bounded durable retry dates
+transport exits, timeouts and stdout overflow retain safe branch diagnostics
 traversal / malformed id → 400 and the store is NEVER touched
 two
 two approved preferences for the same subject are refused without supersession
 two different DOM nodes never share a ref, however alike they look
 two entries render INLINE — collapsing three lines is worse than reading them
 two genuinely distinct INTERACTIVE elements with one name both survive
+two independent Node hosts atomically reserve the same persisted root without resetting after restart
 two names that differed ONLY by a glyph become a real ambiguity, and are flagged
 two numbers is ambiguous and fires nothing
 two options collapse to the first question; prose with none becomes null
@@ -6992,7 +7338,9 @@ two paths, a wildcard, or a directory are rejected
 two-of-three flags + a full EXECUTE triple -> conflict, ZERO execution
 two-of-three flags on -> configuration_conflict -> ZERO execution
 two-of-three through the real app: agent + worker on -> conflict, runner never authorizes
+typed Owner instructions preserve dates times quantities and constraints without laundering external business facts
 typed needs work across domains, cap reads and ignore source-text instructions
+typed read outcomes outrank a heuristic file offer for all tested success and failure states
 unaccepted, rollback, skipped, foreign scope and mismatched source cannot enable continuation
 unavailable development source routes to equivalent authorised evidence, not mail by default
 unavailable inventory remains unavailable, not absence or duplicates
@@ -7004,6 +7352,7 @@ unavailable verification does not invent behavior proof or undo a verified adopt
 unavailable work and contradictory loaded revisions are distinct from missing regression records
 unavailable, stale and conflicting process receipts cannot confirm enablement or a model route
 unbound visual evidence and unsupported billing cannot authorize a correction
+unbound work, wrong model/effort, extra limits and a tenth turn fail closed
 uncertain approval discards authority and only offers readback, never a second POST
 uncertain coding preparation records intent before issuing authority and is never replayed
 uncertain preparation keeps intent and never repeats a write
@@ -7029,26 +7378,33 @@ unknown proposalId → 404
 unknown reason is not interpreted; successful adoption prerequisite never becomes a product fix
 unknown subscription errors fail closed without leaking details or consuming source attempts
 unknown version is rejected
+unknown, conflicting or quoted clauses cannot silently change the fixed recipe
 unlisted backend, CI, launcher, dependency and storage changes require the Owner instead of defaulting low risk
 unmapped development evidence triggers the same bounded exact revision read in Chinese and English
 unmapped or unknown required operations keep explicit gaps without inventing reads
 unmatched low-risk capability (Report) returns allow
+unobserved business claims are still withheld even when the model supplies an empty operational claim list
 unparseable worker output yields ok:false, not a throw
+unpinned print calls and alternate print syntax cannot bypass the native budget; only exact metadata packets are exempt
 unreadable automation directories and rejected files are explicit coverage gaps, never proof that no automation exists
 unreadable ledger stays unavailable and is not overwritten
+unreadable persisted context is a visible failure before models, not fabricated empty history
 unrecorded work diagnostics and test outcomes stay unknown rather than becoming passing values
 unregistered draft and pending job cannot prepare; pending jobs poll and offer cancellation
 unregistered plans and clarification cannot dispatch, and request replays stay bound
 unregistered, non-shared-root and missing credentials do not produce a live lease
 unrelated dirty files stay outside the package
 unrelated topic falls through and cannot carry the old job into the next topic
+unresolved readonly instructions cannot be silently classified as editing work
 unscheduled + DUE reads as a standing fact, not a fault
 unselected overview still lists work; previews remain collapsed
 unset HUB_TOKEN + no injected token → privileged route 401 (NO stub fallback)
+unsupported cross-module dispatch cannot become a different diagnosis or registered repair
 unsupported format, download denial and missing revision remain explicit metadata-only reads
 unsupported management requests report a boundary without a proposal or mutation
 unsupported numbers in prose cannot pass via an unrelated source value
 unsupported quotes and assistant claims cannot create grounded preferences
+unsupported recipe results expose source metadata and limits without inventing document contents
 unsupported usage leaves actual quota intact; failed quota does not hide supported account activity
 unsupported whole requirements stop before drafting, preserve the requested goal and explain missing capabilities
 unsupported work explains the missing capability on the visible card with no execution controls
@@ -7083,13 +7439,20 @@ visible current action follows real worker events even while the outer state sta
 visual findings are visible as text without running page markup; absent screenshots render nothing
 visual input accepts bounded PNG pixels, rejects remote URLs and local paths before connecting
 visual review sends verified pixels with provenance and keeps tools disabled
+wage answers explain source gaps bilingually while retaining unknown membership and rejecting unsafe reasons
+wage follow-ups reuse only a saved read topic and refresh source before selecting an exact numeric threshold
+wage gap reasons preserve ambiguous rates and future records instead of inventing missing-role zeros
 wage schema errors, future wages and contradictory current rates remain unavailable rather than guessed
+wage summaries merge equal rates per employee and separate inactive rows without hiding zero or missing wages
 wages reader retrieves real values through fixed company GET endpoints and excludes private profile fields
 wait_for spends it — waiting for a change means the DOM changed
 warm transport is reused but every answer has a fresh isolated thread and requested effort
 website bridge input cannot supply prompts, credentials, executable paths or queries
 website intent uses owner context, dispatches, and returns measured result instead of a promise
+website interpretation preserves several owner turns without using assistant claims as targets
 website markdown links become safe DOM anchors; executable schemes and embedded credentials stay text
+website model and tool errors identify their failed stage without generic questions or secrets
+website native retries reserve another website slot; the third RPC never starts
 website worker enables only web search and requires an actually opened result URL
 weekday comes from the DATA (event local date), not the model
 well-formed card is wrapped in EXACTLY one data block
@@ -7102,6 +7465,8 @@ when the probe itself cannot say, the reason is UNKNOWN — not a guess
 when the top-ranked agent's adapter throws, the dispatcher falls back to the next and succeeds
 white-list enforced: keys outside the schema are dropped (observable)
 whole application Owner boundary protects adoption page data and writes
+whole general goal is retained; quotations/history cannot authorize a request or fixed replacement
+whole-goal evidence follows the real existing Action Gateway displayed approval and readback, not model status or an older approval
 with AGENT_BRIDGE OFF a fully correct approval confirms but executes NOTHING
 with AGENT_BRIDGE OFF nothing is constructed and nothing is audited
 with NO interactionMode the server routes, and builds the matching locked opts
@@ -7129,6 +7494,7 @@ work order uses the existing policy-first dispatcher and verifies source values 
 work previews are collapsed, use protected image routes and keep legacy reviews honest
 work sampling retains the newest failure and explicit related records before unrelated recent tasks
 work source comparison only reads registered files and never promotes a matching candidate to a confirmed repair
+work-card stop survives a late model reply and cannot overwrite the next question or revive a spinner
 workOrder: a well-formed order validates
 workOrder: absolute / traversing / forbidden files are un-allowlistable
 workOrder: isFileAllowed + deterministic hash
@@ -7411,213 +7777,3 @@ zoneLabel takes the city, never the whole IANA string
 首頁 is a sidebar destination, beside 設定
 香香（Claude）receives the read-context and decision-recall blocks
 香香（GPT）NOW receives them too — the v0 exclusion is removed
-
-an internal deadline retains verified wages and labels unfinished employees without claiming completeness
-Owner cancellation and revoked access discard partial wage results
-a mixed roster caps the final page to remaining capacity and returns an explicitly partial read
-a wage timeout is visible in the answer and retained evidence while unsafe errors stay private
-company-scoped role responses may omit company_id but an explicit foreign company is rejected
-one missing assigned-role wage preserves other verified roles and never becomes a zero rate
-bounded deterministic wage reports fit native frames while generated answers retain their smaller limit
-large wage reports visibly bound rendered employee rows and retain every measured coverage count
-saved wage presentation survives get but is omitted from follow-up history and shares the result byte bound
-the real wage panel groups active users by rate and keeps inactive rows, roles and models collapsed
-wage summaries merge equal rates per employee and separate inactive rows without hiding zero or missing wages
-the default wage answer groups employees sharing an hourly rate and keeps salary and role-dependent rates distinct
-real panels isolate topics, drafts and new-chat reset across tabs and windows without replaying inference
-topic context keys are unique per tab, survive concurrent restore, and never capture the page
-a scoped panel cannot capture another active tab or another window and rejects extra scope parameters
-native browser broker permits no input when scope, capture or single-use claim is refused
-native browser broker reports input uncertainty once and cannot accept extension-provided actions
-actual native browser input compiles and rejects an unapproved site before any desktop observation or input
-native browser executor refuses a replaced or unpinned executable before spawn
-real operator panel requires screenshot consent, stops inference and restores only saved answers without replay
-browser operator route refuses unauthenticated requests and browser origins before parsing screenshots
-browser operator seals a single action to the observed window, frame and central model
-browser operator cancellation during inference refuses all later native input
-browser operator rejects foreign tabs, stale frames, write routes, free clicks and live typing
-browser operator consumes input before execution and never retries an unknown native outcome
-browser operator refuses an unverified actual model and expires native tickets without input
-browser operator participates in execution mutual exclusion and rejects native window movement
-real browser sites remain closed until native acceptance while the owned fixture remains available
-browser operator stop aborts and invalidates input even when its audit write fails
-native browser stop aborts the local helper before an unavailable backend can reject it
-actual app serves only the synthetic operator fixture without login while every operator API remains authenticated
-operator observation refuses an unavailable fixture before native capture or page text extraction
-compiled native URL matching accepts the fixed fixture Chrome display and refuses neighboring HTTP destinations
-operator vision contract uses normalized coordinates and empty non-result fields before a sealed fixture click
-operator invalid action diagnostics record only closed reasons without model text page text or input tickets
-native refusal preserves a closed diagnostic and consumed ticket without exposing an arbitrary exception
-native refusal reporting accepts legacy uncertainty but refuses arbitrary causes and causes on success
-owned fixture focused input remains visually stable without weakening native pixel validation
-owned fixture keeps both admitted controls visible after a real wheel scroll for post-action observation
-employee live profile admits only the exact Owner company employee landing and list URLs
-native live admission rejects a changed source before capture and legacy live get cannot authorize a screenshot
-actual app employee profile is authenticated and refuses other routes without dispatching native or model work
-compiled native link guard requires the actual URI to match the sealed employee destination
-shared read collection follows opaque cursors and records every page before proving exhaustion
-shared read collection reports budget coverage and refuses loops duplicates and revoked reads
-shared numeric selection preserves unknown values and reports source coverage independently of matches
-shared numeric selection retains unresolved mixed rows and never converts null into zero
-wage follow-ups reuse only a saved read topic and refresh source before selecting an exact numeric threshold
-numeric wage filtering surfaces uncertain membership and weekly salary without asserting a complete zero
-follow-up scope and thresholds come from Owner text and saved read metadata rather than previous answers
-numeric wage presentation separates verified matches from unresolved memberships without discarding salary details
-all-status wage filtering labels inactive matches separately from unresolved users while retaining complete selected output
-successful wage reads distinguish missing role records and no assignments from permission failures
-wage gap reasons preserve ambiguous rates and future records instead of inventing missing-role zeros
-wage answers explain source gaps bilingually while retaining unknown membership and rejecting unsafe reasons
-the live work card measures elapsed time and host phases and remains visible in a narrow long conversation
-status-only recovery shows a pending phase and finishes a saved answer without replaying read or model calls
-work-card stop survives a late model reply and cannot overwrite the next question or revive a spinner
-stopping preparation before its reply arrives cancels only the orphan approval and preserves the next draft
-lost progress replies stop the spinner and recovery only observes the saved job without redispatch
-model progress is durable status evidence and status reads never dispatch or resurrect cancelled work
-Browser work observes the real native service without exposing input authority or mutating its jobs
-Browser work audit reader fails visibly on malformed files and accounts for its bounded operation history
-Browser work groups saved parent chains into independent topics and projects real phases without dispatch
-Browser work terminal clocks remain fixed and unknown or malformed evidence cannot claim active progress
-Browser work omits snapshots secrets tickets request hashes and private action data from both projections
-Browser work retains native audit status after restart without inventing lost questions or answers
-Browser work visibly reports unavailable stores and refuses broken parent chains instead of empty success
-Browser work exposes only authenticated Owner GET routes and observes the same source without executing jobs
-main Browser work panel shows measured progress saved results and errors through GET only while preserving the chat draft
-Browser work never assigns terminal duration from an earlier or missing audit event
-Context intent contract treats Browser evidence as optional data and binds queries to direct Owner requests
-approved Browser context plans from the active environment and searches then retrieves actual Drive contents
-automatic Browser context uses the real Drive Context Gateway after confirmation and restores without replay
-cancelled and restarted context tasks cannot save late results or repeat source reads
-explicit general requests and unrelated pages do not cause company reads
-legacy and already saved tasks never inherit newly available Drive tools
-metadata-only and truncated documents cannot claim a complete verified recipe
-only source-returned candidate IDs and exact document quotations may become an answer
-page injection, negative requests and fabricated search terms cannot authorize Drive execution
-provider sharing, failed audit and mid-read revocation stop content and further reads
-revoked Drive scope and stale or changed Browser context prevent source dispatch
-tab switches and navigation cancel an in-flight contextual read without capturing the new tab
-V2 permission hashes bind the exact task, version, context and disclosed source scope before dispatch
-host-enforced selection budgets reject four valid candidates before any document retrieval
-current Drive locator verification uses metadata only and an out-of-scope locator cannot trigger search
-V2 saved wage follow-ups perform a fresh legacy read and numeric filtering without Drive routing
-ordinary V2 page questions reach the page-grounded answer branch without a general keyword or company read
-the actual Browser capture contract accepts its text limit and refuses oversized V2 payloads before planning
-same-tab navigation preserves existing Operator jobs while contextual reads retain their navigation stop
-Drive selection sees source MIME types and existing body-read support without trusting titles
-model-selected Drive folders are rejected before get rather than treated as readable recipes
-unsupported recipe results expose source metadata and limits without inventing document contents
-folder-only Drive matches do not dispatch document selection or get and remain incomplete
-a pending consent cannot be updated into a new executable task
-client metadata route refuses browser origins and command-shaped payloads and returns only job occupancy
-client publication refuses a foreign package, extra Chrome permissions and a mismatched runtime
-client status refuses active and unknown jobs without returning task contents or granting operations
-extension reload preserves legacy topic bindings while a real browser startup discards only tab bindings
-managed client publication preserves the previous slot and refuses unaccounted local changes
-managed update fails closed for a busy or unknown host and rejects page senders and extra update arguments
-managed update observes only client metadata, blocks concurrent dispatch, and chooses panel refresh for identical worker bytes
-native client status is an exact metadata-only operation and never forwards a client command as a browser read
-the update button loads a newly published panel without closing Chrome or replaying a saved task and keeps the draft
-the update button retains the current panel on busy, unknown or failed draft persistence
-first managed installation recovers a unique saved read topic from content-free host bindings after session storage was cleared
-busy or unavailable legacy migration preserves archived topics and still opens a fresh conversation
-legacy migration refuses a reused tab identifier whose live URL hash differs from the saved source
-a failed startup clear cannot revive stale tab bindings when Chrome later recreates the worker
-a manifest change invalidates panel-only reload even when all worker scripts are unchanged
-managed publication rejects optional hosts and unexpected manifest capabilities
-legacy topics recover separately when each tab receives its own activeTab grant
-main Update loads new served assets while preserving exact conversation and literal unsent draft without replay
-main Update leaves current assets and draft intact on unavailable version and failed history persistence
-main Update discards expired foreign-scope and command-shaped history handoffs without sending
-main Update preserves the home view and refuses prepared attachments without dropping them
-main Update never moves a restored draft to a missing authorized conversation
-main Update refuses active reply and open confirmation controls instead of losing their state
-main Update restores a fresh chat draft with one greeting and removes it on the first explicit send
-main Update retains unsaved later turns in stored chats after failed persistence or transport
-managed installer source pin accepts only CRLF equivalence and rejects all other byte changes
-Owner procurement goal retains every original outcome recurrence and no-checkout constraint without new actions
-Owner goal discovery refuses invented capabilities and page text and binds exact task scope
-Owner goal completion needs current host-verified evidence for every mandatory outcome; investigation completion is insufficient
-legacy task projections remain unchanged and goal reports never turn a read-only result into an executed action
-typed Owner instructions preserve dates times quantities and constraints without laundering external business facts
-legacy answer plans require no Owner-instruction migration and borrowed source text never becomes an Owner instruction
-existing Goal Decomposer carries whole Owner outcomes even when its read-fact plan has no facts
-real intake preserves the failed procurement goal despite a data-only model answer and performs no business action
-existing conversation and investigation stores retain incomplete goals separately from completed read-only receipts
-whole-goal evidence follows the real existing Action Gateway displayed approval and readback, not model status or an older approval
-read coverage and revocation stay distinct from verified whole-outcome completion
-existing Task Store keeps legacy state and stores a separate goal projection without dispatch
-same-conversation whole-goal status survives reload and reads back without a model call or action
-
-negative compound clauses and reminders never erase a positive mandatory outcome
-canonical goal reporting preserves deterministic read rows and purges false completion from every narrative field
-a verified scheduler effect cannot complete an attached cart step or ambiguous compound objective
-ordinary informational intake cannot acquire an action goal from invented decomposer mappings
-host-originated clarification stays visible and archived beside incomplete whole-goal status
-
-host-owned proposal clarification and recommendation outcomes survive canonical goal reporting without proving business completion
-semantic prepare cannot replace a compound Owner goal with an unbound follow-up goal
-
-a transient conversation read failure releases the existing gateway lock and permits a safe prepare retry
-restoring a verified child action retains every unresolved outcome of its compound Owner goal
-
-conversation goal index survives ordinary topics and preserves independently scoped unfinished requests
-malformed canonical goal history fails closed without overwriting or hiding unfinished records
-
-existing button approval records exact-scope goal evidence without replacing another active goal or replaying execution
-
-ordinary acknowledgements accept the immediate unrelated offer rather than a persistent or completed goal cursor
-scheduler refusal clarification unsupported and mixed-approval requests conserve every current outcome without granting authority
-a failed goal-history append stays visible to the Owner instead of claiming durable task tracking
-concurrent button evidence survives in-flight status and refused prepare replies without replaying the action
-a prepared proposal retains its usable conversation context when goal refresh fails
-numeric recurring-intent input is bounded and cannot block the host event loop
-
-Business Scheduler preserves the real daily procurement request without admitting arbitrary work
-Business Scheduler uses Winnipeg calendar days across both DST transitions
-Business Scheduler groups every retrieved item and never promotes missing coverage or stale stock to COMPLETE
-Business Scheduler approval, exact delegated identity and daily deduplication form one evidence chain
-Business Scheduler rejects stale task and tool scopes instead of inheriting new authority
-Business Scheduler proposal remains valid while the clock advances before approval
-Business Scheduler disables on revoke and discards a read completed after revocation
-Business Scheduler refuses scope or definition drift before source access
-Business Scheduler requires exact actor, conversation and displayed proposal hash
-Business Scheduler expired proposals and restarted approval sessions cannot execute
-Business Scheduler duplicate concurrent delivery performs exactly one daily read sequence
-Business Scheduler partial API failure and numeric zero are not a complete empty purchasing report
-Business Scheduler missing, future and stale source timestamps remain PARTIAL
-Business Scheduler delayed runs do not claim on-time execution even with an earlier time event
-Business Scheduler no run is admitted before the Winnipeg morning slot
-Business Scheduler partial run persists missing mappings without inventing supplier identities
-Business Scheduler status keeps the latest attempt separate from the last complete success
-Business Scheduler Windows adapter accepts no command, path or arbitrary operation
-Business Scheduler source gateway preserves scheduled identity and rechecks revocation after a read
-Business Scheduler source adapter preserves all 100 capped rows and every uncapped supplier
-Business Scheduler unsupported source pagination is disclosed instead of followed or hidden
-Business Scheduler rejects mixed times, malformed approval ids and injected source instructions
-Business Scheduler real conversation persistence preserves the whole goal through approval, pause and resume
-Business Scheduler dialogue approval is not inferred from another conversation or changed topic
-Business Scheduler missing activation is disclosed with the original Owner goal, without any scheduling or read
-Business Scheduler pause followed by resume cannot revive a cancelled in-flight read
-Business Scheduler registration interrupted before grant persistence requires a fresh bounded recovery and stays paused
-Business Scheduler restart retains daily execution identity and never repeats a persisted run
-Business Scheduler durable recovery refuses live lock holders and checks orphan bytes
-Business Scheduler backend timer route is service-authenticated, parameterless and rejects browser-origin approval forgery
-Business Scheduler production app connects the fixed conversation handler behind Owner authentication
-Business Scheduler bridge routes delegated triggers separately from Owner management and model traffic
-Business Scheduler authorization can be revoked even when Windows is unavailable and can never be resumed through pause
-Business Scheduler full ToolGateway adapter path retains all rows and exact scheduled authorization in durable source audit
-Business Scheduler explicitly approved orphan recovery closes interrupted evidence and retains daily duplicate protection
-Business Scheduler failed source envelopes and discarded rows cannot masquerade as complete reads
-Business Scheduler rendered approval stays inert until presentation and double click submits once
-Business Scheduler unsupported times and zones never select the fixed 08:00 workflow silently
-Business Scheduler contradictory source counts and ambiguous supplier mappings remain unresolved
-Business Scheduler transient conversation and receipt reads release the dialogue lock for a safe retry
-Business Scheduler minute and fractional-hour requests never become fixed 08:00 proposals
-Business Scheduler pending registration is occupied until the Windows approval operation finishes
-Business Scheduler meridiem alternative hour units and foreign zones cannot authorize fixed morning work
-Business Scheduler failed lock initialization leaves no published lock and cannot strand recovery
-Business Scheduler process death before atomic lock publication cannot leave an empty execution lock
-Business Scheduler explicit spaced hours bare times and alternate cadences stay outside the fixed workflow
-Business Scheduler admission holds occupancy through Windows inspection and releases it on inspection failure
-Business Scheduler Owner can revoke the existing task after deleting its creating conversation
-Business Scheduler cross-conversation reduction cannot resume or change the original task scope
-Business Scheduler reducing from another Owner goal cannot borrow or overwrite that goal

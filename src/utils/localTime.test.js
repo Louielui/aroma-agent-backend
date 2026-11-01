@@ -96,12 +96,9 @@ test('the error names the bad value so it can be fixed without a debugger', () =
 
 /* ═══ 3. IT IS ACTUALLY THE CONFIGURED ZONE, NOT THE MACHINE'S ═════════════ */
 
-const OS_ZONE = Intl.DateTimeFormat().resolvedOptions().timeZone
-
 test('*** startOfLocalDay follows the SETTING, not the operating system ***', () => {
-  // The machine is America/Winnipeg. Configure Asia/Tokyo and the day must start at a
-  // different instant — if this passes with the old setHours() implementation, the test is
-  // not measuring what it claims.
+  // Two explicit zones must have different midnights, whatever the host zone.
+  // The old setHours() implementation returns the same instant for both.
   const at = '2026-07-15T18:00:00Z'
   const tokyo = lt.startOfLocalDay(at, { root: root({ timezone: 'Asia/Tokyo' }) })
   const winnipeg = lt.startOfLocalDay(at, { root: root({ timezone: 'America/Winnipeg' }) })
@@ -169,10 +166,15 @@ test('*** an abbreviation that RESOLVES is still rejected ***', () => {
   assert.equal(lt.isValidZone('America/Winnipeg'), true)
 })
 
-test('sanity: the machine really is America/Winnipeg, so the tests above prove a difference', () => {
-  // EARN THE ZERO. If the host were already Asia/Tokyo, the "follows the setting" test would
-  // pass without proving anything. Stated rather than assumed.
-  assert.equal(OS_ZONE, 'America/Winnipeg', 'host zone changed — re-read the tests above before trusting them')
+test('configured midnights prove a difference from process-local arithmetic without assuming a host zone name', () => {
+  // Some Windows/ICU combinations return no resolved IANA name. Exercise the
+  // actual process-local operation instead. The old implementation fails at
+  // least one exact assertion even if the host itself is Tokyo or Winnipeg.
+  const at='2026-07-15T18:00:00Z',local=new Date(at);local.setHours(0,0,0,0)
+  const midnight=[['Asia/Tokyo','2026-07-15T15:00:00.000Z'],['America/Winnipeg','2026-07-15T05:00:00.000Z']].map(([timezone,expected])=>{
+    const actual=lt.startOfLocalDay(at,{root:root({timezone})}).toISOString();assert.equal(actual,expected);return actual
+  })
+  assert.ok(midnight.some(value=>value!==local.toISOString()),'at least one explicit configured zone must differ from process-local midnight')
 })
 
 /* ═══ 5. THE SAVE PATH REFUSES WHAT THE READ PATH WOULD THROW ON ══════════ */
