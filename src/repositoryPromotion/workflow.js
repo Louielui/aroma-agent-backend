@@ -1,10 +1,11 @@
 'use strict'
 const {randomUUID}=require('node:crypto')
 const {promotionDecision}=require('./policy')
-function createWorkflow ({adapter,save,id=randomUUID(),initial=null}) {
+function createWorkflow ({adapter,save,id=randomUUID(),initial=null,stopBeforeReview=false}) {
   let busy=false,spent=false
   const row=initial ? structuredClone(initial) : {id,workflow:'repository_promotion',state:'new',startedAt:new Date().toISOString(),steps:[]}
-  if(initial && !['new','awaiting_administrator','awaiting_idle','awaiting_reload_idle'].includes(row.state)) throw Error('promotion_recovery_requires_inspection')
+  if(!initial&&stopBeforeReview)row.reviewHold=true
+  if(initial && (!['new','awaiting_administrator','awaiting_idle','awaiting_reload_idle','awaiting_review'].includes(row.state)||row.state==='awaiting_review'&&row.reviewHold!==true)) throw Error('promotion_recovery_requires_inspection')
   function record(stage,facts={}){row.state=stage;row.steps.push({stage,at:new Date().toISOString(),facts});save(structuredClone(row))}
   async function rollback (failure) {
     row.failure=failure;record('verification_failed',failure)
@@ -58,6 +59,7 @@ function createWorkflow ({adapter,save,id=randomUUID(),initial=null}) {
       row.publication=await adapter.publish(row);record('published',row.publication)
       if(row.publication?.verified!==true)throw Error('preservation_unconfirmed')
       row.pr=await adapter.pullRequest(row);record('pr_prepared',row.pr)
+      if(row.reviewHold===true){record('awaiting_review',{commit:row.committed.commit,automaticReview:false});return row}
       row.review=await adapter.review(row);record('reviewed',row.review)
       if(row.review?.verdict!=='pass')throw Error('review_changes_requested')
       }
@@ -77,9 +79,23 @@ function createWorkflow ({adapter,save,id=randomUUID(),initial=null}) {
   }
   async function resume () {
     if(busy)throw Error('promotion_busy')
-    if(!['awaiting_administrator','awaiting_idle','awaiting_reload_idle'].includes(row.state))throw Error('promotion_recovery_requires_inspection')
+    if(!['awaiting_administrator','awaiting_idle','awaiting_reload_idle','awaiting_review'].includes(row.state))throw Error('promotion_recovery_requires_inspection')
     busy=true
     try{
+      if(row.state==='awaiting_review'){
+        try{
+          if(row.reviewHold!==true||await adapter.recheckReview(row)!==true)throw Error('head_or_base_changed')
+          // Persist intent before dispatch. A crash or provider failure is never
+          // treated as an unspent review ticket or automatically retried.
+          record('reviewing',{commit:row.committed.commit})
+          row.review=await adapter.review(row);record('reviewed',row.review)
+          if(row.review?.verdict!=='pass')throw Error('review_changes_requested')
+          record('reviewed_hold',{commit:row.committed.commit,mergeAuthorized:false,deployed:false});return row
+        }catch(error){
+          const known=['head_or_base_changed','committed_candidate_changed','committed_tests_unconfirmed','review_changes_requested','review_unavailable','review_invalid_output','review_model_unavailable','review_scope_too_large','claude_login_required','subscription_limit_reached','worker_timeout','claude_unavailable','usage_limit_reached','usage_unresolved_work','usage_run_not_active','usage_scope_required','usage_model_not_allowed']
+          row.reason=known.includes(error.message)?error.message:'review_unavailable';row.failure={stage:row.state,reason:row.reason,at:new Date().toISOString()};record('needs_attention',{reason:row.reason});return row
+        }
+      }
       if(row.state==='awaiting_idle'){
         if(await adapter.recheckPending(row)!==true){row.reason='runtime_mismatch';record('needs_attention',{reason:row.reason});return row}
         return await deployAndVerify()
