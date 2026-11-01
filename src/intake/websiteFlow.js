@@ -5,7 +5,9 @@ const { publicUrl, validTarget } = require('../subscription/websitePolicy')
 
 async function runWebsiteFlow ({ message, history = [], classify, search, record = () => {}, readEnabled = true, onClassification = () => {} }) {
   if (!candidate(message)) return null
-  const previous = (Array.isArray(history) ? history : []).filter(h => h && h.role === 'user').map(h => h.text || h.content).filter(s => typeof s === 'string' && s !== message).slice(-4).map(s => s.slice(0, 450))
+  // History contains prior turns, even when their text matches the current input.
+  // Keep repetitions; the current input belongs only in latestOwnerTurn below.
+  const previous = (Array.isArray(history) ? history : []).filter(h => h && h.role === 'user').map(h => h.text || h.content).filter(s => typeof s === 'string').slice(-4).map(s => s.slice(0, 450))
   const owner = [...previous, message]
   // Bounded owner context only; assistant claims and memory cannot become search targets.
   const evidence = { events: [], state: 'classifying', provider: 'codex', model: null }
