@@ -7,6 +7,7 @@ const browserEvidence = require('../../workers/execution/browserEvidence')
 const ACTIVE = new Set(['awaiting_approval', 'queued', 'checking', 'coding', 'reviewing'])
 const ERRORS = new Set(['source_changed', 'source_dirty', 'source_sensitive', 'source_unavailable', 'approval_unavailable', 'not_enabled', 'worker_busy', 'worker_cancelled', 'baseline_not_red', 'acceptance_failed', 'subscription_limit_reached', 'subscription_model_unavailable', 'subscription_unavailable', 'sandbox_stop_unconfirmed', 'sandbox_recovery_or_work_pending', 'provider_not_ready', 'invalid_worker_result', 'worker_no_changes', 'claude_unavailable', 'claude_max_turns', 'claude_invalid_structured_output', 'worker_timeout', 'visual_evidence_unavailable', 'invalid_visual_review', 'accepted_evidence_changed'])
 const owner = actor => { if (actor?.id !== 'owner' || actor.role !== 'owner') throw Error('permission_denied') }
+ERRORS.add('review_scope_too_large')
 function createProjectWork ({ source, providers, store, enabled, invocationLedger, repositoryBudget = null, observeLive = null, onEvent = () => {}, repositoryPreflight = null, onAccepted = null, approvals = createOwnerApprovalStore(), resolveRecipe = recipe, catalogueRecipes = () => Object.values(RECIPES) }) {
   const sessions = new Map(), controllers = new Map()
   let busy = false, pending = Promise.resolve()
@@ -121,9 +122,7 @@ function createProjectWork ({ source, providers, store, enabled, invocationLedge
         break
       }
     } catch (e) {
-      if (e.safeDiagnostics) r.failureDiagnostic = { exitCode: Number.isInteger(e.safeDiagnostics.exitCode) ? e.safeDiagnostics.exitCode : null,
-        parsedJson: e.safeDiagnostics.parsedJson === true, subtype: ['success', 'error_max_turns', 'error_during_execution', 'error_max_budget_usd', 'error_max_structured_output_retries'].includes(e.safeDiagnostics.subtype) ? e.safeDiagnostics.subtype : 'unknown',
-        stdoutBytes: Number.isInteger(e.safeDiagnostics.stdoutBytes) ? e.safeDiagnostics.stdoutBytes : null, stderrBytes: Number.isInteger(e.safeDiagnostics.stderrBytes) ? e.safeDiagnostics.stderrBytes : null }
+      if (e.safeDiagnostics) r.failureDiagnostic = require('../../subscription/codexClient').safeDiagnostics(e.safeDiagnostics)
       r.state = signal.aborted ? 'cancelled' : 'failed'; r.reason = (ERRORS.has(e.code || e.message)||require('../../actions/usageBudget').ERRORS.has(e.code||e.message)) ? (e.code || e.message) : 'worker_unavailable'; r.finishedAt = new Date().toISOString()
       record(r, r.state, { reason: r.reason, appliedToLive: false })
     }
