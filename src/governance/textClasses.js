@@ -76,6 +76,7 @@ const CLASS = Object.freeze({
  */
 const FILE_CLASS = Object.freeze({
   'actions/procurementContract.js': CLASS.MATCHING, // Fixed Owner intent guards; never translated.
+  'core/codeDiagnosis/chat.js': CLASS.MATCHING, // Bounded command and constraint admission, never display copy.
   'actions/procurementChat.js': CLASS.INTERFACE, // Owner result/proposal presentation; exact intent guards stay in the contract.
   'intake/goal/ownerGoalView.js': CLASS.INTERFACE,
   'intake/goal/ownerGoal.js': CLASS.MATCHING, // Exact Owner scope matching; these terms must not be translated.
