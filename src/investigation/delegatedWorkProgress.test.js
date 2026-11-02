@@ -34,8 +34,13 @@ test('usage comes from the same validated ledger without locking, resetting or a
 })
 test('completion separates test-draft, coding candidate, read-only diagnosis and actual deployment',async t=>{
  const f=fixture(t),r=f.record('completed');r.result={patchHash:'a'.repeat(64),isolatedRunId:randomUUID(),tests:{total:4,passed:4,failed:0,exitCode:0,skipped:0,cancelled:0}};r.review={verdict:'pass'};f.save('project-runs',r);f.writeLedger([])
- const v=await f.read({id:r.id}),row=v.records[0];assert.equal(row.completion.candidateRecorded,true);assert.equal(row.completion.appliedToLive,false);assert.equal(row.completion.liveVerified,false);assert.equal(row.completion.tests.passed,4);assert.equal(row.completion.reviewVerdict,'pass');assert.equal(row.usage.state,'not_bound')
+ const v=await f.read({id:r.id}),row=v.records[0];assert.equal(row.completion.candidateRecorded,true);assert.equal(row.completion.appliedToLive,false);assert.equal(row.completion.liveVerified,null);assert.equal(row.completion.tests.passed,4);assert.equal(row.completion.reviewVerdict,'pass');assert.equal(row.usage.state,'not_bound')
  const d={...f.record('completed'),workflow:'code_diagnosis',verification:{matched:true,citationsVerified:true}};fs.writeFileSync(path.join(f.dataRoot,'code-diagnosis-runs',d.id+'.json'),JSON.stringify(d));assert.equal((await f.read({id:d.id})).records[0].completion.diagnosisVerified,true)
+})
+test('CLI start remains separate from provider-turn and returned-model evidence; legacy event records remain readable',async t=>{
+ const f=fixture(t),r=f.record('coding'),trace={recordId:r.id,kind:'project-runs',runId:randomUUID(),workId:'work:'+sha(JSON.stringify(['worker/project-runs',r.id])),attempt:1};r.workerRuns=[{trace,startedAt:r.startedAt,state:'unknown'}];f.save('project-runs',r)
+ f.writeLedger([{invocationId:randomUUID(),role:'worker_completion',state:'failed',workerTrace:trace,workerPhase:'review',candidateAttempt:1,model:'claude-sonnet-5-5',effort:'medium',startedAt:r.startedAt,dispatchedAt:r.startedAt,dispatchBasis:'cli_process_started'}]);const row=(await f.read({id:r.id})).records[0];assert.equal(row.calls.dispatched,1);assert.equal(row.calls.cliProcesses,1);assert.equal(row.calls.providerTurns,0);assert.equal(row.calls.modelResults,0);assert.equal(row.calls.receipts[0].actualModel,null)
+ const old=f.record();delete old.steps;delete old.workflow;old.events=[{stage:'coding',at:old.startedAt}];f.save('runs',old);assert.equal((await f.read({id:old.id})).records[0].kind,'runs')
 })
 test('redirected files, duplicate invocation identities and missing usage are shown as unavailable',async t=>{
  const f=fixture(t),r=f.record();r.workOrder.usageRoot=randomUUID();f.save('project-runs',r);f.writeLedger([]);let v=await f.read({id:r.id});assert.equal(v.records[0].usage.state,'unavailable');assert.equal(v.records[0].usage.helper,null)

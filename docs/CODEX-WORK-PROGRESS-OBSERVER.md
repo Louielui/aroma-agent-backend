@@ -30,6 +30,8 @@ permanent chat hook or produce updates while the conversation is inactive.
   without constructing its writer or rewriting `started` to interrupted. Only
   complete exact host worker identities join calls to a work record. Requested
   model, actual returned model, effort and dispatch evidence stay separate.
+  CLI process-start checkpoints, provider-turn starts and returned model results
+  have separate counters; none is silently substituted for another.
   Old or omitted receipts never become a measured total of zero calls.
 - The original repository usage ledger, through the same usage-profile/grant
   validator and formatter. `readStatus` reads an immutable file snapshot without
@@ -49,6 +51,10 @@ gaps and omitted results are explicit. Exact UUID reads and direct structured
 links remain accessible beyond the list window. Equal task titles are not merged;
 similar time or prose cannot establish identity. Ambiguous UUIDs across stores
 stay ambiguous, and an explicit target is retained before linked rows.
+Unavailable record UUIDs and safe failure categories are reported separately.
+Some real legacy packaged-app files resolve away from the pinned Owner root;
+the observer retains the existing canonical-path refusal and does not follow
+those alternate paths or silently call the remaining readable rows a full list.
 
 ## What the snapshot can establish
 

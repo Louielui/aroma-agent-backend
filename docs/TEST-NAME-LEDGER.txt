@@ -3189,6 +3189,7 @@ CLASS D — true ambiguity: clarify keeps the question legitimate
 CLASS E — action: commit mode is never a candidate, whatever the verdict
 CLASS F — social: a greeting turn carries no plan and is not a candidate
 CLI dry-run writes no file (all fs writes disabled)
+CLI start remains separate from provider-turn and returned-model evidence; legacy event records remain readable
 CRITICAL: Deploy to production without approval is pending, adapter NEVER invoked
 CSRF matrix: method, Origin, Host and Sec-Fetch-Site are ALL enforced, fail-closed
 CSS task carries immutable JS and protected tests through registration, isolated coding, adoption and rollback
