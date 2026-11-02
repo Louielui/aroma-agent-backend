@@ -81,6 +81,15 @@ does not authorize merging/deploying either branch or reusing the two additional
 helpers reserved for the original catalogue task. Coordinate any eventual formal
 delivery in the same service window; do not deploy both histories twice.
 
+Independent repository review for this new observer is separate from the
+catalogue task allowance. Its host invocation must explicitly pin the agreed
+Claude Sonnet 5.5 / medium model: the existing text-review adapter otherwise uses
+its ordinary CLI default when no repository usage scope is present. Check the
+final arguments before sending, cap the CLI at one turn and one completion, and
+record that call separately. Do not attach the original usage root merely to
+obtain a different model default. A refused pre-send configuration spends no
+helper; preserve its failed native run and never relabel or resume it.
+
 The new observer can be run by the Owner-host chat without reloading production,
 because it only reads existing canonical sources. That is local observer evidence,
 not evidence that new backend code or a Codex App integration has been deployed.
