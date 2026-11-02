@@ -4689,6 +4689,7 @@ actual central settings and independent bilingual topic controls persist, follow
 actual component observations bind failure -> explicit correction -> tests -> adoption -> same loaded process; bilingual report states precise scope
 actual event detail chat includes source description, location and updated date
 actual fixed PowerShell projection preserves definitions and handles empty or unsupported triggers without touching Windows tasks
+actual model receipts require exact worker identities, and a snapshot never rewrites started invocations
 actual native browser input compiles and rejects an unapproved site before any desktop observation or input
 actual native launcher compiles and refuses a different extension before opening the broker
 actual offline Native Host package resolves E1 and legacy requests without repository dependencies
@@ -4802,6 +4803,7 @@ an enquiry can be saved and reopened whole
 an enumerator that throws leaves the pid check UNKNOWN
 an errand that throws is still recorded, and ok is false
 an evidenced change is unaffected — the same sentences pass with appliedChanges
+an exact old work ID remains readable beyond scan limits; absent or corrupt sources never become zero work
 an exact shared request ID is only a possible lead and retains both receipt identities
 an exhausted operational scope reports the gap without repeated subscription answers or reads
 an existing settings file without the field keeps working untouched
@@ -5228,6 +5230,7 @@ completed-terminal timeline (COMPLETED) → already_completed
 completed-terminal timeline → already_completed
 completion disables configured MCPs and returns only the final answer
 completion is reserved before dispatch and remains consumed across a restart without erasing the answer
+completion separates test-draft, coding candidate, read-only diagnosis and actual deployment
 component outage preserves queued receipts and unknown coverage instead of reporting empty memory
 composer exposes exactly five localized options with Medium selected and a Claude initial model
 composer shows current work without opening a log and can reveal its actual drawer
@@ -5792,6 +5795,7 @@ integrity — task.proposalId set but Proposal missing → 409 + evidence, no re
 intent correctness and connector correctness stay separate concepts
 interface planning hashes supporting markup and bindings and rejects read-only dependency drift
 interface registration has a closed profile and immutable sibling asset
+invalid IDs, arbitrary paths, mutation commands and unbounded list sizes are refused
 invalid candidate cannot proceed to review or be marked completed
 invalid criteria can be corrected locally without issuing a request
 invalid drafts retain a safe precise validation reason without retaining rejected source
@@ -6349,6 +6353,7 @@ probe results expire, credentials invalidate evidence, and concurrent changes ca
 produces a SEALED work order with system-owned fields and a system hash
 production never emits stackSample even with INTAKE_DEBUG_STACK=1
 profiles map to explicit efforts and reject arbitrary execution settings
+progress lists more than the diagnostic five-record sample without merging identical task titles
 project execution metadata joins the governed read receipts with scope and no model dispatch
 project execution records providers only after existing approval and retains unapplied candidate state
 project review transport disables CLI formatter tools and host validates exact JSON authority
@@ -6477,6 +6482,7 @@ recovery requires Owner, closed input shapes and a fresh nonce; original coding 
 recovery: interrupted worker (WORKER_CLAIMED + Execution artifact, no result) → INTERRUPTED (branch c)
 recurring hours cannot turn missing days or undated exceptions into confirmed closures
 recurring intervals use verified quoted fields in a weekday-ordered table, with critical gaps visible
+redirected files, duplicate invocation identities and missing usage are shown as unavailable
 reference catalog is bounded and reports omitted rows without inventing absence
 refinements after a completed plan cannot silently draft its obsolete criteria
 reflection remains a candidate, stale evidence prevents approval, and SOPs require canonical version links
@@ -7420,6 +7426,7 @@ unsupported, contradicted, uncertain, missing and duplicated semantic reviews wi
 updateHealthFromEvent creates then updates a record and increments sample_count
 updatedAt moves with each turn; createdAt does not
 upstream error → safe mapped response (no provider/stack leak)
+usage comes from the same validated ledger without locking, resetting or activating it
 user-declared heartbeat identifiers cannot become authenticated scheduler execution or billing proof
 v1.1: capability limits must be disclosed BEFORE asking for details
 v1.1: the amendment did not disturb the existing groups or their order

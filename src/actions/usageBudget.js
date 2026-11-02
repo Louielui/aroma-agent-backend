@@ -33,10 +33,14 @@ function createUsageBudget({store,evidenceDir,now=Date.now,activationReady=null,
  function change(fn){let release;try{release=store.lockRun(profile.id)}catch{throw error('usage_busy')};try{const r=load(true);const value=fn(r);return value}finally{release()}}
  function save(r,event,facts={}){r.timeline.push({at:new Date(now()).toISOString(),event,...facts});try{store.save(r)}catch{throw error('usage_audit_unavailable')}}
  function assertScope(r,s){if(!r||r.state!=='active')throw error('usage_run_not_active');if(!validScope(s)||s.rootId!==r.id)throw error('usage_scope_required');const t=r.turns.find(t=>t.id===s.turnId),child=s.childId&&r.children.find(c=>c.id===s.childId&&c.turnId===s.turnId&&!c.finished);if(!t||!t.entered||t.finished&&!child||t.conversationId!==s.conversationId||t.requestId!==s.requestId||s.childId&&!child)throw error('usage_scope_required');return t}
- function status(){const r=load();if(!r)return{state:'not_activated',id:profile.id,identity:profile.identity,limits:{...limits},turnsUsed:0,helper:{reserved:0,available:limits.helper},website:{reserved:0,available:limits.website}}
+ function statusOf(r){if(!r)return{state:'not_activated',id:profile.id,identity:profile.identity,limits:{...limits},turnsUsed:0,helper:{reserved:0,available:limits.helper},website:{reserved:0,available:limits.website}}
   const counts=kind=>{const a=r.attempts.filter(a=>a.kind===kind),dispatched=a.filter(v=>v.dispatchedAt).length,cap=r.limits[kind]+(kind==='helper'&&r.extension?2:0),expired=kind==='helper'&&r.extension&&now()>=r.extension.expiresAt;return{limit:cap,reserved:a.length,dispatched,failed:a.filter(v=>v.state==='failed').length,succeeded:a.filter(v=>v.state==='succeeded').length,unresolved:a.filter(v=>['reserved','dispatched'].includes(v.state)).length,reservedNotDispatched:a.length-dispatched,available:expired?0:cap-a.length,...(expired?{unusedExpired:cap-a.length}:{})}}
   return{id:r.id,identity:r.identity,state:r.state,limits:r.limits,...(r.extension?{extension:structuredClone(r.extension)}:{}),turnsUsed:r.turns.length,turns:r.turns,helper:counts('helper'),website:counts('website'),attempts:r.attempts.map(a=>({...a})),timeline:r.timeline,semantics:'Reservations are conservative attempt capacity, not billing. Failed/uncertain reservations are never automatically refunded.'}
  }
+ function status(){return statusOf(load())}
+ // A host observer reads one atomic JSON snapshot, without obtaining a writer
+ // lock or reconciling state. Every existing profile/grant invariant still runs.
+ function readStatus(){return statusOf(load(true))}
  function extensionAction(b){
   if(!isDevelopment||!extensionWitness)throw error('usage_extension_unavailable')
   if(b.op==='usage_extension_prepare')return change(r=>{
@@ -89,7 +93,7 @@ function createUsageBudget({store,evidenceDir,now=Date.now,activationReady=null,
  }
  function encode(s,token){if(!validScope(s)||!/^([a-f0-9]{64})$/.test(token||''))throw error('usage_scope_required');const data=Buffer.from(JSON.stringify(s)).toString('base64url');return data+'.'+crypto.createHmac('sha256',token).update('usage-scope-v1:'+data).digest('hex')}
  function withHeader(header,token,fn){if(header===undefined)return context.run({service:api,scope:null,permit:null},fn);if(typeof header!=='string'||header.length>900||!/^[A-Za-z0-9_-]+\.[a-f0-9]{64}$/.test(header)||!/^[a-f0-9]{64}$/.test(token||''))throw error('usage_scope_required');const[data,signature]=header.split('.'),expected=crypto.createHmac('sha256',token).update('usage-scope-v1:'+data).digest('hex');if(!crypto.timingSafeEqual(Buffer.from(signature),Buffer.from(expected)))throw error('usage_scope_required');let s;try{s=JSON.parse(Buffer.from(data,'base64url'))}catch{throw error('usage_scope_required')};return withScope(s,fn)}
- const api={acceptsModel,handle,status,enterTurn,finishTurn,withScope,withAllocation,childScope,finishChild,capture,reserve,encode,withHeader,rejection,turnFailure,setActivationWitness:fn=>{activationReady=fn},isActive:()=>load()?.state==='active'};return api
+ const api={acceptsModel,handle,status,readStatus,enterTurn,finishTurn,withScope,withAllocation,childScope,finishChild,capture,reserve,encode,withHeader,rejection,turnFailure,setActivationWitness:fn=>{activationReady=fn},isActive:()=>load()?.state==='active'};return api
 }
 let ownerBudget
 // The resident LocalService and Owner bridge already share the operational data
