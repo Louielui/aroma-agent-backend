@@ -5,10 +5,11 @@ const {createProjectWork}=require('./service'),{createMemoryRunStore}=require('.
 const usage=require('../../actions/usageBudget'),{createRepositoryBudget}=require('../projectTasks/repositoryBudget'),{definition}=require('../projectTasks/contract')
 const OWNER={id:'owner',role:'owner'},OLD='a'.repeat(40),NEW='b'.repeat(40),FILE='src/i18n/catalogue.js',TEST='acceptance/registered-task.test.cjs'
 const ticket=p=>({id:p.approval.id,hash:p.approval.hash,nonce:p.approval.nonce})
-async function fixture(t){
+async function fixture(t,{allowExtension=false}={}){
  const dir=fs.mkdtempSync(path.join(os.tmpdir(),'coding-recovery-'));t.after(()=>{assert.equal(path.dirname(fs.realpathSync(dir)).toLowerCase(),fs.realpathSync(os.tmpdir()).toLowerCase());assert.ok(path.basename(dir).startsWith('coding-recovery-'));fs.rmSync(dir,{recursive:true,force:true})})
  const taskId=randomUUID(),input={bootCommit:OLD,requestId:randomUUID(),goal:'Change only copy',criteria:['Use actual receipt'],editable:[FILE],scope:{profile:'repository',files:[FILE],budgetRoot:taskId}},generated={testCode:"const test=require('node:test'),assert=require('node:assert/strict');test('copy',()=>assert.ok(true));",expectedTests:3},registered=definition(taskId,input,generated)
- const budget=createRepositoryBudget({dir:path.join(dir,'budget')}),store=createMemoryRunStore();budget.activate(taskId)
+ const store=createMemoryRunStore(),extensionWitness=allowExtension?(id,workId)=>{const r=store.get(workId);let eligible=false;try{require('./recovery').eligible(r);eligible=true}catch{};return{workId,commit:NEW,approvalHash:r?.approvalHash,idle:true,eligible}}:null
+ const budget=createRepositoryBudget({dir:path.join(dir,'budget'),extensionWitness});budget.activate(taskId)
  await budget.run(taskId,async()=>{for(let i=0;i<5;i++){const p=usage.nativePermit('helper',{model:'gpt-6.1-sol',effort:'high'}).permit;p.dispatched('provider_turn_start');p.finish(null)}})
  let boot=OLD,text='old catalogue',enabled=true,backgroundBusy=false,events=0,reads=0,coding=0,reviews=0,gate=null
  const snapshot=revision=>{const evidence={projectId:'aroma-agent-backend',recipe:registered.workOrder.recipe,revision,bootCommit:revision,sourceFiles:[{path:FILE,blob:'c'.repeat(40),sha256:digest(text)}],dependencyFiles:[],acceptanceFiles:[{path:TEST,sha256:digest(generated.testCode)}],committedOnly:true,dirtyScope:false};return{evidence,hash:digest(JSON.stringify(evidence)),order:{goal:registered.workOrder.goal,files:{[FILE]:text,[TEST]:generated.testCode},editable:[FILE],tests:[TEST],expectedTests:3,sourceRevision:revision,effort:'high'}}}

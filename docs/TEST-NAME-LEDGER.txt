@@ -4561,6 +4561,7 @@ a runner that rejects yields ok false with an error, not an unhandled rejection
 a runner that resolves after a delay does not block: an independent task completes first
 a runtime mismatch preserves unpublished history when repository identity is proven, then stops promotion
 a runtime overlay is reapplied only when unchanged upstream or already absorbed exactly
+a same-root extension retains the original eight attempts and reserves one coding and one review only
 a sandbox minted OUTSIDE os.tmpdir() still returns normally, but is not registered
 a sandbox outside tmpdir refuses BEFORE spawn — so cwd never reaches spawn with a bad value
 a saved investigation prepares the registered enquiry without asking for a file; duplicate dispatch stays refused
@@ -5530,6 +5531,7 @@ expired history performs a checkpointed full scan before replay and acknowledgem
 expired recovery authority prevents rollback merge immediately before PUT
 expired shared cooldown rechecks actual subscription before touching an original or provider
 expired, changed-version, malformed and prohibited receipts cannot start work
+expired, restarted, source-drifted or changed-ledger extension approvals cannot add allowance
 expiry and service restart cannot renew or execute a stored recovery ticket
 expiry during idle inspection prevents checkout and reload
 expiry during regression prevents subsequent managed-client publication
@@ -5556,6 +5558,7 @@ explicit sidebar improvement commands start planning without a prior discussion 
 explicit starts do not use other applications, arbitrary paths or history to infer a target
 explicit subscription provider works without OpenAI key and reports bridge presence instead of API credential
 exports are deep frozen, and mutating them cannot move the argv
+extension cannot be forged by a changed limit, applied twice, activated for a new task, or used without a phase
 extension declares only the read-side permissions, one stable id and no site-wide content scripts
 extension reload preserves legacy topic bindings while a real browser startup discards only tab bindings
 extension source survey forbids network/model credentials, page actions and dynamic injected code
@@ -5582,6 +5585,7 @@ failed component read is unavailable; unattached component read is unconnected, 
 failed composition and cached results preserve original measured timing without new dispatch claims
 failed composition preserves observed search usage and never triggers API or another provider
 failed fresh reads block stale conversational offers, reassignment stays separate, and forged snapshots cannot become notes
+failed grant or reservation persistence prevents capacity or provider dispatch
 failed history read does not acknowledge or advance cursor; wrong mailbox cannot trigger reads
 failed indexing keeps raw history searchable; temporary work expires; archive excludes recall
 failed initial sources trigger only observed alternate reads, with unavailable checks retained
@@ -5705,6 +5709,7 @@ goal and conversationId may be null, and defaults are applied
 goal-based routes select distinct fixed source sections and intersect authority
 google scopes are ALL read-only; bootstrap refuses a write scope
 governance wording v2 present (Proposal-first, stage-honest)
+grant expiry, source drift, uncertain failure and concurrent requests cannot cause an eleventh dispatch
 grounding: clarification (>1 task) reply claims NO proposal + no id
 grounding: execution with a REAL proposal id → reply references THAT id
 grounding: promote failed → reply claims NO proposal + no id
@@ -5973,6 +5978,7 @@ malformed canonical goal history fails closed without overwriting or hiding unfi
 malformed facts are skipped without throwing
 malformed file → construction throws a controlled error; file NOT overwritten, nothing fabricated
 malformed or overbroad context never reaches worker; source change withholds result
+malformed persisted grants, expired unused slots and extra input cannot silently become usable capacity
 malformed result artifact → controlled 500, no crash, no path leak
 malformed results and persistence failures never become successful runs
 malformed semantic result falls back to canonical lexical records rather than throwing or silently emptying
@@ -6622,6 +6628,7 @@ same work identity, complete passing tests and loaded commit prove adoption prer
 same-ID recovery keeps original failure/source, reuses approved tests and exhausts only the original allowance
 same-conversation whole-goal status survives reload and reads back without a model call or action
 same-identity same-facet opposing current observations conflict; historical and different roles do not
+same-record recovery uses two sealed extra allocations without rebuilding the task or changing its eight-call profile
 same-tab navigation preserves existing Operator jobs while contextual reads retain their navigation stop
 same-time conflicting account snapshots are withheld and quota cannot grant per-job charge evidence
 same-time conflicting claims are disclosed instead of presenting either as a conclusion
@@ -6931,6 +6938,7 @@ the clean sentences survive; only the claim is removed
 the client asks the briefing endpoint, not the greeting alone
 the client asks the settings endpoint and re-points its resolver
 the client fetches the version and warns when it differs
+the closed Owner entry accepts identifiers only and adds no execution or deployment switch
 the closed enum is unchanged by this repair
 the collapsed sections keep every promise they had
 the common phrasings are all caught — where the claim NAMES the source

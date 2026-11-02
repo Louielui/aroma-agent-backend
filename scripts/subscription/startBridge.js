@@ -41,7 +41,7 @@ function main () {
   const taskStore = require('../../src/core/operating/runStore').createRunStore({ dir: path.join(workerRoot, 'project-tasks'), workflow: 'project_task' })
   const taskRegistry = require('../../src/core/projectTasks/contract').createRegistry(taskStore)
   const resolveRecipe = taskRegistry.resolve
-  const repositoryBudget=require('../../src/core/projectTasks/repositoryBudget').createRepositoryBudget({dir:path.join(workerRoot,'project-task-usage')})
+  const repositoryBudget=require('../../src/core/projectTasks/repositoryBudget').createRepositoryBudget({dir:path.join(workerRoot,'project-task-usage'),root:repo})
   const repositoryLocks=require('../../src/actions/store').createStore({dir:path.join(workerRoot,'project-task-locks')})
   const repositoryInventory=require('../../src/core/projectTasks/repositoryScope').createInventory({root:repo})
   const projectSource = require('../../src/core/projectWork/source').createSource({ root: repo, resolveRecipe })

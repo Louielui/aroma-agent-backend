@@ -67,3 +67,14 @@ test('cancelling a queued recovery records a separate outcome without dispatch o
  const r=f.work.get(OWNER,f.failed.id);assert.equal(r.state,'cancelled');assert.equal(r.recoveries[0].outcome.state,'cancelled');assert.equal(r.recoveries[0].failure.reason,'subscription_unavailable');assert.equal(f.counts().coding,1);assert.equal(f.counts().reviews,0);assert.equal(f.budget.status(f.taskId).helper.reserved,6)
 })
 
+test('same-record recovery uses two sealed extra allocations without rebuilding the task or changing its eight-call profile',async t=>{
+ const f=await fixture(t,{allowExtension:true}),prior=structuredClone(f.failed)
+ await f.budget.run(f.taskId,async()=>{for(let i=0;i<2;i++){const p=usage.nativePermit('helper',{model:'claude-sonnet-5-5',effort:'medium'}).permit;p.dispatched('provider_turn_start');p.finish(null)}})
+ const before=f.budget.status(f.taskId),actions=f.budget.actions(f.taskId),{extension:p}=actions.handle(OWNER,{op:'usage_extension_prepare',workId:prior.id,commit:NEW,attemptsHash:require('../../actions/contract').hash(before.attempts)})
+ actions.handle(OWNER,{op:'usage_extension_approve',id:p.id,hash:p.hash,nonce:p.nonce})
+ const prepared=await f.prepare();assert.equal(prepared.run.id,prior.id);await f.work.approveRecovery(OWNER,ticket(prepared));await f.work.settled()
+ const r=f.work.get(OWNER,prior.id),s=f.budget.status(f.taskId)
+ assert.equal(r.state,'completed');assert.equal(r.appliedToLive,false);assert.equal(r.repositoryPromotion.state,'held');assert.deepEqual(r.source,prior.source);assert.deepEqual(r.workOrder,prior.workOrder);assert.equal(f.store.all().length,1)
+ assert.equal(s.helper.limit,10);assert.equal(s.helper.reserved,10);assert.equal(s.limits.helper,8);assert.equal(s.website.reserved,0);assert.deepEqual(s.attempts.slice(0,8),before.attempts);assert.deepEqual(s.attempts.slice(8).map(a=>[a.allocation,a.model,a.effort]),[['coding','gpt-6.1-sol','high'],['result_review','claude-sonnet-5-5','medium']])
+})
+

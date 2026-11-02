@@ -16,14 +16,16 @@ function eligible(r){
   r.workerRuns?.some(a=>!a.finishedAt||a.state!=='failed'))throw Error('recovery_unavailable')
  return failure(r)
 }
-function allowance(budget,root){
+function allowance(budget,root,workId){
  if(!budget)throw Error('recovery_unavailable')
  const s=budget.status(root),turn=s.turns?.find(t=>t.id===root)
  if(s.id!==root||s.state!=='active'||s.identity!=='owner-repository-repair:'+root||!turn?.entered||turn.finished||turn.conversationId!==root||turn.requestId!==root)throw Error('usage_run_not_active')
  if(s.helper.unresolved)throw Error('usage_unresolved_work')
  if(s.helper.available<2)throw Error('usage_limit_reached')
  if(s.limits.turns!==1||s.limits.helper!==8||s.limits.website!==0||s.website.reserved!==0)throw Error('usage_binding_conflict')
- return{rootId:root,limits:s.limits,attemptsHash:digest(JSON.stringify(s.attempts)),helperReserved:s.helper.reserved,minimumHelpers:2}
+ const extension=s.extension?budget.extensionForRecovery(root,workId):null
+ if(s.helper.limit!==(extension?10:8))throw Error('usage_binding_conflict')
+ return{rootId:root,limits:s.limits,attemptsHash:digest(JSON.stringify(s.attempts)),helperReserved:s.helper.reserved,minimumHelpers:2,...(extension?{extension}:{} )}
 }
 function rebind(r,definition,current,bootCommit){
  const changed=()=>{throw Error('source_changed')},w=r.workOrder

@@ -101,7 +101,8 @@ function createProjectWork ({ source, providers, store, enabled, invocationLedge
       for (let attempt = 1; attempt <= 2; attempt++) {
         if (signal.aborted) throw Error('worker_cancelled')
         if (attempt > 1) { r.state = 'coding'; record(r, 'repairing_visual', { attempt, previousPatchHash: reviewRepair.patchHash }) }
-        const coding = await require('../../investigation/workerInvocation').withWorkerPhase('development', attempt, () => providers.codeOrder({ order: snapshot.order, signal, verify, emit: (stage, facts) => record(r, stage, facts), ...(reviewRepair ? { reviewRepair } : {}) }))
+        const allocate=(purpose,fn)=>WORK_ORDER.usageRoot?repositoryBudget.phase(WORK_ORDER.usageRoot,r.id,purpose,fn):fn()
+        const coding = await allocate('coding',()=>require('../../investigation/workerInvocation').withWorkerPhase('development', attempt, () => providers.codeOrder({ order: snapshot.order, signal, verify, emit: (stage, facts) => record(r, stage, facts), ...(reviewRepair ? { reviewRepair } : {}) })))
         await verify()
         if (WORK_ORDER.effort && (!Array.isArray(coding?.changes) || JSON.stringify(coding.changes.map(c => c.file).sort()) !== JSON.stringify(WORK_ORDER.allowedFiles.slice().sort()) ||
             coding.changes.some(c => c.before !== snapshot.order.files[c.file] || typeof c.after !== 'string' || !c.after || c.before === c.after || digest(c.before) !== c.beforeHash || digest(c.after) !== c.afterHash) || digest(JSON.stringify(coding.changes)) !== coding.patchHash)) throw Error('invalid_worker_result')
@@ -113,7 +114,7 @@ function createProjectWork ({ source, providers, store, enabled, invocationLedge
         r.result = coding
         if (signal.aborted) throw Error('worker_cancelled')
         r.state = 'reviewing'; record(r, 'reviewing')
-        r.review = await require('../../investigation/workerInvocation').withWorkerPhase('review', attempt, () => providers.reviewOrder({ workOrder: WORK_ORDER, ...coding }, { signal, emit: (stage, facts) => record(r, stage, facts) }))
+        r.review = await allocate('result_review',()=>require('../../investigation/workerInvocation').withWorkerPhase('review', attempt, () => providers.reviewOrder({ workOrder: WORK_ORDER, ...coding }, { signal, emit: (stage, facts) => record(r, stage, facts) })))
         if (signal.aborted) throw Error('worker_cancelled')
         await verify()
         if (!['pass', 'changes_requested'].includes(r.review?.verdict)) throw Error('invalid_worker_result')
@@ -172,13 +173,13 @@ function createProjectWork ({ source, providers, store, enabled, invocationLedge
       const prior=r.recoveries?.find(a=>a.requestId===input.requestId)
       if(prior){if(prior.runtimeCommit!==input.bootCommit)throw Error('request_conflict');return{run:r,approval:prior.state==='awaiting_approval'?recoveryTickets.get(prior.approvalId)||null:null}}
       checkRecoveryReady()
-      const failed=recovery.eligible(r),usage=recovery.allowance(repositoryBudget,r.workOrder.usageRoot)
+      const failed=recovery.eligible(r),usage=recovery.allowance(repositoryBudget,r.workOrder.usageRoot,r.id)
       if((r.recoveries?.length||0)>=8)throw Error('recovery_unavailable')
       if(repositoryPreflight)await repositoryPreflight()
       const current=await source.read(input.bootCommit,undefined,r.workOrder.recipe),original=recovery.rebind(r,resolveRecipe(r.workOrder.recipe),current,input.bootCommit)
       if(!enabled())throw Error('not_enabled')
       checkRecoveryReady()
-      if(JSON.stringify(recovery.failure(store.get(r.id)))!==JSON.stringify(failed)||JSON.stringify(recovery.allowance(repositoryBudget,r.workOrder.usageRoot))!==JSON.stringify(usage))throw Error('approval_unavailable')
+      if(JSON.stringify(recovery.failure(store.get(r.id)))!==JSON.stringify(failed)||JSON.stringify(recovery.allowance(repositoryBudget,r.workOrder.usageRoot,r.id))!==JSON.stringify(usage))throw Error('approval_unavailable')
       const material={kind:'same_work_coding_recovery_v1',workId:r.id,requestId:input.requestId,failure:failed,originalSnapshot:original,runtimeSnapshot:current,usage},hash=digest(JSON.stringify(material)),approvalId=randomUUID(),session=approvals.createSession()
       const sealed=approvals.seal({workOrder:{approvalId,workOrderHash:hash,material},proposalId:r.id});if(!sealed.ok)throw Error('approval_unavailable')
       for(const a of r.recoveries||[])if(a.state==='awaiting_approval')a.state='superseded'
@@ -206,7 +207,7 @@ function createProjectWork ({ source, providers, store, enabled, invocationLedge
       if(!enabled())throw Error('not_enabled')
       checkRecoveryReady()
       if(JSON.stringify(recovery.failure(store.get(r.id)))!==JSON.stringify(m.failure))throw Error('approval_unavailable')
-      if(JSON.stringify(recovery.allowance(repositoryBudget,r.workOrder.usageRoot))!==JSON.stringify(m.usage))throw Error('usage_binding_conflict')
+      if(JSON.stringify(recovery.allowance(repositoryBudget,r.workOrder.usageRoot,r.id))!==JSON.stringify(m.usage))throw Error('usage_binding_conflict')
       a.state='approved';r.state='queued';r.reason=null;delete r.finishedAt;delete r.failureDiagnostic;r.activeRecoveryId=a.approvalId
       record(r,'coding_recovery_approved',{approvalId:a.approvalId,usageRoot:r.workOrder.usageRoot,originalApprovalHash:r.approvalHash})
       recoveryTickets.delete(a.approvalId);const controller=new AbortController();controllers.set(r.id,controller)
