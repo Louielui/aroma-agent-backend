@@ -14,7 +14,8 @@ function fixture(search='?run='+ID, options={}){
   calls.push({url,body:opts?.body&&JSON.parse(opts.body)})
   if(failed)throw Error('offline')
   if(opts?.body)prepared={id:OTHER,workRunId:ID,state:'awaiting_approval',action:'adopt',source:{evidence:{revision:'a'.repeat(40)}},before:{},after:{}}
-  const value=opts?.body?{run:prepared,approval:{id:OTHER,hash:'h',nonce:'n'}}:url.includes('project-adoption')?{runs:prepared?[prepared]:options.adoptions||[]}:url.endsWith('/'+ID)?{run:options.missing?null:run(options.mismatch?OTHER:ID)}:{runs:[run(OTHER),run()]}
+  const u=new URL(url,'http://127.0.0.1:8090'),part=u.pathname.split('/').at(-1)
+  const value=url.includes('/evidence/')?{evidence:require('./presentation').evidence(options.projectedRun,{part,offset:Number(u.searchParams.get('offset')),patchHash:u.searchParams.get('patch'),...(u.searchParams.has('file')?{file:u.searchParams.get('file')}:{})})}:opts?.body?{run:prepared,approval:{id:OTHER,hash:'h',nonce:'n'}}:url.includes('project-adoption')?{runs:prepared?[prepared]:options.adoptions||[]}:url.endsWith('/'+ID)?{run:options.missing?null:options.projectedRun?require('./presentation').present(options.projectedRun):run(options.mismatch?OTHER:ID)}:{runs:[run(OTHER),run()]}
   return {status:options.unauthorized?401:200,ok:!options.unauthorized,json:async()=>value}
  }})
  // Browser creates dataset on every element.
@@ -64,4 +65,10 @@ test('polling failure disables stale adoption actions',async()=>{
 test('targeted results omit unrelated adoptions and suppress repeat adoption',async()=>{
  const f=fixture('?run='+ID,{adoptions:[{id:OTHER,workRunId:OTHER,state:'completed',action:'adopt'},{id:ID,workRunId:ID,state:'completed',action:'adopt',source:{evidence:{revision:'a'.repeat(40)}},loaded:{bootCommit:'a'.repeat(40)}}]});await f.flush()
  assert.equal(f.elements.get('adoptions').children.length,1);assert.ok(!f.all().some(n=>n.dataset?.action==='adopt'));assert.ok(f.all().some(n=>n.dataset?.action==='rollback'))
+})
+test('large completed work shows the measured candidate and loads exact full evidence only on request',async()=>{
+ const r=require('./presentationFixture.cjs').fixture();r.id=ID;r.startedAt='2026-11-03T01:00:00Z'
+ const f=fixture('?run='+ID,{projectedRun:r});await f.flush();assert.equal(f.elements.get('runs').children.length,1);assert.equal(f.calls.some(c=>c.url.includes('/evidence/')),false)
+ const button=f.all().find(n=>n.dataset?.evidencePart==='after');assert.ok(button);await button.onclick();await f.flush()
+ const first=f.calls.find(c=>c.url.includes('/evidence/after'));assert.ok(first.url.includes(r.result.patchHash));assert.ok(first.url.includes('offset=0'));await button.onclick();assert.ok(f.calls.some(c=>c.url.includes('offset=32768')));assert.ok(f.calls.every(c=>!c.body));assert.ok(!f.all().some(n=>n.dataset?.action==='adopt'))
 })

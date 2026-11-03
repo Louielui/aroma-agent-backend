@@ -17,8 +17,8 @@ function codingProvider (client, codexClient = require('../../subscription/codex
   }
 }
 
-async function code ({ root, executable, allowCredits = false, executor, provider, emit = () => {}, order, verify, signal, reviewRepair }) {
-  const client = { executable, cwd: path.join(root, 'text-only-empty'), allowCredits:require('../../actions/usageBudget').currentScope()?false:allowCredits }
+async function code ({ root, executable, allowCredits = false, executor, provider, emit = () => {}, order, verify, signal, reviewRepair, visibleWork }) {
+  const client = { executable, cwd: path.join(root, 'text-only-empty'), allowCredits:require('../../actions/usageBudget').currentScope()?false:allowCredits,...(visibleWork?{visibleWork}:{}) }
   fs.mkdirSync(client.cwd, { recursive: true })
   executor ||= require('../../workers/execution/windowsSandbox').createExecutor({ root: path.join(root, 'offline-execution') })
   provider ||= codingProvider(client)

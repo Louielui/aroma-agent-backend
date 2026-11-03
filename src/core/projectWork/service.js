@@ -11,13 +11,14 @@ const owner = actor => { if (actor?.id !== 'owner' || actor.role !== 'owner') th
 ERRORS.add('review_scope_too_large')
 ERRORS.add('subscription_invalid_output')
 ERRORS.add('recovery_background_not_idle')
-function createProjectWork ({ source, providers, store, enabled, invocationLedger, repositoryBudget = null, recoveryReady = () => false, observeLive = null, onEvent = () => {}, repositoryPreflight = null, onAccepted = null, approvals = createOwnerApprovalStore(), resolveRecipe = recipe, catalogueRecipes = () => Object.values(RECIPES) }) {
+function createProjectWork ({ source, providers, store, enabled, invocationLedger, repositoryBudget = null, recoveryReady = () => false, observeLive = null, onEvent = () => {}, onProgress = () => {}, visibleCodexWork=false, repositoryPreflight = null, onAccepted = null, approvals = createOwnerApprovalStore(), resolveRecipe = recipe, catalogueRecipes = () => Object.values(RECIPES) }) {
   const sessions = new Map(), controllers = new Map(), recoveryTickets = new Map()
   let busy = false, pending = Promise.resolve()
   const all = () => store.all()
   const list = actor => { owner(actor); return all().sort((a, b) => b.startedAt.localeCompare(a.startedAt)).slice(0, 25) }
   const record = (r, stage, facts = {}) => {
     const at = new Date().toISOString(); r.steps.push({ sequence: r.steps.length + 1, stage, at, facts }); store.save(r)
+    if(r.codexThread)try{onProgress({id:r.id,state:r.state,phase:stage,at,threadId:r.codexThread.id,goal:r.workOrder.title||r.workOrder.goal,appliedToLive:r.appliedToLive})}catch{/* A missing title receipt is not a model or task success. */}
     // Recovery audit stays in this canonical store. Sending it to automatic
     // memory would enqueue unmetered indexing, including on a refused approval.
     if(r.recoveries?.length)return
@@ -102,7 +103,8 @@ function createProjectWork ({ source, providers, store, enabled, invocationLedge
         if (signal.aborted) throw Error('worker_cancelled')
         if (attempt > 1) { r.state = 'coding'; record(r, 'repairing_visual', { attempt, previousPatchHash: reviewRepair.patchHash }) }
         const allocate=(purpose,fn)=>WORK_ORDER.usageRoot?repositoryBudget.phase(WORK_ORDER.usageRoot,r.id,purpose,fn):fn()
-        const coding = await allocate('coding',()=>require('../../investigation/workerInvocation').withWorkerPhase('development', attempt, () => providers.codeOrder({ order: snapshot.order, signal, verify, emit: (stage, facts) => record(r, stage, facts), ...(reviewRepair ? { reviewRepair } : {}) })))
+        const visible=visibleCodexWork&&WORK_ORDER.usageRoot&&WORK_ORDER.delivery==='owner_deployment_package_required'?{visibleWork:{id:r.id,...(r.codexThread?.id?{resumeThreadId:r.codexThread.id}:{}),created:async value=>{if(value.workId!==r.id||typeof value.id!=='string'||!/^[a-f0-9-]{36}$/.test(value.id)||r.codexThread&&r.codexThread.id!==value.id)throw Error('worker_evidence_unavailable');r.codexThread={...value,createdAt:r.codexThread?.createdAt||new Date().toISOString(),appVisibility:'not_verified'};record(r,'codex_thread_created',{threadId:value.id,model:value.model,effort:value.effort,modelDispatched:false})}}}:{}
+        const coding = await allocate('coding',()=>require('../../investigation/workerInvocation').withWorkerPhase('development', attempt, () => providers.codeOrder({ order: snapshot.order, signal, verify, ...visible, emit: (stage, facts) => record(r, stage, facts), ...(reviewRepair ? { reviewRepair } : {}) })))
         await verify()
         if (WORK_ORDER.effort && (!Array.isArray(coding?.changes) || JSON.stringify(coding.changes.map(c => c.file).sort()) !== JSON.stringify(WORK_ORDER.allowedFiles.slice().sort()) ||
             coding.changes.some(c => c.before !== snapshot.order.files[c.file] || typeof c.after !== 'string' || !c.after || c.before === c.after || digest(c.before) !== c.beforeHash || digest(c.after) !== c.afterHash) || digest(JSON.stringify(coding.changes)) !== coding.patchHash)) throw Error('invalid_worker_result')

@@ -2,7 +2,7 @@
 // Read-only projection of existing canonical work, invocation and usage records.
 // No worker/service constructors, provider calls, new store or synthetic history.
 const fs=require('node:fs'),path=require('node:path'),{ID}=require('../actions/contract')
-const {pin,readAt,FOLDERS}=require('./workRecords'),{projectWorkRecord}=require('./workEvidence'),{projectRecord}=require('./invocations')
+const {pin,readAt,FOLDERS,CANONICAL_WORK_LIMIT}=require('./workRecords'),{projectWorkRecord}=require('./workEvidence'),{projectRecord}=require('./invocations')
 const stamp=v=>typeof v==='string'&&Number.isFinite(Date.parse(v))?v:null
 const uuid=v=>typeof v==='string'&&ID.test(v)?v:null
 const hash=v=>typeof v==='string'&&/^[a-f0-9]{64}$/.test(v)?v:null
@@ -30,7 +30,7 @@ function createProgressReader({workerRoot,repoRoot,dataRoot=null,invocationFile,
   const sources=FOLDERS.map(kind=>({kind,base:root,folder:kind}));if(dataRoot){let d=null;try{d=pin(dataRoot)}catch{};for(const kind of ['code-diagnosis-runs','code-repair-runs'])sources.push({kind,base:d,folder:kind})}
   function load(source,name){
    const key=source.kind+'/'+name;if(seen.has(key))return;seen.add(key)
-   const raw=JSON.parse(readAt(source.base,path.join(source.folder,name),2*1024*1024)),id=name.slice(0,-5),expected={ 'project-tasks':'project_task','project-runs':'project_work',adoptions:'project_adoption','code-diagnosis-runs':'code_diagnosis','code-repair-runs':'code_repair'}[source.kind]
+   const raw=JSON.parse(readAt(source.base,path.join(source.folder,name),CANONICAL_WORK_LIMIT)),id=name.slice(0,-5),expected={ 'project-tasks':'project_task','project-runs':'project_work',adoptions:'project_adoption','code-diagnosis-runs':'code_diagnosis','code-repair-runs':'code_repair'}[source.kind]
    if(raw.id!==id||expected&&raw.workflow!==expected||!Array.isArray(raw.steps)&&!(source.kind==='runs'&&Array.isArray(raw.events)))throw Error('invalid_work_record')
    if(raw.workOrder?.usageRoot&&raw.workOrder?.registrationId&&raw.workOrder.usageRoot!==raw.workOrder.registrationId)throw Error('conflicting_work_identity')
    const canonicalKind=FOLDERS.includes(source.kind)?'worker/'+source.kind:source.kind,p=projectWorkRecord(raw,{kind:canonicalKind,recordId:id,readSource:n=>repo?readAt(repo,n,512*1024):null})
@@ -62,14 +62,15 @@ function createProgressReader({workerRoot,repoRoot,dataRoot=null,invocationFile,
    // Diagnosis has its own host receipts, not workerTrace. Do not invent a link
    // to the invocation ledger or mistake configured workers for actual models.
    const diagnosisReceipts=kind==='code-diagnosis-runs'&&Array.isArray(raw.modelReceipts)?raw.modelReceipts.slice(0,20).filter(r=>r.requestId===id).map(r=>({requestedModel:safeModel(r.requestedModel),actualModel:safeModel(r.actualModel),effort:code(r.effort),state:['started','returned','failed'].includes(r.state)?r.state:'unknown',billing:['chatgpt-subscription','claude-subscription'].includes(r.billing)?r.billing:null,basis:'canonical_diagnosis_model_receipt'})):[]
-   return{id,kind,goal,state:p.state||'unknown',phase,phaseAt,startedAt:p.startedAt,finishedAt:p.finishedAt,reason:p.reason,rootId,linkedIds,currentRunning:'unknown',
+   const codexThread=raw.codexThread?.workId===id&&/^[a-f0-9-]{36}$/.test(raw.codexThread?.id||'')?{id:raw.codexThread.id,source:'actual_coding_provider_thread',appVisibility:'not_verified'}:null
+   return{id,kind,goal,state:p.state||'unknown',phase,phaseAt,startedAt:p.startedAt,finishedAt:p.finishedAt,reason:p.reason,rootId,linkedIds,currentRunning:'unknown',codexThread,
     acceptance:{approvedAt:stamp((raw.steps||raw.events).find(s=>s.stage==='approved'&&s.facts?.actor==='owner')?.at),workerAttempts:runs.length,dispatchCheckpoints:calls.dispatched},calls,diagnosisReceipts,usage:usage(rootId,root),
     completion:{candidateRecorded:!!hash(raw.result?.patchHash),tests:p.tests,reviewVerdict:p.reviewVerdict||'unknown',appliedToLive:p.appliedToLive,liveVerified:null,recordedLiveVerificationState:code(p.liveVerification?.state),diagnosisVerified:kind==='code-diagnosis-runs'&&raw.verification?raw.verification.matched===true&&raw.verification.citationsVerified===true:null,promotionState:code(raw.repositoryPromotion?.state),loadedCommit:p.loadedCommit},
     references:{record:kind+'/'+id,sourceRevision:p.sourceRevision,patchHash:hash(raw.result?.patchHash),isolatedRunId:uuid(raw.result?.isolatedRunId)}}
   })
   const lookup=input.id?(targets.length>1?'ambiguous':targets.length===1?'found':lookupFailures.size||coverage.some(c=>c.state!=='ok')?'unavailable':'not_found'):'list'
   return{version:1,readOnly:true,observedAt,state:coverage.every(c=>c.state==='ok')&&ledger.state==='ok'&&!omitted&&!lookupFailures.size?'ok':'partial',lookup,records,coverage,unavailableRecords:unavailableRecords.slice(0,25),unavailableRecordsOmitted:Math.max(0,unavailableRecords.length-25),invocationCoverage:{state:ledger.state,omitted:ledger.omitted,coverageStartedAt:ledger.coverageStartedAt},omitted,
-   scope:'existing_program_workers_and_fixed_diagnosis_records',consistency:'individual_file_snapshots_not_a_cross_store_transaction',codexAppThreadBinding:'not_connected',automaticUpdates:false,note:'Recorded phase is not a per-job live-process witness. Bounded receipts are not account totals; missing evidence is unknown. This observer starts no work, approvals, reconciliation or model calls.'}
+   scope:'existing_program_workers_and_fixed_diagnosis_records',consistency:'individual_file_snapshots_not_a_cross_store_transaction',codexAppThreadBinding:records.some(r=>r.codexThread)?'recorded_worker_thread':'not_connected',automaticUpdates:false,note:'Recorded phase is not a per-job live-process witness. A provider thread ID does not prove desktop visibility. Bounded receipts are not account totals; missing evidence is unknown. This observer starts no work, approvals, reconciliation or model calls.'}
  }
  return{read}
 }
