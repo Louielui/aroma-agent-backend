@@ -53,18 +53,21 @@ function applyCheckout (repository,snapshot,target,guard=()=>{}) {
   if(repository.runtimeGit(['rev-parse','HEAD'])!==target)throw Error('runtime_checkout_unconfirmed')
   return{commit:target,stash,absorbed:plan.filter(f=>f.absorbed).map(f=>f.path),retainedOverlays:plan.filter(f=>!f.absorbed).map(f=>f.path),sourceVerified:true}
 }
-function stageReloadControl (repository,controlCommit) {
-  if(!SHA.test(controlCommit||''))throw Error('reload_control_unbound')
-  const relative='scripts/repository/restartLocal.ps1'
+function stagePinnedControl (repository,controlCommit,kind) {
+  if(!['reload','client'].includes(kind))throw Error('control_kind_unbound')
+  if(!SHA.test(controlCommit||''))throw Error(kind+'_control_unbound')
+  const relative=kind==='reload'?'scripts/repository/restartLocal.ps1':'scripts/browser/install-read-host.ps1',name=path.basename(relative)
   const bytes=repository.git(['show',controlCommit+':'+relative],{buffer:true}),hash=digest(bytes)
-  const directory=path.join(repository.artifacts,'reload-control',hash),file=path.join(directory,'restartLocal.ps1')
+  const directory=path.join(repository.artifacts,kind+'-control',hash),file=path.join(directory,name)
   fs.mkdirSync(directory,{recursive:true})
   if(fs.existsSync(file)){
     const stat=fs.lstatSync(file)
-    if(!stat.isFile()||stat.isSymbolicLink()||stat.nlink!==1||digest(fs.readFileSync(file))!==hash)throw Error('reload_control_changed')
+    if(!stat.isFile()||stat.isSymbolicLink()||stat.nlink!==1||digest(fs.readFileSync(file))!==hash)throw Error(kind+'_control_changed')
   }else fs.writeFileSync(file,bytes,{flag:'wx'})
   return{file,hash,controlCommit}
 }
+function stageReloadControl(repository,controlCommit){return stagePinnedControl(repository,controlCommit,'reload')}
+function stageClientControl(repository,controlCommit){return stagePinnedControl(repository,controlCommit,'client')}
 async function health (url,fetchImpl=fetch) {
   const response=await fetchImpl(url,{signal:AbortSignal.timeout(7000),redirect:'manual'})
   if(!response.ok)throw Error('runtime_health_unavailable')
@@ -141,9 +144,15 @@ function createRuntime ({repository,dependencies,restartImpl=null,readinessImpl=
       if(!bytes.toString('utf8').includes('[switch]$PublishClient'))return{verified:false,reason:'legacy_client_requires_explicit_restore',bootCommit:backend.bootCommit,bridgeCommit:bridge.bootCommit}
       const executable=path.join(process.env.SystemRoot||'C:/Windows','System32/WindowsPowerShell/v1.0/powershell.exe')
       guard()
-      const result=cp.spawnSync(executable,['-NoProfile','-NonInteractive','-ExecutionPolicy','RemoteSigned','-File',path.join(root,script),'-PublishClient'],{windowsHide:true,shell:false,encoding:'utf8',timeout:90000})
+      // Like the reload helper, reviewed installation control must survive an
+      // exact-source rollback to an older broken installer. Its fixed runtime
+      // root still packages and pins only the actual restored source/assets.
+      const control=rollback?stageClientControl(repository,row.merge.commit):null
+      guard()
+      const result=cp.spawnSync(executable,['-NoProfile','-NonInteractive','-ExecutionPolicy','RemoteSigned','-File',control?.file||path.join(root,script),'-PublishClient'],{windowsHide:true,shell:false,encoding:'utf8',timeout:90000})
       if(result.status!==0)return{verified:false,reason:'client_publication_failed',bootCommit:backend.bootCommit,bridgeCommit:bridge.bootCommit,diagnostics:clientDiagnostics(result)}
       try{clientPublication=JSON.parse(result.stdout);if(clientPublication.commit!==expected||clientPublication.registrationVerified!==true||require('../browserRead/clientUpdate').readInstallation({bootCommit:expected}).state!=='ready')throw Error('client_publication_unconfirmed')}catch{return{verified:false,reason:'client_publication_unconfirmed',diagnostics:clientDiagnostics(result)}}
+      if(control)clientPublication.control=control
     }
     return{verified,expectedCommit:expected,bootCommit:backend.bootCommit,bridgeCommit:bridge.bootCommit,sourceVerified:source,smokePassed,regressionPassed:regression.exitCode===0&&regression.failed===0&&regression.passed>0,regression,clientPublication,checkedAt:new Date().toISOString()}
   }
@@ -152,4 +161,4 @@ function createRuntime ({repository,dependencies,restartImpl=null,readinessImpl=
 // Git checkout may expand CRLF. Preserve every other byte, including invalid
 // UTF-8, BOMs and trailing newlines; only an existing CRLF pair may become LF.
 function sameInstallerSource(actual,expected){const canonical=b=>Buffer.from(Buffer.from(b).toString('latin1').replace(/\r\n/g,'\n'),'latin1');return canonical(actual).equals(canonical(expected))}
-module.exports={overlayPlan,applyCheckout,stageReloadControl,health,createRuntime,sameInstallerSource}
+module.exports={overlayPlan,applyCheckout,stageReloadControl,stageClientControl,health,createRuntime,sameInstallerSource}

@@ -5543,6 +5543,7 @@ expired, restarted, source-drifted or changed-ledger extension approvals cannot 
 expiry and service restart cannot renew or execute a stored recovery ticket
 expiry during idle inspection prevents checkout and reload
 expiry during regression prevents subsequent managed-client publication
+expiry during rollback client-control staging refuses before publisher dispatch
 expiry, bridge restart and changed live definition refuse automatic approval
 expiry, cancellation and process restart never resume writes
 expiry, cancellation, restart and duplicate requests do not reissue authorization
@@ -6604,8 +6605,10 @@ revoked read access prevents verification without any bridge request
 revoked token, abort and repeated cursors stop execution without leaking response bodies
 role wages use assigned roles and latest effective wages without treating weekly salary as hourly
 roles and knowledge domains cannot confer execution or business-truth authority
+rollback client installation retains reviewed control bytes outside the older restored installer
 rollback needs independent approval, restores original behavior and requires reload
 rollback refuses target definition or state drift
+rollback verifies restored source but publishes its client through the reviewed repair control
 round 1 opens a session id; later rounds RESUME it rather than starting fresh
 round 1 opens a session with --session-id
 round-robin: no source gets a second line while another has none

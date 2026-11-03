@@ -48,6 +48,16 @@ Owner capability, expiry, idle and independent rollback read-back checks are not
 removed or expanded. Known refusal reasons are retained; arbitrary thrown prose
 is still discarded. Failed runs are not resumable inputs or relabelled success.
 
+Classification alone is insufficient: restoring the older source would otherwise
+execute its same broken installer again. The existing pinned-control storage used
+by the reload helper now also retains the reviewed client installer for conditional
+rollback. It is bound to the original reviewed merge/control SHA and exact bytes,
+outside the restored release. The runtime first pins the actual restored installer
+and source, then the reviewed control packages only that restored source's assets
+and commit. It preserves the fixed repository, Node executable, client slot and
+HKCU key. Expiry is checked before control staging and execution; changed control
+bytes refuse. No external control path, command or source is supplied by a model.
+
 ## Verification and remaining delivery gates
 
 The new tests execute the actual packaging loop with all sixteen reviewed inputs

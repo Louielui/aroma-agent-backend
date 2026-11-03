@@ -21,7 +21,7 @@ function createWorkflow ({adapter,save,id=randomUUID(),initial=null,stopBeforeRe
       const check=await adapter.verifyRollback(row)
       if(check?.verified!==true)throw Error('rollback_verification_failed')
       row.rollbackVerification=check;record('rolled_back');return row
-    }catch(error){const known=['rollback_verification_failed','rollback_not_authorized','rollback_source_mismatch','rollback_ref_drift','recovery_authorization_expired','approval_material_changed','approval_unavailable'];row.rollbackFailure={reason:known.includes(error.message)?error.message:'rollback_failed'};row.reason='rollback_failed';record('needs_attention',{reason:row.reason});return row}
+    }catch(error){const known=['rollback_verification_failed','rollback_not_authorized','rollback_source_mismatch','rollback_ref_drift','recovery_authorization_expired','approval_material_changed','approval_unavailable','client_control_unbound','client_control_changed'];row.rollbackFailure={reason:known.includes(error.message)?error.message:'rollback_failed'};row.reason='rollback_failed';record('needs_attention',{reason:row.reason});return row}
   }
   async function deployAndVerify () {
     try{
