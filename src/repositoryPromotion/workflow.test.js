@@ -59,6 +59,28 @@ test('verification throwing also rolls back; a failed rollback remains an Owner 
   const {w}=fixture({verify:async()=>{throw Error('verification_unavailable')},rollback:async()=>{throw Error('rollback_failed')}})
   const row=await w.finish();assert.equal(row.state,'needs_attention');assert.equal(row.reason,'rollback_failed');assert.ok(row.failure)
 })
+
+test('client publication failures retain diagnostics and use the existing exact-source rollback category',async()=>{
+ const {createGitHub}=require('./github'),head='a'.repeat(40),base='c'.repeat(40),source='b'.repeat(40),tree='e'.repeat(40),runId='594bb1ea-ed9b-4eba-b67a-7ca90592e00f'
+ for(const boundary of ['client_publication_failed','client_publication_unconfirmed','client_installer_source_changed','legacy_client_requires_explicit_restore']){
+  let puts=0,captured;const diagnostics={exitCode:1,stderrBytes:17,stderrHash:'f'.repeat(64)}
+  const github=createGitHub({root:'fixture',tokenProvider:()=> 'fixture-only',fetchImpl:async(url,o)=>{if(o.method==='PUT'){puts++;return{ok:true,json:async()=>({merged:true,sha:'d'.repeat(40)})}}return{ok:true,json:async()=>url.endsWith('/pulls/120')?{head:{sha:head},base:{sha:base}}:url.endsWith('/commits/main')?{sha:base}:url.endsWith('/commits/'+head)?{commit:{tree:{sha:tree}},parents:[{sha:base}]}:{commit:{tree:{sha:tree}}}}}})
+  const changes={verify:async()=>({verified:false,reason:boundary,diagnostics}),rollback:async row=>{captured=row.failure;return github.rollbackMerge({pr:120,head,base,source,tree,failure:row.failure,runId})}},f=fixture(changes)
+  const result=await f.w.finish();assert.equal(result.state,'rolled_back',boundary);assert.equal(puts,1);assert.equal(captured.reason,'runtime_verification_failed');assert.equal(captured.boundary,boundary);assert.deepEqual(captured.diagnostics,diagnostics)
+  const pending=fixture({...changes,deploy:async()=>({state:'administrator_required',applied:false}),recheckDeployed:async()=>true,restartPending:async()=>({state:'restarted'})});assert.equal((await pending.w.finish()).state,'awaiting_administrator');assert.equal((await pending.w.resume()).state,'rolled_back');assert.equal(puts,2);assert.equal(captured.boundary,boundary)
+ }
+})
+
+test('unknown verification reasons and expired recovery still refuse before a rollback write',async()=>{
+ const {createGitHub}=require('./github');let network=0
+ const github=createGitHub({root:'fixture',tokenProvider:()=>{throw Error('unexpected_credentials')},fetchImpl:async()=>{network++;throw Error('unexpected_network')}})
+ const f=fixture({verify:async()=>({verified:false,reason:'arbitrary_failure'}),rollback:row=>github.rollbackMerge({pr:120,head:'a'.repeat(40),base:'b'.repeat(40),source:'c'.repeat(40),tree:'d'.repeat(40),failure:row.failure,runId:'594bb1ea-ed9b-4eba-b67a-7ca90592e00f'})})
+ const r=await f.w.finish();assert.equal(r.state,'needs_attention');assert.equal(r.failure.reason,'arbitrary_failure');assert.equal(r.rollbackFailure.reason,'rollback_not_authorized');assert.equal(network,0)
+ const expired=fixture({verify:async()=>({verified:false,reason:'client_publication_failed'}),rollback:async()=>{throw Error('recovery_authorization_expired')}})
+ const e=await expired.w.finish();assert.equal(e.reason,'rollback_failed');assert.equal(e.rollbackFailure.reason,'recovery_authorization_expired')
+ const secret=fixture({verify:async()=>({verified:false,reason:'client_publication_failed'}),rollback:async()=>{throw Error('token=fixture-secret')}})
+ assert.ok(!JSON.stringify(await secret.w.finish()).includes('fixture-secret'))
+})
 test('Windows privilege block persists a reload-pending state without bypass, rollback or completion',async()=>{
   const {w,events}=fixture({deploy:async()=>({state:'administrator_required',applied:false})})
   const row=await w.finish();assert.equal(row.state,'awaiting_administrator');assert.ok(!events.includes('rollback'));assert.ok(!events.includes('verify'))

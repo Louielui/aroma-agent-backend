@@ -1,5 +1,8 @@
 param([switch]$PrepareOnly,[switch]$PublishClient)
 $ErrorActionPreference='Stop'
+$browserStage='identity'
+$browserSourceName=$null
+try{
 if($PrepareOnly -and $PublishClient){throw 'ConflictingInstallationMode'}
 # Only this fixed Owner repository, per-user host and consent-bound extension.
 $browserRepo='C:\Aroma\aroma-agent-backend'
@@ -21,9 +24,17 @@ function Read-BrowserGitBlob([string]$name){
   $buffer=New-Object IO.MemoryStream
   try{[void]$process.Start();$process.StandardOutput.BaseStream.CopyTo($buffer);$process.WaitForExit();if($process.ExitCode -ne 0){throw 'GitBlobUnavailable'};return $buffer.ToArray()}finally{$buffer.Dispose();$process.Dispose()}
 }
+function Get-BrowserFileHash([string]$file){
+  # Windows PowerShell on this host does not expose Get-FileHash. Hash bytes
+  # directly with the same built-in SHA256; do not change module/security settings.
+  $hasher=[Security.Cryptography.SHA256]::Create();$stream=$null
+  try{$stream=[IO.File]::OpenRead($file);return ([BitConverter]::ToString($hasher.ComputeHash($stream))).Replace('-','').ToLowerInvariant()}finally{if($null -ne $stream){$stream.Dispose()};$hasher.Dispose()}
+}
 $browserNames=@('src/browserRead/nativeHost.cjs','src/browserRead/clientUpdate.js','src/browserRead/contract.js','src/browserRead/nativeProtocol.js','src/browserRead/operatorBroker.cjs','src/browserRead/nativeInput.cjs','src/browserOperator/NativeBrowserInput.cs','extensions/browser-read/manifest.json','extensions/browser-read/worker.js','extensions/browser-read/collector.js','extensions/browser-read/operator.js','extensions/browser-read/operator-panel.js','extensions/browser-read/sidepanel.html','extensions/browser-read/sidepanel.js','extensions/browser-read/sidepanel.css','extensions/browser-read/release.js')
 $browserPins=@{}
+$browserStage='copy_sources'
 foreach($browserName in $browserNames){
+  $browserSourceName=$browserName
   $browserSource=Join-Path $browserRepo $browserName
   $browserStat=Get-Item -LiteralPath $browserSource
   if($browserStat.Attributes -band [IO.FileAttributes]::ReparsePoint){throw 'UnsafeSource'}
@@ -34,25 +45,28 @@ foreach($browserName in $browserNames){
   $browserDestination=if($browserName.StartsWith('extensions/')){Join-Path (Join-Path $browserRelease 'extension') ([IO.Path]::GetFileName($browserName))}else{Join-Path $browserRelease ([IO.Path]::GetFileName($browserName))}
   New-Item -ItemType Directory -Path ([IO.Path]::GetDirectoryName($browserDestination)) -Force | Out-Null
   [IO.File]::WriteAllBytes($browserDestination,(Read-BrowserGitBlob $browserName))
-  $browserPins[[IO.Path]::GetFileName($browserDestination)]=(Get-FileHash -LiteralPath $browserDestination -Algorithm SHA256).Hash.ToLowerInvariant()
+  $browserPins[[IO.Path]::GetFileName($browserDestination)]=Get-BrowserFileHash $browserDestination
 }
+$browserSourceName=$null
+$browserStage='prepare_input'
 $browserManifest=Get-Content -LiteralPath (Join-Path $browserRelease 'extension/manifest.json') -Raw | ConvertFrom-Json
 $browserWorkerHasher=[Security.Cryptography.SHA256]::Create()
 try{$browserWorkerHash=([BitConverter]::ToString($browserWorkerHasher.ComputeHash([Text.Encoding]::UTF8.GetBytes((@($browserPins['manifest.json'],$browserPins['worker.js'],$browserPins['collector.js'],$browserPins['operator.js']) -join ':'))))).Replace('-','').ToLowerInvariant()}finally{$browserWorkerHasher.Dispose()}
 $browserReleaseScript='globalThis.IMAGINE_CLIENT_RELEASE='+(@{commit=$browserCommit;workerHash=$browserWorkerHash}|ConvertTo-Json -Compress)+";`n"
 [IO.File]::WriteAllText((Join-Path $browserRelease 'extension/release.js'),$browserReleaseScript,(New-Object Text.UTF8Encoding($false)))
-$browserPins['release.js']=(Get-FileHash -LiteralPath (Join-Path $browserRelease 'extension/release.js')).Hash.ToLowerInvariant()
+$browserPins['release.js']=Get-BrowserFileHash (Join-Path $browserRelease 'extension/release.js')
 $browserKey=[Convert]::FromBase64String($browserManifest.key)
 $browserHasher=[Security.Cryptography.SHA256]::Create()
 try{$browserIdHash=([BitConverter]::ToString($browserHasher.ComputeHash($browserKey))).Replace('-','').ToLowerInvariant().Substring(0,32)}finally{$browserHasher.Dispose()}
 $browserExtensionId=-join ($browserIdHash.ToCharArray() | ForEach-Object { [char](97+[Convert]::ToInt32($_.ToString(),16)) })
 $browserOrigin='chrome-extension://'+$browserExtensionId+'/'
 $browserInputExe=Join-Path $browserRelease 'ImagineBrowserInput.exe'
+$browserStage='compile_input'
 Add-Type -Path (Join-Path $browserRelease 'NativeBrowserInput.cs') -ReferencedAssemblies 'System.Core','System.Drawing','System.Web.Extensions',(Join-Path $env:SystemRoot 'Microsoft.NET/Framework64/v4.0.30319/WPF/UIAutomationClient.dll'),(Join-Path $env:SystemRoot 'Microsoft.NET/Framework64/v4.0.30319/WPF/UIAutomationTypes.dll'),(Join-Path $env:SystemRoot 'Microsoft.NET/Framework64/v4.0.30319/WPF/WindowsBase.dll') -OutputAssembly $browserInputExe -OutputType ConsoleApplication
-$browserInputHash=(Get-FileHash -LiteralPath $browserInputExe).Hash.ToLowerInvariant()
+$browserInputHash=Get-BrowserFileHash $browserInputExe
 $browserPins['ImagineBrowserInput.exe']=$browserInputHash
 [IO.File]::WriteAllText((Join-Path $browserRelease 'host-config.json'),(@{extensionOrigin=$browserOrigin;commit=$browserCommit;inputHash=$browserInputHash}|ConvertTo-Json -Compress),(New-Object Text.UTF8Encoding($false)))
-$browserPins['host-config.json']=(Get-FileHash -LiteralPath (Join-Path $browserRelease 'host-config.json')).Hash.ToLowerInvariant()
+$browserPins['host-config.json']=Get-BrowserFileHash (Join-Path $browserRelease 'host-config.json')
 $browserPinLiteral=($browserPins.GetEnumerator() | Where-Object {$_.Key -in @('nativeHost.cjs','clientUpdate.js','contract.js','nativeProtocol.js','operatorBroker.cjs','nativeInput.cjs','NativeBrowserInput.cs','ImagineBrowserInput.exe','host-config.json')} | ForEach-Object {'{"'+$_.Key+'","'+$_.Value+'"}'} ) -join ','
 $browserCsharp=@"
 using System; using System.IO; using System.Diagnostics; using System.Collections.Generic; using System.Security.Cryptography; using System.Threading.Tasks;
@@ -81,7 +95,9 @@ public static class ImagineBrowserReadHost {
 }
 "@
 $browserExe=Join-Path $browserRelease 'ImagineBrowserReadHost.exe'
+$browserStage='compile_host'
 Add-Type -TypeDefinition $browserCsharp -OutputAssembly $browserExe -OutputType ConsoleApplication
+$browserStage='prepare_receipt'
 $browserHostManifest=Join-Path $browserRelease 'native-host.json'
 [IO.File]::WriteAllText($browserHostManifest,(@{name='com.imagine.browser_read';description='Imagine approved current-page read broker';path=$browserExe;type='stdio';allowed_origins=@($browserOrigin)}|ConvertTo-Json -Depth 3),(New-Object Text.UTF8Encoding($false)))
 $browserRegistry='HKCU:\Software\Google\Chrome\NativeMessagingHosts\com.imagine.browser_read'
@@ -91,6 +107,7 @@ $browserReceipt=@{commit=$browserCommit;extensionId=$browserExtensionId;extensio
 [IO.File]::WriteAllText((Join-Path $browserRelease 'installation.json'),($browserReceipt|ConvertTo-Json -Depth 4),(New-Object Text.UTF8Encoding($false)))
 $browserPublished=$null
 if($PublishClient){
+  $browserStage='publish_client'
   $browserPublicationText=(& $browserNode (Join-Path $browserRelease 'clientUpdate.js') publish (Join-Path $browserRelease 'installation.json'))
   if($LASTEXITCODE -ne 0){throw 'ClientPublicationFailed'}
   $browserPublished=$browserPublicationText | ConvertFrom-Json
@@ -98,6 +115,7 @@ if($PublishClient){
   $browserReceipt.managedExtensionPath=$browserPublished.extensionDirectory
 }
 if(-not $PrepareOnly){
+  $browserStage='register_host'
   try{
     New-Item -Path $browserRegistry -Force | Out-Null
     Set-Item -LiteralPath $browserRegistry -Value $browserHostManifest
@@ -114,3 +132,14 @@ if(-not $PrepareOnly){
   [IO.File]::WriteAllText((Join-Path $browserRelease 'installation.json'),($browserReceipt|ConvertTo-Json -Depth 4),(New-Object Text.UTF8Encoding($false)))
 }
 Write-Output ($browserReceipt|ConvertTo-Json -Depth 4)
+}catch{
+  $known=@('ConflictingInstallationMode','NodeRuntimeUnavailable','RepositoryIdentityUnavailable','RepositoryIdentityChanged','ReleaseAlreadyPrepared','GitBlobUnavailable','UnsafeSource','UncommittedHostSource','ClientPublicationFailed','HostRegistrationUnconfirmed','ClientAndHostRollbackFailed','HostRegistrationFailedAndRestored')
+  $reason=if($_.Exception.Message -cin $known){$_.Exception.Message}else{'client_install_unconfirmed'}
+  $type=$_.Exception.GetType().FullName;$errorId=($_.FullyQualifiedErrorId -split ',')[0]
+  if($type -cnotin @('System.Management.Automation.RuntimeException','System.Management.Automation.CommandNotFoundException','System.Management.Automation.MethodInvocationException','System.Management.Automation.ParameterBindingException','System.Management.Automation.ItemNotFoundException','System.Management.Automation.PSArgumentException','System.IO.IOException','System.IO.FileNotFoundException','System.IO.DirectoryNotFoundException','System.UnauthorizedAccessException','System.ArgumentException','System.InvalidOperationException')){$type='unconfirmed'}
+  if($errorId -cnotin (@('CommandNotFoundException','InvokeMethodOnNull','MethodInvocationException','ParameterBindingException','PathNotFound','ItemNotFoundException','UnauthorizedAccessException','InvalidOperationException','NativeCommandError','InvalidArgument','TypeNotFound','RuntimeException')+$known)){$errorId='unconfirmed'}
+  $diagnostic=@{stage=$browserStage;reason=$reason;errorType=$type;errorId=$errorId}
+  if($null -ne $browserSourceName -and $browserSourceName -cin $browserNames){$diagnostic.sourceName=$browserSourceName}
+  [Console]::Error.WriteLine('IMAGINE_CLIENT_INSTALL '+($diagnostic|ConvertTo-Json -Compress))
+  exit 1
+}

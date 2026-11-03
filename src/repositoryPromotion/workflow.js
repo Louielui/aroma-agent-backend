@@ -1,6 +1,13 @@
 'use strict'
 const {randomUUID}=require('node:crypto')
 const {promotionDecision}=require('./policy')
+const CLIENT_VERIFICATION_FAILURES=new Set(['client_installer_source_changed','legacy_client_requires_explicit_restore','client_publication_failed','client_publication_unconfirmed'])
+function verificationFailure(result){
+  const reason=result?.reason||'runtime_verification_failed'
+  // Preserve the specific client boundary while using the existing conditional
+  // runtime-verification rollback category. Unknown reasons remain refused.
+  return CLIENT_VERIFICATION_FAILURES.has(reason)?{reason:'runtime_verification_failed',boundary:reason,...(result.diagnostics?{diagnostics:result.diagnostics}:{})}:{reason}
+}
 function createWorkflow ({adapter,save,id=randomUUID(),initial=null,stopBeforeReview=false}) {
   let busy=false,spent=false
   const row=initial ? structuredClone(initial) : {id,workflow:'repository_promotion',state:'new',startedAt:new Date().toISOString(),steps:[]}
@@ -14,7 +21,7 @@ function createWorkflow ({adapter,save,id=randomUUID(),initial=null,stopBeforeRe
       const check=await adapter.verifyRollback(row)
       if(check?.verified!==true)throw Error('rollback_verification_failed')
       row.rollbackVerification=check;record('rolled_back');return row
-    }catch(error){row.rollbackFailure={reason:error.message==='rollback_verification_failed'?'rollback_verification_failed':'rollback_failed'};row.reason='rollback_failed';record('needs_attention',{reason:row.reason});return row}
+    }catch(error){const known=['rollback_verification_failed','rollback_not_authorized','rollback_source_mismatch','rollback_ref_drift','recovery_authorization_expired','approval_material_changed','approval_unavailable'];row.rollbackFailure={reason:known.includes(error.message)?error.message:'rollback_failed'};row.reason='rollback_failed';record('needs_attention',{reason:row.reason});return row}
   }
   async function deployAndVerify () {
     try{
@@ -23,7 +30,7 @@ function createWorkflow ({adapter,save,id=randomUUID(),initial=null,stopBeforeRe
       if(row.deployment?.state==='idle_required'&&row.deployment.applied===false){record('awaiting_idle');return row}
       record('deployed')
       row.runtime=await adapter.verify(row)
-      if(row.runtime?.verified!==true)return rollback({reason:row.runtime?.reason || 'runtime_verification_failed'})
+      if(row.runtime?.verified!==true)return rollback(verificationFailure(row.runtime))
       record('complete',{runtime:row.runtime});return row
     }catch(error){
       if(error.message==='administrator_required'){record('awaiting_administrator');return row}
@@ -107,7 +114,7 @@ function createWorkflow ({adapter,save,id=randomUUID(),initial=null,stopBeforeRe
         if(restarted.state==='idle_required'){record('awaiting_reload_idle');return row}
       }
       row.runtime=await adapter.verify(row)
-      if(row.runtime?.verified!==true)return await rollback({reason:row.runtime?.reason || 'runtime_verification_failed'})
+      if(row.runtime?.verified!==true)return await rollback(verificationFailure(row.runtime))
       record('complete',{runtime:row.runtime});return row
     }finally{busy=false}
   }

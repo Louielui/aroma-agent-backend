@@ -1,6 +1,18 @@
 'use strict'
 const fs=require('node:fs'),path=require('node:path'),cp=require('node:child_process')
 const {SHA}=require('./policy'),{digest,parseStatus,command}=require('./repository')
+function clientDiagnostics(result){
+  const stdout=result.stdout||'',stderr=result.stderr||'',stages=['identity','copy_sources','prepare_input','compile_input','compile_host','prepare_receipt','publish_client','register_host'],reasons=['client_install_unconfirmed','ConflictingInstallationMode','NodeRuntimeUnavailable','RepositoryIdentityUnavailable','RepositoryIdentityChanged','ReleaseAlreadyPrepared','GitBlobUnavailable','UnsafeSource','UncommittedHostSource','ClientPublicationFailed','HostRegistrationUnconfirmed','ClientAndHostRollbackFailed','HostRegistrationFailedAndRestored']
+  const types=['unconfirmed','System.Management.Automation.RuntimeException','System.Management.Automation.CommandNotFoundException','System.Management.Automation.MethodInvocationException','System.Management.Automation.ParameterBindingException','System.Management.Automation.ItemNotFoundException','System.Management.Automation.PSArgumentException','System.IO.IOException','System.IO.FileNotFoundException','System.IO.DirectoryNotFoundException','System.UnauthorizedAccessException','System.ArgumentException','System.InvalidOperationException'],ids=['unconfirmed','CommandNotFoundException','InvokeMethodOnNull','MethodInvocationException','ParameterBindingException','PathNotFound','ItemNotFoundException','UnauthorizedAccessException','InvalidOperationException','NativeCommandError','InvalidArgument','TypeNotFound','RuntimeException',...reasons]
+  const sources=['src/browserRead/nativeHost.cjs','src/browserRead/clientUpdate.js','src/browserRead/contract.js','src/browserRead/nativeProtocol.js','src/browserRead/operatorBroker.cjs','src/browserRead/nativeInput.cjs','src/browserOperator/NativeBrowserInput.cs','extensions/browser-read/manifest.json','extensions/browser-read/worker.js','extensions/browser-read/collector.js','extensions/browser-read/operator.js','extensions/browser-read/operator-panel.js','extensions/browser-read/sidepanel.html','extensions/browser-read/sidepanel.js','extensions/browser-read/sidepanel.css','extensions/browser-read/release.js']
+  let installer=null
+  const markers=String(stderr).match(/^IMAGINE_CLIENT_INSTALL (\{[^\r\n]{1,2000}\})\r?$/gm)||[]
+  if(markers.length===1)try{
+    const v=JSON.parse(markers[0].slice('IMAGINE_CLIENT_INSTALL '.length)),keys=Object.keys(v).sort().join(',')
+    if(['errorId,errorType,reason,stage','errorId,errorType,reason,sourceName,stage'].includes(keys)&&stages.includes(v.stage)&&reasons.includes(v.reason)&&types.includes(v.errorType)&&ids.includes(v.errorId)&&(!Object.hasOwn(v,'sourceName')||sources.includes(v.sourceName)))installer=v
+  }catch{}
+  return{exitCode:Number.isInteger(result.status)?result.status:null,timedOut:result.error?.code==='ETIMEDOUT',signal:/^SIG[A-Z0-9]{1,20}$/.test(result.signal||'')?result.signal:null,stdoutBytes:Buffer.byteLength(stdout),stdoutHash:digest(stdout),stderrBytes:Buffer.byteLength(stderr),stderrHash:digest(stderr),installer}
+}
 function overlayPlan (repository,snapshot,target) {
   if(!SHA.test(target||'')||!SHA.test(snapshot.head||'')||snapshot.verified!==true)throw Error('runtime_snapshot_unavailable')
   const blob=(sha,name)=>{try{return repository.runtimeGit(['rev-parse',sha+':'+name])}catch{return null}}
@@ -130,8 +142,8 @@ function createRuntime ({repository,dependencies,restartImpl=null,readinessImpl=
       const executable=path.join(process.env.SystemRoot||'C:/Windows','System32/WindowsPowerShell/v1.0/powershell.exe')
       guard()
       const result=cp.spawnSync(executable,['-NoProfile','-NonInteractive','-ExecutionPolicy','RemoteSigned','-File',path.join(root,script),'-PublishClient'],{windowsHide:true,shell:false,encoding:'utf8',timeout:90000})
-      if(result.status!==0)return{verified:false,reason:'client_publication_failed',bootCommit:backend.bootCommit,bridgeCommit:bridge.bootCommit}
-      try{clientPublication=JSON.parse(result.stdout);if(clientPublication.commit!==expected||clientPublication.registrationVerified!==true||require('../browserRead/clientUpdate').readInstallation({bootCommit:expected}).state!=='ready')throw Error('client_publication_unconfirmed')}catch{return{verified:false,reason:'client_publication_unconfirmed'}}
+      if(result.status!==0)return{verified:false,reason:'client_publication_failed',bootCommit:backend.bootCommit,bridgeCommit:bridge.bootCommit,diagnostics:clientDiagnostics(result)}
+      try{clientPublication=JSON.parse(result.stdout);if(clientPublication.commit!==expected||clientPublication.registrationVerified!==true||require('../browserRead/clientUpdate').readInstallation({bootCommit:expected}).state!=='ready')throw Error('client_publication_unconfirmed')}catch{return{verified:false,reason:'client_publication_unconfirmed',diagnostics:clientDiagnostics(result)}}
     }
     return{verified,expectedCommit:expected,bootCommit:backend.bootCommit,bridgeCommit:bridge.bootCommit,sourceVerified:source,smokePassed,regressionPassed:regression.exitCode===0&&regression.failed===0&&regression.passed>0,regression,clientPublication,checkedAt:new Date().toISOString()}
   }

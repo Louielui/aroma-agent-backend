@@ -4680,6 +4680,7 @@ actual Calendar page renders nonempty linked events as text and preserves all-da
 actual HTTP dialogue, planner and registration services retain the design and produce a reviewed draft without coding
 actual HTTP intake produces a saved proposal, reload restores it and natural confirmation creates one bounded handoff
 actual Owner credit answer and archive retain source-bound call evidence with no billing inference
+actual Windows installer packaging copies all reviewed blobs into an isolated fixture without registration
 actual app composition protects and mounts the read route with central selection and no provider fallback
 actual app employee profile is authenticated and refuses other routes without dispatching native or model work
 actual app serves only the synthetic operator fixture without login while every operator API remains authenticated
@@ -4690,6 +4691,7 @@ actual central settings and independent bilingual topic controls persist, follow
 actual component observations bind failure -> explicit correction -> tests -> adoption -> same loaded process; bilingual report states precise scope
 actual event detail chat includes source description, location and updated date
 actual fixed PowerShell projection preserves definitions and handles empty or unsupported triggers without touching Windows tasks
+actual installer failure reporting emits only a fixed stage and allowlisted error metadata
 actual model receipts require exact worker identities, and a snapshot never rewrites started invocations
 actual native browser input compiles and rejects an unapproved site before any desktop observation or input
 actual native launcher compiles and refuses a different extension before opening the broker
@@ -5195,8 +5197,10 @@ cleanup is a NO-OP — returns undefined and does not remove the dir (B2-1 prese
 cleanup: remove the disposable directories this suite created
 client body never carries detail / raw / message / stack
 client metadata route refuses browser origins and command-shaped payloads and returns only job occupancy
+client publication failures retain diagnostics and use the existing exact-source rollback category
 client publication refuses a foreign package, extra Chrome permissions and a mismatched runtime
 client status refuses active and unknown jobs without returning task contents or granting operations
+client subprocess failures preserve safe exit and stage evidence without raw output or credentials
 closed authenticated model metadata stays readable during every active worker lane
 closed grammar refuses quotes, negation, pasted prompts and generic approval
 closed or corrupt roots, turn replay, and failure to persist prevent dispatch
@@ -6949,6 +6953,7 @@ the closed Owner entry accepts identifiers only and adds no execution or deploym
 the closed enum is unchanged by this repair
 the collapsed sections keep every promise they had
 the common phrasings are all caught — where the claim NAMES the source
+the complete Windows installer prepares real compiled host artifacts in a private profile with registry access fenced
 the complete search-to-quote chain prioritizes actually cited sources in Chinese and English across domains
 the completion timer never overlaps retains and stop cannot resurrect its loop
 the composer and the message column share ONE centre axis
@@ -7392,6 +7397,7 @@ unknown project, paths, commands and non-Owner requests cannot reach source or e
 unknown proposalId → 404
 unknown reason is not interpreted; successful adoption prerequisite never becomes a product fix
 unknown subscription errors fail closed without leaking details or consuming source attempts
+unknown verification reasons and expired recovery still refuse before a rollback write
 unknown version is rejected
 unknown, conflicting or quoted clauses cannot silently change the fixed recipe
 unlisted backend, CI, launcher, dependency and storage changes require the Owner instead of defaulting low risk
