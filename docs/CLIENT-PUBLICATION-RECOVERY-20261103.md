@@ -15,8 +15,9 @@ remain unknown and are not fabricated by this repair.
 
 The actual Windows PowerShell 5.1 packaging loop, executed against a private Git
 fixture, fails at `Get-FileHash` with `CommandNotFoundException` after the first
-copy. A read-only native-command probe confirms this host lacks that command,
-while JSON conversion, Add-Type and file-management cmdlets are available. This
+copy. A read-only native-command probe confirms the inherited PSModulePath hides
+that command; omitting that value only in the probe child restores it. JSON
+conversion, Add-Type and file-management cmdlets remain available. This
 is a reproduced environmental failure consistent with the original partial
 package, not a claim that missing historical stderr was recovered.
 

@@ -25,7 +25,7 @@ function Read-BrowserGitBlob([string]$name){
   try{[void]$process.Start();$process.StandardOutput.BaseStream.CopyTo($buffer);$process.WaitForExit();if($process.ExitCode -ne 0){throw 'GitBlobUnavailable'};return $buffer.ToArray()}finally{$buffer.Dispose();$process.Dispose()}
 }
 function Get-BrowserFileHash([string]$file){
-  # Windows PowerShell on this host does not expose Get-FileHash. Hash bytes
+  # The inherited module environment can hide Get-FileHash. Hash bytes
   # directly with the same built-in SHA256; do not change module/security settings.
   $hasher=[Security.Cryptography.SHA256]::Create();$stream=$null
   try{$stream=[IO.File]::OpenRead($file);return ([BitConverter]::ToString($hasher.ComputeHash($stream))).Replace('-','').ToLowerInvariant()}finally{if($null -ne $stream){$stream.Dispose()};$hasher.Dispose()}
