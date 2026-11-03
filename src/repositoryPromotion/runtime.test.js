@@ -38,3 +38,14 @@ test('a forward rollback to a pre-policy tree retains a pinned reload helper out
  const repository={artifacts,git:(args,options)=>require('./repository').command(root,args,options)};const canonical=repository.git(['show',control+':'+helper],{buffer:true});const staged=stageReloadControl(repository,control);assert.equal(digest(fs.readFileSync(staged.file)),digest(canonical));assert.ok(!staged.file.startsWith(root+path.sep));
  fs.writeFileSync(staged.file,'tampered');assert.throws(()=>stageReloadControl(repository,control),/reload_control_changed/);
 });
+
+test('rollback client installation retains reviewed control bytes outside the older restored installer',t=>{
+ const {stageClientControl}=require('./runtime'),{digest}=require('./repository'),dir=fs.mkdtempSync(path.join(os.tmpdir(),'client-control-'));t.after(()=>{assert.ok(path.resolve(dir).startsWith(path.resolve(os.tmpdir())+path.sep));fs.rmSync(dir,{recursive:true,force:true})})
+ const root=path.join(dir,'repo'),artifacts=path.join(dir,'artifacts'),relative='scripts/browser/install-read-host.ps1';fs.mkdirSync(path.dirname(path.join(root,relative)),{recursive:true})
+ const git=(...args)=>cp.execFileSync('git',['-c','user.name=Fixture','-c','user.email=fixture@example.test','-C',root,...args],{encoding:'utf8',stdio:'pipe'}).trim()
+ git('init','-b','main');fs.writeFileSync(path.join(root,relative),"param([switch]$PublishClient)\nGet-FileHash 'old-fixture'\n");git('add','.');git('commit','-m','old installer');const before=git('rev-parse','HEAD'),tree=git('rev-parse','HEAD^{tree}')
+ const bytes=fs.readFileSync(path.resolve(__dirname,'../../',relative));fs.writeFileSync(path.join(root,relative),bytes);git('add','.');git('commit','-m','reviewed installer repair');const reviewed=git('rev-parse','HEAD'),rollback=git('commit-tree',tree,'-p',reviewed,'-m','restore old source');git('merge','--ff-only',rollback)
+ const repository={artifacts,git:(args,options)=>require('./repository').command(root,args,options)},expected=repository.git(['show',reviewed+':'+relative],{buffer:true}),control=stageClientControl(repository,reviewed)
+ assert.equal(control.controlCommit,reviewed);assert.equal(control.hash,digest(expected));assert.deepEqual(fs.readFileSync(control.file),expected);assert.ok(!control.file.startsWith(root+path.sep));assert.ok(!fs.readFileSync(path.join(root,relative)).equals(expected))
+ fs.writeFileSync(control.file,'changed control');assert.throws(()=>stageClientControl(repository,reviewed),/client_control_changed/)
+})
