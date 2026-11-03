@@ -41,7 +41,7 @@ function main () {
   const taskStore = require('../../src/core/operating/runStore').createRunStore({ dir: path.join(workerRoot, 'project-tasks'), workflow: 'project_task' })
   const taskRegistry = require('../../src/core/projectTasks/contract').createRegistry(taskStore)
   const resolveRecipe = taskRegistry.resolve
-  const repositoryBudget=require('../../src/core/projectTasks/repositoryBudget').createRepositoryBudget({dir:path.join(workerRoot,'project-task-usage'),root:repo})
+  const repositoryBudget=require('../../src/core/projectTasks/repositoryBudget').createRepositoryBudget({dir:path.join(workerRoot,'project-task-usage')})
   const repositoryLocks=require('../../src/actions/store').createStore({dir:path.join(workerRoot,'project-task-locks')})
   const repositoryInventory=require('../../src/core/projectTasks/repositoryScope').createInventory({root:repo})
   const projectSource = require('../../src/core/projectWork/source').createSource({ root: repo, resolveRecipe })
@@ -57,9 +57,6 @@ function main () {
   const observeLive = require('../../src/core/projectWork/liveVerification').createClient({token:env.HUB_TOKEN || process.env.HUB_TOKEN})
   const projectWork = require('../../src/core/projectWork/service').createProjectWork({
     source: projectSource, providers: workerProviders, enabled, invocationLedger, repositoryBudget, observeLive, resolveRecipe, catalogueRecipes: taskRegistry.catalogue,
-    // Recovery cannot enqueue extra indexing calls outside its original budget.
-    // The existing Owner setting must already be paused; this never changes it.
-    recoveryReady: () => {if(!memoryRuntime)return true;const capture=memoryRuntime.status(),consolidation=memoryRuntime.consolidation.status();return capture.enabled===false && capture.active===false && consolidation.busy===false},
     repositoryPreflight: () => repositoryPromotion.begin(), onAccepted: run => repositoryPromotion.enqueue(run),
     store: require('../../src/core/operating/runStore').createRunStore({ dir: path.join(workerRoot, 'project-runs'), workflow: 'project_work' }),
     onEvent: value => memoryRuntime && memoryRuntime.event('worker', 'project-work:' + value.id + ':' + value.stage + ':' + value.at, JSON.stringify(value), 'measured_result', value.at) })

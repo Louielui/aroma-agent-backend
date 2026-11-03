@@ -35,4 +35,4 @@ function createWorkReader ({ workerRoot, repoRoot, activity = () => [], clock = 
   }
   return {read:()=>{if(!pending)pending=collect().finally(()=>{pending=null});return pending}}
 }
-module.exports={createWorkReader,FOLDERS,pin,readAt}
+module.exports={createWorkReader,FOLDERS}
