@@ -14,6 +14,12 @@ test('progress lists more than the diagnostic five-record sample without merging
  const f=fixture(t),ids=[];for(let i=0;i<12;i++){const r=f.record();ids.push(r.id);f.save('project-runs',r)}f.writeLedger([])
  const v=await f.read({limit:20});assert.equal(v.records.length,12);assert.equal(new Set(v.records.map(r=>r.id)).size,12);assert.equal(v.readOnly,true);assert.ok(v.records.every(r=>r.currentRunning==='unknown'&&r.kind==='project-runs'));assert.equal(v.omitted,0)
 })
+test('large canonical source results remain readable as metadata while desktop visibility stays unverified',async t=>{
+ const f=fixture(t),r={...f.record('completed'),...require('../core/projectWork/presentationFixture.cjs').fixture()};r.codexThread={id:randomUUID(),workId:r.id,source:'actual_coding_provider_thread'};f.save('project-runs',r);f.writeLedger([])
+ const p=path.join(f.workerRoot,'project-runs',r.id+'.json'),before=sha(fs.readFileSync(p));assert.ok(fs.statSync(p).size>2*1024*1024)
+ const v=await f.read({id:r.id});assert.equal(v.records[0].completion.candidateRecorded,true);assert.equal(v.records[0].codexThread.id,r.codexThread.id);assert.equal(v.records[0].codexThread.appVisibility,'not_verified');assert.equal(v.codexAppThreadBinding,'recorded_worker_thread');assert.ok(JSON.stringify(v).length<64000);assert.equal(sha(fs.readFileSync(p)),before)
+ r.sections=['x'.repeat(require('./workRecords').CANONICAL_WORK_LIMIT)];f.save('project-runs',r);const blocked=await f.read({id:r.id});assert.equal(blocked.lookup,'unavailable');assert.ok(blocked.unavailableRecords.some(x=>x.reason==='record_limit'))
+})
 test('an exact old work ID remains readable beyond scan limits; absent or corrupt sources never become zero work',async t=>{
  const f=fixture(t),target=f.record();target.id='ffffffff-ffff-4fff-8fff-ffffffffffff';f.save('project-runs',target)
  for(let i=0;i<251;i++){const r=f.record();r.id=i.toString(16).padStart(8,'0')+'-0000-4000-8000-000000000000';f.save('project-runs',r)}f.writeLedger([])

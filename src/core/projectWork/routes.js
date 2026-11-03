@@ -8,6 +8,11 @@ function createProjectRouter ({ bootCommit, env = process.env, request = input =
   const call = async (res, input) => { try { const value = await request(input); res.set('Cache-Control', 'no-store').status(value.error ? 409 : 200).json(value) } catch (_) { res.status(503).json({ error: 'workflow_unavailable' }) } }
   router.get('/api/v1/project-work', (req, res) => call(res, { op: 'list' }))
   router.get('/api/v1/project-work/:id', (req, res) => { if (!ID.test(req.params.id || '')) return res.status(400).json({ error: 'invalid_request' }); call(res, { op: 'get', id: req.params.id }) })
+  router.get('/api/v1/project-work/:id/evidence/:part',(req,res)=>{
+    const {id,part}=req.params,q=req.query
+    if(!ID.test(id||'')||!['before','after','tests','baseline','review'].includes(part)||Object.keys(q).some(k=>!['file','offset','patch'].includes(k))||!/^\d{1,9}$/.test(q.offset||'0')||!/^[a-f0-9]{64}$/.test(q.patch||'')||(['before','after'].includes(part)?typeof q.file!=='string'||q.file.length>240:q.file!==undefined))return res.status(400).json({error:'invalid_request'})
+    call(res,{op:'evidence',id,part,offset:Number(q.offset||0),patchHash:q.patch,...(q.file!==undefined?{file:q.file}:{})})
+  })
   router.get('/api/v1/project-work/:id/browser/:name', async (req, res) => {
     if (!ID.test(req.params.id || '') || !require('../../workers/execution/browserEvidence').NAMES.includes(req.params.name) || Object.keys(req.query).some(k => k !== 'phase') || (req.query.phase !== undefined && !['before','after'].includes(req.query.phase))) return res.status(400).json({ error: 'invalid_request' })
     try {

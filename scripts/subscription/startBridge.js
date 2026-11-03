@@ -55,8 +55,11 @@ function main () {
     root: repo, artifacts: promotionDirectory(),
     privateRefs: ['refs/heads/backup/imagine-20261012-dirty-checkpoint'], resolveRecipe, isolated: isolatedReceipt, invocationLedger })
   const observeLive = require('../../src/core/projectWork/liveVerification').createClient({token:env.HUB_TOKEN || process.env.HUB_TOKEN})
+  const threadTitles=require('../../src/subscription/workThreadTitles')
+  const workTitles=threadTitles.createPublisher({client:threadTitles.createClient({executable:chatExecutable,cwd}),store:require('../../src/actions/store').createStore({dir:path.join(workerRoot,'project-thread-progress')})})
   const projectWork = require('../../src/core/projectWork/service').createProjectWork({
     source: projectSource, providers: workerProviders, enabled, invocationLedger, repositoryBudget, observeLive, resolveRecipe, catalogueRecipes: taskRegistry.catalogue,
+    visibleCodexWork:true,onProgress:value=>{workTitles.update(value).catch(()=>{/* The persisted title receipt remains unavailable. */})},
     // Recovery cannot enqueue extra indexing calls outside its original budget.
     // The existing Owner setting must already be paused; this never changes it.
     recoveryReady: () => {if(!memoryRuntime)return true;const capture=memoryRuntime.status(),consolidation=memoryRuntime.consolidation.status();return capture.enabled===false && capture.active===false && consolidation.busy===false},
