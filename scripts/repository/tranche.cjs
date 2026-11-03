@@ -5,7 +5,7 @@ const {command}=require('../../src/repositoryPromotion/repository')
 const {promotionDirectory}=require('../../src/repositoryPromotion/paths')
 function argumentsOf (argv) {
   const action=argv.shift(),options={}
-  if(!['begin','finish','resume','status','install-hooks','hook-before-commit','hook-after-commit','hook-before-push'].includes(action))throw Error('invalid_repository_action')
+  if(!['begin','finish','prepare-review','resume','status','install-hooks','hook-before-commit','hook-after-commit','hook-before-push'].includes(action))throw Error('invalid_repository_action')
   while(argv.length){const name=argv.shift(),value=argv.shift();if(!['--root','--files','--message','--id'].includes(name)||!value||Object.hasOwn(options,name))throw Error('invalid_repository_argument');options[name]=value}
   return{action,options}
 }
@@ -37,10 +37,10 @@ async function main () {
     if(action==='begin')console.log(JSON.stringify({branch:row.branch,head:row.head,originMain:row.originMain,ahead:row.ahead,behind:row.behind,unpublished:row.unpublished.length,dirty:row.dirty.length,preservation:row.preservation.directory,runtimeCommit:row.runtimeObserved,next:row.next}))
     return
   }
-  const first=action==='resume'?await coordinator.resume(options['--id']):await coordinator.finish({files:options['--files']?.split(','),message:options['--message']||'Promote accepted Imagine development tranche'})
+  const first=action==='resume'?await coordinator.resume(options['--id']):await coordinator.finish({files:options['--files']?.split(','),message:options['--message']||'Promote accepted Imagine development tranche',stopBeforeReview:action==='prepare-review'})
   const row=await require('../../src/repositoryPromotion/workflow').waitForIdle(first,{coordinator})
   console.log(JSON.stringify({id:row.id,state:row.state,reason:row.reason||null,commit:row.merge?.commit||row.committed?.commit||null,pr:row.pr,runtime:row.runtime}))
-  if(!['complete','awaiting_idle','awaiting_reload_idle','awaiting_administrator'].includes(row.state))process.exitCode=1
+  if(!['complete','awaiting_idle','awaiting_reload_idle','awaiting_administrator','awaiting_review','reviewed_hold'].includes(row.state))process.exitCode=1
 }
 function validatePush (lines,repository) {
     for(const line of lines){

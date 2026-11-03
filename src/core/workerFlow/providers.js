@@ -213,7 +213,8 @@ function createProviders ({ executable, root, allowCredits = false }) {
     async reviewOrder (packet, { signal, emit = () => {} } = {}) {
       await claudeStatus({ cwd: root })
       const files = packet.workOrder.allowedFiles
-      const review = await runTextReview(textReviewArgs(files, 'Review only the supplied work order, source changes and measured tests for correctness, scope and preservation of existing behavior.'), { cwd: root, timeoutMs: 180000, signal, input: JSON.stringify(packet) }, files)
+      const reviewInput=require('./reviewPacket').reviewPacket(packet)
+      const review = await runTextReview(textReviewArgs(files, 'Review only the supplied work order, source changes and measured tests for correctness, scope and preservation of existing behavior. Host-compacted packets contain every differing character and complete context lines; omitted outer bytes are identical and hash-bound, not line-reviewed.'), { cwd: root, timeoutMs: 180000, signal, input: JSON.stringify(reviewInput) }, files)
       // New UI candidates must pass both correctness and actual-pixel review.
       // Existing archived receipts are never rewritten or replayed.
       if (review.verdict === 'pass' && require('../../design/uiDesign').forFiles(files)) {

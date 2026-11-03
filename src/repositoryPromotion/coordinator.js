@@ -87,6 +87,15 @@ function createCoordinator ({root,runtimeRoot,artifacts,privateRefs=[],invocatio
         const cwd=path.join(runs,row.id,'review-empty');fs.mkdirSync(cwd,{recursive:true})
         return checks.runReview({packet,cwd,directory:path.join(runs,row.id,'review')})
       },
+      recheckReview:async row=>{
+        require('./committedCandidate').verifyPreparedTests({root,artifacts,row})
+        const pre=await repository.inspect(),pr=await github.inspectPR(row.pr.number),refs=repository.remoteRefs()
+        if(pre.head!==row.committed.commit||pre.remoteMain!==row.preflight.remoteMain||pre.runtimeObserved!==row.preflight.runtimeExpected||repository.runtimeGit(['rev-parse','HEAD'])!==row.runtimeSnapshot.head||
+          row.publication?.verified!==true||row.publication.commit!==row.committed.commit||!refs.refs.some(r=>r.ref===row.publication.remoteRef&&r.sha===row.committed.commit)||
+          pr.head!==row.committed.commit||pr.base!==row.preflight.remoteMain||pr.state!=='open'||pr.unresolvedThreads!==0)return false
+        for(const f of require('./runtime').overlayPlan(repository,row.runtimeSnapshot,row.committed.commit))if(!f.deleted&&digest(fs.readFileSync(path.join(runtimeRoot,f.path)))!==f.sha256)return false
+        return true
+      },
       evidence:async row=>{
         const pre=await repository.inspect(),pr=await github.inspectPR(row.pr.number)
         const authorizedExceptions=exceptions(row.committed.commit,row.reviewPacket.changedPaths)
@@ -156,7 +165,7 @@ function createCoordinator ({root,runtimeRoot,artifacts,privateRefs=[],invocatio
   async function finish (options) {
     acquire();const id=crypto.randomUUID(),file=path.join(runs,id+'.json')
     try{
-      const workflow=createWorkflow({id,adapter:adapter(options),save:row=>atomic(file,row)})
+      const workflow=createWorkflow({id,adapter:adapter(options),stopBeforeReview:options.stopBeforeReview===true,save:row=>atomic(file,row)})
       const result=await workflow.finish();atomic(path.join(artifacts,'latest.json'),{id,state:result.state,record:file})
       return result
     }finally{release()}

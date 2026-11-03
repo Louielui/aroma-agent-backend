@@ -9,12 +9,22 @@ const { DEFAULT_MODEL, REASONING_EFFORTS, CHAT_MODELS, isChatModel } = require('
 // Existing non-chat workloads keep their transport default; chat binds its own model.
 const MODEL = 'gpt-6-astra'
 const CODES = new Set(['subscription_login_required', 'subscription_limit_reached', 'subscription_unavailable', 'subscription_model_unavailable', 'subscription_invalid_output',...require('../actions/usageBudget').ERRORS])
+function safeDiagnostics(value={}){
+ const reasons=['process_error','process_exit','stdin_error','transport_timeout','transport_aborted','stdout_limit','rpc_invalid_json','rpc_server_request_refused','completion_output_limit','provider_error','provider_request_rejected','unexpected_model_item']
+ const d={exitCode:Number.isInteger(value.exitCode)?value.exitCode:null,parsedJson:value.parsedJson===true,subtype:['success','error_max_turns','error_during_execution','error_max_budget_usd','error_max_structured_output_retries'].includes(value.subtype)?value.subtype:'unknown',stdoutBytes:Number.isSafeInteger(value.stdoutBytes)&&value.stdoutBytes>=0?value.stdoutBytes:null,stderrBytes:Number.isSafeInteger(value.stderrBytes)&&value.stderrBytes>=0?value.stderrBytes:null}
+ if(reasons.includes(value.reason))d.reason=value.reason
+ for(const key of ['timeoutMs','limitBytes','limitChars','receivedChars'])if(Number.isSafeInteger(value[key])&&value[key]>=0)d[key]=value[key]
+ if(['SIGTERM','SIGKILL','SIGINT','SIGABRT'].includes(value.signal))d.signal=value.signal
+ if(['quota','authentication','validation','other'].includes(value.providerCategory))d.providerCategory=value.providerCategory
+ return d
+}
 class SubscriptionError extends Error {
-  constructor (code = 'subscription_unavailable') {
+  constructor (code = 'subscription_unavailable', diagnostic) {
     const safe = CODES.has(code) ? code : 'subscription_unavailable'
     super(safe)
     this.name = 'SubscriptionError'
     this.code = safe
+    if(diagnostic)this.safeDiagnostics=safeDiagnostics(diagnostic)
   }
 }
 
@@ -59,22 +69,27 @@ function threadParams (cwd, system, model = MODEL) {
 function wireError (error) {
   // Inspect only to classify. Provider error text never leaves this boundary.
   const value = JSON.stringify(error || {})
-  if (/usage_limit|rate_limit|quota|limit reached/i.test(value)) return new SubscriptionError('subscription_limit_reached')
-  if (/unauthorized|not authenticated|login required|token.*expired/i.test(value)) return new SubscriptionError('subscription_login_required')
-  return new SubscriptionError()
+  // An explicit context/schema/output rejection must not become a quota error
+  // merely because its message contains the words "limit reached".
+  if(/context_length_exceeded|input.*too.*large|invalid.*schema|max_output/i.test(value))return new SubscriptionError('subscription_unavailable',{reason:'provider_request_rejected',providerCategory:'validation'})
+  if (/usage_limit|rate_limit|quota|limit reached/i.test(value)) return new SubscriptionError('subscription_limit_reached',{reason:'provider_error',providerCategory:'quota'})
+  if (/unauthorized|not authenticated|login required|token.*expired/i.test(value)) return new SubscriptionError('subscription_login_required',{reason:'provider_error',providerCategory:'authentication'})
+  return new SubscriptionError('subscription_unavailable',{reason:'provider_error',providerCategory:'other'})
 }
 
-function connect ({ executable, cwd, timeoutMs = 120000, env = process.env, config = LOCKED_CONFIG, onToolCall }) {
-  assertLiveEgressAllowed('openai-codex')
+function connect ({ executable, cwd, timeoutMs = 120000, env = process.env, config = LOCKED_CONFIG, onToolCall, spawnImpl=spawn }) {
+  if(spawnImpl===spawn)assertLiveEgressAllowed('openai-codex')
   const args = ['app-server', '--stdio']
   for (const [key, value] of Object.entries(config)) args.push('-c', key + '=' + configValue(value))
-  const child = spawn(executable, args, { cwd, env: cleanEnvironment(env), windowsHide: true, shell: false, stdio: ['pipe', 'pipe', 'pipe'] })
+  const child = spawnImpl(executable, args, { cwd, env: cleanEnvironment(env), windowsHide: true, shell: false, stdio: ['pipe', 'pipe', 'pipe'] })
   const events = new EventEmitter()
   const pending = new Map()
   let nextId = 0
   let buffer = ''
   let closed = false
   let received = 0
+  let stderrBytes=0
+  const error=(reason,extra={})=>new SubscriptionError('subscription_unavailable',{reason,stdoutBytes:received,stderrBytes,...extra})
   const fail = (error) => {
     if (closed) return
     closed = true
@@ -85,21 +100,21 @@ function connect ({ executable, cwd, timeoutMs = 120000, env = process.env, conf
     child.kill()
     clearTimeout(timer)
   }
-  const timer = timeoutMs > 0 ? setTimeout(() => fail(new SubscriptionError()), timeoutMs) : null
-  child.on('error', () => fail(new SubscriptionError()))
-  child.on('exit', () => fail(new SubscriptionError()))
-  child.stdin.on('error', () => fail(new SubscriptionError()))
-  child.stderr.resume() // Never log prompts, tokens, paths, or provider bodies.
+  const timer = timeoutMs > 0 ? setTimeout(() => fail(error('transport_timeout',{timeoutMs})), timeoutMs) : null
+  child.on('error', () => fail(error('process_error')))
+  child.on('exit', (exitCode,signal) => fail(error('process_exit',{exitCode,signal})))
+  child.stdin.on('error', () => fail(error('stdin_error')))
+  child.stderr.on('data',chunk=>{stderrBytes+=Buffer.byteLength(chunk)}) // Count only; never retain raw provider/credential text.
   child.stdout.setEncoding('utf8')
   child.stdout.on('data', data => {
     received += Buffer.byteLength(data)
-    if (received > 4 * 1024 * 1024) return fail(new SubscriptionError())
+    if (received > 4 * 1024 * 1024) return fail(error('stdout_limit',{limitBytes:4*1024*1024}))
     buffer += data
     let at
     while ((at = buffer.indexOf('\n')) !== -1) {
       const line = buffer.slice(0, at); buffer = buffer.slice(at + 1)
       let message
-      try { message = JSON.parse(line) } catch (_) { fail(new SubscriptionError()); return }
+      try { message = JSON.parse(line) } catch (_) { fail(error('rpc_invalid_json')); return }
       if (message.id !== undefined && message.method) {
         if (message.method === 'item/tool/call' && typeof onToolCall === 'function') {
           Promise.resolve().then(() => onToolCall(message.params)).then(result => {
@@ -109,7 +124,7 @@ function connect ({ executable, cwd, timeoutMs = 120000, env = process.env, conf
         }
         // No approval, tool call, credential refresh, or user-input request is delegated.
         child.stdin.write(JSON.stringify({ id: message.id, error: { code: -32601, message: 'Text-only client does not provide this method' } }) + '\n')
-        fail(new SubscriptionError())
+        fail(error('rpc_server_request_refused'))
         return
       }
       if (message.id !== undefined) {
@@ -234,7 +249,7 @@ function createSession (options = {}) {
       active = rpc
       const stopped = new Promise((resolve, reject) => {
         fail = reject
-        abort = () => reject(new SubscriptionError())
+        abort = () => reject(new SubscriptionError('subscription_unavailable',{reason:signal?.aborted?'transport_aborted':'transport_timeout',timeoutMs:options.timeoutMs||120000}))
         active.events.once('failure', fail)
         if (signal) signal.addEventListener('abort', abort, { once: true })
         timer = setTimeout(abort, options.timeoutMs || 120000)
@@ -310,7 +325,7 @@ async function completeUnobserved (options, input) {
         }
         if (message.method === 'turn/completed') {
           if (!p.turn || p.turn.status !== 'completed') reject(wireError(p.turn && p.turn.error))
-          else if (!text || text.length > 100000) reject(new SubscriptionError('subscription_invalid_output'))
+          else if (!text || text.length > 100000) reject(new SubscriptionError('subscription_invalid_output',{reason:'completion_output_limit',limitChars:100000,receivedChars:text.length}))
           else resolve({ text, model: thread.model, latencyMs: Date.now() - start, stopReason: 'end_turn', billing: 'chatgpt-subscription', ...(allowance.usageMode ? { usageMode: allowance.usageMode } : {}), usageBasis:'provider_last_turn_usage', usage: require('../investigation/invocations').projectUsage(usage) })
         }
       }
@@ -333,4 +348,4 @@ async function completeUnobserved (options, input) {
   })
 }
 
-module.exports = { MODEL, LOCKED_CONFIG, SubscriptionError, cleanEnvironment, threadParams, preflight, connect, checkSubscription, complete, createSession, configValue, withClient, listSubscriptionModels, imageInputs }
+module.exports = { MODEL, LOCKED_CONFIG, SubscriptionError, safeDiagnostics, cleanEnvironment, threadParams, preflight, connect, checkSubscription, complete, createSession, configValue, withClient, listSubscriptionModels, imageInputs }

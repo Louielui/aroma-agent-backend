@@ -18,10 +18,10 @@ function createProjectRouter ({ bootCommit, env = process.env, request = input =
   })
   router.post('/api/v1/project-work', (req, res) => {
     if (!sameOrigin(req)) return res.status(403).json({ error: 'same_origin_required' })
-    const b = req.body, shapes = { renew:['op','id'], prepare: ['op', 'projectId', 'recipe', 'requestId'], approve: ['op', 'id', 'hash', 'nonce'], cancel: ['op', 'id'] }
+    const b = req.body, shapes = { renew:['op','id'], prepareRecovery:['op','id','requestId'], approveRecovery:['op','id','hash','nonce'], prepare: ['op', 'projectId', 'recipe', 'requestId'], approve: ['op', 'id', 'hash', 'nonce'], cancel: ['op', 'id'] }
     if (b?.op === 'prepare' && Object.hasOwn(b,'repairOf')) { if(!ID.test(b.repairOf || ''))return res.status(400).json({error:'invalid_request'}); shapes.prepare.push('repairOf') }
-    if (!req.is('application/json') || !b || Array.isArray(b) || !Object.hasOwn(shapes, b.op) || Object.keys(b).sort().join(',') !== shapes[b.op].sort().join(',') || !ID.test((b.op === 'prepare' ? b.requestId : b.id) || '') || (b.op === 'approve' && (!/^[a-f0-9]{64}$/.test(b.hash || '') || !/^[a-f0-9]{48}$/.test(b.nonce || '')))) return res.status(400).json({ error: 'invalid_request' })
-    call(res, b.op === 'prepare' ? { ...b, bootCommit } : b)
+    if (!req.is('application/json') || !b || Array.isArray(b) || !Object.hasOwn(shapes, b.op) || Object.keys(b).sort().join(',') !== shapes[b.op].sort().join(',') || !ID.test((b.op === 'prepare' ? b.requestId : b.id) || '') || (b.op==='prepareRecovery'&&!ID.test(b.requestId||'')) || (['approve','approveRecovery'].includes(b.op) && (!/^[a-f0-9]{64}$/.test(b.hash || '') || !/^[a-f0-9]{48}$/.test(b.nonce || '')))) return res.status(400).json({ error: 'invalid_request' })
+    call(res, ['prepare','prepareRecovery'].includes(b.op) ? { ...b, bootCommit } : b)
   })
   return router
 }
