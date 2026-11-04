@@ -3316,6 +3316,7 @@ const CATALOGUE = Object.freeze({
   'assistant.archTitle': { zh: '通用助手入口', en: 'Universal assistant entrance' },
   'assistant.archCurrent': { zh: '一般概念解釋及明確文字翻譯走聊天入口；不自動查公司資料或產生操作提案。概念內容不誤當公司狀況；具名公司及當前狀況仍保留證據核對，轉題沿用當前要求。', en: 'General definitions and explicit supplied-text transformations use chat without automatic company reads or operation offers. Concept details are not treated as company observations; named-company/current facts retain evidence checks. New topics follow the current request.' },
   'assistant.archLimits': { zh: '語句辨識有界；其他問法沿用現有語意與證據流程。公開資料查詢另有獨立的有界訂閱搜尋路徑；搜尋結果不等於即時觀測，不保證任何問題均能正確回答。', en: 'Recognition is bounded; other phrasing uses existing semantic and evidence workflows. Public information has a separate bounded subscription retrieval path; search results are not live observations. Universal correctness is not guaranteed.' },
+  'assistant.enumerationCandidate': { zh: '設計建議中的開放問題列舉已加入有界核對：項數、實列問題及業務敘述分開判斷。修正只經離線驗證；正式驗收因仍有誤刪而暫停，不能宣稱整體理解已通過。', en: 'Design advice now has bounded checks for enumerated open questions, separating the stated count, listed questions and business assertions. This repair is offline-verified only; native acceptance remains paused after false withholding and does not establish overall understanding.' },
   'publicSearch.title': {zh:'即時公開資料查詢 v1',en:'Current public information v1'},
   'publicSearch.details': {zh:'來源與核對細節',en:'Source checks and excerpts'},
   'publicSearch.dayColumn': {zh:'星期',en:'Day'},

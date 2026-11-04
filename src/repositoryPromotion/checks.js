@@ -1,5 +1,5 @@
 'use strict'
-const fs=require('node:fs'),path=require('node:path'),cp=require('node:child_process')
+const fs=require('node:fs'),path=require('node:path'),cp=require('node:child_process'),os=require('node:os')
 const {digest,command}=require('./repository')
 const AUTHORIZED_SKIP_NAMES=Object.freeze([
   '*** the observer names a refusal for each zero case, so no block is unexplained ***',
@@ -21,7 +21,10 @@ function cleanTestEnv (dependencies,data,artifacts) {
 async function runTests ({root,dependencies,directory,files=null,tree=null,commit=null,timeoutMs=900000}) {
   fs.mkdirSync(directory,{recursive:true})
   const data=fs.mkdtempSync(path.join(directory,'data-')),artifacts=fs.mkdtempSync(path.join(directory,'artifacts-')),logPath=path.join(directory,'tests.tap')
-  const fd=fs.openSync(logPath,'w'),args=['--test','--test-reporter=tap',...(files || [])]
+  // Keep every test and its existing deadline; bound competing file workers so
+  // Windows/Git fixtures are not starved by the host's large logical CPU count.
+  const fileConcurrency=Math.min(8,Math.max(1,(os.availableParallelism?.()||os.cpus().length)-1))
+  const fd=fs.openSync(logPath,'w'),args=['--test','--test-concurrency='+fileConcurrency,'--test-reporter=tap',...(files || [])]
   const result=await new Promise(resolve=>{
     const child=cp.spawn(process.execPath,args,{cwd:root,env:cleanTestEnv(dependencies,data,artifacts),windowsHide:true,shell:false,stdio:['ignore',fd,fd]})
     let settled=false,timedOut=false
@@ -30,7 +33,7 @@ async function runTests ({root,dependencies,directory,files=null,tree=null,commi
     child.once('error',()=>done(null));child.once('close',done)
   })
   fs.closeSync(fd)
-  const receipt={...parseTests(fs.readFileSync(logPath,'utf8'),result.exitCode),timedOut:result.timedOut,commit,tree,logPath,dataRoot:data,artifactRoot:artifacts,finishedAt:new Date().toISOString(),producer:'node-test-isolated'}
+  const receipt={...parseTests(fs.readFileSync(logPath,'utf8'),result.exitCode),timedOut:result.timedOut,fileConcurrency,commit,tree,logPath,dataRoot:data,artifactRoot:artifacts,finishedAt:new Date().toISOString(),producer:'node-test-isolated'}
   fs.writeFileSync(path.join(directory,'tests.json'),JSON.stringify(receipt,null,2)+'\n')
   return receipt
 }
