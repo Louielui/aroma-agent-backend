@@ -187,7 +187,8 @@ function enforceRouteEvidence (input) {
   // A host-reviewed no-read recommendation must also check a reviewer's edits,
   // even when the keyword router called the original question BUSINESS_QUERY.
   if (!route || (route.route !== 'CONVERSATION' && input.reviewedNoReadAdvice !== true)) return none
-  const definition = generalRequestKind(message) === 'definition'
+  const generalKind = generalRequestKind(message)
+  const definition = generalKind === 'definition'
 
   const removedSpans = []
   const withheld = []
@@ -209,7 +210,7 @@ function enforceRouteEvidence (input) {
       if (explicitNoun) subject = explicitNoun
       // Conversation evidence is neither a business read nor permission to
       // bypass this whole reply. Check only a complete typed speech-count claim.
-      const conversation = subject === null ? checkConversationClaim(s, input.conversationEvidence) : null
+      const conversation = subject === null && generalKind !== 'supplied_text' ? checkConversationClaim(s, input.conversationEvidence) : null
       if (conversation) {
         if (!conversation.supported) {
           withheld.push(s)

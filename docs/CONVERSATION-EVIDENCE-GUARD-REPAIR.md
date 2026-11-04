@@ -25,6 +25,12 @@ the entire substantial first request (at least 24 characters). Mixed topics,
 short acknowledgements, malformed roles and missing stored history are unknown.
 This proves literal request repetition, not semantic equivalence or agreement.
 Other phrasing and English count claims are outside this candidate's verifier.
+The existing whole-request supplied-text classification stays separate: quoted
+counts in a translation/rewrite are data, not assertions about this conversation.
+Its original evidence checks remain; the new conversational classifier does not
+reinterpret it. A focused failing regression caught and fixed that boundary
+before final review. The first all-pass candidate was not deployed or reviewed;
+the final full suite and review bind the later complete SHA.
 
 The store getter promises the complete transcript; a prompt slice or browser
 fallback is never used as a complete transcript. This relies on the existing

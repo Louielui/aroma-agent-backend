@@ -67,3 +67,9 @@ test('the read-result boundary consumes host-issued evidence',()=>{
  const out=require('./readResultView').buildReadResultReply({reply,message,conversationEvidence:facts(),reviewedNoReadAdvice:true,evidenceSets:[],itemsBySource:[],perSource:[]})
  assert.equal(out.reply,reply)
 })
+
+test('supplied-text transformations preserve quoted counts instead of claiming a conversation fact',()=>{
+ const reply='這已經是你第四次提出同一個構想。'
+ const out=enforceRouteEvidence({reply,message:'改寫：'+reply,evidenceSets:[]})
+ assert.equal(out.reply,reply);assert.equal(out.violated,false)
+})
