@@ -74,6 +74,8 @@ function buildArchitectureHtml () {
   rows.push({id:'business-procurement-scheduler',state:'not_enabled',title:t('procurement.title'),purpose:t('procurement.archPurpose'),component:'Fixed daily procurement workflow / existing Task Store and Action Gateway / exact scoped delegated grant / Windows trigger / ToolGateway reads / durable daily receipts / supplier-grouped in-app report',current:t('procurement.archCurrent'),next:t('procurement.archNext'),evidence:'src/actions/procurement*.js; src/context/procurementContext.js; scripts/scheduler/*procurement*.ps1; src/actions/procurement.test.js; docs/BUSINESS-SCHEDULER-V1.md; /api/v1/procurement'})
     rows.find(row => row.id === 'universal-assistant').current += ' ' + t('context.answerFlowCandidate')
     rows.find(row => row.id === 'universal-assistant').current += ' ' + t('assistant.enumerationCandidate')
+    rows.find(row => row.id === 'universal-assistant').current += ' ' + t('assistant.conversationEvidenceCandidate')
+    rows.find(row => row.id === 'universal-assistant').evidence += '; docs/CONVERSATION-EVIDENCE-GUARD-REPAIR.md; src/intake/conversationEvidence.test.js; src/routes/conversationEvidence.test.js'
     rows.find(row => row.id === 'universal-assistant').evidence += '; docs/ADVICE-ENUMERATION-GUARD-REPAIR.md; src/intake/adviceEnumerationGuard.test.js'
     rows.find(row => row.id === 'universal-assistant').evidence += '; docs/CONTEXT-ANSWER-FLOW-REPAIR.md; src/intake/postdeploymentAnswerReplay.test.js; src/memory/captureDescription.test.js'
     investigationRow.current += ' ' + t('investigation.qualityCurrent')

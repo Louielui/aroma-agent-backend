@@ -713,6 +713,7 @@ function buildReadResultReply (input = {}) {
   const routed = enforceRouteEvidence({
     reply: out && typeof out.reply === 'string' ? out.reply : '',
     message: input.message,
+    conversationEvidence: input.conversationEvidence,
     evidenceSets: Array.isArray(input.evidenceSets) ? input.evidenceSets : [],
     historicalMemoryAnswer: input.historicalMemoryAnswer === true,
     reviewedNoReadAdvice: input.reviewedNoReadAdvice === true
