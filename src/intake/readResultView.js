@@ -709,11 +709,13 @@ function buildReadResultReply (input = {}) {
   // but no model action narrative. This reuses the existing evidence formatter.
   if(input.ownerGoalReporting===true)input={...input,reply:'',answerPlan:null,correction:null}
   const out = buildReadResultReplyInner(input)
+  if(input.adviceReview?.state==='unavailable')out.reply=t('advice.reviewUnavailable')+'\n\n'+out.reply
   const routed = enforceRouteEvidence({
     reply: out && typeof out.reply === 'string' ? out.reply : '',
     message: input.message,
     evidenceSets: Array.isArray(input.evidenceSets) ? input.evidenceSets : [],
-    historicalMemoryAnswer: input.historicalMemoryAnswer === true
+    historicalMemoryAnswer: input.historicalMemoryAnswer === true,
+    reviewedNoReadAdvice: input.reviewedNoReadAdvice === true
   })
   let afterRoute = out
   if (routed.violated) {
