@@ -69,6 +69,11 @@ for (const i of INTENTS) for (const n of i.cjk || []) if (!SOURCES_BY_NOUN.has(n
  */
 const STATUS_WORD = /(充足|足夠|夠用|不足|不夠|短缺|缺貨|斷貨|沒有了|用完|正常|沒問題|沒有問題|全部|都要|要補|需要補|要訂|已經|全都|一切)/
 
+// A pending action modifying its object is not a status predicate: "items to
+// order" differs from "items need ordering". Other status words and all numeric
+// checks remain in force, including claims about those same pending objects.
+const hasStatusPredicate = s => STATUS_WORD.test(String(s).replace(/(?:需要補|要補|要訂)(?:的|嘅)/gu, ''))
+
 /**
  * THREE THINGS THAT ARE NOT CLAIMS ABOUT THE BUSINESS, and are exempt for the same reason:
  * a question, an offer, and a statement about what SHE can do.
@@ -149,17 +154,25 @@ function enforceRouteEvidence (input) {
   if (!route || (route.route !== 'CONVERSATION' && input.reviewedNoReadAdvice !== true)) return none
   const definition = generalRequestKind(message) === 'definition'
 
-  const kept = []
+  const removedSpans = []
   const withheld = []
   const sources = new Set()
+  let sentenceCursor = 0
   for (const sentence of splitSentences(reply)) {
+    const sentenceStart = reply.indexOf(sentence, sentenceCursor)
+    if (sentenceStart < 0) throw Error('guard_span_unavailable')
+    sentenceCursor = sentenceStart + sentence.length
     let subject = null
+    let clauseCursor = 0
     for (const clause of assertionClauses(sentence)) {
       const s = String(clause)
+      const clauseStart = sentence.indexOf(s, clauseCursor)
+      if (clauseStart < 0) throw Error('guard_span_unavailable')
+      clauseCursor = clauseStart + s.length
       const explicitNoun = entityIn(s)
       if (explicitNoun) subject = explicitNoun
-      if (!s.trim() || ASKING.test(s.trim()) || OWN_OFFER.test(s) || ROUTE_EVIDENCE_NOTE_RE.test(s)) { kept.push(s); continue }
-      if (definition && !BUSINESS_REFERENT.test(s)) { kept.push(s); continue }
+      if (!s.trim() || ASKING.test(s.trim()) || OWN_OFFER.test(s) || ROUTE_EVIDENCE_NOTE_RE.test(s)) continue
+      if (definition && !BUSINESS_REFERENT.test(s)) continue
   
       const noun = explicitNoun || subject
       // (a) THE NUMERIC HALF — precise, and not ours to reimplement. A bare number is not
@@ -168,21 +181,25 @@ function enforceRouteEvidence (input) {
       // 要補 is not 補貨, which is exactly why the turn fell to CONVERSATION — so requiring a
       // noun here would have made the guard miss the very case it was built for.
       const numeric = !sentenceIsSupported(s, EMPTY_INDEX) && !onlyEchoesTheOwner(s, message) &&
-        (noun !== null || STATUS_WORD.test(s))
+        (noun !== null || hasStatusPredicate(s))
       // (b) THE ENTITY-PLUS-STATUS HALF — no number at all. Porous by construction; see header.
-      const asserted = noun !== null && STATUS_WORD.test(s)
+      const asserted = noun !== null && hasStatusPredicate(s)
   
       if (numeric || asserted) {
         withheld.push(s)
+        removedSpans.push({start:sentenceStart+clauseStart,end:sentenceStart+clauseStart+s.length})
         const src = noun ? SOURCES_BY_NOUN.get(noun) : (entityIn(message) ? SOURCES_BY_NOUN.get(entityIn(message)) : null)
         if (src) sources.add(src)
         continue
       }
-      kept.push(s)
       }
     }
   
     if (withheld.length === 0) return none
+    // Delete only measured source spans; sentence splitting is for judgement,
+    // never a renderer. Keep every unaffected newline, list marker and space.
+    let preserved = reply
+    for (const span of removedSpans.sort((a,b)=>b.start-a.start)) preserved = preserved.slice(0,span.start)+preserved.slice(span.end)
   
     // A rejected model assertion does not establish what the Owner requested.
     // Keep withholding and source audit, without inventing a retrieval obligation.
@@ -192,7 +209,7 @@ function enforceRouteEvidence (input) {
   
     return {
       // The note NEVER stands in for the answer silently, and never leaves an empty reply.
-      reply: (kept.join('').trim() ? kept.join('').trim() + '\n\n' : '') + note,
+      reply: (preserved.trim() ? preserved + '\n\n' : '') + note,
       violated: true,
       withheld,
       sources: [...sources]
