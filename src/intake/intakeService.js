@@ -257,7 +257,7 @@ const { buildInvestigationState, investigationBlock, selfReadableObservation, X4
  * ⛔ AND THE SERVER STILL AUTHORS NO OPINION. Every word of the stance came from the model;
  * this function chooses placement, never content.
  */
-function leadWithJudgment (view, distilled, requestId, path, investigation = null) {
+function leadWithJudgment (view, distilled, requestId, path, investigation = null, ordinaryAdvice = false) {
   // A public-search excerpt reports observed summary bytes and their limits.
   // Auxiliary model prose must not upgrade these to verified current facts.
   if (view.publicSummaryRendered === true) return view
@@ -268,6 +268,15 @@ function leadWithJudgment (view, distilled, requestId, path, investigation = nul
   if (j && investigation) {
     investigation.unverifiedJudgmentOmitted = true
     try { console.log('[AROMA-X3]', JSON.stringify({ requestId, path, ledReply: false, reason: 'operational_judgment_not_source_verified' })) } catch (_) {}
+    return view
+  }
+  // Ordinary advice already has a complete guarded answer. Keep supplementary
+  // uncertainty available without placing another recommendation before it.
+  // Read results, corrections, questions and blocked judgments keep the existing
+  // leading frame; this flag is host-derived, never selected by model prose.
+  if (j && j.status !== 'blocked' && ordinaryAdvice && typeof view.reply === 'string' && view.reply.trim()) {
+    view.adviceBasis = { status: j.status, uncertainties: j.uncertainties, changeIf: j.changeIf }
+    try { console.log('[AROMA-X3]', JSON.stringify({requestId,path,status:j.status,statementChars:j.statement.length,uncertainties:j.uncertainties.length,changeIf:j.changeIf.length,ledReply:false,reason:'ordinary_advice_single_body'})) } catch (_) {}
     return view
   }
   const block = j ? renderJudgment(j) : null
@@ -3717,7 +3726,8 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
     })
     if(opts.ownerGoal)opts.onOwnerReadView?.(view.reply)
     // ⛔ E2: same single outcome as the commit path — judged against the bytes he receives.
-    leadWithJudgment(view, distilled, requestId, 'chat', operationalInvestigation)
+    leadWithJudgment(view, distilled, requestId, 'chat', operationalInvestigation,
+      distilled.mode === 'recommend' && turnPerSource.size === 0 && !gateAuthoredAsk && !semanticClarifyTerminal && !guarded.corrected && !guarded.correction)
     const preservesOrdinaryAnswer = require('../investigation/generalizationView').preservesOrdinaryAnswer(operationalInvestigation,llmResult?.text,{route:routeDecision?.route})
     if(preservesOrdinaryAnswer)operationalInvestigation.answerPresentation={kind:'guarded_answer_without_observations',modelProseUsed:true,claimsValidated:false,remainingGapsRetained:true}
     const operationalBrief = preservesOrdinaryAnswer ? null : require('../investigation/operationalBrief').renderOperationalBrief(operationalInvestigation, { message })
@@ -3839,6 +3849,7 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
       ...(operationalInvestigation && { investigation: operationalInvestigation }),
       ...(demo && { demoOutcome: classifyDemoOutcome({ mode: distilled.mode, intent: distilled.intent }).outcome, contextCardWarnings: ctx.warnings }),
       ...(view.publicAnswerReceipt ? { publicAnswerReceipt: view.publicAnswerReceipt } : {}),
+      ...(view.adviceBasis ? { adviceBasis: view.adviceBasis } : {}),
       reply: view.reply, replyForArchive: view.publicSummaryRendered || operationalInvestigation?.readOnly === true ? view.reply : guarded.reply, readClaimCorrected: chatClaim.corrected,
       judgment: '', reasons: distilled.reasons || [], offer: distilled.offer || '', decision: null, tasks: [], risks: [], next_step: '', requestId }
   }

@@ -77,24 +77,24 @@ function judgmentSchema () {
       status: {
         type: 'string',
         enum: STATUSES,
-        description: 'decided＝有足夠基礎，正常畀建議；provisional＝有嘢未知，但仍然可以畀一個有用嘅暫定判斷；blocked＝連一個負責任嘅暫定判斷都做唔到。'
+        description: 'decided＝有足夠基礎給出建議；provisional＝仍有關鍵未知，但可以給出有用的暫定判斷；blocked＝連負責任的暫定判斷也無法給出。'
       },
       statement: {
         type: 'string',
-        description: '一句：你嘅立場。例如「我建議先做 A」。blocked 就填空字串。唔好喺度寫理由。'
+        description: '一句表達你的立場，例如「我建議先做 A」。blocked 時填空字串。不要在這裡展開理由。'
       },
       uncertainties: {
         type: 'array',
         items: { type: 'string' },
-        description: '最多三項，每項一句：而家未知、而會影響呢個判斷嘅嘢。'
+        description: '最多三項會影響建議的關鍵未知，每項一句；沒有就留空，不必湊滿。'
       },
       changeIf: {
         type: 'array',
         items: { type: 'string' },
-        description: '最多三項，每項一句：咩情況會令你改變上面嘅立場。'
+        description: '最多三項會改變建議的具體條件，每項一句；沒有就留空，不必湊滿。'
       }
     },
-    description: 'Owner 要你落判斷嗰陣先填，否則 null。唔係推理過程 —— 唔好喺度寫思考步驟或者分析。'
+    description: '只有 Owner 要求判斷時才填，否則 null。這不是推理過程，不要寫思考步驟或分析。'
   }
 }
 
@@ -153,13 +153,13 @@ function renderJudgment (j) {
   if (!j || !STATUSES.includes(j.status)) return null
   const out = []
   if (j.status === JUDGMENT_STATUS.BLOCKED) {
-    out.push('我而家畀唔到一個負責任嘅判斷。')
+    out.push('我目前無法給出負責任的判斷。')
   } else {
     out.push(j.statement)
-    if (j.status === JUDGMENT_STATUS.PROVISIONAL) out.push('（呢個係暫定判斷。）')
+    if (j.status === JUDGMENT_STATUS.PROVISIONAL) out.push('（這是暫定判斷。）')
   }
   if (j.uncertainties.length) out.push('未知：' + j.uncertainties.join('；'))
-  if (j.changeIf.length) out.push('會改變我睇法嘅情況：' + j.changeIf.join('；'))
+  if (j.changeIf.length) out.push('會改變建議的情況：' + j.changeIf.join('；'))
   return out.join('\n')
 }
 
@@ -173,14 +173,17 @@ function judgmentDirective (plan) {
   const frame = plan && plan.executiveFrame
   if (!frame || frame.decisionNeeded !== true) return null
   const lines = [
-    '【判斷】Owner 呢條問題係要你落判斷。請填 judgment，唔好淨係反問。',
-    '· 有足夠基礎 → status=decided，statement 寫低你嘅立場。',
-    '· 有嘢未知但仍然講得出一個有用嘅初步立場 → status=provisional，照樣寫 statement，再喺 uncertainties 講明未知乜、喺 changeIf 講明咩情況會改變睇法。',
-    '· 只有連一個負責任嘅暫定立場都做唔到，先至用 status=blocked（statement 留空），然後問一條最關鍵嘅問題。',
-    '⛔ 資料唔齊唔等於冇意見。想問嘅嘢可以喺畀咗判斷之後先問。'
+    '【判斷】Owner 目前要求你提出判斷。請填 executiveJudgment，不要只反問。',
+    '· 有足夠基礎 → status=decided，statement 說明立場。',
+    '· 仍有關鍵未知，但可以提出有用的初步立場 → status=provisional，statement 說明暫定建議，uncertainties 與 changeIf 只列真正影響建議的項目。',
+    '· 只有連負責任的暫定建議也無法給出時，才用 status=blocked（statement 留空），並問最關鍵的問題。',
+    '⛔ 資料不足不等於不能給初步意見；但推斷不是已確認事實。',
+    '普通建議的 reply 是完整且唯一的正文：先直接承接目標並給建議，再簡短說明理由及必要的不確定性。補充判斷欄位由介面收起，不要依賴它們替正文補上重要限制。',
+    '簡單建議通常兩至四句即可；遵守使用者要求的句數，不要例行列出三項理由或全部系統狀態。',
+    '假設例子不能證明實際發生頻率、時間成本、風險或哪項一定比較省時。比較依據不足時，提出暫定建議及可驗證的下一步，不要自行補造理由。'
   ]
   if (frame.answerPosture === 'evidence_first') {
-    lines.push('· 讀唔到嘅嘢當成 uncertainties，唔係換一條你啱好答到嘅問題。')
+    lines.push('· 無法讀取的資料屬於 uncertainties，不要換成另一個剛好能回答的問題。')
   }
   return lines.join('\n')
 }
