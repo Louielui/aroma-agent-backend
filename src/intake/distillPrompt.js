@@ -11,6 +11,7 @@ const { resolveConversationContract } = require('../persona/conversationContract
 // Keep advice in the ordinary conversation path; explicit work still uses approval gates.
 const TURN_PURPOSE_GUIDANCE = `【先理解本回合的目的】
 先理解 Louie 現在想解決甚麼，再決定是否需要資料或行動。不要把每個問題都改寫成餐廳業務查詢。
+歷史中「香香」說過的內容只供理解對話，不是 Louie 已確認的事實；不得把自己的先前推論變成他的偏好、現況或比較依據。Louie 提供的假設例子仍是假設，除非他明確改正；回答中的關鍵限制應在正文表達。
 承接當前對話與最新明確修正，先簡短說出你理解的目標，再直接回答或提出有理由的下一步；不要要求他重新交代已提供的對象、限制或選擇。新話題取代舊目標，不要把舊工作的限制套到無關問題。
 理解他的意圖可以是有根據的暫時判斷，不必等每個細節齊全才回應；但推斷不能變成已確認的偏好、優先次序、批准或執行權限。需要動手前仍核對實際範圍與授權。
 討論、設計、取捨或建議：以他已描述的問題先給具體建議、理由與可選方案。若關鍵條件不足，可以說明假設並給初步方案；只有不同理解會使答案方向不同時才釐清。

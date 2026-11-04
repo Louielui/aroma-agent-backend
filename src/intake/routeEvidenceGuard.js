@@ -144,7 +144,9 @@ function enforceRouteEvidence (input) {
   // work; BUSINESS_QUERY has the whole read path in front of it.
   let route = null
   try { route = routeTurn(message) } catch (_) { return none }
-  if (!route || route.route !== 'CONVERSATION') return none
+  // A host-reviewed no-read recommendation must also check a reviewer's edits,
+  // even when the keyword router called the original question BUSINESS_QUERY.
+  if (!route || (route.route !== 'CONVERSATION' && input.reviewedNoReadAdvice !== true)) return none
   const definition = generalRequestKind(message) === 'definition'
 
   const kept = []
@@ -182,12 +184,11 @@ function enforceRouteEvidence (input) {
   
     if (withheld.length === 0) return none
   
-    // SOURCE_LABELS holds thunks now (see answerPlan.js) — a key string there would be a
-    // dynamic key at the call site.
-    const named = [...sources].map((s) => (SOURCE_LABELS[s] ? SOURCE_LABELS[s]() : s))
-    const note = named.length
-      ? `有 ${withheld.length} 句講到營運狀況，但這一輪沒有查任何來源，所以我沒有顯示它。這個問題要查${named.join('、')}才答得準，要我現在查嗎？`
-      : `有 ${withheld.length} 句講到營運狀況，但這一輪沒有查任何來源，所以我沒有顯示它。要我查過再答嗎？`
+    // A rejected model assertion does not establish what the Owner requested.
+    // Keep withholding and source audit, without inventing a retrieval obligation.
+    const named = [...sources].map(s => SOURCE_LABELS[s] ? SOURCE_LABELS[s]() : s)
+    const note = `有 ${withheld.length} 句講到營運狀況，但這一輪沒有查任何來源，所以我沒有顯示它。` +
+      (named.length ? `未核實的敘述涉及：${named.join('、')}。` : '')
   
     return {
       // The note NEVER stands in for the answer silently, and never leaves an empty reply.

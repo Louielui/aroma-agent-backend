@@ -3614,6 +3614,18 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
   // ── CHAT or ASK: talk only — do NOT persist any Decision/Task ─────────────
   if (distilled.mode !== 'commit') {
     await recordProviderUsage(llmResult) // idempotent: already recorded pre-parse
+    // Reuse the existing semantic-review adapter and usage boundary only for
+    // uncertain, no-read recommendations. Retrieval and action gates keep their
+    // original inputs. Corrections still traverse every ordinary answer guard.
+    let adviceReview = null
+    if(subscriptionMode && distilled.mode==='recommend' && turnPerSource.size===0 && !operationalInvestigation && !gateAuthoredAsk && !semanticClarifyTerminal && distilled[JUDGMENT_KEY]?.status==='provisional' && distilled[JUDGMENT_KEY].uncertainties.length){
+      const reviewed=await timePhase({requestId,phase:PHASE.MODEL_CALL,role:ROLE.EVIDENCE_REVIEW,provider:activeProvider||primaryProvider},
+        ()=>require('../investigation/semanticAnswer').reviewAdviceAnswer({reply:distilled.reply,judgment:distilled[JUDGMENT_KEY],message,history,adapter:activeAdapter,billing:llmResult.billing,model:llmResult.model,onResult:recordProviderUsage}),
+        {clock:latencyClock,sink:latencySink})
+      adviceReview={state:reviewed.state,reason:reviewed.reason,calls:reviewed.calls,editedSpans:reviewed.editedSpans,model:reviewed.model,elapsedMs:reviewed.elapsedMs}
+      distilled={...distilled,reply:reviewed.reply}
+      try{console.log('[AROMA-ADVICE-REVIEW]',JSON.stringify({requestId,...adviceReview}))}catch(_){}
+    }
     // The ordinary chat path — this is the one the 「我目前讀唔到你的日程」 turn came down
     // while the calendar telemetry said trust:'live'.
     const guarded = enforceReadState(distilled.reply, Array.from(turnPerSource.values()), message)
@@ -3702,6 +3714,8 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
     if(opts.ownerGoal&&(gateAuthoredAsk||semanticClarifyTerminal))opts.onOwnerClarification?.(guarded.reply)
     const view = buildReadResultReply({
       ownerGoalReporting:!!opts.ownerGoal,
+      reviewedNoReadAdvice:!!adviceReview,
+      adviceReview,
       reply: guarded.reply,
       historicalMemoryAnswer,
       correction: guarded.correction || null,
@@ -3850,7 +3864,8 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
       ...(demo && { demoOutcome: classifyDemoOutcome({ mode: distilled.mode, intent: distilled.intent }).outcome, contextCardWarnings: ctx.warnings }),
       ...(view.publicAnswerReceipt ? { publicAnswerReceipt: view.publicAnswerReceipt } : {}),
       ...(view.adviceBasis ? { adviceBasis: view.adviceBasis } : {}),
-      reply: view.reply, replyForArchive: view.publicSummaryRendered || operationalInvestigation?.readOnly === true ? view.reply : guarded.reply, readClaimCorrected: chatClaim.corrected,
+      ...(adviceReview ? { adviceReview } : {}),
+      reply: view.reply, replyForArchive: adviceReview || view.publicSummaryRendered || operationalInvestigation?.readOnly === true ? view.reply : guarded.reply, readClaimCorrected: chatClaim.corrected,
       judgment: '', reasons: distilled.reasons || [], offer: distilled.offer || '', decision: null, tasks: [], risks: [], next_step: '', requestId }
   }
 

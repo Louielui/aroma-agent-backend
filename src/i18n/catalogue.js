@@ -42,6 +42,7 @@ const CATALOGUE = Object.freeze({
   'advice.provisional': { zh: '這是暫定建議。', en: 'This recommendation is provisional.' },
   'advice.unknown': { zh: '不確定之處', en: 'Uncertainties' },
   'advice.changeIf': { zh: '會改變建議的情況', en: 'What would change the recommendation' },
+  'advice.reviewUnavailable': { zh: '這段建議尚未完成依據核對，以下保留為未驗證草稿，請先不要據此作決定。', en: 'The premises of this recommendation could not be checked. The unverified draft is retained below; please do not rely on it for a decision yet.' },
   'ownerGoal.available': {zh:"已取得授權來源讀取紀錄；完整結果仍待核實",en:"Authorized source read recorded; the complete outcome remains unverified"},
   'ownerGoal.blocked': {zh:"讀取失敗或範圍不完整，尚未完成",en:"Read unavailable or coverage incomplete; not complete"},
   'ownerGoal.heading': {"zh":"原任務進度","en":"Original goal status"},
