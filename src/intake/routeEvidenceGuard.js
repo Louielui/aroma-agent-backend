@@ -53,7 +53,7 @@
 const { routeTurn } = require('./turnRouter')
 const { generalRequestKind } = require('./generalKnowledge')
 const { INTENTS } = require('../context/readContext')
-const { sentenceIsSupported, splitSentences, evidenceIndex, SOURCE_LABELS } = require('./answerPlan')
+const { sentenceIsSupported, splitSentences, evidenceIndex, SOURCE_LABELS, cjkToNumber } = require('./answerPlan')
 
 /** An index over nothing — the point being that NOTHING was read this turn. */
 const EMPTY_INDEX = evidenceIndex([], [])
@@ -131,6 +131,24 @@ function entityIn (sentence) {
   return null
 }
 
+// A requirement can count the open questions it explicitly lists. Verify that
+// local structure rather than treating an obligation ("all must document") as
+// a measured state. This admits neither operational subjects nor closed facts;
+// ambiguous, mismatched and non-question lists retain the original guard.
+function isQuestionEnumeration (clause) {
+  const text = String(clause).trim().replace(/^[-*+]\s+/u, '')
+  if (BUSINESS_REFERENT.test(text) || entityIn(text)) return false
+  const match = text.match(/^([\p{L}\s]+?)(?:都)?(?:應該|應|必須|須|需要|要)(?:寫清楚|列明|說明|交代)\s*([0-9零〇一二兩三四五六七八九十百千萬]+)\s*(?:件事|點|項(?:內容|資料|要求))\s*[:：](.+?)[。.!！]?$/u)
+  // Stricter than the business-count parser: numeral-free subject/items avoid
+  // admitting units outside its known measure words or a quantified actor.
+  const numeral = /[\p{N}零〇一二兩三四五六七八九十百千萬]/u
+  if (!match || STATUS_WORD.test(match[1]) || numeral.test(match[1])) return false
+  const count = /^\d+$/.test(match[2]) ? Number(match[2]) : cjkToNumber(match[2])
+  const items = match[3].split('、').map(item => item.trim())
+  return count >= 2 && count <= 16 && items.length === count && new Set(items).size === count &&
+    items.every(item => /^[\p{L}\s]*(?:什麼|甚麼|哪些|何時|哪裡|哪裏|如何)$/u.test(item) && !STATUS_WORD.test(item) && !numeral.test(item))
+}
+
 // Numeric and entity predicates must concern the same clause. A later negative
 // statement about code changes cannot turn an earlier proposal count into a
 // business claim. Retain an explicit subject for elliptical status clauses.
@@ -188,6 +206,7 @@ function enforceRouteEvidence (input) {
       if (explicitNoun) subject = explicitNoun
       if (!s.trim() || ASKING.test(s.trim()) || OWN_OFFER.test(s) || ROUTE_EVIDENCE_NOTE_RE.test(s)) continue
       if (definition && !BUSINESS_REFERENT.test(s)) continue
+      if (input.reviewedNoReadAdvice === true && subject === null && isQuestionEnumeration(s)) continue
   
       const noun = explicitNoun || subject
       // (a) THE NUMERIC HALF — precise, and not ours to reimplement. A bare number is not
