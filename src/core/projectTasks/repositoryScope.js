@@ -5,7 +5,7 @@ const {ID}=require('../operating/runStore')
 const TEST='acceptance/registered-task.test.cjs'
 function allowed(name){try{return typeof name==='string'&&name.startsWith('src/')&&fileName(name)===name}catch{return false}}
 function validate(scope,editable){
- if(!scope||Object.keys(scope).sort().join(',')!=='budgetRoot,files,profile'||scope.profile!=='repository'||!ID.test(scope.budgetRoot||'')||scope.budgetRoot===require('../../actions/usageBudget').PROFILE.id||!Array.isArray(scope.files)||!scope.files.length||scope.files.length>49||new Set(scope.files.map(n=>String(n).toLowerCase())).size!==scope.files.length||scope.files.some(n=>!allowed(n))||editable.some(n=>!scope.files.includes(n)||n.startsWith('src/demo/assets/')||/\.(?:test\.[cm]?js|css|html|svg)$/.test(n)))throw Error('invalid_request')
+ if(!scope||Object.keys(scope).sort().join(',')!=='budgetRoot,files,profile'||scope.profile!=='repository'||!ID.test(scope.budgetRoot||'')||require('../../actions/usageBudget').isAcceptanceRoot(scope.budgetRoot)||!Array.isArray(scope.files)||!scope.files.length||scope.files.length>49||new Set(scope.files.map(n=>String(n).toLowerCase())).size!==scope.files.length||scope.files.some(n=>!allowed(n))||editable.some(n=>!scope.files.includes(n)||n.startsWith('src/demo/assets/')||/\.(?:test\.[cm]?js|css|html|svg)$/.test(n)))throw Error('invalid_request')
  return scope
 }
 function validateSnapshot(snapshot){try{validatePackage({files:snapshot.order.files,tests:[TEST],expectedTests:3})}catch{throw Error('repository_package_limit')}}

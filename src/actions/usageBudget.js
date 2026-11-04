@@ -1,11 +1,16 @@
 'use strict'
-// Restricts the existing Owner-authorized acceptance. No provider, quota purchase,
+// Bounds acceptance windows; definitions stay inert until Owner activation. No provider, quota purchase,
 // new credential or model-selected grant. All reservations use the Action store.
 const fs=require('node:fs'),path=require('node:path'),crypto=require('node:crypto'),{AsyncLocalStorage}=require('node:async_hooks')
 const {ID,hash}=require('./contract')
 const extension=require('./usageExtension')
 const context=new AsyncLocalStorage()
 const PROFILE=Object.freeze({id:'a57b0b98-3638-42b2-8e65-d5f220261031',identity:'owner-context-understanding-acceptance-20261031',model:'claude-opus-5-5',effort:'medium',turns:9,helper:40,website:2})
+// A separate, initially inert window. Deploying this definition neither activates
+// it nor reopens the historical acceptance. The authenticated Owner action and
+// existing shared-service idle witness remain required before any reservation.
+const UNDERSTANDING_PROFILE=Object.freeze({id:'e217d640-2bf9-45d0-9b43-b228b4dd2c6e',identity:'owner-natural-understanding-acceptance-20261103',model:'claude-opus-5-5',effort:'medium',turns:5,helper:30,website:0})
+function isAcceptanceRoot(id){return id===PROFILE.id||id===UNDERSTANDING_PROFILE.id}
 const SHAPES={usage_activate:['op'],usage_status:['op'],usage_pause:['op'],usage_close:['op'],usage_reconcile:['op'],usage_bind_turn:['op','turnId','conversationId']}
 SHAPES.usage_extension_prepare=['op','workId','commit','attemptsHash']
 SHAPES.usage_extension_approve=['op','id','hash','nonce']
@@ -15,11 +20,11 @@ const validInput=b=>!!b&&!Array.isArray(b)&&Object.hasOwn(SHAPES,b.op)&&Object.k
 const error=code=>Object.assign(Error(code),{code})
 const scopeKeys='childId,conversationId,requestId,rootId,turnId'
 function validScope(s){return !!s&&Object.keys(s).sort().join(',')===scopeKeys&&[s.rootId,s.turnId,s.conversationId,s.requestId].every(v=>ID.test(v||''))&&(s.childId===null||ID.test(s.childId||''))}
-function developmentProfile(id){if(!ID.test(id||'')||id===PROFILE.id)throw error('usage_profile_not_allowed');return{id,identity:'owner-repository-repair:'+id,turns:1,helper:8,website:0,models:[{model:'gpt-6.1-sol',effort:'high'},{model:'claude-sonnet-5-5',effort:'medium'}]}}
+function developmentProfile(id){if(!ID.test(id||'')||isAcceptanceRoot(id))throw error('usage_profile_not_allowed');return{id,identity:'owner-repository-repair:'+id,turns:1,helper:8,website:0,models:[{model:'gpt-6.1-sol',effort:'high'},{model:'claude-sonnet-5-5',effort:'medium'}]}}
 function createUsageBudget({store,evidenceDir,now=Date.now,activationReady=null,profile=PROFILE,extensionWitness=null,approvals=require('../agent/ownerApprovalStore').createOwnerApprovalStore({now}),processAlive=pid=>{try{process.kill(pid,0);return true}catch(e){return e.code!=='ESRCH'}}}={}){
  if(!store?.lockRun)throw error('usage_store_required')
  profile=structuredClone(profile)
- if(hash(profile)!==hash(PROFILE)&&hash(profile)!==hash(developmentProfile(profile.id)))throw error('usage_profile_not_allowed')
+ if(hash(profile)!==hash(PROFILE)&&hash(profile)!==hash(UNDERSTANDING_PROFILE)&&hash(profile)!==hash(developmentProfile(profile.id)))throw error('usage_profile_not_allowed')
  const limits={turns:profile.turns,helper:profile.helper,website:profile.website}
  const acceptsModel=input=>(profile.models||[{model:profile.model,effort:profile.effort}]).some(m=>m.model===input.model&&m.effort===input.effort)
  const profileHash=hash(profile)
@@ -100,7 +105,16 @@ let ownerBudget
 // directory. USERPROFILE would silently create two ledgers for these identities.
 // resolveDataDir also provides the existing hermetic test redirection.
 function ownerDirectory(){return path.join(require('../store/dataDir').resolveDataDir(),'scheduler-action-runs','usage-budget')}
-function owner(){if(!ownerBudget){const dir=ownerDirectory();ownerBudget=createUsageBudget({store:require('./store').createStore({dir}),evidenceDir:path.join(dir,'evidence')})}return ownerBudget}
+function owner(){
+ if(!ownerBudget){
+  const dir=ownerDirectory(),store=require('./store').createStore({dir}),evidenceDir=path.join(dir,'evidence')
+  // Never hide a paused/active legacy window by selecting an empty ledger.
+  const legacy=createUsageBudget({store,evidenceDir})
+  if(!['not_activated','closed'].includes(legacy.readStatus().state))throw error('usage_unresolved_work')
+  ownerBudget=createUsageBudget({store,evidenceDir,profile:UNDERSTANDING_PROFILE})
+ }
+ return ownerBudget
+}
 function service(){return context.getStore()?.service||owner()}
 function currentScope(){return context.getStore()?.scope||null}
 function currentHeader(token){const s=currentScope();return s?service().encode(s,token):null}
@@ -112,4 +126,4 @@ function blockAPI(){if(currentScope()||service().isActive())throw service().reje
 // Interactive coding CLIs can make internal turns the host cannot meter. They
 // cannot be started in this fixed, read-only conversation acceptance window.
 function blockInteractiveWorker(){if(currentScope()||service().isActive())throw service().rejection('usage_operation_not_allowed')}
-module.exports={PROFILE,developmentProfile,ERRORS,validInput,createUsageBudget,ownerDirectory,owner,service,currentScope,currentHeader,observe,nativePermit,guardRPC,withRPCBudget,blockAPI,blockInteractiveWorker}
+module.exports={PROFILE,UNDERSTANDING_PROFILE,isAcceptanceRoot,developmentProfile,ERRORS,validInput,createUsageBudget,ownerDirectory,owner,service,currentScope,currentHeader,observe,nativePermit,guardRPC,withRPCBudget,blockAPI,blockInteractiveWorker}

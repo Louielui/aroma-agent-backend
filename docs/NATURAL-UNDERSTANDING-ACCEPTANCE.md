@@ -28,9 +28,19 @@ the reply. The bounded private source copy and hash remain outside Git.
   and discourages irrelevant historical lists and routine confirmation.
 
 The frozen identity, proposal/approval wording, Policy, Dispatcher, Action
-Gateway, evidence guards, source permissions, usage accounting, persistence,
-provider selection, runtime flags and helper-call limits are unchanged. No
-additional model call or new memory/understanding subsystem is introduced.
+Gateway, evidence guards, source permissions, accounting implementation,
+provider selection and runtime flags remain in place. No additional model call
+or new memory/understanding subsystem is introduced.
+
+The old formal acceptance profile is permanently closed. The existing budget
+mechanism therefore gains a separate inert profile
+`e217d640-2bf9-45d0-9b43-b228b4dd2c6e`, fixed at five turns, 30 helpers, zero
+website calls and Claude Opus 5.5 / Medium. This definition is not an allowance
+grant: authenticated Owner activation and the existing idle witness remain
+mandatory, after a new explicit authorization. Both acceptance root IDs are
+refused as development-budget aliases. Old roots, limits and records are
+unchanged. Restart persistence, conservative failed reservations and child
+sharing still use the existing store and dispatch guards.
 
 ## Offline checks
 
@@ -39,6 +49,10 @@ current-message occurrence, excluded memory, explicit redaction, citation
 pointers requiring a fresh Gateway read, unavailable memory and HTTP response
 preservation. Fixed adapters establish transport and guard behavior only.
 They do not establish semantic understanding or natural prose quality.
+Separate budget regressions check an inert new root, immutable old closure,
+parallel 31st-helper refusal before dispatch, zero website dispatches, children,
+restart, failed attempts, fifth-turn boundary, model/effort refusal and permanent
+closure. These run against local temporary ledgers, not approved live capacity.
 
 Run the full isolated suite and independent Claude subscription review against
 the complete candidate commit. Record exact hashes, review receipts and skips;
