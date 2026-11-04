@@ -72,7 +72,22 @@ const STATUS_WORD = /(充足|足夠|夠用|不足|不夠|短缺|缺貨|斷貨|�
 // A pending action modifying its object is not a status predicate: "items to
 // order" differs from "items need ordering". Other status words and all numeric
 // checks remain in force, including claims about those same pending objects.
-const hasStatusPredicate = s => STATUS_WORD.test(String(s).replace(/(?:需要補|要補|要訂)(?:的|嘅)/gu, ''))
+const NOMINAL_HEAD = new RegExp('^(?:' + ENTITY_NOUNS.map(n => n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).concat(['貨品','貨物','物品','商品','項目','清單']).join('|') + ')')
+const hasStatusPredicate = s => {
+  const text = String(s)
+  // An explicitly current/company-specific description is still evidence-bound.
+  if (BUSINESS_REFERENT.test(text)) return STATUS_WORD.test(text)
+  return STATUS_WORD.test(text.replace(/(?:需要補|要補|要訂)(?:的|嘅)/gu, (match, offset) => {
+    // Admit only an action's direct nominal object, not a subject's predicate or
+    // classification. A known entity before that action must be a prepositional
+    // grouping key, rather than the actor/stock whose condition is being stated.
+    const prefix=text.slice(0,offset),action=prefix.match(/(?:整理|列出|彙整|草擬)\s*$/u)
+    if (!action || !NOMINAL_HEAD.test(text.slice(offset+match.length))) return match
+    const lead=prefix.slice(0,action.index).trim()
+    if (entityIn(lead) && !/^(?:按|依照|依|根據)[\p{Script=Han}A-Za-z0-9\s]+$/u.test(lead)) return match
+    return ''
+  }))
+}
 
 /**
  * THREE THINGS THAT ARE NOT CLAIMS ABOUT THE BUSINESS, and are exempt for the same reason:

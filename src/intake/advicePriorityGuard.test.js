@@ -7,10 +7,15 @@ const input={reply:'先做甲。甲最有效。',message:'討論兩個假設方�
 const review=packet=>reviewAdviceAnswer({...input,adapter:{complete:async()=>({text:JSON.stringify(packet),model:input.model,billing:input.billing})}})
 
 test('attributive pending-action objects are not operational status assertions',()=>{
- for(const reply of ['按供應商整理要訂的貨品。','草擬要補的庫存清單。','整理需要補的貨品。','整理要訂嘅貨品。'])assert.equal(say(reply).reply,reply)
+ for(const reply of ['按供應商整理要訂的貨品。','草擬要補的庫存清單。','整理需要補的貨品。','整理要訂嘅貨品。','列出要訂的項目。','彙整需要補的存貨。'])assert.equal(say(reply).reply,reply)
 })
 test('pending-action modifiers cannot hide real counts, shortage or sufficiency claims',()=>{
  for(const reply of ['今天要訂的貨品有 12 種。','要補的庫存全部不足。','存貨要訂。','庫存需要補。','缺貨的庫存全部不足。']){
+  const r=say(reply);assert.equal(r.violated,true,reply);assert.ok(r.withheld.length,reply)
+ }
+})
+test('de nominalization cannot exempt copular, terminal or current stock predicates',()=>{
+ for(const reply of ['存貨是要補的。','存貨係要補嘅。','庫存要訂的。','庫存是需要補的項目。','目前整理要補的庫存。','存貨屬於要補的庫存。','存貨是準備要補的項目。','供應商整理要訂的貨品。']){
   const r=say(reply);assert.equal(r.violated,true,reply);assert.ok(r.withheld.length,reply)
  }
 })
