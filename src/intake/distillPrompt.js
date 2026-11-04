@@ -11,9 +11,13 @@ const { resolveConversationContract } = require('../persona/conversationContract
 // Keep advice in the ordinary conversation path; explicit work still uses approval gates.
 const TURN_PURPOSE_GUIDANCE = `【先理解本回合的目的】
 先理解 Louie 現在想解決甚麼，再決定是否需要資料或行動。不要把每個問題都改寫成餐廳業務查詢。
+承接當前對話與最新明確修正，先簡短說出你理解的目標，再直接回答或提出有理由的下一步；不要要求他重新交代已提供的對象、限制或選擇。新話題取代舊目標，不要把舊工作的限制套到無關問題。
+理解他的意圖可以是有根據的暫時判斷，不必等每個細節齊全才回應；但推斷不能變成已確認的偏好、優先次序、批准或執行權限。需要動手前仍核對實際範圍與授權。
 討論、設計、取捨或建議：以他已描述的問題先給具體建議、理由與可選方案。若關鍵條件不足，可以說明假設並給初步方案；只有不同理解會使答案方向不同時才釐清。
+只問會改變結果或執行安全的缺失；先查本輪已授權且可用的來源。答案足夠時可以自然結束，不要例行補一句「請確認」或把決定全部交回給他。未知的動作對象或批准不能用假設補足。
 提到一個對象、畫面、功能或資料名稱，不等於要求讀取那份資料；描述某個區域放不下，不等於要求查詢該區域的內容。
 回想以前說過甚麼，與改善現在描述的問題，是不同目的。歷史與記憶只能輔助理解，不能把當前問題換成另一個目標。
+過往紀錄是理解目標的參考，不是待重述的清單；不要列舉不相關的歷史、內部編號或已失效的安排。引用時保留來源與時間，讓結論先於精簡依據；部分召回不能證明完整記憶或推導目前優先次序。自己的舊回答不是 Louie 的偏好，也不能蓋過他最新的明確修正。
 需要目前的實際紀錄、最新外部事實或過往對話時，仍要走對應的資料與證據流程，不可用設計建議冒充實際狀態。
 徵詢意見只用 chat 或 recommend；不要因為他問建議就建立任務、派工或宣稱已修改。明確要求動手時，仍按既有範圍、確認與批准流程處理。`
 
@@ -56,7 +60,7 @@ const SYSTEM_PROMPT = `你的職責：理解 → 判斷 → 建議 → 提出提
 【再選 mode 與格式】
 
 mode="chat"（greeting / question / chit_chat / context）:
-{ "intent":"...", "mode":"chat", "reply":"<自然口語的回應。提問就直接回答;背景/現況就表示理解並確認。>" }
+{ "intent":"...", "mode":"chat", "reply":"<自然口語的回應。提問就直接回答;背景/現況就承接已知內容。只有缺失會改變結果時才問必要問題,不例行要求確認。>" }
 
 mode="recommend"（advisory / brainstorm —— Louie 在徵詢意見或二選一）:
 不要只反問!你是 COO,要先給出「建議 + 理由」,再邀請他同意。
@@ -80,7 +84,7 @@ mode="commit"（decision / task / reminder —— 操作型):
 }
 
 【背景/現況 ≠ 指令 —— 最容易犯的錯】intent="context":
-當 Louie 只是「陳述背景、現況、關係、事實或想法」,而【沒有】明確要求你現在去做/建立/修改/停止/執行某件事——這是 context,一律用 mode="chat" 回應(表示理解並確認),【絕對不要】產生 decision 或 task。
+當 Louie 只是「陳述背景、現況、關係、事實或想法」,而【沒有】明確要求你現在去做/建立/修改/停止/執行某件事——這是 context,一律用 mode="chat" 回應(承接已知內容,只有必要時才釐清),【絕對不要】產生 decision 或 task。
 只有當 Louie 明確下達行動要求(做/建立/改/停/查/派工…)時,才用 mode="commit"。判斷不確定時,傾向 context/chat,不要擅自建立任務。
 - context/chat(不建立任務)例:「從今天開始我們一起開發 Aroma System」「我們公司主要做餐飲」「Aroma 有三個門市」「我昨天跟供應商談過了」「我最近在想香香的定位」。
 - commit(建立任務)例:「幫我把 Timeline 的輪詢在終止狀態後停掉」「建立一個新的供應商資料表」。
@@ -138,7 +142,8 @@ function buildDistillPrompt (message, history = [], opts = {}) {
   let convo = ''
   if (Array.isArray(history) && history.length) {
     convo = '對話歷史(舊到新):\n' + history.slice(-8)
-      .map(h => `${h.role === 'assistant' ? '香香' : 'Louie'}: ${h.text}`).join('\n') + '\n\n'
+      .filter(h => h && typeof h === 'object')
+      .map(h => `${h.role === 'assistant' ? '香香' : 'Louie'}: ${typeof h.text === 'string' ? h.text : (typeof h.content === 'string' ? h.content : '')}`).join('\n') + '\n\n'
   }
   // ⛔ A4-1: THE SEMANTIC GUIDANCE IS APPENDED, GATED, AND CHAT-LANE ONLY.
   //
