@@ -73,3 +73,16 @@ test('supplied-text transformations preserve quoted counts instead of claiming a
  const out=enforceRouteEvidence({reply,message:'改寫：'+reply,evidenceSets:[]})
  assert.equal(out.reply,reply);assert.equal(out.violated,false)
 })
+
+test('operational assertions in headings are guarded separately from a supported conversation claim',()=>{
+ const conversation='這是你第四次提出同一個想法。'
+ for(const heading of ['## 已經有3件', '## 今日有3樣貨已經到', '## 存貨全部充足']) {
+  const out=say(heading+'\n\n'+conversation)
+  assert.equal(out.violated,true,heading);assert.ok(out.withheld.some(s=>s.includes(heading)),heading)
+  assert.ok(!out.reply.includes(heading));assert.match(out.reply,/營運狀況/)
+ }
+ const unrelated=say('## 已經有3件\n\n'+conversation)
+ assert.ok(unrelated.reply.includes(conversation),'an unrelated nounless heading cannot shelter itself behind the conversation proof')
+ assert.deepEqual(require('./answerPlan').splitSentences('## 已經有3件\n\n'+conversation),['## 已經有3件',conversation])
+ for(const reply of ['存貨，全部不足。', '存貨，有3件。', '我可以查存貨，目前全部不足。'])assert.equal(say(reply).violated,true,reply)
+})

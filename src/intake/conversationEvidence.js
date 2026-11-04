@@ -31,7 +31,7 @@ function fromSavedConversation(saved, message) {
 function checkConversationClaim(clause, token) {
   // A bounded grammatical claim type (ordinal + speech act + same topic), not
   // a specific count/sentence exception. No trailing operational predicate fits.
-  const text = String(clause).trim().replace(/^(?:#{1,6}[^\n]*\n\s*)+/u, '').replace(/^[-*+]\s+/u, '')
+  const text = String(clause).trim().replace(/^[-*+]\s+/u, '')
   const match = text.match(/^(?:這|这)(?:已經|已经)?是你第\s*([0-9零〇一二兩三四五六七八九十百千萬]+)\s*次(?:提出|提起|提及|詢問|询问|問到|问到)(?:同一個|同一个|這個|这个)(?:構想|构想|想法|要求|問題|问题)[。．.!！,，；;—]?$/u)
   if (!match) return null
   const count = /^\d+$/.test(match[1]) ? Number(match[1]) : cjkToNumber(match[1])

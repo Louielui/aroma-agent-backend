@@ -70,3 +70,17 @@ U1 email-draft option contract. Display copy now lives in a classified interface
 helper; the attestation option is added only to chat with actual saved evidence.
 Neither protection/test was relaxed. The final candidate requires a fresh full
 suite and review; the failed run is never resumed or relabelled.
+
+The first independent review of `792910e9c8acec029f4baccdaf04bbc7c546bb2e`
+requested changes: stripping arbitrary Markdown headings might shelter an
+unsupported nounless operational assertion if the sentence splitter kept both
+lines together. Its needs_attention run `15de9c9f-3c5d-49ef-a049-0a361db8f66d`
+and original review are retained. Direct checks of the actual splitter prove
+it already separates heading lines and guards the operational heading; that
+conditional bypass was not reproduced. Redundant heading stripping was removed
+so the verifier only admits a whole clause. New regression controls assert the
+actual split and both heading/business protections. A draft control had assumed
+business subjects inherit across newlines; that is outside the existing guard
+contract (inheritance is within one sentence), and was corrected rather than
+reported as the review finding. Its original failed log remains retained.
+Final review must cover the complete new SHA; the rejected review is not edited.
