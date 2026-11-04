@@ -38,6 +38,10 @@
  * than editing the same strings twice.
  */
 const CATALOGUE = Object.freeze({
+  'advice.basis': { zh: '判斷依據', en: 'Recommendation basis' },
+  'advice.provisional': { zh: '這是暫定建議。', en: 'This recommendation is provisional.' },
+  'advice.unknown': { zh: '不確定之處', en: 'Uncertainties' },
+  'advice.changeIf': { zh: '會改變建議的情況', en: 'What would change the recommendation' },
   'ownerGoal.available': {zh:"已取得授權來源讀取紀錄；完整結果仍待核實",en:"Authorized source read recorded; the complete outcome remains unverified"},
   'ownerGoal.blocked': {zh:"讀取失敗或範圍不完整，尚未完成",en:"Read unavailable or coverage incomplete; not complete"},
   'ownerGoal.heading': {"zh":"原任務進度","en":"Original goal status"},

@@ -2347,6 +2347,22 @@
     return turn
   }
 
+  function appendAdviceBasis (host, basis) {
+    if (!basis || ['decided', 'provisional'].indexOf(basis.status) < 0 || !Array.isArray(basis.uncertainties) || !Array.isArray(basis.changeIf)) return
+    var details = el('details', 'advice-basis')
+    details.appendChild(el('summary', '', t('advice.basis')))
+    if (basis.status === 'provisional') details.appendChild(el('p', 'meta', t('advice.provisional')))
+    ;[[basis.uncertainties, t('advice.unknown')], [basis.changeIf, t('advice.changeIf')]].forEach(function (pair) {
+      var rows = pair[0].filter(function (v) { return typeof v === 'string' && v.trim() }).slice(0, 3)
+      if (!rows.length) return
+      details.appendChild(el('p', '', pair[1]))
+      var list = el('ul')
+      rows.forEach(function (text) { list.appendChild(el('li', '', text.slice(0, 160))) })
+      details.appendChild(list)
+    })
+    host.appendChild(details)
+  }
+
   function render (status, res, conv) {
     res = res || {}
     if (status === 403) return addError(t('err.demoDisabled'), conv)
@@ -2447,6 +2463,7 @@
     if (res.demoOutcome === 'clarification') return renderProposal(res, conv)
     if (res.talkOnly === true || res.mode === 'chat' || res.mode === 'ask' || res.mode === 'recommend') {
       var chatTurn = addBot(res.reply || '', conv)
+      if (res.adviceBasis) appendAdviceBasis(chatTurn.body, res.adviceBasis)
       if (res.hrRecheckOffer && topicController) topicController.recheckOffer(chatTurn.body, res.hrRecheckOffer)
       if (res.followUpOffer && topicController) topicController.offer(chatTurn.body, res.followUpOffer)
       if (res.historySaved === false) addMeta(chatTurn.body, t('workflow.historyFailed'))

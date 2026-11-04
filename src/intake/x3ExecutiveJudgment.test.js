@@ -311,9 +311,9 @@ describe('the directive', () => {
 
   test('*** ⛔ 「資料唔齊」 IS NAMED AS A NON-REASON — that sentence IS the tranche ***', () => {
     const d = judgmentDirective({ executiveFrame: { decisionNeeded: true, answerPosture: 'direct' } })
-    assert.match(d, /資料唔齊唔等於冇意見/)
+    assert.match(d, /資料不足不等於不能給初步意見/)
     assert.match(d, /provisional/)
-    assert.match(d, /唔好淨係反問/)
+    assert.match(d, /不要只反問/)
   })
 
   test('the directive never instructs a reasoning dump', () => {
@@ -343,10 +343,10 @@ describe('Owner-visible behaviour', () => {
       const t = await turn({ message: DECIDE_MSG, history: DESIGN_HISTORY, plan: planOf(), script: [answerWith(j)] })
       const reply = String(t.res.reply)
       assert.ok(reply.trim().startsWith('暫時建議先做 Email 區。'), '⛔ the provisional position was not first')
-      assert.match(reply, /呢個係暫定判斷/)
+      assert.match(reply, /這是暫定判斷/)
       assert.ok(reply.indexOf('未知：') > reply.indexOf('暫時建議'), '⛔ uncertainty came before the position')
       assert.match(reply, /未知廣告預算/)
-      assert.match(reply, /會改變我睇法嘅情況：/)
+      assert.match(reply, /會改變建議的情況：/)
       assert.match(reply, /如果廣告預算已經批咗/)
     })
   })
@@ -356,7 +356,7 @@ describe('Owner-visible behaviour', () => {
       const j = { status: 'blocked', statement: '', uncertainties: ['連兩邊嘅成本都未知'], changeIf: [] }
       const t = await turn({ message: DECIDE_MSG, history: DESIGN_HISTORY, plan: planOf(), script: [answerWith(j)] })
       const reply = String(t.res.reply)
-      assert.match(reply, /畀唔到一個負責任嘅判斷/)
+      assert.match(reply, /目前無法給出負責任的判斷/)
       assert.equal(/我建議/.test(reply), false, '⛔ a blocked judgement still recommended something')
       assert.equal(t.x3.status, 'blocked')
       assert.equal(t.x3.statementChars, 0)
@@ -368,8 +368,8 @@ describe('Owner-visible behaviour', () => {
       const plan = planOf({ executive_frame: frame({ taskType: 'retrieval', decisionNeeded: false }) })
       const t = await turn({ message: '我下個月有咩行程？', history: [], plan, script: [{ intent: 'question', mode: 'chat', reply: '你下個月有三個會。', nextRead: null, answerPlan: null }] })
       assert.equal(t.x3, null, '⛔ a retrieval turn emitted a judgement')
-      assert.equal(/資料唔齊唔等於冇意見/.test(t.terminal), false, '⛔ the judgement directive polluted a retrieval prompt')
-      assert.equal(/唔好淨係反問/.test(t.terminal), false, '⛔ the judgement directive polluted a retrieval prompt')
+      assert.equal(/資料不足不等於不能給初步意見/.test(t.terminal), false, '⛔ the judgement directive polluted a retrieval prompt')
+      assert.equal(/不要只反問/.test(t.terminal), false, '⛔ the judgement directive polluted a retrieval prompt')
       assert.equal(String(t.res.reply).includes('未知：'), false)
       assert.equal(String(t.res.reply).includes('暫定判斷'), false)
     })
@@ -408,7 +408,7 @@ describe('Owner-visible behaviour', () => {
   test('*** ⛔ H — X1 UNAVAILABLE MEANS PRE-X3 BEHAVIOUR, NOT DEGRADED BEHAVIOUR ***', async () => {
     await withEnv({}, async () => {
       const t = await turn({ message: DECIDE_MSG, history: DESIGN_HISTORY, plan: 'THROW', script: [answerWith(J())] })
-      assert.equal(/資料唔齊唔等於冇意見/.test(t.terminal), false, '⛔ the directive appeared without a frame')
+      assert.equal(/資料不足不等於不能給初步意見/.test(t.terminal), false, '⛔ the directive appeared without a frame')
       assert.ok(String(t.res.reply).length > 0, 'the turn must still answer')
     })
   })
@@ -449,13 +449,13 @@ describe('X3 fences', () => {
     const rendered = ej.renderJudgment(j)
     // Strip the model's words and the fixed server labels. Anything left is content the
     // server invented — on a business question that would be an opinion nobody authored.
-    const LABELS = ['（呢個係暫定判斷。）', '未知：', '會改變我睇法嘅情況：']
+    const LABELS = ['（這是暫定判斷。）', '未知：', '會改變建議的情況：']
     let residue = rendered.split(S1).join('').split(S2).join('').split(S3).join('')
     for (const l of LABELS) residue = residue.split(l).join('')
     assert.equal(residue.trim(), '', '⛔ the server contributed content of its own: ' + JSON.stringify(residue))
     // And a blocked judgement renders a refusal — never a manufactured stance.
     const b = judgeExecutiveJudgment({ status: 'blocked', statement: '', uncertainties: [], changeIf: [] }).judgment
-    assert.equal(ej.renderJudgment(b), '我而家畀唔到一個負責任嘅判斷。')
+    assert.equal(ej.renderJudgment(b), '我目前無法給出負責任的判斷。')
   })
 
   test('*** ⛔ C1-A STAYS AN OBSERVER — X3 does not branch on candidateJudgmentGap ***', () => {
