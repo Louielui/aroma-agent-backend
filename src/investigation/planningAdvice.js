@@ -3,8 +3,14 @@
 // the facts and permissions; an investigation focus cannot replace a plan goal.
 const {t}=require('../i18n/t')
 function isPlanningAdvice({plan,report,mode,ownerGoal,clarification=false}={}){
+ // Preparing a proposal may be judged as an action while the final mode is a
+ // non-executable recommendation. This selects only the draft/review view; it
+ // creates no Proposal, Task or authority and cannot admit a different action.
+ const proposalDraft=plan?.executiveFrame?.taskType==='act'&&plan.requestedCapability==='proposal.create'&&
+  Array.isArray(plan.ownerOutcomes)&&plan.ownerOutcomes.some(o=>o?.kind==='action'&&o.capability==='proposal.create')&&
+  plan.ownerOutcomes.every(o=>o?.kind!=='action'||o.capability==='proposal.create')
  return !ownerGoal&&!clarification&&mode==='recommend'&&report?.readOnly===true&&
-  plan?.executiveFrame?.taskType==='plan'&&plan.executiveFrame.decisionNeeded===true
+  (plan?.executiveFrame?.taskType==='plan'||proposalDraft)&&plan.executiveFrame.decisionNeeded===true
 }
 // Select the first actual Markdown list, including one attached to a heading.
 // Retain complete continuation/nested lines within each item; never pick a later
