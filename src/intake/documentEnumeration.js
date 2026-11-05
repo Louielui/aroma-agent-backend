@@ -28,8 +28,13 @@ function verifiedDocumentLists(reply){
 // The caller still checks entity/status predicates and every adjacent clause.
 const conditionalZh=new RegExp('^(?:可以(?:考慮)?|建議)(?:先)?(?:準備|草擬|整理|建立|開)\\s*(一|1)(?:份|個|張)(?:唯讀的|待批的|隔離的)?(?:[「“][^「」“”\\r\\n]{1,40}[」”])?(?:的)?(?:'+zhKinds+'|草稿|工作單)(?:[（(][^）)\\r\\n]*[）)]?)?[，；;。.!！]?$', 'u')
 const conditionalEn=new RegExp('^(?:We could (?:draft|prepare|create)|(?:I suggest|Consider) (?:drafting|preparing|creating)) (one|a|an) (?:read-only |proposed |isolated |pending-approval )?'+enKinds+'(?: \\([^()\\r\\n]*\\))?[.!]?$','iu')
+// Modal transformations describe a proposed text/work unit too. Their result
+// object, rather than a preceding source noun, owns the indefinite article.
+// A whole-clause match excludes actual/completed transformations and extra data.
+const transformationZh=new RegExp('^(?:可(?:以)?|建議)(?:先|再)?(?:合併|整合|歸併|拆分|轉換)(?:成|為)\\s*(一|1)(?:項(?:修正|變更)|個(?:步驟|流程|'+zhKinds+'))[，；;。.!！]?$', 'u')
+const transformationEn=new RegExp('^(?:We could (?:combine|consolidate|merge)|(?:I suggest|Consider) (?:combining|consolidating|merging))(?: these)? into (one|a|1) (?:change|step|workflow|'+enKinds+')[.!]?$', 'iu')
 function conditionalDraftObject(clause){
- const text=String(clause).trim(),match=text.match(conditionalZh)||text.match(conditionalEn)
+ const text=String(clause).trim(),match=text.match(conditionalZh)||text.match(conditionalEn)||text.match(transformationZh)||text.match(transformationEn)
  if(!match)return false
  const at=text.indexOf(match[1]);return !/[\p{N}零〇一二兩三四五六七八九十百千萬]/u.test(text.slice(0,at)+text.slice(at+match[1].length))
 }

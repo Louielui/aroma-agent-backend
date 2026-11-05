@@ -46,7 +46,10 @@ const VERIFIER_PROFILE=Object.freeze({id:'08cb9cff-cad8-4b3c-9aea-323a947dd253',
 // Inert exact-edit retest proposal: installation does not close or reactivate
 // the paused final-verifier root and grants no model allowance.
 const EDIT_PROFILE=Object.freeze({id:'95f9ab4d-7d67-4a72-b679-1b4f4f058ffb',identity:'owner-advice-edit-contract-acceptance-20261105',model:'claude-opus-5-5',effort:'medium',turns:1,helper:6,website:0})
-function isAcceptanceRoot(id){return id===PROFILE.id||id===UNDERSTANDING_PROFILE.id||id===ADVICE_PROFILE.id||id===PRIORITY_PROFILE.id||id===CONVERSATION_PROFILE.id||id===GOAL_PROFILE.id||id===CLARITY_PROFILE.id||id===PLANNING_PROFILE.id||id===CONTINUATION_PROFILE.id||id===MARKDOWN_PROFILE.id||id===DRAFT_PROFILE.id||id===HANDOFF_PROFILE.id||id===VERIFIER_PROFILE.id||id===EDIT_PROFILE.id}
+// Inert proposed-object retest; the paused advice-edit root remains selected.
+// No installation, restart or child task can create or transfer this allowance.
+const SCOPE_PROFILE=Object.freeze({id:'588208a8-ec9b-4ddf-86c4-0ff410e7e7b5',identity:'owner-proposal-clause-scope-acceptance-20261105',model:'claude-opus-5-5',effort:'medium',turns:1,helper:6,website:0})
+function isAcceptanceRoot(id){return id===PROFILE.id||id===UNDERSTANDING_PROFILE.id||id===ADVICE_PROFILE.id||id===PRIORITY_PROFILE.id||id===CONVERSATION_PROFILE.id||id===GOAL_PROFILE.id||id===CLARITY_PROFILE.id||id===PLANNING_PROFILE.id||id===CONTINUATION_PROFILE.id||id===MARKDOWN_PROFILE.id||id===DRAFT_PROFILE.id||id===HANDOFF_PROFILE.id||id===VERIFIER_PROFILE.id||id===EDIT_PROFILE.id||id===SCOPE_PROFILE.id}
 const SHAPES={usage_activate:['op'],usage_status:['op'],usage_pause:['op'],usage_close:['op'],usage_reconcile:['op'],usage_bind_turn:['op','turnId','conversationId']}
 SHAPES.usage_extension_prepare=['op','workId','commit','attemptsHash']
 SHAPES.usage_extension_approve=['op','id','hash','nonce']
@@ -60,7 +63,7 @@ function developmentProfile(id){if(!ID.test(id||'')||isAcceptanceRoot(id))throw 
 function createUsageBudget({store,evidenceDir,now=Date.now,activationReady=null,profile=PROFILE,extensionWitness=null,approvals=require('../agent/ownerApprovalStore').createOwnerApprovalStore({now}),processAlive=pid=>{try{process.kill(pid,0);return true}catch(e){return e.code!=='ESRCH'}}}={}){
  if(!store?.lockRun)throw error('usage_store_required')
  profile=structuredClone(profile)
- if(hash(profile)!==hash(PROFILE)&&hash(profile)!==hash(UNDERSTANDING_PROFILE)&&hash(profile)!==hash(ADVICE_PROFILE)&&hash(profile)!==hash(PRIORITY_PROFILE)&&hash(profile)!==hash(CONVERSATION_PROFILE)&&hash(profile)!==hash(GOAL_PROFILE)&&hash(profile)!==hash(CLARITY_PROFILE)&&hash(profile)!==hash(PLANNING_PROFILE)&&hash(profile)!==hash(CONTINUATION_PROFILE)&&hash(profile)!==hash(MARKDOWN_PROFILE)&&hash(profile)!==hash(DRAFT_PROFILE)&&hash(profile)!==hash(HANDOFF_PROFILE)&&hash(profile)!==hash(VERIFIER_PROFILE)&&hash(profile)!==hash(EDIT_PROFILE)&&hash(profile)!==hash(developmentProfile(profile.id)))throw error('usage_profile_not_allowed')
+ if(hash(profile)!==hash(PROFILE)&&hash(profile)!==hash(UNDERSTANDING_PROFILE)&&hash(profile)!==hash(ADVICE_PROFILE)&&hash(profile)!==hash(PRIORITY_PROFILE)&&hash(profile)!==hash(CONVERSATION_PROFILE)&&hash(profile)!==hash(GOAL_PROFILE)&&hash(profile)!==hash(CLARITY_PROFILE)&&hash(profile)!==hash(PLANNING_PROFILE)&&hash(profile)!==hash(CONTINUATION_PROFILE)&&hash(profile)!==hash(MARKDOWN_PROFILE)&&hash(profile)!==hash(DRAFT_PROFILE)&&hash(profile)!==hash(HANDOFF_PROFILE)&&hash(profile)!==hash(VERIFIER_PROFILE)&&hash(profile)!==hash(EDIT_PROFILE)&&hash(profile)!==hash(SCOPE_PROFILE)&&hash(profile)!==hash(developmentProfile(profile.id)))throw error('usage_profile_not_allowed')
  const limits={turns:profile.turns,helper:profile.helper,website:profile.website}
  const acceptsModel=input=>(profile.models||[{model:profile.model,effort:profile.effort}]).some(m=>m.model===input.model&&m.effort===input.effort)
  const profileHash=hash(profile)
@@ -159,7 +162,8 @@ function owner(){
   const draft=markdown.readStatus().state==='closed'?createUsageBudget({store,evidenceDir,profile:DRAFT_PROFILE}):markdown
   const handoff=draft.readStatus().state==='closed'?createUsageBudget({store,evidenceDir,profile:HANDOFF_PROFILE}):draft
   const verifier=handoff.readStatus().state==='closed'?createUsageBudget({store,evidenceDir,profile:VERIFIER_PROFILE}):handoff
-  ownerBudget=verifier.readStatus().state==='closed'?createUsageBudget({store,evidenceDir,profile:EDIT_PROFILE}):verifier
+  const edit=verifier.readStatus().state==='closed'?createUsageBudget({store,evidenceDir,profile:EDIT_PROFILE}):verifier
+  ownerBudget=edit.readStatus().state==='closed'?createUsageBudget({store,evidenceDir,profile:SCOPE_PROFILE}):edit
  }
  return ownerBudget
 }
@@ -174,4 +178,4 @@ function blockAPI(){if(currentScope()||service().isActive())throw service().reje
 // Interactive coding CLIs can make internal turns the host cannot meter. They
 // cannot be started in this fixed, read-only conversation acceptance window.
 function blockInteractiveWorker(){if(currentScope()||service().isActive())throw service().rejection('usage_operation_not_allowed')}
-module.exports={PROFILE,UNDERSTANDING_PROFILE,ADVICE_PROFILE,PRIORITY_PROFILE,CONVERSATION_PROFILE,GOAL_PROFILE,CLARITY_PROFILE,PLANNING_PROFILE,CONTINUATION_PROFILE,MARKDOWN_PROFILE,DRAFT_PROFILE,HANDOFF_PROFILE,VERIFIER_PROFILE,EDIT_PROFILE,isAcceptanceRoot,developmentProfile,ERRORS,validInput,createUsageBudget,ownerDirectory,owner,service,currentScope,currentHeader,observe,nativePermit,guardRPC,withRPCBudget,blockAPI,blockInteractiveWorker}
+module.exports={PROFILE,UNDERSTANDING_PROFILE,ADVICE_PROFILE,PRIORITY_PROFILE,CONVERSATION_PROFILE,GOAL_PROFILE,CLARITY_PROFILE,PLANNING_PROFILE,CONTINUATION_PROFILE,MARKDOWN_PROFILE,DRAFT_PROFILE,HANDOFF_PROFILE,VERIFIER_PROFILE,EDIT_PROFILE,SCOPE_PROFILE,isAcceptanceRoot,developmentProfile,ERRORS,validInput,createUsageBudget,ownerDirectory,owner,service,currentScope,currentHeader,observe,nativePermit,guardRPC,withRPCBudget,blockAPI,blockInteractiveWorker}
