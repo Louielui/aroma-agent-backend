@@ -225,6 +225,10 @@ function enforceRouteEvidence (input) {
       if (!s.trim() || ASKING.test(s.trim()) || OWN_OFFER.test(s) || ROUTE_EVIDENCE_NOTE_RE.test(s)) continue
       if (definition && !BUSINESS_REFERENT.test(s)) continue
       if (noReadRecommendation && subject === null && isQuestionEnumeration(s)) continue
+      // A new conditional draft object is not the preceding entity's quantity.
+      // Keep the antecedent for subsequent elliptical business clauses; admit
+      // neither explicit entities/status predicates nor completed-action prose.
+      if (noReadRecommendation && explicitNoun === null && !hasStatusPredicate(s) && !BUSINESS_REFERENT.test(s) && require('./documentEnumeration').conditionalDraftObject(s)) continue
       // This exact whole clause counts immediately enumerated proposal text.
       // It grants no exemption to the following items or adjacent status claims.
       if (s === sentence && documentCounts.has(sentenceStart)) continue
