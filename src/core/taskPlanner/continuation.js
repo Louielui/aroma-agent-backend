@@ -43,8 +43,12 @@ function makeOffer(message, mode, prior, revision, now = Date.now()) {
 function resolveConfirmation(message, conversation, revision, now = Date.now()) {
   if (!confirmation(message)) return null
   const last = conversation?.messages?.at(-1)
-  if (last?.role !== 'assistant') return { clarification:true }
+  if (last?.role !== 'assistant') return null
   if (typeof last.taskPlanRunId === 'string') return { runId:last.taskPlanRunId }
+  // A confirmation phrase is not evidence of an interface-planning discussion.
+  // No receipt means ordinary understanding owns the turn and its full history.
+  // A present but invalid receipt still fails closed within the planner.
+  if (!last.planningOffer) return null
   if (!validOffer(last.planningOffer,revision,now)) return { clarification:true }
   // Stable across HTTP retries and an uncertain conversation append. The planner
   // persists this request identity before dispatch, so a new browser UUID cannot

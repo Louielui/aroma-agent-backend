@@ -907,7 +907,10 @@ function createDemoRouter ({ getAdapterFn = getAdapterForLane, processIntakeFn =
       let continued = null
       if (planningLane && planContinuation.confirmation(message)) {
         try { continued = planContinuation.resolveConfirmation(message, conversationStore.get?.(req.body.conversationId), planningRevision) }
-        catch (_) { continued = { clarification: true } }
+        catch (_) {
+          emit('context_read_failed', 503, 'conversation_context_unavailable')
+          return res.status(503).json({ error: { code: 'conversation_context_unavailable', message: t('context.conversationUnavailable'), retryable: false } })
+        }
       }
       const planning = planningLane ? (continued || require('../core/taskPlanner/contract').classify(message)) : null
       if (planning) {
@@ -1188,7 +1191,12 @@ function createDemoRouter ({ getAdapterFn = getAdapterForLane, processIntakeFn =
         // not instrumentation; it is a variable. (HR-8, second instance.)
         const hasProposalAlready = !!(result && typeof result === 'object' && !Array.isArray(result) &&
           Array.isArray(result.proposals) && result.proposals.length > 0)
-        const offerDecision = explainOffer({ message, hasProposal: hasProposalAlready, response: result })
+        // A referential confirmation has no standalone file/change pair. Its
+        // contextual answer owns the turn; the generic file form must not mask
+        // that answer after the interface planner correctly declines ownership.
+        const offerDecision = planningLane && !continued && planContinuation.confirmation(message)
+          ? { offer: null, reason: 'contextual_confirmation', state: WORK_REQUEST_STATE.NOT_A_WORK_REQUEST }
+          : explainOffer({ message, hasProposal: hasProposalAlready, response: result })
         /**
          * ⛔ THE SETTINGS OFFER, computed from HIS WORDS. Nothing is written by computing it —
          * it carries before → after so he approves what he can see, and the button is what

@@ -133,13 +133,9 @@
   /* The user bubble stays narrower than the column — a bubble spanning the full width
      stops reading as a bubble. The assistant has no bubble and uses all of it. */
   --user-bubble-max: 86%;
-  /* THE MESSAGE COLUMN. Widened 634 -> 768 because the page read as mostly margin.
-     Chosen from LINE LENGTH, not from a competitor pixel value: at --msg-size 16px a
-     768px column runs ~95 Latin characters, and the assistant body no longer shrinks
-     inside it, so ~90 is the working measure — the upper end of the comfortable 45-95
-     band, and ~48 full-width CJK characters, which is where Chinese still scans well.
-     One token: if it is still too narrow (or now too wide), this line is the only edit. */
-  --col: 768px;
+  /* One reading measure for messages and composer. The Owner requested a
+     narrower column for long replies; responsive layouts still use available width. */
+  --col: 680px;
   --msg-gap: 28px;        /* vertical space BETWEEN messages — the reference is generous */
   /* THE ONE KNOB FOR THE CHAT AVATAR. Change this number and nothing else: the dot's
      width, height, flex-basis and its vertical alignment with the first line of the reply
@@ -321,7 +317,7 @@ body {
 
 .md > *:first-child { margin-top: 0; }
 .md > *:last-child { margin-bottom: 0; }
-.md p { margin: 0 0 10px; white-space: pre-wrap; }
+.md p { margin: 0 0 14px; white-space: pre-wrap; }
 .md h1, .md h2, .md h3 { margin: 16px 0 8px; line-height: 1.35; }
 .md h1 { font-size: 1.25em; } .md h2 { font-size: 1.125em; } .md h3 { font-size: 1em; }
 .md ul, .md ol { margin: 0 0 10px; padding-left: 22px; }

@@ -3743,7 +3743,7 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
     if(opts.ownerGoal)opts.onOwnerReadView?.(view.reply)
     // ⛔ E2: same single outcome as the commit path — judged against the bytes he receives.
     leadWithJudgment(view, distilled, requestId, 'chat', operationalInvestigation,
-      distilled.mode === 'recommend' && turnPerSource.size === 0 && !gateAuthoredAsk && !semanticClarifyTerminal && !guarded.corrected && !guarded.correction)
+      distilled.mode === 'recommend' && !gateAuthoredAsk && !semanticClarifyTerminal && !guarded.corrected && !guarded.correction)
     const preservesOrdinaryAnswer = require('../investigation/generalizationView').preservesOrdinaryAnswer(operationalInvestigation,llmResult?.text,{route:routeDecision?.route})
     if(preservesOrdinaryAnswer)operationalInvestigation.answerPresentation={kind:'guarded_answer_without_observations',modelProseUsed:true,claimsValidated:false,remainingGapsRetained:true}
     const operationalBrief = preservesOrdinaryAnswer ? null : require('../investigation/operationalBrief').renderOperationalBrief(operationalInvestigation, { message })
@@ -3858,6 +3858,11 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
         meaning: 'available_bound_reached_not_all_facts_proven' }
     }
     view.reply=require('../memory/recallReply').enforceCapturePolicyReply(view.reply,message).reply
+    // An evidence-rendered answer must not archive the obsolete model draft.
+    // Keep A-prime's third-party boundary: ordinary read views archive a neutral
+    // receipt, not newly copied rows. The conversation retains the visible reply.
+    const archiveReply = adviceReview || (view.adviceBasis && turnPerSource.size === 0) || view.routeEvidenceWithheld>0 || view.publicSummaryRendered || operationalInvestigation?.readOnly === true
+      ? view.reply : view.applied ? require('./conversationEvidenceView').guardedArchiveReceipt() : guarded.reply
     const chatClaim = view.readClaim || { corrected: false, sources: [], kind: null }
     if (chatClaim.corrected) logReadClaimCorrection(chatClaim, requestId)
     return { blocked: false, mode: distilled.mode, intent: distilled.intent,
@@ -3867,7 +3872,7 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
       ...(view.publicAnswerReceipt ? { publicAnswerReceipt: view.publicAnswerReceipt } : {}),
       ...(view.adviceBasis ? { adviceBasis: view.adviceBasis } : {}),
       ...(adviceReview ? { adviceReview } : {}),
-      reply: view.reply, replyForArchive: adviceReview || view.routeEvidenceWithheld>0 || view.publicSummaryRendered || operationalInvestigation?.readOnly === true ? view.reply : guarded.reply, readClaimCorrected: chatClaim.corrected,
+      reply: view.reply, replyForArchive: archiveReply, readClaimCorrected: chatClaim.corrected,
       judgment: '', reasons: distilled.reasons || [], offer: distilled.offer || '', decision: null, tasks: [], risks: [], next_step: '', requestId }
   }
 

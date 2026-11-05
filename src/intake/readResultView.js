@@ -281,6 +281,7 @@ function labelFor (operation, readKey, source) {
  */
 function renderPlanSection (sec) {
   const items = (sec && Array.isArray(sec.items)) ? sec.items : []
+  if (!items.length) return ''
   const judged = judgeSectionHeading({ heading: sec && sec.heading, items })
   const headingSurvives = judged.verdict === VERDICT.ALLOW
   // A blanked heading (one the validator would not stand behind) is omitted, not printed as a
