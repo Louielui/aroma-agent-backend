@@ -42,10 +42,9 @@ test('*** EXACT values, read from Manus computed styles ***', () => {
 
 test('*** OWNER-DIRECTED layout — deliberate departures from the Manus reference ***', () => {
   // `col` and `msg-line` used to sit in the EXACT group above, because they were read from
-  // Manus's computed styles. They are no longer that: the Owner asked for a wider column
-  // with less margin (2026-08-03), so their provenance is now a decision, not a
-  // measurement, and pretending otherwise would make the group above a lie.
-  assert.equal(token('col'), '768px', 'the message column — widened on Owner direction')
+  // Manus's computed styles. They are now Owner-selected readability values,
+  // so their provenance is a decision rather than a measurement.
+  assert.equal(token('col'), '680px', 'the message column — narrower reading measure on Owner direction')
   assert.equal(token('msg-line'), '1.6', 'leading raised to suit the longer measure')
   assert.equal(token('user-bubble-max'), '86%', 'only the USER bubble stays narrow')
 

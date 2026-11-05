@@ -58,5 +58,5 @@ test('standalone definitions and supplied-text transformations use one answer, w
  }
  const eligible=require('./chatSpeed').canUseGeneralFastPath,route={route:'CONVERSATION',reason:'general_knowledge'}
  for(const message of ['今天我們庫存有多少？','照上次安排','What is our current revenue?','這三位先處理'])assert.equal(eligible(message,route,[],{}),false)
- assert.equal(eligible('什麼是現金流？',route,[{role:'user',text:'Earlier task'}],{}),false);assert.equal(eligible('什麼是現金流？',route,[],{attachSection:'work'}),false)
+ assert.equal(eligible('什麼是現金流？',route,[{role:'user',text:'Earlier task'}],{}),true);assert.equal(eligible('什麼是現金流？',route,[],{attachSection:'work'}),false)
 })

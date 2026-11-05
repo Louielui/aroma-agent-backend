@@ -78,6 +78,8 @@ function buildArchitectureHtml () {
     rows.find(row => row.id === 'universal-assistant').evidence += '; docs/CONVERSATION-EVIDENCE-GUARD-REPAIR.md; docs/REPLY-EVIDENCE-DOMAINS-REPAIR.md; docs/CORRECTED-GOAL-ACCEPTANCE-WINDOW.md; src/actions/goalAcceptanceProfile.test.js; src/intake/replyEvidenceDomains.test.js; src/intake/conversationEvidence.test.js; src/routes/conversationEvidence.test.js'
     rows.find(row => row.id === 'universal-assistant').evidence += '; docs/ADVICE-ENUMERATION-GUARD-REPAIR.md; src/intake/adviceEnumerationGuard.test.js'
     rows.find(row => row.id === 'universal-assistant').evidence += '; docs/CONTEXT-ANSWER-FLOW-REPAIR.md; src/intake/postdeploymentAnswerReplay.test.js; src/memory/captureDescription.test.js'
+    rows.find(row => row.id === 'universal-assistant').current += ' ' + t('conversationClarity.current')
+    rows.find(row => row.id === 'universal-assistant').evidence += '; docs/CONVERSATION-CLARITY.md; src/intake/conversationClarity.test.js'
     investigationRow.current += ' ' + t('investigation.qualityCurrent')
   investigationRow.current += ' ' + t('investigation.accessCoverageCurrent')
   investigationRow.current += ' ' + t('investigation.generalizationAcceptanceCurrent')

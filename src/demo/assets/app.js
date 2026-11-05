@@ -241,7 +241,16 @@
         if (/^(\u4f86\u6e90\uff1a7shifts \u56fa\u5b9a GET|Source: fixed 7shifts GET)/.test(para.textContent)) {
           var sourceDetails = el('details', 'report-source'), sourceSummary = el('summary', null, t('report.sourceDetails'))
           sourceDetails.append(sourceSummary, para); root.appendChild(sourceDetails)
-        } else root.appendChild(para)
+        } else {
+          // Plain long prose can be spaced without summarising or dropping a
+          // qualifier. Formatted paragraphs, code and lists retain their nodes.
+          var plainOnly = Array.prototype.every.call(para.childNodes, function (n) { return n.nodeType === 3 })
+          var prose = para.textContent
+          var sentences = plainOnly && prose.length > 260 ? prose.match(/[^。！？!?]+[。！？!?]+\s*|[^。！？!?]+$/g) : null
+          if (sentences && sentences.length > 2 && sentences.join('') === prose) {
+            for (var k = 0; k < sentences.length; k += 2) root.appendChild(el('p', null, sentences.slice(k, k + 2).join('')))
+          } else root.appendChild(para)
+        }
       }
       para = null
     }

@@ -22,7 +22,10 @@ const CONVERSATION_PROFILE=Object.freeze({id:'42a79086-f301-43d0-a38e-276e14db76
 // Inert one-case proposal for the remaining corrected-goal regression. It is
 // neither selected while the prior root is paused nor activated by deployment.
 const GOAL_PROFILE=Object.freeze({id:'076a60e0-490d-4695-8915-4b337fd49d9b',identity:'owner-corrected-goal-acceptance-20261105',model:'claude-opus-5-5',effort:'medium',turns:1,helper:6,website:0})
-function isAcceptanceRoot(id){return id===PROFILE.id||id===UNDERSTANDING_PROFILE.id||id===ADVICE_PROFILE.id||id===PRIORITY_PROFILE.id||id===CONVERSATION_PROFILE.id||id===GOAL_PROFILE.id}
+// Proposed clarity verification only. No ledger or allowance exists until the
+// Owner separately closes the spent goal window and activates this exact root.
+const CLARITY_PROFILE=Object.freeze({id:'2ab7ab45-1f53-4df7-ba98-4605bcfb7cde',identity:'owner-conversation-clarity-acceptance-20261105',model:'claude-opus-5-5',effort:'medium',turns:3,helper:18,website:0})
+function isAcceptanceRoot(id){return id===PROFILE.id||id===UNDERSTANDING_PROFILE.id||id===ADVICE_PROFILE.id||id===PRIORITY_PROFILE.id||id===CONVERSATION_PROFILE.id||id===GOAL_PROFILE.id||id===CLARITY_PROFILE.id}
 const SHAPES={usage_activate:['op'],usage_status:['op'],usage_pause:['op'],usage_close:['op'],usage_reconcile:['op'],usage_bind_turn:['op','turnId','conversationId']}
 SHAPES.usage_extension_prepare=['op','workId','commit','attemptsHash']
 SHAPES.usage_extension_approve=['op','id','hash','nonce']
@@ -36,7 +39,7 @@ function developmentProfile(id){if(!ID.test(id||'')||isAcceptanceRoot(id))throw 
 function createUsageBudget({store,evidenceDir,now=Date.now,activationReady=null,profile=PROFILE,extensionWitness=null,approvals=require('../agent/ownerApprovalStore').createOwnerApprovalStore({now}),processAlive=pid=>{try{process.kill(pid,0);return true}catch(e){return e.code!=='ESRCH'}}}={}){
  if(!store?.lockRun)throw error('usage_store_required')
  profile=structuredClone(profile)
- if(hash(profile)!==hash(PROFILE)&&hash(profile)!==hash(UNDERSTANDING_PROFILE)&&hash(profile)!==hash(ADVICE_PROFILE)&&hash(profile)!==hash(PRIORITY_PROFILE)&&hash(profile)!==hash(CONVERSATION_PROFILE)&&hash(profile)!==hash(GOAL_PROFILE)&&hash(profile)!==hash(developmentProfile(profile.id)))throw error('usage_profile_not_allowed')
+ if(hash(profile)!==hash(PROFILE)&&hash(profile)!==hash(UNDERSTANDING_PROFILE)&&hash(profile)!==hash(ADVICE_PROFILE)&&hash(profile)!==hash(PRIORITY_PROFILE)&&hash(profile)!==hash(CONVERSATION_PROFILE)&&hash(profile)!==hash(GOAL_PROFILE)&&hash(profile)!==hash(CLARITY_PROFILE)&&hash(profile)!==hash(developmentProfile(profile.id)))throw error('usage_profile_not_allowed')
  const limits={turns:profile.turns,helper:profile.helper,website:profile.website}
  const acceptsModel=input=>(profile.models||[{model:profile.model,effort:profile.effort}]).some(m=>m.model===input.model&&m.effort===input.effort)
  const profileHash=hash(profile)
@@ -127,7 +130,8 @@ function owner(){
   const advice=previous.readStatus().state==='closed'?createUsageBudget({store,evidenceDir,profile:ADVICE_PROFILE}):previous
   const priority=advice.readStatus().state==='closed'?createUsageBudget({store,evidenceDir,profile:PRIORITY_PROFILE}):advice
   const conversation=priority.readStatus().state==='closed'?createUsageBudget({store,evidenceDir,profile:CONVERSATION_PROFILE}):priority
-  ownerBudget=conversation.readStatus().state==='closed'?createUsageBudget({store,evidenceDir,profile:GOAL_PROFILE}):conversation
+  const goal=conversation.readStatus().state==='closed'?createUsageBudget({store,evidenceDir,profile:GOAL_PROFILE}):conversation
+  ownerBudget=goal.readStatus().state==='closed'?createUsageBudget({store,evidenceDir,profile:CLARITY_PROFILE}):goal
  }
  return ownerBudget
 }
@@ -142,4 +146,4 @@ function blockAPI(){if(currentScope()||service().isActive())throw service().reje
 // Interactive coding CLIs can make internal turns the host cannot meter. They
 // cannot be started in this fixed, read-only conversation acceptance window.
 function blockInteractiveWorker(){if(currentScope()||service().isActive())throw service().rejection('usage_operation_not_allowed')}
-module.exports={PROFILE,UNDERSTANDING_PROFILE,ADVICE_PROFILE,PRIORITY_PROFILE,CONVERSATION_PROFILE,GOAL_PROFILE,isAcceptanceRoot,developmentProfile,ERRORS,validInput,createUsageBudget,ownerDirectory,owner,service,currentScope,currentHeader,observe,nativePermit,guardRPC,withRPCBudget,blockAPI,blockInteractiveWorker}
+module.exports={PROFILE,UNDERSTANDING_PROFILE,ADVICE_PROFILE,PRIORITY_PROFILE,CONVERSATION_PROFILE,GOAL_PROFILE,CLARITY_PROFILE,isAcceptanceRoot,developmentProfile,ERRORS,validInput,createUsageBudget,ownerDirectory,owner,service,currentScope,currentHeader,observe,nativePermit,guardRPC,withRPCBudget,blockAPI,blockInteractiveWorker}

@@ -17,7 +17,10 @@ function canUseSocialFastPath (message, route, history, opts) {
   return classifyPureChatEligibility(message, route).eligible === true
 }
 function canUseGeneralFastPath(message,route,history,opts){
- return !!opts&&Array.isArray(history)&&history.length===0&&!opts.contextCard&&!opts.attachSection&&!opts.sectionPreamble&&
+ // Whole-request definitions and colon-delimited supplied text name their own
+ // subject. Earlier turns remain in the answer prompt but grant no action.
+ // Referential follow-ups never satisfy generalRequestKind.
+ return !!opts&&Array.isArray(history)&&!opts.contextCard&&!opts.attachSection&&!opts.sectionPreamble&&
    route?.route==='CONVERSATION'&&route.reason==='general_knowledge'&&require('./generalKnowledge').generalRequestKind(message)!==null
 }
 module.exports = { PROFILES, LEGACY_LEVELS, profileFor, canUseSocialFastPath,canUseGeneralFastPath }
