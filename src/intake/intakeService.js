@@ -1721,6 +1721,8 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
     for (const obs of extraObservationBlocks) {
       if (obs) effPrompt = obs + '\n\n' + effPrompt
     }
+    const planningContext=require('../investigation/planningAdvice').promptContext({plan:goalPlanObserved,report:operationalInvestigation,ownerGoal:opts.ownerGoal,previous:opts.previousInvestigation})
+    if(planningContext){effPrompt=planningContext.prompt+'\n\n'+effPrompt;operationalInvestigation.planningContext=planningContext.receipt}
     /**
      * ⛔ THE RESERVED CALL IS TOLD IT IS THE LAST ONE. IT USED TO BE TOLD NOTHING.
      *
