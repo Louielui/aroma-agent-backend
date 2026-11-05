@@ -589,10 +589,14 @@ function createDemoRouter ({ getAdapterFn = getAdapterForLane, processIntakeFn =
       // Browser history can still contain the immediately displayed mail answer.
       // Replace it before ordinary intake; the source-bound lane rechecks access.
       let contextHistory = req.body.history
+      let conversationEvidence = null
       if (isValidConversationId(req.body.conversationId) && typeof conversationStore.get === 'function') {
         try {
           const saved = conversationStore.get(req.body.conversationId)
-          if (saved) contextHistory = saved.messages
+          if (saved) {
+            contextHistory = saved.messages
+            conversationEvidence = require('../intake/conversationEvidence').fromSavedConversation(saved, message)
+          }
         } catch (_) {
           emit('context_read_failed', 503, 'conversation_context_unavailable')
           return res.status(503).json({ error: { code: 'conversation_context_unavailable', message: t('context.conversationUnavailable'), retryable: false } })
@@ -1042,6 +1046,7 @@ function createDemoRouter ({ getAdapterFn = getAdapterForLane, processIntakeFn =
           providerHint
         })
         opts.telemetry = telemetry
+        if (interactionMode === 'chat' && conversationEvidence) opts.conversationEvidence = conversationEvidence
         if (interactionMode === 'chat') {
           opts.ownerInvestigation = true
           opts.operationsBackgroundReader = req.app.locals.operationsBackgroundReader

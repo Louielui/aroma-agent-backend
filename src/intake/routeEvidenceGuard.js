@@ -54,6 +54,8 @@ const { routeTurn } = require('./turnRouter')
 const { generalRequestKind } = require('./generalKnowledge')
 const { INTENTS } = require('../context/readContext')
 const { sentenceIsSupported, splitSentences, evidenceIndex, SOURCE_LABELS, cjkToNumber } = require('./answerPlan')
+const { checkConversationClaim } = require('./conversationEvidence')
+const { conversationClaimNotice } = require('./conversationEvidenceView')
 
 /** An index over nothing — the point being that NOTHING was read this turn. */
 const EMPTY_INDEX = evidenceIndex([], [])
@@ -185,10 +187,12 @@ function enforceRouteEvidence (input) {
   // A host-reviewed no-read recommendation must also check a reviewer's edits,
   // even when the keyword router called the original question BUSINESS_QUERY.
   if (!route || (route.route !== 'CONVERSATION' && input.reviewedNoReadAdvice !== true)) return none
-  const definition = generalRequestKind(message) === 'definition'
+  const generalKind = generalRequestKind(message)
+  const definition = generalKind === 'definition'
 
   const removedSpans = []
   const withheld = []
+  let conversationWithheld = 0
   const sources = new Set()
   let sentenceCursor = 0
   for (const sentence of splitSentences(reply)) {
@@ -204,6 +208,17 @@ function enforceRouteEvidence (input) {
       clauseCursor = clauseStart + s.length
       const explicitNoun = entityIn(s)
       if (explicitNoun) subject = explicitNoun
+      // Conversation evidence is neither a business read nor permission to
+      // bypass this whole reply. Check only a complete typed speech-count claim.
+      const conversation = subject === null && generalKind !== 'supplied_text' ? checkConversationClaim(s, input.conversationEvidence) : null
+      if (conversation) {
+        if (!conversation.supported) {
+          withheld.push(s)
+          conversationWithheld++
+          removedSpans.push({start:sentenceStart+clauseStart,end:sentenceStart+clauseStart+s.length})
+        }
+        continue
+      }
       if (!s.trim() || ASKING.test(s.trim()) || OWN_OFFER.test(s) || ROUTE_EVIDENCE_NOTE_RE.test(s)) continue
       if (definition && !BUSINESS_REFERENT.test(s)) continue
       if (input.reviewedNoReadAdvice === true && subject === null && isQuestionEnumeration(s)) continue
@@ -238,8 +253,12 @@ function enforceRouteEvidence (input) {
     // A rejected model assertion does not establish what the Owner requested.
     // Keep withholding and source audit, without inventing a retrieval obligation.
     const named = [...sources].map(s => SOURCE_LABELS[s] ? SOURCE_LABELS[s]() : s)
-    const note = `有 ${withheld.length} 句講到營運狀況，但這一輪沒有查任何來源，所以我沒有顯示它。` +
-      (named.length ? `未核實的敘述涉及：${named.join('、')}。` : '')
+    const businessWithheld = withheld.length - conversationWithheld
+    const notes = []
+    if (businessWithheld) notes.push(`有 ${businessWithheld} 句講到營運狀況，但這一輪沒有查任何來源，所以我沒有顯示它。` +
+      (named.length ? `未核實的敘述涉及：${named.join('、')}。` : ''))
+    if (conversationWithheld) notes.push(conversationClaimNotice(conversationWithheld))
+    const note = notes.join('\n')
   
     return {
       // The note NEVER stands in for the answer silently, and never leaves an empty reply.

@@ -216,6 +216,7 @@ const FILE_CLASS = Object.freeze({
   // what the check decides — the alarm/report split lives in shapeDrift.js, which has no text.
   'errands/shapeDriftRunner.js': CLASS.INTERFACE,     //   6 — the drift summary sentence
   'intake/readResultView.js': CLASS.INTERFACE,        //  19
+  'intake/conversationEvidenceView.js': CLASS.INTERFACE, // Conversation-only withholding notice; no admission logic.
   'intake/publicProvenance.js': CLASS.INTERFACE,      // Display-only public evidence excerpts; no model prompt or matching.
   'demo/assets/settings.js': CLASS.INTERFACE,         //  18
   'home/errandKinds.js': CLASS.INTERFACE,             //  18 — titles + duration words

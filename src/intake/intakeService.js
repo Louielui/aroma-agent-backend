@@ -3715,6 +3715,7 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
     const view = buildReadResultReply({
       ownerGoalReporting:!!opts.ownerGoal,
       reviewedNoReadAdvice:!!adviceReview,
+      conversationEvidence:opts.conversationEvidence,
       adviceReview,
       reply: guarded.reply,
       historicalMemoryAnswer,

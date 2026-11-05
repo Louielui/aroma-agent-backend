@@ -38,6 +38,8 @@
  * than editing the same strings twice.
  */
 const CATALOGUE = Object.freeze({
+  'context.conversationClaimUnverified': { zh: '有 {count} 句關於對話紀錄的說法未能核實，已暫不顯示；其餘回答保留。', en: '{count} statement(s) about the conversation could not be verified and were withheld; the rest of the answer is preserved.' },
+  'assistant.conversationEvidenceCandidate': { zh: '對話次數敘述現在由已保存的完整前文核對，與業務來源分開；只支援可證明的原文重複，其他語義相似仍未確認。修正經離線驗證，尚未部署或通過新正式對話驗收。', en: 'Conversation count claims are checked against the full saved transcript separately from business sources. Only provable literal repeated requests are supported; semantic similarity remains unverified. This repair is offline-verified, not deployed or newly accepted in native conversation.' },
   'advice.basis': { zh: '判斷依據', en: 'Recommendation basis' },
   'advice.provisional': { zh: '這是暫定建議。', en: 'This recommendation is provisional.' },
   'advice.unknown': { zh: '不確定之處', en: 'Uncertainties' },
