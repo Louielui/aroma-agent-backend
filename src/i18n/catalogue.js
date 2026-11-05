@@ -39,7 +39,7 @@
  */
 const CATALOGUE = Object.freeze({
   'context.conversationClaimUnverified': { zh: '有 {count} 句關於對話紀錄的說法未能核實，已暫不顯示；其餘回答保留。', en: '{count} statement(s) about the conversation could not be verified and were withheld; the rest of the answer is preserved.' },
-  'assistant.conversationEvidenceCandidate': { zh: '對話次數敘述現在由已保存的完整前文核對，與業務來源分開；只支援可證明的原文重複，其他語義相似仍未確認。修正經離線驗證，尚未部署或通過新正式對話驗收。', en: 'Conversation count claims are checked against the full saved transcript separately from business sources. Only provable literal repeated requests are supported; semantic similarity remains unverified. This repair is offline-verified, not deployed or newly accepted in native conversation.' },
+  'assistant.conversationEvidenceCandidate': { zh: '正式對話仍有誤刪及歸檔落差，整體理解驗收未通過。新候選分開核對整段訊息重複與原始要求前綴、區分清單編號與業務數量，並修補漏填判斷欄位時的建議覆核及可見回覆歸檔；僅離線驗證，尚未部署或正式重驗。', en: 'Native conversation still showed false withholding and an archive mismatch; overall understanding acceptance has not passed. The new candidate distinguishes exact-message repetition from request-prefix repetition and list labels from business quantities, and repairs recommendation review without optional judgment and guarded-reply archiving. Offline verification only; not deployed or natively retested.' },
   'advice.basis': { zh: '判斷依據', en: 'Recommendation basis' },
   'advice.provisional': { zh: '這是暫定建議。', en: 'This recommendation is provisional.' },
   'advice.unknown': { zh: '不確定之處', en: 'Uncertainties' },

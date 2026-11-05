@@ -75,7 +75,7 @@ function buildArchitectureHtml () {
     rows.find(row => row.id === 'universal-assistant').current += ' ' + t('context.answerFlowCandidate')
     rows.find(row => row.id === 'universal-assistant').current += ' ' + t('assistant.enumerationCandidate')
     rows.find(row => row.id === 'universal-assistant').current += ' ' + t('assistant.conversationEvidenceCandidate')
-    rows.find(row => row.id === 'universal-assistant').evidence += '; docs/CONVERSATION-EVIDENCE-GUARD-REPAIR.md; src/intake/conversationEvidence.test.js; src/routes/conversationEvidence.test.js'
+    rows.find(row => row.id === 'universal-assistant').evidence += '; docs/CONVERSATION-EVIDENCE-GUARD-REPAIR.md; docs/REPLY-EVIDENCE-DOMAINS-REPAIR.md; src/intake/replyEvidenceDomains.test.js; src/intake/conversationEvidence.test.js; src/routes/conversationEvidence.test.js'
     rows.find(row => row.id === 'universal-assistant').evidence += '; docs/ADVICE-ENUMERATION-GUARD-REPAIR.md; src/intake/adviceEnumerationGuard.test.js'
     rows.find(row => row.id === 'universal-assistant').evidence += '; docs/CONTEXT-ANSWER-FLOW-REPAIR.md; src/intake/postdeploymentAnswerReplay.test.js; src/memory/captureDescription.test.js'
     investigationRow.current += ' ' + t('investigation.qualityCurrent')

@@ -168,6 +168,7 @@ function assertionClauses (sentence) {
 function enforceRouteEvidence (input) {
   const reply = typeof input.reply === 'string' ? input.reply : ''
   const message = typeof input.message === 'string' ? input.message : ''
+  const noReadRecommendation=input.noReadRecommendation===true||input.reviewedNoReadAdvice===true
   const none = { reply, violated: false, withheld: [], sources: [] }
   if (!reply.trim()) return none
 
@@ -186,7 +187,7 @@ function enforceRouteEvidence (input) {
   try { route = routeTurn(message) } catch (_) { return none }
   // A host-reviewed no-read recommendation must also check a reviewer's edits,
   // even when the keyword router called the original question BUSINESS_QUERY.
-  if (!route || (route.route !== 'CONVERSATION' && input.reviewedNoReadAdvice !== true)) return none
+  if (!route || (route.route !== 'CONVERSATION' && !noReadRecommendation)) return none
   const generalKind = generalRequestKind(message)
   const definition = generalKind === 'definition'
 
@@ -221,7 +222,7 @@ function enforceRouteEvidence (input) {
       }
       if (!s.trim() || ASKING.test(s.trim()) || OWN_OFFER.test(s) || ROUTE_EVIDENCE_NOTE_RE.test(s)) continue
       if (definition && !BUSINESS_REFERENT.test(s)) continue
-      if (input.reviewedNoReadAdvice === true && subject === null && isQuestionEnumeration(s)) continue
+      if (noReadRecommendation && subject === null && isQuestionEnumeration(s)) continue
   
       const noun = explicitNoun || subject
       // (a) THE NUMERIC HALF — precise, and not ours to reimplement. A bare number is not
@@ -229,10 +230,14 @@ function enforceRouteEvidence (input) {
       // noun or a state word. 「今日有 3 樣貨要補。」 names NO entity the intent table knows —
       // 要補 is not 補貨, which is exactly why the turn fell to CONVERSATION — so requiring a
       // noun here would have made the guard miss the very case it was built for.
-      const numeric = !sentenceIsSupported(s, EMPTY_INDEX) && !onlyEchoesTheOwner(s, message) &&
+      // Markdown ordered-list labels are formatting, never measured quantities.
+      // Keep checking actual body quantities and the original status predicates.
+      const numericText=s.replace(/^[ \t]{0,3}\d{1,9}[.)][ \t]+/u,'')
+      const presentationCounter=numericText!==s
+      const numeric = !sentenceIsSupported(numericText, EMPTY_INDEX) && !onlyEchoesTheOwner(numericText, message) &&
         (noun !== null || hasStatusPredicate(s))
       // (b) THE ENTITY-PLUS-STATUS HALF — no number at all. Porous by construction; see header.
-      const asserted = noun !== null && hasStatusPredicate(s)
+      const asserted = (noun !== null || presentationCounter&&!onlyEchoesTheOwner(s,message)) && hasStatusPredicate(s)
   
       if (numeric || asserted) {
         withheld.push(s)

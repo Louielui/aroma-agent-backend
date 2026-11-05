@@ -38,7 +38,7 @@ test('evidence guard still withholds operational claims but does not assert an u
  assert.ok(r.sources.includes('aroma_system'))
 })
 
-async function httpReplay(t,{review={status:'revised',checks,edits},draft=raw,throwReview=false}={}){
+async function httpReplay(t,{review={status:'revised',checks,edits},draft=raw,throwReview=false,message=fixture.case5.message}={}){
  const before={...process.env};Object.assign(process.env,{CHAT_BACKEND:'codex-subscription',TURN_ROUTER:'on',CONVERSATION_CONTRACT:'on',MULTI_AI_ROUTER:'off',READ_ACCESS:'off',CONVERSATION_RECALL:'off',DECISION_RECALL:'off',GOAL_DECOMPOSER:'off',A4_KNOWLEDGE_ROUTING:'off',XIANGXIANG_MEMORY:'off',XIANGXIANG_ARCHIVE:'off',LLM_LANGUAGE_MODE:'off',XIANGXIANG_WEBSITE_FLOW:'off'})
  t.after(()=>{for(const k of Object.keys(process.env))if(!(k in before))delete process.env[k];Object.assign(process.env,before)})
  const express=require('express'),{createDemoRouter}=require('../routes/demoRouter'),{processIntake}=require('./intakeService'),calls=[]
@@ -50,7 +50,7 @@ async function httpReplay(t,{review={status:'revised',checks,edits},draft=raw,th
  const app=express();app.locals.conversationDemo=true;app.use(express.json());app.locals.promoteToProposal=()=>assert.fail('unexpected proposal')
  app.use(createDemoRouter({getAdapterFn:()=>adapter,conversationStore:{get:()=>({messages:fixture.case5.history}),appendTurn:()=>{}},processIntakeFn:(m,a,h,o)=>processIntake(m,a,h,{...o,openaiAdapter:adapter})}))
  const server=app.listen(0,'127.0.0.1');await new Promise(r=>server.once('listening',r));t.after(()=>new Promise(r=>{server.closeAllConnections();server.close(r)}))
- const response=await fetch('http://127.0.0.1:'+server.address().port+'/api/v1/demo/intake',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({message:fixture.case5.message,conversationId:'advice-grounding-offline',interactionMode:'chat'})})
+ const response=await fetch('http://127.0.0.1:'+server.address().port+'/api/v1/demo/intake',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({message,conversationId:'advice-grounding-offline',interactionMode:'chat'})})
  assert.equal(response.status,200);return{result:await response.json(),calls}
 }
 test('actual HTTP intake routes the retained native draft through the bounded review and ordinary guards',async t=>{
@@ -73,6 +73,17 @@ test('a proposed review edit cannot bypass the existing operational evidence gua
 test('ordinary chat does not acquire an advice-review helper',async t=>{
  const {result,calls}=await httpReplay(t,{draft:{...raw,mode:'chat',intent:'chit_chat',executiveJudgment:null,reply:'生日快樂！'}})
  assert.equal(result.reply,'生日快樂！');assert.equal(calls.length,1);assert.equal(result.adviceReview,undefined)
+})
+
+test('a recommendation cannot skip review by omitting its optional judgment',async t=>{
+ const draft={...raw};delete draft.executiveJudgment
+ const {result,calls}=await httpReplay(t,{draft,review:{status:'supported',checks,edits:[]}})
+ assert.deepEqual(calls.map(c=>c.phase),['answer','evidence_review']);assert.equal(result.adviceReview.state,'supported')
+})
+
+test('an unsupported operational claim cannot survive in archive text when ordinary chat is guarded',async t=>{
+ const {result}=await httpReplay(t,{message:'我們先聊一下設計吧。',draft:{...raw,mode:'chat',intent:'chit_chat',executiveJudgment:null,reply:'存貨還有 12 箱。可以討論設計。'}})
+ assert.doesNotMatch(result.reply,/12 箱/);assert.match(result.reply,/沒有查任何來源/);assert.equal(result.replyForArchive,result.reply)
 })
 
 test('an incomplete priority review stays an explicit unverified draft on the HTTP path without retry or work',async t=>{

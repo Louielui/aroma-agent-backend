@@ -209,7 +209,7 @@ test('*** END TO END: with no read access the reply IS stored, and provenance st
     XIANGXIANG_ARCHIVE: 'on', XIANGXIANG_ARCHIVE_ROOT: root,
     READ_ACCESS: 'off', CONTEXT_GMAIL: 'off', DECISION_RECALL: 'off', MULTI_AI_ROUTER: 'off'
   }, async () => {
-    const app = makeApp(realPipelineWith(readDeps(['gmail'])))
+    const app = makeApp(realPipelineWith(readDeps(['gmail'])), CHAT_ENVELOPE_NO_CITE)
     const { json } = await post(app, {
       message: '早晨', interactionMode: 'chat', conversationId: 'e2e-conv-2', history: []
     })
@@ -222,6 +222,30 @@ test('*** END TO END: with no read access the reply IS stored, and provenance st
     assert.equal(recs[1].omitted, false)
     assert.equal(recs[1].model, MODEL_ID)
     assert.equal(recs[1].provider, 'claude')
+  })
+})
+
+test('with no read access only the final guarded reply reaches the archive file', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'xx-e2e-guarded-'))
+  await withEnv({
+    XIANGXIANG_ARCHIVE: 'on', XIANGXIANG_ARCHIVE_ROOT: root,
+    READ_ACCESS: 'off', CONTEXT_GMAIL: 'off', DECISION_RECALL: 'off', MULTI_AI_ROUTER: 'off'
+  }, async () => {
+    const envelope = JSON.stringify({ intent: 'chit_chat', mode: 'chat', reply: 'UNSUPPORTED_MAIL_SENTINEL 你有一封郵件。保留這句設計建議。' })
+    const { json } = await post(makeApp(realPipelineWith(readDeps(['gmail'])), envelope), {
+      message: '早晨', interactionMode: 'chat', conversationId: 'e2e-conv-guarded', history: []
+    })
+    assert.doesNotMatch(json.reply, /UNSUPPORTED_MAIL_SENTINEL/)
+    assert.match(json.reply, /保留這句設計建議/)
+    assert.match(json.reply, /這一輪沒有查任何來源/)
+    assert.equal(json.labArchive.recorded, true)
+    assert.equal(json.labArchive.assistantOmitted, false)
+    const raw = lines(root)
+    assert.doesNotMatch(raw, /UNSUPPORTED_MAIL_SENTINEL|MAIL_TITLE_SENTINEL|MAIL_BODY_SENTINEL/)
+    const assistant = raw.trim().split('\n').map(line => JSON.parse(line)).find(row => row.role === 'assistant')
+    assert.equal(assistant.text, json.reply)
+    assert.equal(assistant.model, MODEL_ID)
+    assert.equal(assistant.provider, 'claude')
   })
 })
 
