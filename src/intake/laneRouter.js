@@ -192,6 +192,25 @@ const CONCRETE_CORRESPONDENCE = /(呢封|這封|这封|嗰封|那封|封信|呢�
  */
 const ADDRESSABLE_UNIT = /(?:回覆|回复|覆|reply to|respond to|to|畀|俾|比|給)\s*(?:the\s+)?[A-Za-z0-9一-鿿.\- ]{0,24}?(?:部門|部门|團隊|团队|小組|小组|desk|team|department|division)/i
 
+// A correspondence verb inside a topic is not the requested act. The dedicated
+// draft lane loses chat context/model selection, so only a leading composition
+// request with an object or addressed recipient may own it. Ambiguous contiguous
+// Chinese text stays with understanding rather than being invented as a name.
+const CORRESPONDENCE_PREFIX = /^(?:(?:香香|Imagine|Xiangxiang)[，,:：\s]*)?(?:(?:請你?|请你?|幫我|帮我|幫手|帮手|麻煩你?|麻烦你?|唔該|我想(?:請你|请你)?|我要|你|妳|可唔可以|可不可以|可以|先|再|然後|然后|接著|接着|現在|现在|而家|please\b|kindly\b|I want you to\b|I would like you to\b)\s*)*/i
+const LEADING_WRITE_ACT = new RegExp('^(?:' + WRITE_ACT.source + ')', 'i')
+function requestsCorrespondence (text) {
+  const prefix = text.match(CORRESPONDENCE_PREFIX)[0]
+  // Act-verb A-not-A forms keep their established correspondence semantics;
+  // capability questions have already been handled by the earlier lane gate.
+  const request = text.slice(prefix.length).replace(/^([一-鿿]{1,2})(?:唔|不)(?=\1)/u, '')
+  if (!LEADING_WRITE_ACT.test(request)) return false
+  const head = request.split(/[，,。.!！;；\n]/u)[0]
+  if (MAIL_OBJECT.test(head) || ADDRESSABLE_UNIT.test(head)) return true
+  const explicitRequest = /(?:請|请|幫|帮|麻煩|麻烦|唔該|我想|我要|please\b|kindly\b|I want you to\b|I would like you to\b)/i.test(prefix)
+  const separatedAddressee = /^(?:回覆|回复|覆返|覆下)\s+\S|^(?:draft|write|reply to|respond to)\b/i.test(request)
+  return (explicitRequest || separatedAddressee) && RECIPIENT.test(head)
+}
+
 function isArrangementRequest (text) {
   // Addressed to a unit → he is writing TO it, not designing it.
   if (ADDRESSABLE_UNIT.test(text)) return false
@@ -265,6 +284,7 @@ function routeLane (message, opts) {
   const hasWriteAct = WRITE_ACT.test(text)
   if (hasWriteAct && (MAIL_OBJECT.test(text) || RECIPIENT.test(text))) {
     if (isArrangementRequest(text)) return { lane: CHAT, reason: 'arrangement_request' }
+    if (!requestsCorrespondence(text)) return { lane: CHAT, reason: 'not_correspondence' }
     return { lane: EMAIL, reason: 'write_act' }
   }
 
