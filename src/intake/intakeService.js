@@ -3756,7 +3756,7 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
     if(planningPreview){
       view.reply=planningPreview.reply
       operationalInvestigation.answerDetails=planningPreview.details
-      operationalInvestigation.answerPresentation={kind:'reviewed_foreground_planning_advice',foregroundTask:'plan',investigationFocus:operationalInvestigation.focus,modelProseUsed:true,claimsValidated:false,remainingGapsRetained:true,sourceFactsInProse:false,premiseReview:adviceReview,points:planningPreview.points}
+      operationalInvestigation.answerPresentation={kind:'reviewed_foreground_planning_advice',foregroundTask:goalPlanObserved.executiveFrame.taskType,investigationFocus:operationalInvestigation.focus,modelProseUsed:true,claimsValidated:false,remainingGapsRetained:true,sourceFactsInProse:false,premiseReview:adviceReview,points:planningPreview.points}
     }else if(preservesOrdinaryAnswer)operationalInvestigation.answerPresentation={kind:'guarded_answer_without_observations',modelProseUsed:true,claimsValidated:false,remainingGapsRetained:true}
     const operationalBrief = preservesOrdinaryAnswer ? null : require('../investigation/operationalBrief').renderOperationalBrief(operationalInvestigation, { message })
     if (operationalBrief && classifyDemoOutcome({ mode: distilled.mode, intent: distilled.intent }).outcome !== 'clarification') {
