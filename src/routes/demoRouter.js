@@ -937,7 +937,9 @@ function createDemoRouter ({ getAdapterFn = getAdapterForLane, processIntakeFn =
       // Persist receipt before any model call. A failed generation is still an observed event.
       if (memoryJournal) {
         try {
-          const receipt = memoryJournal.event('conversation', correlationId + ':received', message, 'owner_statement', new Date().toISOString(), { conversationId: isValidConversationId(req.body.conversationId) ? req.body.conversationId : null })
+          const conversationId = isValidConversationId(req.body.conversationId) ? req.body.conversationId : null
+          const learningAnchor = require('../memory/learningContext').anchor(conversationId ? conversationStore.get?.(conversationId)?.messages : null)
+          const receipt = memoryJournal.event('conversation', correlationId + ':received', message, 'owner_statement', new Date().toISOString(), { conversationId, learningAnchor })
           res.setHeader('X-Memory-Receipt', receipt.state)
           let working = null
           if (receipt.state === 'queued') {

@@ -197,6 +197,7 @@ function enforceRouteEvidence (input) {
   const sources = new Set()
   const documentCounts = noReadRecommendation
     ? new Set(require('./documentEnumeration').verifiedDocumentLists(reply).map(list=>list.start)) : new Set()
+  const documentOrdinals = noReadRecommendation ? new Set(require('./documentEnumeration').numberedSections(reply).map(s=>s.ordinal)) : new Set()
   let sentenceCursor = 0
   for (const sentence of splitSentences(reply)) {
     const sentenceStart = reply.indexOf(sentence, sentenceCursor)
@@ -228,7 +229,8 @@ function enforceRouteEvidence (input) {
       // A new conditional draft object is not the preceding entity's quantity.
       // Keep the antecedent for subsequent elliptical business clauses; admit
       // neither explicit entities/status predicates nor completed-action prose.
-      if (noReadRecommendation && explicitNoun === null && !hasStatusPredicate(s) && !BUSINESS_REFERENT.test(s) && require('./documentEnumeration').conditionalDraftObject(s)) continue
+      if (noReadRecommendation && explicitNoun === null && !hasStatusPredicate(s) && !BUSINESS_REFERENT.test(s) &&
+          (require('./documentEnumeration').conditionalDraftObject(s) || require('./documentEnumeration').documentReference(s,documentOrdinals))) continue
       // This exact whole clause counts immediately enumerated proposal text.
       // It grants no exemption to the following items or adjacent status claims.
       if (s === sentence && documentCounts.has(sentenceStart)) continue

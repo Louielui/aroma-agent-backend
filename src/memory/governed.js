@@ -11,6 +11,7 @@ const SCOPES = Object.freeze(['global:aroma', 'company:st-marys', 'company:the-f
   'agent:email', 'agent:qa', 'agent:coding', 'agent:purchasing', 'agent:accounting', 'agent:review', 'private:owner'])
 const STATUSES = Object.freeze(['temporary', 'candidate', 'active', 'superseded', 'archived', 'rejected', 'ignored'])
 const hash = s => createHash('sha256').update(s).digest('hex')
+const learningHash=r=>hash(JSON.stringify([r.details?.conversationId??null,r.details?.learningAnchor??null]))
 // Index bookkeeping changes the row version, not the evidence or its authority.
 const evidenceHash = r => hash(JSON.stringify([r.id, r.type, r.scope, r.subject, r.text, r.expiresAt,
   r.source.kind, r.source.id, r.source.at, r.source.attribution, r.source.url, r.source.version,
@@ -20,7 +21,7 @@ const stableId = value => { const h = hash(value); return 'xx-' + h.slice(0, 8) 
 const owner = actor => { if (actor?.id !== 'owner' || actor?.role !== 'owner') throw Error('permission_denied') }
 const sourceBound = row => row?.source?.kind?.startsWith('admin_mail_') === true
 const text = (v, max) => typeof v === 'string' && v.trim().length > 0 && v.length <= max
-function createGateway({ store, engine, clock = () => new Date().toISOString() }) {
+function createGateway({ store, engine, readConversation, clock = () => new Date().toISOString() }) {
   const indexing = new Map()
   // General memory never needs the source-bound mailbox bodies. Filter them in
   // PostgreSQL before transport; injected older stores retain their safe fallback.
@@ -98,7 +99,8 @@ function createGateway({ store, engine, clock = () => new Date().toISOString() }
     if (action === 'approve') {
       if (r.details.evidenceVersions) for (const e of r.details.evidenceVersions) {
         const evidence = await get(actor, e.id)
-        if (!evidence || !current(evidence) || !matchesEvidence(evidence, e)) throw Error('stale_evidence')
+        if (!evidence || !current(evidence) || !matchesEvidence(evidence, e) ||
+            (e.learningContextHash && learningHash(evidence) !== e.learningContextHash)) throw Error('stale_evidence')
       }
       if (r.supersedes) {
         const old = await get(actor, r.supersedes)
@@ -118,6 +120,22 @@ function createGateway({ store, engine, clock = () => new Date().toISOString() }
     const rows = (await list(actor, { type: 'decision', scope })).filter(r => current(r) && r.subject === subject)
     if (rows.length > 1) throw Error('decision_conflict')
     return rows[0] || null
+  }
+  async function preferences(actor) {
+    owner(actor)
+    // A canonical read independent of query ranking and semantic availability.
+    const approved = r => current(r) && r.type === 'preference' && r.scope === 'private:owner' &&
+      r.approval?.kind === 'owner' && r.approval.actor === 'owner' && r.approval.contentHash === hash(r.text)
+    const first = (await list(actor, { type:'preference', scope:'private:owner' })).filter(approved)
+    const second = (await list(actor, { type:'preference', scope:'private:owner' })).filter(approved)
+    const latest = new Map(second.map(r => [r.id,r])); let size = 0
+    const items = first.filter(r => latest.has(r.id) && evidenceHash(latest.get(r.id)) === evidenceHash(r))
+      .sort((a,b) => a.subject.localeCompare(b.subject) || a.id.localeCompare(b.id)).filter(r => {
+        if (r.text.length > 2000 || size + r.text.length > 8000) return false
+        size += r.text.length; return true
+      }).slice(0,8).map(r => ({id:r.id,documentId:r.id,type:r.type,scope:r.scope,subject:r.subject,text:r.text,
+        date:r.source.at,version:r.version,approval:r.approval,source:r.source}))
+    return {state:items.length === second.length && first.length === second.length ? 'ok' : 'partial',total:second.length,items}
   }
   async function recall(actor, query, options = {}) {
     if (!text(query, 2000) || exclusionReason(query, false)) throw Error('invalid_query')
@@ -332,7 +350,10 @@ function createGateway({ store, engine, clock = () => new Date().toISOString() }
     let checkpoint='consolidation_inference'
     try {
       const existing = (await list(actor, { scope: source.scope })).filter(r => current(r) && r.approval?.kind === 'owner' && ['preference','decision','semantic'].includes(r.type)).slice(-40)
-      const result = await withWorkTrace(workTrace,()=>engine.forScope(source.scope).consolidate({ id: source.id, text: source.text, source: source.source },
+      const context = require('./learningContext').precedingExchange(await list(actor, {scope:source.scope}), source, current, readConversation)
+      const evidence = [source, ...context]
+      const result = await withWorkTrace(workTrace,()=>engine.forScope(source.scope).consolidate({ id: source.id, text: source.text, source: source.source,
+        context: context.map(r=>({id:r.id,text:r.text,source:r.source})) },
         existing.map(r => ({ id: r.id, kind: r.details.category || r.type, subject: r.subject, text: r.text.slice(0,2000) }))))
       checkpoint='consolidation_validation'
       const plans = require('./consolidationPolicy').validate(result, source, existing)
@@ -343,9 +364,11 @@ function createGateway({ store, engine, clock = () => new Date().toISOString() }
         const fingerprint = hash(JSON.stringify([source.id, evidenceHash(source), plan]))
         const row = await create(actor, { id: stableId('consolidation:' + fingerprint), type: plan.type, scope: source.scope,
           subject: target?.subject || plan.subject, text: plan.text,
-          source: { kind: 'consolidation', id: source.id, at: source.source.at, attribution: 'derived', evidence: [source.id] },
+          source: { kind: 'consolidation', id: source.id, at: source.source.at, attribution: 'derived', evidence: evidence.map(r=>r.id) },
           details: { category: plan.kind, reason: plan.reason, quote: plan.quote, taskState: plan.taskState, sourceId: source.id,
-            engine: 'hindsight', evidenceVersions: [source, ...(target ? [target] : [])].map(r => ({ id: r.id, contentHash: evidenceHash(r) })),
+            engine: 'hindsight', learningContext: context.map(r=>({id:r.id,text:r.text,source:r.source})),
+            evidenceVersions: [...evidence, ...(target ? [target] : [])].map(r => ({ id: r.id, contentHash: evidenceHash(r),
+              learningContextHash:learningHash(r) })),
             ...(target ? { replaces: { id: target.id, text: target.text, sourceAt: target.source.at } } : {}) },
           ...(target ? { supersedes: target.id } : {}) }, false, true)
         if (row.status !== 'candidate') throw Error('invalid_consolidation')
@@ -356,7 +379,11 @@ function createGateway({ store, engine, clock = () => new Date().toISOString() }
       for (let retry = 0; retry < 3; retry++) {
         checkpoint='consolidation_source_verification'
         const latest = await get(actor, id)
-        if (!current(latest) || evidenceHash(latest) !== evidenceHash(source)) throw Error('stale_evidence')
+        if (!current(latest) || evidenceHash(latest) !== evidenceHash(source) || learningHash(latest)!==learningHash(source)) throw Error('stale_evidence')
+        for (const row of context) {
+          const now = await get(actor,row.id)
+          if (!now || !current(now) || evidenceHash(now)!==evidenceHash(row) || learningHash(now)!==learningHash(row)) throw Error('stale_evidence')
+        }
         const resultState = require('../investigation/memoryAttemptEvidence').appendAttempt('memory_consolidation',source.details.consolidation,{ ...state, state: drafts.length ? 'done' : 'empty', checkedAt: clock(), candidateIds: drafts.map(r => r.id) },source.id)
         const changes = [{ expected: latest.version, row: { ...latest, version: latest.version + 1, details: { ...latest.details, consolidation: resultState } } }]
         for (const row of drafts) if (!await store.get(row.id)) changes.push({ expected: 0, row })
@@ -376,7 +403,7 @@ function createGateway({ store, engine, clock = () => new Date().toISOString() }
     }
   }
   return { engine: 'memory_gateway', authorize, get, list, propose: (actor, input) => create(actor, input, false),
-    observe: (actor, input) => create(actor, input, true), transition, getDecision, recall, index, rebuildIndex, working, finishWork,
+    observe: (actor, input) => create(actor, input, true), transition, getDecision, preferences, recall, index, rebuildIndex, working, finishWork,
     grant, authenticate, reflect, consolidate, status, progress, audit: async (actor, id) => { const r = await get(actor, id); return r ? store.audit(id) : [] } }
 }
 module.exports = { createGateway, OWNER, TYPES, SCOPES, STATUSES, stableId }

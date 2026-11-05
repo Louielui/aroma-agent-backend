@@ -3623,7 +3623,7 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
     const planningAdvice = subscriptionMode && require('../investigation/planningAdvice').isPlanningAdvice({plan:goalPlanObserved,report:operationalInvestigation,mode:distilled.mode,ownerGoal:opts.ownerGoal,clarification:gateAuthoredAsk||semanticClarifyTerminal})
     if(subscriptionMode && distilled.mode==='recommend' && ((turnPerSource.size===0 && !operationalInvestigation)||planningAdvice) && !gateAuthoredAsk && !semanticClarifyTerminal){
       const reviewed=await timePhase({requestId,phase:PHASE.MODEL_CALL,role:ROLE.EVIDENCE_REVIEW,provider:activeProvider||primaryProvider},
-        ()=>require('../investigation/semanticAnswer').reviewAdviceAnswer({reply:distilled.reply,judgment:distilled[JUDGMENT_KEY],recommendation:true,foregroundPlanning:!!planningAdvice,conversationEvidence:opts.conversationEvidence,message,history,adapter:activeAdapter,billing:llmResult.billing,model:llmResult.model,onResult:recordProviderUsage}),
+        ()=>require('../investigation/semanticAnswer').reviewAdviceAnswer({reply:distilled.reply,judgment:distilled[JUDGMENT_KEY],recommendation:true,foregroundPlanning:!!planningAdvice,conversationEvidence:opts.conversationEvidence,ownerPreferences:hindsightCache?.preferences,message,history,adapter:activeAdapter,billing:llmResult.billing,model:llmResult.model,onResult:recordProviderUsage}),
         {clock:latencyClock,sink:latencySink})
       adviceReview={state:reviewed.state,reason:reviewed.reason,calls:reviewed.calls,editedSpans:reviewed.editedSpans,model:reviewed.model,elapsedMs:reviewed.elapsedMs}
       distilled={...distilled,reply:reviewed.reply}

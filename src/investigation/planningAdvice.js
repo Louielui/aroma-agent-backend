@@ -24,6 +24,11 @@ function promptContext({plan,report,ownerGoal,previous}={}){
 // Retain complete continuation/nested lines within each item; never pick a later
 // acceptance list merely because the earlier proposal used ordered markers.
 function markdownPoints(text){
+ const sections=require('../intake/documentEnumeration').numberedSections(text)
+ if(sections.length){
+  const points=sections.slice(0,3).map(s=>'- '+s.title+' '+s.lines.join(' ').trim())
+  return points.some(p=>p.length>400)?null:points
+ }
  const lines=text.split(/\r?\n/),marker=line=>line.match(/^( {0,3})([-*+]|\d{1,3}[.)])[ \t]+(.*)$/),isOrdered=m=>/^\d/.test(m[2]),indent=line=>(line.match(/^[ \t]*/)||[''])[0].length
  const boundary=line=>/^\s*(?:#{1,6}\s|>\s|(?:[-*_]\s*){3,}$)/.test(line)||/^\s*(?:\*\*[^*]+\*\*|__[^_]+__)\s*$/.test(line)
  let fence=null

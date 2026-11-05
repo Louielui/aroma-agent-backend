@@ -18,7 +18,8 @@ function createGovernedRouter({ gateway, runtime, operations, recovery }) {
       const filter = { scope: req.query.scope, type: req.query.type, status: req.query.status }
       const rows = await gateway.list(OWNER, filter)
       const offset = Math.max(0, Math.min(100000, Number.parseInt(req.query.offset, 10) || 0))
-      res.set('Cache-Control', 'no-store').json({ status: await gateway.status(OWNER), consolidation: runtime?.consolidation?.status() || null, runtime: runtime?.status() || null, total: rows.length, offset, items: rows.reverse().slice(offset, offset + 200) })
+      const preferences = typeof gateway.preferences === 'function' ? await gateway.preferences(OWNER).catch(()=>({state:'unavailable',total:null,items:[]})) : null
+      res.set('Cache-Control', 'no-store').json({ status: await gateway.status(OWNER), preferences, consolidation: runtime?.consolidation?.status() || null, runtime: runtime?.status() || null, total: rows.length, offset, items: rows.reverse().slice(offset, offset + 200) })
     } catch (e) { fail(res, e) }
   })
   router.get('/api/v1/memory/catalog/:id', async (req, res) => {

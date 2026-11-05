@@ -25,14 +25,16 @@ function confirmedCapture(row) {
   return captureOriginal(row) && Number.isInteger(row.index?.facts) && typeof row.index.checkedAt === 'string' && Number.isFinite(Date.parse(row.index.checkedAt)) &&
     ((row.index.state === 'saved' && row.index.facts > 0) || (row.index.state === 'raw_only' && row.index.facts === 0))
 }
-function createRuntime({ store = createStructuredStore(), engine = createHindsight(), dir = path.join(resolveDataDir(), 'memory-outbox') } = {}) {
-  const gateway = createGateway({ store, engine })
+function createRuntime({ store = createStructuredStore(), engine = createHindsight(), dir = path.join(resolveDataDir(), 'memory-outbox'),
+  readConversation = id => require('../store/conversationStore').conversationStore.get(id) } = {}) {
+  const gateway = createGateway({ store, engine, readConversation })
   let timer; let active = false; let indexActive = false; let lastError = null; let nextIndexAt = 0
   function enabled() {
     try { return JSON.parse(fs.readFileSync(path.join(dir, '../memory-capture/settings.json'), 'utf8')).enabled !== false }
     catch (e) { if (e.code === 'ENOENT') return true; throw Error('memory_setting_unavailable') }
   }
-  const consolidation = require('./consolidationWorker').createWorker({ gateway, dir: path.join(dir, '../memory-consolidation'), allowed: enabled })
+  const consolidation = require('./consolidationWorker').createWorker({ gateway, dir: path.join(dir, '../memory-consolidation'), allowed: enabled,
+    ready: () => !active && captureQueueCount() === 0 })
   function enqueue(input) {
     if (!enabled()) return { state: 'paused' }
     const excluded = exclusionReason(input.text) || exclusionReason(JSON.stringify(input.source), false)
@@ -100,6 +102,7 @@ function createRuntime({ store = createStructuredStore(), engine = createHindsig
   }
   const ownerClient = {
     engine: 'memory_gateway',
+    preferences: () => gateway.preferences(OWNER),
     recall: (query, options) => gateway.recall(OWNER, query, options),
     get: async id => {
       const r = await gateway.get(OWNER, id)
