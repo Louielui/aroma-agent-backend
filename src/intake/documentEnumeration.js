@@ -38,4 +38,23 @@ function conditionalDraftObject(clause){
  if(!match)return false
  const at=text.indexOf(match[1]);return !/[\p{N}零〇一二兩三四五六七八九十百千萬]/u.test(text.slice(0,at)+text.slice(at+match[1].length))
 }
-module.exports={verifiedDocumentLists,conditionalDraftObject}
+// A numbered Markdown section is a local document address. Its body still
+// traverses every ordinary fact/status guard; an ordinal is not a file count.
+function numberedSections(text){
+ if(/^ {0,3}(?:\x60{3,}|~{3,})/m.test(String(text)))return []
+ const lines=String(text).split(/\r?\n/),sections=[];let fence=null
+ for(const line of lines){
+  const code=line.match(/^ {0,3}(`{3,}|~{3,})/)
+  if(code){if(!fence)fence=code[1];else if(code[1][0]===fence[0]&&code[1].length>=fence.length)fence=null;continue}
+  if(fence)continue
+  const header=line.match(/^\*\*(\d{1,2})[.)]\s+(.+?)\*\*\s*$|^#{1,6}\s+(\d{1,2})[.)]\s+(.+?)\s*$/u)
+  if(header){sections.push({ordinal:Number(header[1]||header[3]),title:header[2]||header[4],lines:[]});continue}
+  if(sections.length)sections.at(-1).lines.push(line)
+ }
+ return sections.length>=2&&sections.length<=16&&sections.every((s,i)=>s.ordinal===i+1)?sections:[]
+}
+function documentReference(clause,ordinals){
+ const match=String(clause).trim().match(/^第\s*([0-9零〇一二兩三四五六七八九十百千萬]+)\s*項(?:(?:可以|建議|應|要)?(?:先|再)|可以|建議)([^\p{N}零〇一二兩三四五六七八九十百千萬]+)$/u)
+ return Boolean(match&&ordinals.has(number(match[1])))
+}
+module.exports={verifiedDocumentLists,conditionalDraftObject,numberedSections,documentReference}

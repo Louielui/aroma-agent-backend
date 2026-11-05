@@ -10,6 +10,8 @@ function buildHtml() {
     mailCoverage:t('memoryOps.mailCoverage'),historyComplete:t('memoryOps.historyComplete'),historyRunning:t('memoryOps.historyRunning'),historyNotStarted:t('memoryOps.historyNotStarted'),
     mailMemory: t('company.mailMemory'),
     consolidation: t('mem6.consolidation'), consolidationHelp: t('mem6.consolidationHelp'), automatic: t('mem6.automatic'), paused: t('mem6.paused'),
+    preferenceProfile:t('mem6.preferenceProfile'), preferenceProfileHelp:t('mem6.preferenceProfileHelp'), reviewBlocked:t('mem6.reviewBlocked'),
+    learningContext:t('mem6.learningContext'), ownerQuote:t('mem6.ownerQuote'), assistantOffer:t('mem6.assistantOffer'), capturePending:t('mem6.capturePending'),
     pause: t('mem6.pause'), resume: t('mem6.resume'), review: t('mem6.review'), queued: t('mem6.queued'), processed: t('mem6.processed'),
     empty: t('mem6.empty'), failed: t('mem6.failed'), consolidate: t('mem6.consolidate'), experience: t('mem6.experience'), todo: t('mem6.todo'),
     reason: t('mem6.reason'), quote: t('mem6.quote'), replaces: t('mem6.replaces'), original: t('mem6.original'), open: t('mem6.open'), completed: t('mem6.completed'),

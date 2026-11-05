@@ -2,8 +2,8 @@
 const fs = require('node:fs'), path = require('node:path')
 const { eligible } = require('./consolidationPolicy')
 const { OWNER } = require('./governed')
-function createWorker({ gateway, dir, allowed, clock = Date.now }) {
-  let busy = false, lastError = null
+function createWorker({ gateway, dir, allowed, ready = () => true, clock = Date.now }) {
+  let busy = false, lastError = null, blocked = null
   const file = path.join(dir, 'settings.json')
   function enabled() {
     try { return JSON.parse(fs.readFileSync(file,'utf8')).enabled === true }
@@ -19,9 +19,11 @@ function createWorker({ gateway, dir, allowed, clock = Date.now }) {
     if (busy) return
     busy=true
     try {
-      if (!allowed() || !enabled()) return
+      blocked=null
+      if (!allowed() || !enabled()) { blocked='paused'; return }
+      if (!ready()) { blocked='capture_pending'; return }
       const rows=await gateway.list(OWNER)
-      if(rows.filter(r=>r.status==='candidate'&&r.source.kind==='consolidation').length>=20)return
+      if(rows.filter(r=>r.status==='candidate'&&r.source.kind==='consolidation').length>=20){blocked='review_capacity';return}
       const now=clock()
       const last=Math.max(0,...rows.map(r=>Date.parse(r.details.consolidation?.checkedAt)||0))
       if(now-last<60000)return
@@ -35,6 +37,6 @@ function createWorker({ gateway, dir, allowed, clock = Date.now }) {
     } catch (_) { lastError='consolidation_unavailable' }
     finally { busy=false }
   }
-  return { tick, configure, status:()=>({enabled:enabled(),captureEnabled:allowed(),busy,error:lastError,intervalSeconds:60,reviewLimit:20}) }
+  return { tick, configure, status:()=>({enabled:enabled(),captureEnabled:allowed(),busy,blocked,error:lastError,intervalSeconds:60,reviewLimit:20}) }
 }
 module.exports={createWorker}

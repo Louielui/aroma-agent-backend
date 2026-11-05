@@ -15,6 +15,26 @@ from urllib.parse import urlsplit
 
 HEADER = b"x-xiangxiang-work-trace"
 TRACE = contextvars.ContextVar("xiangxiang_work_trace", default=None)
+USAGE_HEADER = b"x-xiangxiang-usage"
+USAGE = contextvars.ContextVar("xiangxiang_usage_scope", default=None)
+
+
+def valid_usage(value, token):
+    if not isinstance(value, str) or len(value) > 900 or not re.fullmatch(r"[A-Za-z0-9_-]+\.[a-f0-9]{64}", value) or not re.fullmatch(r"[a-f0-9]{64}", token or ""):
+        return False
+    payload, signature = value.split(".")
+    expected = hmac.new(token.encode(), ("usage-scope-v1:" + payload).encode(), hashlib.sha256).hexdigest()
+    if not hmac.compare_digest(signature, expected):
+        return False
+    import base64
+    try:
+        scope = json.loads(base64.urlsafe_b64decode(payload + "=" * (-len(payload) % 4)))
+        uuid = r"[a-fA-F0-9]{8}(?:-[a-fA-F0-9]{4}){3}-[a-fA-F0-9]{12}"
+        return (isinstance(scope, dict) and set(scope) == {"rootId", "turnId", "conversationId", "requestId", "childId"}
+                and all(isinstance(scope[k], str) and re.fullmatch(uuid, scope[k]) for k in {"rootId", "turnId", "conversationId", "requestId"})
+                and (scope["childId"] is None or isinstance(scope["childId"], str) and re.fullmatch(uuid, scope["childId"]) is not None))
+    except (ValueError, TypeError, KeyError):
+        return False
 
 
 def valid_header(value, token):
@@ -45,7 +65,7 @@ class WorkTraceMiddleware:
         self.app, self.memory_token, self.bridge_token = app, memory_token, bridge_token
 
     async def __call__(self, scope, receive, send):
-        trace = None
+        trace, usage = None, None
         if scope["type"] == "http" and scope.get("method") == "POST" and re.fullmatch(r"/v1/default/banks/[a-z0-9-]+/(memories|reflect)", scope.get("path", "")):
             headers = scope.get("headers", [])
             values = [v for k, v in headers if k.lower() == HEADER]
@@ -54,11 +74,18 @@ class WorkTraceMiddleware:
                 candidate = values[0].decode("ascii", errors="replace")
                 if valid_header(candidate, self.bridge_token):
                     trace = candidate
+            usage_values = [v for k, v in headers if k.lower() == USAGE_HEADER]
+            if self.memory_token and len(auth) == 1 and hmac.compare_digest(auth[0], ("Bearer " + self.memory_token).encode()) and len(usage_values) == 1:
+                candidate = usage_values[0].decode("ascii", errors="replace")
+                if valid_usage(candidate, self.bridge_token):
+                    usage = candidate
         handle = TRACE.set(trace)
+        usage_handle = USAGE.set(usage)
         try:
             await self.app(scope, receive, send)
         finally:
             TRACE.reset(handle)
+            USAGE.reset(usage_handle)
 
 
 def install_sdk_forwarding():
@@ -71,11 +98,16 @@ def install_sdk_forwarding():
 
     def build(self, *args, **kwargs):
         request = original(self, *args, **kwargs)
+        # Clear inherited values for every destination; a caller's default SDK
+        # headers must not leak a local usage capability to another provider.
+        request.headers.pop(HEADER.decode(), None)
+        request.headers.pop(USAGE_HEADER.decode(), None)
         url = urlsplit(str(request.url))
         if url.scheme == "http" and url.hostname == "127.0.0.1" and url.port in {8091, 8094} and url.path == "/v1/chat/completions" and not url.query and not url.username:
-            request.headers.pop(HEADER.decode(), None)
             if TRACE.get():
                 request.headers[HEADER.decode()] = TRACE.get()
+            if USAGE.get():
+                request.headers[USAGE_HEADER.decode()] = USAGE.get()
         return request
     build._xiangxiang_trace = True
     BaseClient._build_request = build

@@ -2,6 +2,24 @@
 const test = require('node:test')
 const assert = require('node:assert/strict')
 const { processIntake } = require('../intake/intakeService')
+
+test('a new chat receives an approved preference even when unrelated topic recall is empty',async()=>{
+  const saved={...process.env},prompts=[];let prefReads=0,recallReads=0
+  Object.assign(process.env,{XIANGXIANG_MEMORY:'on',CHAT_BACKEND:'codex-subscription',READ_ACCESS:'on',CONTEXT_DECISIONS_OPENAI:'on',GOAL_DECOMPOSER:'off',TURN_ROUTER:'on',A4_KNOWLEDGE_ROUTING:'on',DECISION_RECALL:'off',CONVERSATION_RECALL:'off'})
+  const {createGateway,OWNER}=require('./governed'),g=createGateway({store:require('./structuredStore').createTestStore()})
+  try{
+    const candidate=await g.propose(OWNER,{type:'preference',subject:'Communication format',text:'Use one conclusion and at most three concise points.',scope:'private:owner',source:{kind:'owner',id:'explicit-format',at:'2026-11-05T05:00:00Z',attribution:'owner_statement'}})
+    await g.transition(OWNER,candidate.id,candidate.version,'approve')
+    const reply='結論：你已確認先講結論，再用最多三個簡短重點。'
+    const adapter={preflight:async()=>{},complete:async prompt=>{prompts.push(prompt);return{text:JSON.stringify({intent:'question',mode:'chat',reply,nextRead:null}),model:'gpt-6-astra',billing:'chatgpt-subscription'}}}
+    const result=await processIntake('What response format did I approve?',adapter,[],{demo:true,interactionMode:'chat',openaiAdapter:adapter,controlAdapter:adapter,
+      memoryClient:{preferences:async()=>{prefReads++;return g.preferences(OWNER)},recall:async()=>{recallReads++;return[]}},
+      readContextDeps:{sources:['public_knowledge'],finalVerifier:async()=>({decision:'require_memory',question:null}),connector:{read:async()=>assert.fail('no business reads')}}})
+    assert.equal(prefReads,1);assert.equal(recallReads,1);assert.equal(prompts.length,1)
+    assert.match(prompts[0],/OWNER-APPROVED PERSONAL PREFERENCES/);assert.ok(prompts[0].includes(candidate.id))
+    assert.equal(result.reply,reply);assert.equal(result.decision,null);assert.deepEqual(result.tasks,[])
+  }finally{for(const key of Object.keys(process.env))if(!(key in saved))delete process.env[key];Object.assign(process.env,saved)}
+})
 test('chat receives Hindsight through the existing gateway and marks derived replies non-archivable', async () => {
   const saved = { ...process.env }; const prompts = []; let reads = 0
   Object.assign(process.env, { XIANGXIANG_MEMORY: 'on', CHAT_BACKEND: 'codex-subscription', READ_ACCESS: 'on', CONTEXT_DECISIONS_OPENAI: 'on', GOAL_DECOMPOSER: 'off', TURN_ROUTER: 'on', A4_KNOWLEDGE_ROUTING: 'off', DECISION_RECALL: 'on', CONVERSATION_RECALL: 'off' })

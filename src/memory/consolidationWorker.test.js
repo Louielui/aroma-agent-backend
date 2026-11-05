@@ -24,10 +24,20 @@ test('review capacity, retry dates and interrupted jobs bound automatic model ca
   let rows=[row,...Array.from({length:20},()=>({status:'candidate',source:{kind:'consolidation'},details:{}}))]
   const worker=createWorker({dir,allowed:()=>true,clock:()=>now,gateway:{list:async()=>rows,consolidate:async()=>{calls++}}})
   await worker.tick();assert.equal(calls,0)
+  assert.equal(worker.status().blocked,'review_capacity')
   rows=[row];row.details.consolidation={state:'failed',attempts:1,checkedAt:new Date(now-120000).toISOString(),nextRetryAt:new Date(now+60000).toISOString()}
   await worker.tick();assert.equal(calls,0)
   now+=60000;await worker.tick();assert.equal(calls,1)
   row.details.consolidation={state:'running',checkedAt:new Date(now-120000).toISOString()}
   await worker.tick();assert.equal(calls,1)
   now+=61000;await worker.tick();assert.equal(calls,2)
+})
+
+test('unfinished capture waits without a model call or a terminal empty learning result',async t=>{
+  const dir=fs.mkdtempSync(path.join(os.tmpdir(),'learning-capture-'));t.after(()=>fs.rmSync(dir,{recursive:true,force:true}))
+  let ready=false,calls=0
+  const row={id:'source',status:'active',type:'episodic',scope:'private:owner',text:'Use concise replies.',source:{attribution:'owner_statement'},createdAt:'2026-11-05T05:00:00Z',details:{}}
+  const worker=createWorker({dir,allowed:()=>true,ready:()=>ready,gateway:{list:async()=>[row],consolidate:async()=>{calls++}}})
+  await worker.tick();assert.equal(calls,0);assert.equal(worker.status().blocked,'capture_pending')
+  ready=true;await worker.tick();assert.equal(calls,1);assert.equal(worker.status().blocked,null)
 })
