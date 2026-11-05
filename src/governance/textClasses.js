@@ -102,6 +102,7 @@ const FILE_CLASS = Object.freeze({
   // Backward-compatible report focus reads historical question vocabulary;
   // translating it would change old receipt presentation, never source routing.
   'investigation/intelligence.js': CLASS.MATCHING,
+  'investigation/planningAdvice.js': CLASS.INTERFACE, // Reviewed advice presentation; judged enum gates contain no translated input matching.
   'investigation/operationalBrief.js': CLASS.INTERFACE, // Receipt-bound presentation; script detection chooses locale only.
   'investigation/semanticView.js': CLASS.INTERFACE, // Reviewed statement presentation, separated from model contracts.
   'investigation/invocationBrief.js': CLASS.INTERFACE, // Receipt-bound call summary; no model prompt or intent routing.
