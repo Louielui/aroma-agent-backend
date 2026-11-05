@@ -3618,9 +3618,10 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
     // uncertain, no-read recommendations. Retrieval and action gates keep their
     // original inputs. Corrections still traverse every ordinary answer guard.
     let adviceReview = null
-    if(subscriptionMode && distilled.mode==='recommend' && turnPerSource.size===0 && !operationalInvestigation && !gateAuthoredAsk && !semanticClarifyTerminal){
+    const planningAdvice = subscriptionMode && require('../investigation/planningAdvice').isPlanningAdvice({plan:goalPlanObserved,report:operationalInvestigation,mode:distilled.mode,ownerGoal:opts.ownerGoal,clarification:gateAuthoredAsk||semanticClarifyTerminal})
+    if(subscriptionMode && distilled.mode==='recommend' && ((turnPerSource.size===0 && !operationalInvestigation)||planningAdvice) && !gateAuthoredAsk && !semanticClarifyTerminal){
       const reviewed=await timePhase({requestId,phase:PHASE.MODEL_CALL,role:ROLE.EVIDENCE_REVIEW,provider:activeProvider||primaryProvider},
-        ()=>require('../investigation/semanticAnswer').reviewAdviceAnswer({reply:distilled.reply,judgment:distilled[JUDGMENT_KEY],recommendation:true,conversationEvidence:opts.conversationEvidence,message,history,adapter:activeAdapter,billing:llmResult.billing,model:llmResult.model,onResult:recordProviderUsage}),
+        ()=>require('../investigation/semanticAnswer').reviewAdviceAnswer({reply:distilled.reply,judgment:distilled[JUDGMENT_KEY],recommendation:true,foregroundPlanning:!!planningAdvice,conversationEvidence:opts.conversationEvidence,message,history,adapter:activeAdapter,billing:llmResult.billing,model:llmResult.model,onResult:recordProviderUsage}),
         {clock:latencyClock,sink:latencySink})
       adviceReview={state:reviewed.state,reason:reviewed.reason,calls:reviewed.calls,editedSpans:reviewed.editedSpans,model:reviewed.model,elapsedMs:reviewed.elapsedMs}
       distilled={...distilled,reply:reviewed.reply}
@@ -3741,11 +3742,22 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
       history
     })
     if(opts.ownerGoal)opts.onOwnerReadView?.(view.reply)
+    // A planning draft is reviewed against Owner-authored premises only. It does
+    // not inherit the read's business evidence exemption: check the entire edited
+    // prose with zero EvidenceSets before producing any compact presentation.
+    const planningView = planningAdvice && ['supported','revised'].includes(adviceReview?.state)
+      ? buildReadResultReply({reply:guarded.reply,message,conversationEvidence:opts.conversationEvidence,evidenceSets:[],itemsBySource:[],perSource:Array.from(turnPerSource.values()),reviewedNoReadAdvice:true,noReadRecommendation:true,requestId}) : null
+    const planningPreview = planningView && !planningView.routeEvidenceWithheld && !planningView.readClaim?.corrected && !guarded.corrected
+      ? require('../investigation/planningAdvice').compactPlanningAdvice(planningView.reply,{message,report:operationalInvestigation}) : null
     // ⛔ E2: same single outcome as the commit path — judged against the bytes he receives.
     leadWithJudgment(view, distilled, requestId, 'chat', operationalInvestigation,
       distilled.mode === 'recommend' && !gateAuthoredAsk && !semanticClarifyTerminal && !guarded.corrected && !guarded.correction)
-    const preservesOrdinaryAnswer = require('../investigation/generalizationView').preservesOrdinaryAnswer(operationalInvestigation,llmResult?.text,{route:routeDecision?.route})
-    if(preservesOrdinaryAnswer)operationalInvestigation.answerPresentation={kind:'guarded_answer_without_observations',modelProseUsed:true,claimsValidated:false,remainingGapsRetained:true}
+    const preservesOrdinaryAnswer = !!planningPreview || require('../investigation/generalizationView').preservesOrdinaryAnswer(operationalInvestigation,llmResult?.text,{route:routeDecision?.route})
+    if(planningPreview){
+      view.reply=planningPreview.reply
+      operationalInvestigation.answerDetails=planningPreview.details
+      operationalInvestigation.answerPresentation={kind:'reviewed_foreground_planning_advice',foregroundTask:'plan',investigationFocus:operationalInvestigation.focus,modelProseUsed:true,claimsValidated:false,remainingGapsRetained:true,sourceFactsInProse:false,premiseReview:adviceReview,points:planningPreview.points}
+    }else if(preservesOrdinaryAnswer)operationalInvestigation.answerPresentation={kind:'guarded_answer_without_observations',modelProseUsed:true,claimsValidated:false,remainingGapsRetained:true}
     const operationalBrief = preservesOrdinaryAnswer ? null : require('../investigation/operationalBrief').renderOperationalBrief(operationalInvestigation, { message })
     if (operationalBrief && classifyDemoOutcome({ mode: distilled.mode, intent: distilled.intent }).outcome !== 'clarification') {
       view.reply = operationalBrief
@@ -3755,7 +3767,7 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
       const semanticView = require('../investigation/semanticView')
       const findings = require('../investigation/sourceBoundFindings').renderSourceBoundFindings(operationalInvestigation, { message, plan: goalPlanObserved })
       const crossSource = operationalInvestigation.crossSourceReads?.length > 0
-      const needsReview = !tel.answerCallSkipped && (!findings || findings.kind==='background' || crossSource)
+      const needsReview = !planningAdvice && !tel.answerCallSkipped && (!findings || findings.kind==='background' || crossSource)
       let draft = null
       let review=null
       if(needsReview){
@@ -3856,6 +3868,10 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
       operationalInvestigation.stop = { state: 'bounded_investigation_finished', additionalReadRounds: operationalInvestigation.followupReads?.rounds || 0,
         attemptedSources: [...new Set(operationalInvestigation.crossSourceReads?.map(r => r.source) || [])], remainingGaps: operationalInvestigation.gaps?.map(g => g.section) || [],
         meaning: 'available_bound_reached_not_all_facts_proven' }
+    }
+    if(planningAdvice&&!planningPreview){
+      view.reply=require('../investigation/planningAdvice').unavailable(message)+'\n\n'+view.reply
+      operationalInvestigation.answerPresentation={...(operationalInvestigation.answerPresentation||{}),planningAdvice:{state:'unavailable',reason:adviceReview?.state==='unavailable'?adviceReview.reason:planningView?.routeEvidenceWithheld?'unsupported_operational_claim':'presentation_not_verified',premiseReview:adviceReview}}
     }
     view.reply=require('../memory/recallReply').enforceCapturePolicyReply(view.reply,message).reply
     // An evidence-rendered answer must not archive the obsolete model draft.

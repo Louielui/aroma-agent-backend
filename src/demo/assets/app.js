@@ -1294,14 +1294,15 @@
     return names[name] || t('investigation.operations')
   }
   function renderInvestigation (turnEl, report, investigationId, approvalId) {
+    var isPlan = (report.answerPresentation || {}).kind === 'reviewed_foreground_planning_advice'
     if (report.focus === 'background' && investigationId && report.persistenceState !== 'unavailable') renderSchedulerChat(turnEl, investigationId)
     if (report.persistenceState === 'unavailable') addMeta(turnEl.body, t('investigation.notSaved'))
     var details = el('details', 'investigation-evidence')
-    details.appendChild(el('summary', '', t('investigation.title')))
+    details.appendChild(el('summary', '', isPlan ? t('planningAdvice.evidenceTitle') : t('investigation.title')))
     if (typeof report.answerDetails === 'string' && report.answerDetails) {
       var fullAnswer = el('details')
-      fullAnswer.appendChild(el('summary', '', t('investigation.answerDetails')))
-      fullAnswer.appendChild(el('p', 'prose', report.answerDetails))
+      fullAnswer.appendChild(el('summary', '', isPlan ? t('planningAdvice.details') : t('investigation.answerDetails')))
+      fullAnswer.appendChild(isPlan ? renderMarkdown(report.answerDetails) : el('p', 'prose', report.answerDetails))
       details.appendChild(fullAnswer)
     }
     if (report.performance) {
@@ -1348,7 +1349,7 @@
         summary.appendChild(el('p', '', t('investigation.activityBoundary')))
       } else summary.appendChild(el('strong', '', t('investigation.generalSummary')))
       if ((report.contradictions || []).length) summary.appendChild(el('p', '', t('investigation.conflictFound')))
-      turnEl.body.appendChild(summary)
+      ;(isPlan ? details : turnEl.body).appendChild(summary)
       var evaluation = el('details'); evaluation.appendChild(el('summary', '', t('investigation.evaluation')))
       evaluation.appendChild(el('pre', '', JSON.stringify({ plan: report.plan, findings: report.findings, findingsOmitted: report.findingsOmitted, gaps: report.gaps, contradictions: report.contradictions, transitions: report.transitions, recommendations: report.recommendations, evaluationScope: report.evaluationScope }, null, 2)))
       details.appendChild(evaluation)
@@ -1361,7 +1362,7 @@
       records.appendChild(el('pre', '', JSON.stringify({ sourceId: section.sourceId, retrievedAt: section.retrievedAt, sha256: section.sha256, records: section.records, coverage: section.coverage, selection: section.selection, omitted: section.omitted, note: section.note }, null, 2)))
       row.appendChild(records); details.appendChild(row)
     })
-    if (report.answerPresentation && report.answerPresentation.kind === 'guarded_answer_without_observations') { turnEl.body.appendChild(details); return }
+    if (isPlan || (report.answerPresentation && report.answerPresentation.kind === 'guarded_answer_without_observations')) { turnEl.body.appendChild(details); return }
     if (!report.focus || report.focus === 'cost') turnEl.body.appendChild(el('p', 'wait-note', t('investigation.boundary')))
     turnEl.body.appendChild(details)
     turnEl.body.appendChild(el('p', 'wait-note', t('investigation.readOnly')))

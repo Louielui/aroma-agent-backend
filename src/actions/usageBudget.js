@@ -25,7 +25,10 @@ const GOAL_PROFILE=Object.freeze({id:'076a60e0-490d-4695-8915-4b337fd49d9b',iden
 // Proposed clarity verification only. No ledger or allowance exists until the
 // Owner separately closes the spent goal window and activates this exact root.
 const CLARITY_PROFILE=Object.freeze({id:'2ab7ab45-1f53-4df7-ba98-4605bcfb7cde',identity:'owner-conversation-clarity-acceptance-20261105',model:'claude-opus-5-5',effort:'medium',turns:3,helper:18,website:0})
-function isAcceptanceRoot(id){return id===PROFILE.id||id===UNDERSTANDING_PROFILE.id||id===ADVICE_PROFILE.id||id===PRIORITY_PROFILE.id||id===CONVERSATION_PROFILE.id||id===GOAL_PROFILE.id||id===CLARITY_PROFILE.id}
+// Inert foreground-planning retest proposal. The paused clarity ledger remains
+// selected until explicit Owner closure; installation grants no new allowance.
+const PLANNING_PROFILE=Object.freeze({id:'d7b1e1b3-9801-4549-bc14-9a5818c2138b',identity:'owner-foreground-planning-acceptance-20261105',model:'claude-opus-5-5',effort:'medium',turns:2,helper:12,website:0})
+function isAcceptanceRoot(id){return id===PROFILE.id||id===UNDERSTANDING_PROFILE.id||id===ADVICE_PROFILE.id||id===PRIORITY_PROFILE.id||id===CONVERSATION_PROFILE.id||id===GOAL_PROFILE.id||id===CLARITY_PROFILE.id||id===PLANNING_PROFILE.id}
 const SHAPES={usage_activate:['op'],usage_status:['op'],usage_pause:['op'],usage_close:['op'],usage_reconcile:['op'],usage_bind_turn:['op','turnId','conversationId']}
 SHAPES.usage_extension_prepare=['op','workId','commit','attemptsHash']
 SHAPES.usage_extension_approve=['op','id','hash','nonce']
@@ -39,7 +42,7 @@ function developmentProfile(id){if(!ID.test(id||'')||isAcceptanceRoot(id))throw 
 function createUsageBudget({store,evidenceDir,now=Date.now,activationReady=null,profile=PROFILE,extensionWitness=null,approvals=require('../agent/ownerApprovalStore').createOwnerApprovalStore({now}),processAlive=pid=>{try{process.kill(pid,0);return true}catch(e){return e.code!=='ESRCH'}}}={}){
  if(!store?.lockRun)throw error('usage_store_required')
  profile=structuredClone(profile)
- if(hash(profile)!==hash(PROFILE)&&hash(profile)!==hash(UNDERSTANDING_PROFILE)&&hash(profile)!==hash(ADVICE_PROFILE)&&hash(profile)!==hash(PRIORITY_PROFILE)&&hash(profile)!==hash(CONVERSATION_PROFILE)&&hash(profile)!==hash(GOAL_PROFILE)&&hash(profile)!==hash(CLARITY_PROFILE)&&hash(profile)!==hash(developmentProfile(profile.id)))throw error('usage_profile_not_allowed')
+ if(hash(profile)!==hash(PROFILE)&&hash(profile)!==hash(UNDERSTANDING_PROFILE)&&hash(profile)!==hash(ADVICE_PROFILE)&&hash(profile)!==hash(PRIORITY_PROFILE)&&hash(profile)!==hash(CONVERSATION_PROFILE)&&hash(profile)!==hash(GOAL_PROFILE)&&hash(profile)!==hash(CLARITY_PROFILE)&&hash(profile)!==hash(PLANNING_PROFILE)&&hash(profile)!==hash(developmentProfile(profile.id)))throw error('usage_profile_not_allowed')
  const limits={turns:profile.turns,helper:profile.helper,website:profile.website}
  const acceptsModel=input=>(profile.models||[{model:profile.model,effort:profile.effort}]).some(m=>m.model===input.model&&m.effort===input.effort)
  const profileHash=hash(profile)
@@ -131,7 +134,8 @@ function owner(){
   const priority=advice.readStatus().state==='closed'?createUsageBudget({store,evidenceDir,profile:PRIORITY_PROFILE}):advice
   const conversation=priority.readStatus().state==='closed'?createUsageBudget({store,evidenceDir,profile:CONVERSATION_PROFILE}):priority
   const goal=conversation.readStatus().state==='closed'?createUsageBudget({store,evidenceDir,profile:GOAL_PROFILE}):conversation
-  ownerBudget=goal.readStatus().state==='closed'?createUsageBudget({store,evidenceDir,profile:CLARITY_PROFILE}):goal
+  const clarity=goal.readStatus().state==='closed'?createUsageBudget({store,evidenceDir,profile:CLARITY_PROFILE}):goal
+  ownerBudget=clarity.readStatus().state==='closed'?createUsageBudget({store,evidenceDir,profile:PLANNING_PROFILE}):clarity
  }
  return ownerBudget
 }
@@ -146,4 +150,4 @@ function blockAPI(){if(currentScope()||service().isActive())throw service().reje
 // Interactive coding CLIs can make internal turns the host cannot meter. They
 // cannot be started in this fixed, read-only conversation acceptance window.
 function blockInteractiveWorker(){if(currentScope()||service().isActive())throw service().rejection('usage_operation_not_allowed')}
-module.exports={PROFILE,UNDERSTANDING_PROFILE,ADVICE_PROFILE,PRIORITY_PROFILE,CONVERSATION_PROFILE,GOAL_PROFILE,CLARITY_PROFILE,isAcceptanceRoot,developmentProfile,ERRORS,validInput,createUsageBudget,ownerDirectory,owner,service,currentScope,currentHeader,observe,nativePermit,guardRPC,withRPCBudget,blockAPI,blockInteractiveWorker}
+module.exports={PROFILE,UNDERSTANDING_PROFILE,ADVICE_PROFILE,PRIORITY_PROFILE,CONVERSATION_PROFILE,GOAL_PROFILE,CLARITY_PROFILE,PLANNING_PROFILE,isAcceptanceRoot,developmentProfile,ERRORS,validInput,createUsageBudget,ownerDirectory,owner,service,currentScope,currentHeader,observe,nativePermit,guardRPC,withRPCBudget,blockAPI,blockInteractiveWorker}
