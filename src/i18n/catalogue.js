@@ -39,7 +39,7 @@
  */
 const CATALOGUE = Object.freeze({
   'context.conversationClaimUnverified': { zh: '有 {count} 句關於對話紀錄的說法未能核實，已暫不顯示；其餘回答保留。', en: '{count} statement(s) about the conversation could not be verified and were withheld; the rest of the answer is preserved.' },
-  'assistant.conversationEvidenceCandidate': { zh: '正式對話仍有誤刪及歸檔落差，整體理解驗收未通過。新候選分開核對整段訊息重複與原始要求前綴、區分清單編號與業務數量，並修補漏填判斷欄位時的建議覆核及可見回覆歸檔；僅離線驗證，尚未部署或正式重驗。', en: 'Native conversation still showed false withholding and an archive mismatch; overall understanding acceptance has not passed. The new candidate distinguishes exact-message repetition from request-prefix repetition and list labels from business quantities, and repairs recommendation review without optional judgment and guarded-reply archiving. Offline verification only; not deployed or natively retested.' },
+  'assistant.conversationEvidenceCandidate': { zh: 'PR129 已部署，單一辦公室正式重驗通過：真實覆核修正兩處假設，回覆、畫面與實際歸檔一致。精確次數、數字清單及漏填判斷欄位分支仍屬離線證據；整體理解及兩句目標更正案例尚未完整驗收，亦未證實速度改善。', en: 'PR129 is deployed and one native office retest passed: real review corrected two assumptions, and response, pixels and the actual archive agree. Exact-count, numeric-list and missing-judgment branches retain offline evidence; overall understanding and the two-sentence corrected-goal case remain incomplete. No speedup is established.' },
   'advice.basis': { zh: '判斷依據', en: 'Recommendation basis' },
   'advice.provisional': { zh: '這是暫定建議。', en: 'This recommendation is provisional.' },
   'advice.unknown': { zh: '不確定之處', en: 'Uncertainties' },
@@ -3732,8 +3732,8 @@ const CATALOGUE = Object.freeze({
   'procurement.blocked': { zh: '每日採購排程尚未完成：{reason}。沒有宣稱已建立或執行；可查詢狀態。', en: 'Daily procurement scheduling is incomplete: {reason}. Creation or execution is not claimed; its status can be inspected.' },
   'usage.blocked': { zh: '本次驗收已停止：{reason}。沒有自行增加或重發額度。', en: 'Acceptance stopped: {reason}. No allowance was increased or reissued.' },
   'usage.title': { zh: '正式驗收用量保護', en: 'Production acceptance usage protection' },
-  'usage.current': { zh: '正式版 316ddbd3 已加入持久預留及發送前拒絕；重試、並行、子工作及重啟共用原 run。原驗收完成 2 輪／11 helper／0 網站後暫停，剩餘 7 輪／29 helper／2 網站；離線邊界證據不等於完整正式對話驗收。', en: 'Runtime 316ddbd3 includes durable reservations and pre-dispatch refusal shared by retries, concurrency, descendants and restart. The original acceptance paused after 2 turns/11 helpers/0 websites, leaving 7 turns/29 helpers/2 websites. Offline boundary evidence is not complete production dialogue acceptance.' },
-  'usage.next': { zh: '通過新版本審查及批准、共享服務窗口交付後，核對正式計數與硬截停，再於原剩餘用量內完成對話驗收。', en: 'Review and authorize the exact new version, deliver in one shared service window, verify production counters and hard stops, then complete dialogue acceptance within the original remaining allowance.' },
+  'usage.current': { zh: '持久預留及發送前拒絕涵蓋重試、並行、子工作及重啟。最近帳本保留 2 輪／9 helper／0 網站並暫停，已無輪次，3 次未用 helper 不轉移。目標更正候選僅定義尚未啟用的 1 輪／6 helper／0 網站；安裝定義不建立額度或重開舊 run。離線邊界證據不等於完整正式對話驗收。', en: 'Durable reservation and pre-dispatch refusal cover retries, concurrency, descendants and restart. The latest ledger is retained paused at 2 turns/9 helpers/0 websites, with no turns and three unused helper slots that are not transferred. The corrected-goal candidate only defines an inert 1-turn/6-helper/0-website window; installing it creates no capacity or reopened run. Offline boundary evidence is not complete native dialogue acceptance.' },
+  'usage.next': { zh: '須另行批准舊帳本結案、新版本交付及新窗口用量；依序核對版本、共享服務閒置、登入及正式截停，再由 Owner 啟用。失敗、版本或模型不符及到限即停，不重置、不移用額度。', en: 'Separately authorize old-ledger closure, exact-version delivery and the new allowance; verify version, shared-service idle, login and installed hard stops before Owner activation. Stop on failure, version/model mismatch or limits, without resetting or transferring capacity.' },
   'punct.colon': { zh: '：', en: ': ' }
 })
 
