@@ -46,14 +46,15 @@ async function replay(t,c,{inject=false}={}){
 for(const c of fixture.cases)test('retained native case '+c.case+' traverses actual review, guards and full intake with source-unavailable substitutes',async t=>{
  const {result,calls}=await replay(t,c)
  assert.equal(result.investigation.answerPresentation.kind,'reviewed_foreground_planning_advice');assert.equal(result.investigation.answerDetails,c.reviewedReply)
- assert.equal(result.investigation.answerPresentation.points,c.case===1?3:2);assert.match(result.reply,/多輪實測/);assert.doesNotMatch(result.reply,/提案內容我暫定為|未取得可讀的失敗紀錄|有 1 句講到營運狀況|Bad credentials/)
+ assert.equal(result.investigation.answerPresentation.points,c.case===1?3:2);assert.match(result.reply,c.case===3?/假設目標拆解是主要延遲來源/:/多輪實測/);assert.doesNotMatch(result.reply,/提案內容我暫定為|未取得可讀的失敗紀錄|有 1 句講到營運狀況|Bad credentials/)
  assert.equal(result.replyForArchive,result.reply);assert.equal(result.decision,null);assert.deepEqual(result.tasks,[]);assert.equal(calls.length,3)
  const answer=calls.find(x=>x.phase==='answer');assert.equal(answer.prompt.split('Louie 現在說:「'+c.message+'」').length-1,1)
  const reviewData=JSON.parse(calls.find(x=>x.schema==='advice_premise_review').prompt.split('DATA:\n')[1]);if(c.case===2)assert.match(reviewData.foregroundPreview,/第一，簡單追問/)
  if(c.case===2){assert.match(result.reply,/若這會降低追問的理解準確度就收回/);assert.match(result.reply,/若讀碼後發現/)}
+ if(c.case===3){assert.match(result.reply,/正文只放答案/);assert.match(result.reply,/並實測確認不影響上下文理解/);assert.match(reviewData.foregroundPreview,/不跑完整的目標拆解/)}
 })
 test('a retained positive review cannot waive a new business quantity through full intake',async t=>{
- const {result}=await replay(t,fixture.cases[1],{inject:true});assert.notEqual(result.investigation.answerPresentation.kind,'reviewed_foreground_planning_advice');assert.doesNotMatch(result.reply,/999/);assert.equal(result.decision,null);assert.deepEqual(result.tasks,[])
+ for(const c of fixture.cases){const {result}=await replay(t,c,{inject:true});assert.notEqual(result.investigation.answerPresentation.kind,'reviewed_foreground_planning_advice');assert.doesNotMatch(result.reply,/999/);assert.equal(result.decision,null);assert.deepEqual(result.tasks,[])}
 })
 
 for(const c of fixture.cases)test('candidate HTTP and actual pixels preserve native case '+c.case+' input, compact answer and complete reviewed plan',{timeout:30000},async t=>{
@@ -74,6 +75,6 @@ for(const c of fixture.cases)test('candidate HTTP and actual pixels preserve nat
  const artifact=process.env.AROMA_ARTIFACT_DIR,screenshot=async name=>{if(artifact){fs.mkdirSync(artifact,{recursive:true});await page.screenshot({path:path.join(artifact,'proposal-case-'+c.case+'-'+name+'.png'),fullPage:false})}}
  await md.scrollIntoViewIfNeeded();await screenshot('desktop')
  await page.setViewportSize({width:390,height:844});await page.locator('#collapse').click();await md.scrollIntoViewIfNeeded();assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);const mobile=await md.boundingBox();assert.ok(mobile.x>=0&&mobile.x+mobile.width<=390);await screenshot('mobile')
- await page.setViewportSize({width:1440,height:1050});await bot.getByText('查看完整方案及來源依據',{exact:true}).click();await bot.getByText('完整建議方案',{exact:true}).click();assert.match(await bot.innerText(),c.case===2?/若這會降低追問的理解準確度就收回/:/若多輪實測顯示/);await screenshot('expanded');assert.deepEqual(errors,[])
+ await page.setViewportSize({width:1440,height:1050});await bot.getByText('查看完整方案及來源依據',{exact:true}).click();await bot.getByText('完整建議方案',{exact:true}).click();const planBody=bot.getByText('完整建議方案',{exact:true}).locator('..').locator('.md').first();assert.match(await planBody.innerText(),c.case===2?/若這會降低追問的理解準確度就收回/:c.case===3?/並實測確認不影響上下文理解/:/若多輪實測顯示/);await planBody.scrollIntoViewIfNeeded();await screenshot('expanded');assert.deepEqual(errors,[])
  if(artifact)fs.writeFileSync(path.join(artifact,'proposal-case-'+c.case+'.json'),JSON.stringify({scope:'Actual isolated HTTP/browser with retained real outputs/review, substituted connectors, no new provider call',provenance:c.provenance,reply:captured.result.reply,reviewedDetails:captured.result.investigation.answerDetails,pointCount:await md.locator('li').count(),savedMessages:store.get(cid).messages.length,ordinaryArchiveMatches:true,closedByDefault:true,width:box.width,mobileNoOverflow:true,offlineAdapterResponses:captured.calls.length,errors},null,2))
 })

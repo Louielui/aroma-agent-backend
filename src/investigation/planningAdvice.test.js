@@ -13,3 +13,26 @@ test('bilingual compact advice retains all complete reviewed wording in details 
 test('unusable or overly long shapes remain unavailable instead of silently cutting an arbitrary prefix',()=>{
  for(const reply of ['', 'x'.repeat(3601),'# Heading only','- A point without a conclusion','A'.repeat(401)+'.\n\n- small'])assert.equal(compactPlanningAdvice(reply),null)
 })
+
+test('the retained PR134 Markdown scope keeps its two substantive changes visible, rather than only draft status',()=>{
+ const c=require('../intake/fixtures/proposalContinuationReplay.json').cases[2],out=compactPlanningAdvice(c.reviewedReply,{message:c.message})
+ assert.equal(out.points,2);assert.match(out.reply,/假設目標拆解是主要延遲來源/);assert.match(out.reply,/並實測確認不影響上下文理解/);assert.match(out.reply,/正文只放答案/);assert.equal(out.details,c.reviewedReply)
+})
+
+test('Markdown list selection is structural across markers, headings and languages and precedes later acceptance lists',()=>{
+ for(const heading of ['## Scope','**Scope**','__Scope__',''])for(const markers of [['1.','2.'],['1)','2)'],['-','-'],['*','*'],['+','+']]){
+  const reply='Measure first, while retaining context.\n\n'+heading+'\n'+markers[0]+' Trial one only if reversible.\n'+markers[1]+' Trial two while retaining approvals.\n\n**Checks**\n- A later check.\n- Another later check.',out=compactPlanningAdvice(reply)
+  assert.equal(out.points,2);assert.match(out.reply,/only if reversible/);assert.match(out.reply,/retaining approvals/);assert.doesNotMatch(out.reply,/later check/);assert.equal(out.details,reply)
+ }
+})
+
+test('wrapped, spaced and nested conditions remain part of the selected complete item without truncation',()=>{
+ const reply='First prepare a reversible trial.\r\n\r\n### Scope\r\n1. Keep the first proposal.\r\n   Only if the original context test passes.\r\n\r\n   - Withdraw if accuracy falls.\r\n2. Keep the second proposal\r\nwhile preserving source checks.\r\n\r\n### Later\r\nDo not infer execution.',out=compactPlanningAdvice(reply)
+ assert.equal(out.points,2);assert.match(out.reply,/Only if the original context test passes/);assert.match(out.reply,/Withdraw if accuracy falls/);assert.match(out.reply,/while preserving source checks/);assert.equal(out.details,reply)
+})
+
+test('quoted or fenced examples do not become planning items and malformed or oversized first lists fail visibly',()=>{
+ const reply='Prepare a trial.\n\n```text\n1. Quoted example.\n2. Another example.\n```\n\n> 1. A quotation.\n\n**Scope**\n1. Keep context.\n\n2. Keep approvals.\n3. Keep sources.\n4. Retain full wording in details.',out=compactPlanningAdvice(reply)
+ assert.equal(out.points,3);assert.doesNotMatch(out.reply,/Quoted example|A quotation|Retain full wording/);assert.match(out.details,/Retain full wording/)
+ for(const bad of ['Prepare a trial.\n\n1. First.\n3. Missing second.','Prepare a trial.\n\n2. Missing first.\n3. Third.','Prepare a trial.\n\n1. '+('x'.repeat(401))+'\n2. Small.','Prepare a trial.\n\n1. A point.\n   ```text\n   Hidden condition.\n   ```\n2. Another.'])assert.equal(compactPlanningAdvice(bad),null,bad)
+})
