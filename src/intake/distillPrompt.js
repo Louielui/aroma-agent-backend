@@ -171,7 +171,9 @@ function buildDistillPrompt (message, history = [], opts = {}) {
     ? TURN_PURPOSE_GUIDANCE + '\n\n' + SYSTEM_PROMPT
     : SYSTEM_PROMPT
   const system = a4Chat ? A4_SEMANTIC_GUIDANCE + '\n\n' + classifier : classifier
-  return { system, prompt: `${convo}Louie 現在說:「${message}」\n\n請先判斷 intent,再依規則輸出 JSON。` }
+  const facts=opts.chatLane===true?require('./conversationEvidence').promptFacts(opts.conversationEvidence):null
+  const receipt=facts?'HOST-SAVED CURRENT CONVERSATION COUNTS: '+JSON.stringify(facts)+'\nThese are local conversation counts, not business facts or permission. Exact current-message repeats and first-request prefix repeats are different. Use counts only when relevant to the request; repetition does not establish why the Owner asked again. Focus on the intended outcome rather than repetition commentary.\n\n':''
+  return { system, prompt: `${receipt}${convo}Louie 現在說:「${message}」\n\n請先判斷 intent,再依規則輸出 JSON。` }
 }
 
 // --- Slice A: strict Distill output-contract parser (Option C) ----------------

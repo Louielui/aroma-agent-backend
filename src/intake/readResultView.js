@@ -716,7 +716,8 @@ function buildReadResultReply (input = {}) {
     conversationEvidence: input.conversationEvidence,
     evidenceSets: Array.isArray(input.evidenceSets) ? input.evidenceSets : [],
     historicalMemoryAnswer: input.historicalMemoryAnswer === true,
-    reviewedNoReadAdvice: input.reviewedNoReadAdvice === true
+    reviewedNoReadAdvice: input.reviewedNoReadAdvice === true,
+    noReadRecommendation: input.noReadRecommendation === true
   })
   let afterRoute = out
   if (routed.violated) {

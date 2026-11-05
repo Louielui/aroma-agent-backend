@@ -775,7 +775,7 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
   // ── STEP 2: LLM DISTILLATION ──────────────────────────────────────────────
   // ⛔ A4-1 is CHAT-ONLY: the lane is passed explicitly so the proposal and email_draft
   // system strings can never pick up read guidance for a lane that cannot read.
-  const { system, prompt } = buildDistillPrompt(message, history, { chatLane: (opts && opts.interactionMode === 'chat') === true })
+  const { system, prompt } = buildDistillPrompt(message, history, { chatLane: (opts && opts.interactionMode === 'chat') === true, conversationEvidence:opts&&opts.conversationEvidence })
   // DEMO (flag ON): trusted persona identity via `system`; untrusted project
   // context via a sanitized prompt data block. Both cross the SAME LLMAdapter
   // boundary as plain strings — no provider SDK here. Context Card sanitization
@@ -3618,9 +3618,9 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
     // uncertain, no-read recommendations. Retrieval and action gates keep their
     // original inputs. Corrections still traverse every ordinary answer guard.
     let adviceReview = null
-    if(subscriptionMode && distilled.mode==='recommend' && turnPerSource.size===0 && !operationalInvestigation && !gateAuthoredAsk && !semanticClarifyTerminal && distilled[JUDGMENT_KEY]?.status==='provisional' && distilled[JUDGMENT_KEY].uncertainties.length){
+    if(subscriptionMode && distilled.mode==='recommend' && turnPerSource.size===0 && !operationalInvestigation && !gateAuthoredAsk && !semanticClarifyTerminal){
       const reviewed=await timePhase({requestId,phase:PHASE.MODEL_CALL,role:ROLE.EVIDENCE_REVIEW,provider:activeProvider||primaryProvider},
-        ()=>require('../investigation/semanticAnswer').reviewAdviceAnswer({reply:distilled.reply,judgment:distilled[JUDGMENT_KEY],message,history,adapter:activeAdapter,billing:llmResult.billing,model:llmResult.model,onResult:recordProviderUsage}),
+        ()=>require('../investigation/semanticAnswer').reviewAdviceAnswer({reply:distilled.reply,judgment:distilled[JUDGMENT_KEY],recommendation:true,conversationEvidence:opts.conversationEvidence,message,history,adapter:activeAdapter,billing:llmResult.billing,model:llmResult.model,onResult:recordProviderUsage}),
         {clock:latencyClock,sink:latencySink})
       adviceReview={state:reviewed.state,reason:reviewed.reason,calls:reviewed.calls,editedSpans:reviewed.editedSpans,model:reviewed.model,elapsedMs:reviewed.elapsedMs}
       distilled={...distilled,reply:reviewed.reply}
@@ -3714,7 +3714,8 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
     if(opts.ownerGoal&&(gateAuthoredAsk||semanticClarifyTerminal))opts.onOwnerClarification?.(guarded.reply)
     const view = buildReadResultReply({
       ownerGoalReporting:!!opts.ownerGoal,
-      reviewedNoReadAdvice:!!adviceReview,
+      noReadRecommendation:!!adviceReview,
+      reviewedNoReadAdvice:adviceReview?.state==='supported'||adviceReview?.state==='revised',
       conversationEvidence:opts.conversationEvidence,
       adviceReview,
       reply: guarded.reply,
@@ -3866,7 +3867,7 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
       ...(view.publicAnswerReceipt ? { publicAnswerReceipt: view.publicAnswerReceipt } : {}),
       ...(view.adviceBasis ? { adviceBasis: view.adviceBasis } : {}),
       ...(adviceReview ? { adviceReview } : {}),
-      reply: view.reply, replyForArchive: adviceReview || view.publicSummaryRendered || operationalInvestigation?.readOnly === true ? view.reply : guarded.reply, readClaimCorrected: chatClaim.corrected,
+      reply: view.reply, replyForArchive: adviceReview || view.routeEvidenceWithheld>0 || view.publicSummaryRendered || operationalInvestigation?.readOnly === true ? view.reply : guarded.reply, readClaimCorrected: chatClaim.corrected,
       judgment: '', reasons: distilled.reasons || [], offer: distilled.offer || '', decision: null, tasks: [], risks: [], next_step: '', requestId }
   }
 
