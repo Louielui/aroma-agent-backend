@@ -195,6 +195,8 @@ function enforceRouteEvidence (input) {
   const withheld = []
   let conversationWithheld = 0
   const sources = new Set()
+  const documentCounts = noReadRecommendation
+    ? new Set(require('./documentEnumeration').verifiedDocumentLists(reply).map(list=>list.start)) : new Set()
   let sentenceCursor = 0
   for (const sentence of splitSentences(reply)) {
     const sentenceStart = reply.indexOf(sentence, sentenceCursor)
@@ -223,6 +225,9 @@ function enforceRouteEvidence (input) {
       if (!s.trim() || ASKING.test(s.trim()) || OWN_OFFER.test(s) || ROUTE_EVIDENCE_NOTE_RE.test(s)) continue
       if (definition && !BUSINESS_REFERENT.test(s)) continue
       if (noReadRecommendation && subject === null && isQuestionEnumeration(s)) continue
+      // This exact whole clause counts immediately enumerated proposal text.
+      // It grants no exemption to the following items or adjacent status claims.
+      if (s === sentence && documentCounts.has(sentenceStart)) continue
   
       const noun = explicitNoun || subject
       // (a) THE NUMERIC HALF — precise, and not ours to reimplement. A bare number is not
