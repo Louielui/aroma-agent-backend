@@ -126,7 +126,7 @@ const { createTurnPlanCache, ownerAuthoredContext, logEgressPlan } = require('./
 // that could classify a request as mixed) is deliberately no longer imported or wired: two
 // components able to establish the same fact is a coincidence waiting to diverge.
 const { missingWorld } = require('./mixedKnowledgeRequirement')
-const { createTurnFinalCache, renderRequiredWorldObservation, logFinalRequirement } = require('./finalKnowledgeRequirement')
+const { createTurnFinalCache, finalOwnerAuthoredContext, renderRequiredWorldObservation, logFinalRequirement } = require('./finalKnowledgeRequirement')
 const { missingRecallReply } = require('../memory/recallReply')
 const { createTurnIntentCache, readMatchesIntent, buildIntentPrompt, logOwnerSourceIntent } = require('./ownerSourceIntentResolver')
 const { runRecoveryWorker, buildWorkerPrompt, logRecoveryWorker } = require('./recoveryDecisionWorker')
@@ -2351,7 +2351,7 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
       history,
       availableWorlds: { internal: w.includes('internal'), public: w.includes('public') }
     })
-    logFinalRequirement({ requestId, outcome: verdict.outcome, requiredWorlds: verdict.requiredWorlds, ownerMessageCount: ownerAuthoredContext(message, history).length, durationMs: Date.now() - startedAt })
+    logFinalRequirement({ requestId, outcome: verdict.outcome, requiredWorlds: verdict.requiredWorlds, ownerMessageCount: finalOwnerAuthoredContext(message, history).length, durationMs: Date.now() - startedAt })
 
     /**
      * ══════════════════════════════════════════════════════════════════════
