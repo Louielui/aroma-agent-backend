@@ -17,6 +17,10 @@ function compactPlanningAdvice(reply,{message='',report}={}){
   const lines=block.split('\n')
   if(lines.every(l=>/^[-*] /.test(l))){for(const line of lines){if(points.length<3){if(line.length>400)return null;points.push(line)}}break}
  }
+ if(!points.length){
+  const list=require('../intake/documentEnumeration').verifiedDocumentLists(reply)[0]
+  if(list)for(const item of list.items.slice(0,3)){if(item.length>400)return null;points.push('- '+item)}
+ }
  const locale=/[\u3400-\u9fff]/.test(message)?'zh':'en'
  const gaps=report?.gaps?.length||report?.sections?.some(s=>!['ok','partial'].includes(s.state))||report?.crossSourceReads?.some(s=>s.state!=='sampled')
  const boundary=[t('planningAdvice.boundary',{},locale),...(gaps?[t('planningAdvice.sourceGaps',{},locale)]:[]),

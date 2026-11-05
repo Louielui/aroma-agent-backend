@@ -351,6 +351,7 @@ const FILE_CLASS = Object.freeze({
   'lab/citationDetector.js': CLASS.MATCHING,          //   1
   'lab/conversationRecall.js': CLASS.MATCHING,        //   1
   'intake/routeEvidenceGuard.js': CLASS.MATCHING,     //   1
+  'intake/documentEnumeration.js': CLASS.MATCHING, // Typed document counts and adjacent ordinal markers, never translated.
   // ⛔ CX1 — laneRouter ALWAYS matched his words; what changed is that one vocabulary is now a
   // STRING. `ADVERB` is the closed list of time/degree adverbs that may sit between 你 and the
   // modal (你現在能… / 你而家可唔可以…); it is composed into three RegExps rather than repeated
