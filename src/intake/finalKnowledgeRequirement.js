@@ -41,7 +41,28 @@
  * ══════════════════════════════════════════════════════════════════════════════
  */
 
-const { ownerAuthoredContext } = require('./publicQueryEgressPlanner')
+const { OWNER_ROLES, MAX_MESSAGE_CHARS, MAX_TOTAL_CHARS } = require('./publicQueryEgressPlanner')
+
+// This verifier needs the Owner's referents, not the public-query planner's
+// four-message window. Several short acknowledgments must not evict an explicit
+// request that still fits the same character budget. Reserve current input first,
+// then retain the newest contiguous bounded Owner entries in reading order.
+// No deduplication, assistant text, recalled facts or model-authored goal enters.
+function finalOwnerAuthoredContext(message,history){
+ const bounded=raw=>typeof raw==='string'?raw.trim().slice(0,MAX_MESSAGE_CHARS):''
+ const current=bounded(message),out=current?[current]:[]
+ let total=current.length
+ const prior=Array.isArray(history)?history:[]
+ for(let i=prior.length-1;i>=0;i--){
+  const entry=prior[i]
+  if(!entry||!OWNER_ROLES.includes(entry.role))continue
+  const text=bounded(typeof entry.text==='string'?entry.text:entry.content)
+  if(!text)continue
+  if(total+text.length>MAX_TOTAL_CHARS)break
+  out.unshift(text);total+=text.length
+ }
+ return out
+}
 
 /**
  * Six outcomes. A meaning clarification or conditional missing-memory question
@@ -199,7 +220,7 @@ async function runFinalKnowledgeRequirement (input = {}) {
   // every answer — that is the failure where a guard exists on paper and allows everything.
   if (!verify) return unavailable()
 
-  const ownerMessages = ownerAuthoredContext(input.message, input.history)
+  const ownerMessages = finalOwnerAuthoredContext(input.message, input.history)
   if (!ownerMessages.length) return unavailable()
 
   const aw = input.availableWorlds && typeof input.availableWorlds === 'object' ? input.availableWorlds : {}
@@ -316,6 +337,7 @@ module.exports = {
   MAX_QUESTION_CHARS,
   WORLD_LABEL,
   validateFinalDecision,
+  finalOwnerAuthoredContext,
   runFinalKnowledgeRequirement,
   createTurnFinalCache,
   renderRequiredWorldObservation,
