@@ -44,3 +44,22 @@ Use the existing subscription and unchanged Opus 5.5 / Medium for comparison.
 Verify approved preferences, referents, unavailable memory and source guards as
 well as stage timings. Report original and candidate observations separately,
 stop on a substantive failure, and do not infer a multi-turn median from one turn.
+
+## Inert acceptance definition
+
+LATENCY_PROFILE proposes three turns, eighteen total helper attempts (including
+failures and retries), zero website calls, only Opus 5.5 / Medium. Installing it
+creates no ledger or grant. The exhausted learning ledger stays resident until
+separately authorized closure; its six unused attempts are not transferable.
+Owner activation and the existing idle witness are required. The existing store,
+native-send ceiling, child binding and restart persistence remain authoritative.
+
+The proposed cases are the retained memory-recall question (with both real
+baselines and the approved response preference), an ordered-history referent /
+goal correction, and a simple follow-up. Each must preserve substantive answers,
+source boundaries and the current task. Capture request, phase and actual provider
+send counts; compare the first case with its retained 49.005-second observation
+without calling a single historical observation a matched benchmark or median.
+No business actions, preference writes, new memory extraction or API fallback.
+Pause automatic memory only during the separately approved run and restore it on
+completion or stop. Stop on the first substantive failure or any usage ceiling.
