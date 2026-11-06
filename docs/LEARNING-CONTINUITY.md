@@ -26,6 +26,8 @@ provider failures may still use separately metered retry attempts. The Gateway
 reads a usage refusal from the authoritative host ledger rather than trusting
 remote error prose, preserves its code, and schedules no timed consolidation
 retry for that policy failure. Existing profile definitions and hashes are unchanged.
+Indexing retains the same safe usage refusal without a timed retry, so exhaustion
+cannot become a later unscoped background indexing attempt.
 The legacy invocation ledger also marked both refused attempts dispatched early
 and omitted their usage failure code. Historical rows are retained unchanged.
 New records notify dispatch only from the existing native process-start callback,

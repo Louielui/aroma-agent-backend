@@ -81,3 +81,15 @@ test('Hindsight/Gateway retains the authoritative usage refusal, disables timed 
  const result=await f.b.withScope(f.scope,()=>g.consolidate(OWNER,source.id));assert.equal(result.error,'usage_model_not_allowed');assert.equal(result.nextRetryAt,null);assert.equal(result.attemptHistory.at(-1).errorCode,'usage_model_not_allowed');assert.equal(result.candidateIds.length,0)
  assert.ok(!JSON.stringify(await g.get(OWNER,source.id)).includes('private provider prose'))
 })
+test('indexing at the actual root cap preserves the same safe refusal and cannot schedule an unscoped background retry',async t=>{
+ const f=fixture(t),{OWNER,createGateway}=require('../memory/governed'),store=require('../memory/structuredStore').createTestStore();let retains=0
+ const engine=require('../memory/hindsight').createHindsight({env:{XIANGXIANG_MEMORY:'on',HINDSIGHT_URL:'http://127.0.0.1:8888',HINDSIGHT_BANK:'xiangxiang-owner',HINDSIGHT_TOKEN:'fixture',CODEX_CHAT_BRIDGE_TOKEN:'a'.repeat(64)},transport:async(url,init)=>{
+  if(init.method==='GET')return Response.json({}, {status:404})
+  if(url.endsWith('/memories')){retains++;assert.throws(()=>f.b.reserve('helper',selection),/usage_limit_reached/);return Response.json({detail:'private callback prose'},{status:500})}
+  return Response.json({})
+ }})
+ const g=createGateway({store,engine}),source=await g.observe(OWNER,{type:'episodic',subject:'offline preference',text:'Keep answers concise.',scope:'private:owner',policy:'owner_history',source:{kind:'conversation',id:'offline-index-source',at:'2026-11-05T00:00:00Z',attribution:'owner_statement'}})
+ const result=await f.b.withScope(f.scope,async()=>{for(let i=0;i<18;i++)f.b.reserve('helper',selection).finish(Error('offline prior attempt'));return g.index(OWNER,source.id)})
+ assert.equal(retains,1);assert.equal(result.index.state,'unconfirmed');assert.equal(result.index.reason,'usage_limit_reached');assert.equal(result.index.nextRetryAt,null);assert.equal(result.index.attemptHistory.at(-1).errorCode,'usage_limit_reached');assert.equal(f.b.readStatus().helper.dispatched,0);assert.equal(f.b.readStatus().helper.reserved,18)
+ assert.ok(!JSON.stringify(result).includes('private callback prose'))
+})

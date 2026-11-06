@@ -213,7 +213,7 @@ function createGateway({ store, engine, readConversation, clock = () => new Date
       result = { state: d.facts > 0 ? 'saved' : 'raw_only', facts: d.facts, attempts,
         reason: d.facts > 0 ? null : 'no_extracted_facts', checkedAt: clock(), nextRetryAt: null }
     } catch (e) {
-      const reason = ['memory_timeout', 'memory_rate_limited', 'memory_unauthorized', 'memory_invalid_request', 'memory_invalid_text', 'memory_invalid_result', 'memory_unconfirmed'].includes(e.message) ? e.message : 'memory_unavailable'
+      const reason = require('../actions/usageBudget').ERRORS.has(e.message)||['memory_timeout', 'memory_rate_limited', 'memory_unauthorized', 'memory_invalid_request', 'memory_invalid_text', 'memory_invalid_result', 'memory_unconfirmed'].includes(e.message) ? e.message : 'memory_unavailable'
       const retryable = ['memory_timeout', 'memory_rate_limited', 'memory_unavailable', 'memory_unconfirmed'].includes(reason)
       const delay = reason === 'memory_rate_limited' ? 15 * 60000 : reason === 'memory_timeout' ? 5 * 60000 : 30000 * 2 ** Math.min(attempts - 1, 4)
       result = { state: 'unconfirmed', facts: null, attempts, reason, failureCheckpoint:checkpoint, checkedAt: clock(),
