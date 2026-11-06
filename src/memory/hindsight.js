@@ -23,10 +23,15 @@ function createHindsight ({ env = process.env, transport = fencedFetch('hindsigh
       const res = await transport(c.url + path, { method, redirect: 'error', signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(timeout)]) : AbortSignal.timeout(timeout),
         headers: { authorization: 'Bearer ' + env.HINDSIGHT_TOKEN, 'content-type': 'application/json',...(workHeader?{'x-xiangxiang-work-trace':workHeader}:{}),...(usageHeader?{'x-xiangxiang-usage':usageHeader}:{}) }, ...(body ? { body: JSON.stringify(body) } : {}) })
       if (res.status === 404 && absent) return null
-      if (!res.ok) throw Error(res.status === 429 ? 'memory_rate_limited' : [401, 403].includes(res.status) ? 'memory_unauthorized' : [400, 422].includes(res.status) ? 'memory_invalid_request' : 'memory_unavailable')
+      if (!res.ok) {
+        // Read the host ledger, never parse a provider's prose as policy authority.
+        const usage=require('../actions/usageBudget'),active=usage.currentScope(),blocked=active?usage.service().turnFailure(active):null
+        if(usage.ERRORS.has(blocked))throw Error(blocked)
+        throw Error(res.status === 429 ? 'memory_rate_limited' : [401, 403].includes(res.status) ? 'memory_unauthorized' : [400, 422].includes(res.status) ? 'memory_invalid_request' : 'memory_unavailable')
+      }
       const raw = await res.text(); if (raw.length > 1000000) throw Error('memory_invalid_result')
       return JSON.parse(raw)
-    } catch (e) { throw Error(signal?.aborted ? 'memory_yielded' : ['memory_rate_limited', 'memory_unauthorized', 'memory_invalid_request', 'memory_invalid_result'].includes(e.message) ? e.message : ['TimeoutError', 'AbortError'].includes(e.name) ? 'memory_timeout' : 'memory_unavailable') }
+    } catch (e) { throw Error(signal?.aborted ? 'memory_yielded' : require('../actions/usageBudget').ERRORS.has(e.message)||['memory_rate_limited', 'memory_unauthorized', 'memory_invalid_request', 'memory_invalid_result'].includes(e.message) ? e.message : ['TimeoutError', 'AbortError'].includes(e.name) ? 'memory_timeout' : 'memory_unavailable') }
   }
   function docId (id) { if (!ID.test(id || '')) throw Error('memory_invalid_id'); return id }
   async function get (id) {

@@ -392,10 +392,11 @@ function createGateway({ store, engine, readConversation, clock = () => new Date
         catch (e) { if (e.message !== 'revision_conflict' || retry === 2) throw e }
       }
     } catch (e) {
-      const error = ['invalid_consolidation', 'stale_evidence'].includes(e.message) ? e.message : 'consolidation_unavailable'
+      const usageFailure=require('../actions/usageBudget').ERRORS.has(e.message)
+      const error = usageFailure||['invalid_consolidation', 'stale_evidence'].includes(e.message) ? e.message : 'consolidation_unavailable'
       const failed = require('../investigation/memoryAttemptEvidence').appendAttempt('memory_consolidation',source.details.consolidation,{ ...state, state: 'failed', error, failureCheckpoint:checkpoint,
         validationCode:require('../investigation/memoryAttemptEvidence').VALIDATION.includes(e.validationCode)?e.validationCode:null,
-        checkedAt: clock(), nextRetryAt: attempts < 3 ? new Date(Date.parse(clock()) + attempts * 300000).toISOString() : null },source.id)
+        checkedAt: clock(), nextRetryAt: !usageFailure&&attempts < 3 ? new Date(Date.parse(clock()) + attempts * 300000).toISOString() : null },source.id)
       const latest = await get(actor, id)
       await store.commit([{ expected: latest.version, row: { ...latest, version: latest.version + 1, details: { ...latest.details, consolidation: failed } } }], { op: 'consolidation_failed', actor: actor.id, at: clock(), reason: error })
       await reportWorkOutcome(workTrace,'failed')

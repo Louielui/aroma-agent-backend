@@ -13,7 +13,7 @@ function attempt(role,state,recordId,at){
  if(!['memory_index','memory_consolidation'].includes(role)||!state||!(role==='memory_index'?INDEX:CONSOLIDATION).includes(state.state)||!integer(state.attempts)||!date(state.checkedAt)||Date.parse(state.checkedAt)>Date.parse(at))return null
  const trace=validWorkTrace(state.workTrace)&&state.workTrace.kind===role&&state.workTrace.recordId===recordId&&state.workTrace.attempt===state.attempts&&state.workTrace.phase===(role==='memory_index'?'extraction':'consolidation')?{...state.workTrace}:null
  return {state:state.state,attempt:state.attempts,at:state.checkedAt,workTrace:trace,
-  errorCode:CODES.includes(state.reason||state.error)&&(role==='memory_index'?String(state.reason||state.error).startsWith('memory_'):['invalid_consolidation','stale_evidence','consolidation_unavailable'].includes(state.error))?state.reason||state.error:null,
+  errorCode:require('../actions/usageBudget').ERRORS.has(state.reason||state.error)||CODES.includes(state.reason||state.error)&&(role==='memory_index'?String(state.reason||state.error).startsWith('memory_'):['invalid_consolidation','stale_evidence','consolidation_unavailable'].includes(state.error))?state.reason||state.error:null,
   checkpoint:CHECKPOINTS.includes(state.failureCheckpoint)&&state.failureCheckpoint.startsWith(role==='memory_index'?'index_':'consolidation_')?state.failureCheckpoint:null,
   validationCode:role==='memory_consolidation'&&state.error==='invalid_consolidation'&&state.failureCheckpoint==='consolidation_validation'&&VALIDATION.includes(state.validationCode)?state.validationCode:null}
 }
