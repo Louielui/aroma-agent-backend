@@ -21,7 +21,7 @@ function client(dir,{resolvedModel='claude-sonnet-5-5',nativeModel=resolvedModel
  return{options:{cwd:dir,run,catalogue:async()=>[{value:'sonnet',resolvedModel,supportsEffort:true,supportedEffortLevels:['low','medium','high']}]},spawns:()=>spawns}
 }
 async function bridge(t,f,c){
- const token='a'.repeat(64),server=require('./bridge').createBridge({token,clientOptions:c.options,usageBudget:f.b,memoryEnabled:true,backgroundModel:'claude-sonnet'})
+ const token='a'.repeat(64),server=require('./bridge').createBridge({token,clientOptions:c.options,usageBudget:f.b,memoryEnabled:true,backgroundModel:'claude-sonnet',invocationLedger:c.ledger})
  await new Promise(r=>server.listen(0,'127.0.0.1',r));t.after(()=>new Promise(r=>server.close(r)))
  const header=f.b.encode(f.scope,token)
  return async()=>{const r=await fetch('http://127.0.0.1:'+server.address().port+'/v1/chat/completions',{method:'POST',headers:{authorization:'Bearer '+token,'content-type':'application/json','x-xiangxiang-usage':header},body:JSON.stringify({model:'gpt-6-astra',messages:[{role:'user',content:'offline source'}]})});return{status:r.status,body:await r.json()}}
@@ -60,6 +60,17 @@ test('an unbound concrete Sonnet call cannot use the alias allowance',async t=>{
  const f=fixture(t);await f.b.withScope(f.scope,async()=>{
   assert.throws(()=>usage.nativePermit('helper',{model:'claude-sonnet-5-5',effort:'low'}),/usage_model_not_allowed/)
  });assert.equal(f.b.readStatus().helper.reserved,0)
+})
+test('a pre-spawn refusal is visible in the real invocation ledger without a false dispatch marker; reloading retains its safe reason',async t=>{
+ const f=fixture(t),c=client(f.dir,{nativeEffort:'medium'}),file=path.join(f.dir,'invocations.json'),create=require('../investigation/invocations').createInvocationLedger
+ c.ledger=create({file});const call=await bridge(t,f,c);assert.equal((await call()).body.code,'usage_model_not_allowed');assert.equal(c.spawns(),0)
+ const row=create({file}).read().records[0];assert.equal(row.state,'failed');assert.equal(row.dispatchedAt,null);assert.equal(row.providerWaitMs,null);assert.equal(row.failureCode,'usage_model_not_allowed');assert.equal(row.modelResultObserved,false)
+ const id=c.ledger.begin({role:'memory_completion',...selection});c.ledger.finish(id,null,Error('private credential-like provider prose'));assert.equal(c.ledger.read().records[0].failureCode,null)
+})
+test('the Claude client dispatch callback fires exactly at actual native process start',async t=>{
+ const f=fixture(t),c=client(f.dir);let dispatches=0;c.options.onDispatch=()=>{dispatches++;assert.equal(c.spawns(),1)}
+ await f.b.withScope(f.scope,()=>usage.observe('helper',selection,()=>require('./claudeClient').complete(c.options,{...selection,prompt:'offline'})))
+ assert.equal(c.spawns(),1);assert.equal(dispatches,1);assert.equal(f.b.readStatus().helper.dispatched,1)
 })
 test('Hindsight/Gateway retains the authoritative usage refusal, disables timed retry and sanitizes remote prose',async t=>{
  const f=fixture(t),{OWNER,createGateway}=require('../memory/governed'),store=require('../memory/structuredStore').createTestStore()

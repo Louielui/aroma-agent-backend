@@ -26,6 +26,10 @@ provider failures may still use separately metered retry attempts. The Gateway
 reads a usage refusal from the authoritative host ledger rather than trusting
 remote error prose, preserves its code, and schedules no timed consolidation
 retry for that policy failure. Existing profile definitions and hashes are unchanged.
+The legacy invocation ledger also marked both refused attempts dispatched early
+and omitted their usage failure code. Historical rows are retained unchanged.
+New records notify dispatch only from the existing native process-start callback,
+retain allowlisted usage reasons, and still discard arbitrary provider prose.
 
 The existing Hindsight launch also failed on the installed Windows timezone name
 `Manitoba Standard Time`. A process-only `America/Winnipeg` recovery restored it

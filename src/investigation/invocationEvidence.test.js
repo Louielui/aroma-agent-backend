@@ -41,7 +41,12 @@ test('many observed calls cannot crowd the unconfirmed billing boundary out of t
 })
 test('Claude result projects selected-model and helper usage separately, with dispatch only after preflight',async()=>{
  let dispatched=0
- const r=await complete({onDispatch:()=>dispatched++,catalogue:async()=>[{value:'sonnet',resolvedModel:'claude-sonnet-5-5',supportsEffort:true,supportedEffortLevels:['medium']}],run:async args=>args.includes('auth')?{loggedIn:true,authMethod:'claude.ai',apiProvider:'firstParty'}:{type:'result',subtype:'success',result:'ok',modelUsage:{'claude-sonnet-5-5':{inputTokens:13,outputTokens:4,cacheReadInputTokens:42,costUSD:3},'claude-haiku-4-5':{inputTokens:2,outputTokens:1}}}},{prompt:'hello',model:'claude-sonnet',effort:'medium'})
+ const r=await complete({onDispatch:()=>dispatched++,catalogue:async()=>[{value:'sonnet',resolvedModel:'claude-sonnet-5-5',supportsEffort:true,supportedEffortLevels:['medium']}],run:async(args,options)=>{
+  if(args.includes('auth'))return{loggedIn:true,authMethod:'claude.ai',apiProvider:'firstParty'}
+  // The transport double must supply the native-start event. Calling complete
+  // itself is no longer (incorrectly) treated as evidence of dispatch.
+  assert.equal(dispatched,0);options.onDispatch();return{type:'result',subtype:'success',result:'ok',modelUsage:{'claude-sonnet-5-5':{inputTokens:13,outputTokens:4,cacheReadInputTokens:42,costUSD:3},'claude-haiku-4-5':{inputTokens:2,outputTokens:1}}}
+ }},{prompt:'hello',model:'claude-sonnet',effort:'medium'})
  assert.equal(dispatched,1);assert.deepEqual(r.usage,{inputTokens:13,outputTokens:4,cacheReadInputTokens:42});assert.equal(r.usage.totalTokens,undefined);assert.equal(r.usageByModel[1].usage.inputTokens,2)
  await assert.rejects(complete({onDispatch:()=>dispatched++,run:async()=>({loggedIn:false})},{prompt:'hello',model:'claude-sonnet'}));assert.equal(dispatched,1)
 })
