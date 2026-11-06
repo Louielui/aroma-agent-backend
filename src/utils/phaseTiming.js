@@ -44,6 +44,9 @@ const PHASE = Object.freeze({
   PROMPT_BUILD: 'prompt_build',
   DECISION_RECALL: 'decision_recall',
   CONVERSATION_RECALL: 'conversation_recall',
+  MEMORY_PREFERENCES: 'memory_preferences',
+  MEMORY_RECALL: 'memory_recall',
+  MAIL_MEMORY_RECALL: 'mail_memory_recall',
   LIVE_READ_CONTEXT: 'live_read_context',
   MODEL_CALL: 'model_call',
   PUBLIC_AUTH: 'public_auth',
@@ -95,6 +98,9 @@ const ALLOWED = Object.freeze([
 const PHASE_CONTAINMENT = Object.freeze({
   [PHASE.DECISION_RECALL]: PHASE.PROMPT_BUILD,
   [PHASE.CONVERSATION_RECALL]: PHASE.PROMPT_BUILD,
+  [PHASE.MEMORY_PREFERENCES]: PHASE.PROMPT_BUILD,
+  [PHASE.MEMORY_RECALL]: PHASE.PROMPT_BUILD,
+  [PHASE.MAIL_MEMORY_RECALL]: PHASE.PROMPT_BUILD,
   [PHASE.LIVE_READ_CONTEXT]: PHASE.PROMPT_BUILD
 })
 

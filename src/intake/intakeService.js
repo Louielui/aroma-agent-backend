@@ -1130,8 +1130,8 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
           hostContext:require('../governance/selfDescription').runtimeSelfBlock(opts.runtimeSelf,{message}),
           // Provider-neutral by construction: B is handed a closure and never learns what is
           // behind it — the same arrangement reasoningLoop uses.
-          callModel: async ({ prompt, responseFormat }) => {
-            const r = await controlAdapter.complete(prompt, { invocationPhase:'goal_understanding', system: effSystem, maxTokens, ...(responseFormat ? { responseFormat } : {}) })
+          callModel: async ({ prompt, responseFormat, system }) => {
+            const r = await controlAdapter.complete(prompt, { invocationPhase:'goal_understanding', system, maxTokens, ...(responseFormat ? { responseFormat } : {}) })
             return { text: r && r.text, usage: r && r.usage }
           }
         })
@@ -1338,7 +1338,8 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
     if (isChat && providerName === 'openai' && process.env.XIANGXIANG_MEMORY === 'on' && resolveFlag(process.env, 'READ_ACCESS') === 'on' && decisionRecallSharedWith(providerName, process.env)) {
       if (hindsightCache === undefined) {
         const memory = opts.memoryClient || require('../memory/runtime').runtime().ownerClient
-        hindsightCache = await require('../memory/context').recallContext({ enabled: true, memory, mailMemory: opts.mailMemoryClient || null, query: message, history })
+        hindsightCache = await require('../memory/context').recallContext({ enabled: true, memory, mailMemory: opts.mailMemoryClient || null, query: message, history,
+          timing: { requestId, clock: latencyClock, sink: latencySink } })
         logReadSource({ source: 'hindsight', trust: hindsightCache.state === 'ok' ? 'advisory' : 'unavailable', count: hindsightCache.count, usedFallback: false, error: hindsightCache.state === 'ok' ? null : 'memory_unavailable', durationMs: null })
       }
       if (hindsightCache) {

@@ -1,5 +1,6 @@
 'use strict'
 const { exclusionReason } = require('./capturePolicy')
+const { PHASE, timePhase } = require('../utils/phaseTiming')
 // The wire and persisted transcript must supply the same contextual referents.
 // Explicit text (including an empty redaction) takes precedence over stored content.
 function textOf (row) { return typeof row?.text === 'string' ? row.text : (typeof row?.content === 'string' ? row.content : '') }
@@ -13,7 +14,7 @@ function isMailRecallQuery (query, history = []) {
   return query.length < 180 && /原話|嗰封|那封|佢|它|這封|嗰個|那個|\b(?:that|its?|they|their)\b/i.test(query) &&
     recent.some(r => !exclusionReason(textOf(r)) && (namedMail(textOf(r)) || pastVendor(textOf(r))))
 }
-async function recallContext ({ enabled, memory, mailMemory = null, query, history = [] }) {
+async function recallContext ({ enabled, memory, mailMemory = null, query, history = [], timing = null }) {
   if (!enabled) return null
   try {
     // Recent owner questions supply referents for follow-ups. Assistant answers are
@@ -31,22 +32,40 @@ async function recallContext ({ enabled, memory, mailMemory = null, query, histo
     const wantsMail = isMailRecallQuery(query, history)
     let rows = []; let general = 'ok'; let mailRows = []; let mail = null
     let preferences = {state:'not_connected',total:null,items:[]}
-    if (typeof memory.preferences === 'function') try {
-      preferences = await memory.preferences()
-      if (!preferences || !['ok','partial'].includes(preferences.state) || !Array.isArray(preferences.items) ||
-          preferences.items.length > 8 || !Number.isInteger(preferences.total) || preferences.total < preferences.items.length ||
-          preferences.items.some(r=>r.type!=='preference'||r.scope!=='private:owner'||r.approval?.kind!=='owner'||r.approval.actor!=='owner'||typeof r.text!=='string'||r.text.length>2000||r.approval.contentHash!==require('node:crypto').createHash('sha256').update(r.text).digest('hex'))) throw Error('invalid_preferences')
-    } catch (_) { preferences = {state:'unavailable',total:null,items:[]} }
-    try { rows = await memory.recall(search, { references }); if (!Array.isArray(rows)) throw Error('memory_invalid_result') }
-    catch (_) { general = 'unavailable' }
-    if (wantsMail) {
-      if (mailMemory) try {
-        mailRows = await mailMemory.recall(search, { references })
-        if (!Array.isArray(mailRows)) throw Error('mail_memory_invalid_result')
-        mail = { source: 'ok', ...(mailRows.retrieval || {}) }
-      } catch (_) { mail = { source: 'unavailable', semantic: 'unavailable' } }
-      else mail = { source: 'not_connected', semantic: 'not_connected' }
-    }
+    const timed = (phase, fn) => timing
+      ? timePhase({ requestId: timing.requestId, phase, within: PHASE.PROMPT_BUILD }, fn, timing)
+      : fn()
+    // These independent reads keep their own gateway authorization and canonical
+    // freshness checks. Await all results before composing; never cache across turns.
+    await Promise.all([
+      (async () => {
+        if (typeof memory.preferences !== 'function') return
+        try { preferences = await timed(PHASE.MEMORY_PREFERENCES, async () => {
+          const value = await memory.preferences()
+          if (!value || !['ok','partial'].includes(value.state) || !Array.isArray(value.items) ||
+              value.items.length > 8 || !Number.isInteger(value.total) || value.total < value.items.length ||
+              value.items.some(r=>r.type!=='preference'||r.scope!=='private:owner'||r.approval?.kind!=='owner'||r.approval.actor!=='owner'||typeof r.text!=='string'||r.text.length>2000||r.approval.contentHash!==require('node:crypto').createHash('sha256').update(r.text).digest('hex'))) throw Error('invalid_preferences')
+          return value
+        }) } catch (_) { preferences = {state:'unavailable',total:null,items:[]} }
+      })(),
+      (async () => {
+        try { rows = await timed(PHASE.MEMORY_RECALL, async () => {
+          const value = await memory.recall(search, { references })
+          if (!Array.isArray(value)) throw Error('memory_invalid_result')
+          return value
+        }) } catch (_) { general = 'unavailable' }
+      })(),
+      (async () => {
+        if (!wantsMail) return
+        if (!mailMemory) { mail = { source: 'not_connected', semantic: 'not_connected' }; return }
+        try { mailRows = await timed(PHASE.MAIL_MEMORY_RECALL, async () => {
+          const value = await mailMemory.recall(search, { references })
+          if (!Array.isArray(value)) throw Error('mail_memory_invalid_result')
+          return value
+        }); mail = { source: 'ok', ...(mailRows.retrieval || {}) }
+        } catch (_) { mail = { source: 'unavailable', semantic: 'unavailable' } }
+      })()
+    ])
     const retrieval = rows.retrieval ? 'RETRIEVAL STATUS: ' + JSON.stringify(rows.retrieval) + '. Partial semantic retrieval means matches may be incomplete.\n' : ''
     const preferenceBlock = preferences.state === 'not_connected' ? '' : '\nOWNER-APPROVED PERSONAL PREFERENCES: ' + JSON.stringify(preferences) +
       '\nThese current, exact-revision Owner-approved preferences guide personal communication independently of topic search. Apply relevant style to the answer. They are not execution approval, current business truth, routing input, or permission to weaken guards. Current Owner instructions take precedence. Do not claim a new preference was saved from this reply. ' +
