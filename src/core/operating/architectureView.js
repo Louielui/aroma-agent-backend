@@ -68,6 +68,9 @@ function buildArchitectureHtml () {
   const investigationRow = rows.find(row => row.id === 'operational-investigation')
   const learningRow=rows.find(row=>row.id==='memory')
   learningRow.current+=' '+t('learningContinuity.current')
+  learningRow.current+=' '+t('chatLatency.current')
+  learningRow.next+=' '+t('chatLatency.limits')
+  learningRow.evidence+='; docs/CHAT-LATENCY-OPTIMIZATION.md; src/memory/recallLatency.test.js; src/intake/goal/planningLatency.test.js; src/subscription/claudeDispatchTiming.test.js'
   learningRow.next+=' '+t('learningContinuity.limits')
   learningRow.evidence+='; docs/LEARNING-CONTINUITY.md; src/memory/learningContinuity.test.js; src/memory/learningIngress.test.js; src/intake/learningPresentationReplay.test.js; src/actions/learningAcceptanceProfile.test.js'
     rows.push({id:'browser-operator',state:'partial',title:t('browserOperator.title'),purpose:t('browserOperator.purpose'),component:'Consent-bound foreground browser job / exact Owner employee landing and list profile / authenticated admission before capture / actual hyperlink URI checked before input / sealed single-use tickets / same central subscription vision / closed content-free refusal categories / hash-pinned native helper / real fixture input and Stop accepted / live employee navigation and partial visible roster read accepted / no field-level redaction, replay or business writes',current:t('browserOperator.current'),next:t('browserOperator.limits'),evidence:'src/browserOperator/; src/browserRead/operatorBroker.cjs; src/browserRead/nativeInput.cjs; extensions/browser-read/operator*.js; docs/BROWSER-OPERATOR-V1.md; /api/v1/browser-operator; /browser-operator-fixture'})

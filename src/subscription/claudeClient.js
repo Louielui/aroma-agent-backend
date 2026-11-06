@@ -18,7 +18,7 @@ function selection (input = {}) {
 async function checkSubscription (options = {}) {
   selection(options)
   let auth
-  try { auth = await (options.run || runClaude)(['--restricted', '--setting-sources', '', 'auth', 'status', '--json'], options) } catch (error) { throw new SubscriptionError(error.message === 'claude_login_required' ? 'subscription_login_required' : 'subscription_unavailable') }
+  try { auth = await (options.run || runClaude)(['--restricted', '--setting-sources', '', 'auth', 'status', '--json'], { ...options, onDispatch: undefined }) } catch (error) { throw new SubscriptionError(error.message === 'claude_login_required' ? 'subscription_login_required' : 'subscription_unavailable') }
   if (auth.loggedIn !== true || auth.authMethod !== 'claude.ai' || auth.apiProvider !== 'firstParty' || auth.apiKeySource) throw new SubscriptionError('subscription_login_required')
   return { model: options.model || MODEL, billing: 'claude-subscription' }
 }
@@ -39,7 +39,7 @@ async function readCatalogue (options = {}) {
   if (options.catalogue) return catalogueRows(await options.catalogue())
   const controlRequestId = CATALOGUE_ID
   const result = await (options.run || runClaude)(catalogueArgs(), {
-    ...options, timeoutMs: 15000, controlRequestId,
+    ...options, onDispatch: undefined, timeoutMs: 15000, controlRequestId,
     input: catalogueInput()
   })
   if (!Array.isArray(result.models)) throw new SubscriptionError('subscription_unavailable')
