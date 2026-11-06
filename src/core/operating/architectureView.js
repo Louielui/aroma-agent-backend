@@ -74,6 +74,8 @@ function buildArchitectureHtml () {
   learningRow.component+=' / bounded approved-preference delivery on existing simple fast answers (offline verified; real-model style and latency unverified)'
   learningRow.evidence+='; docs/CHAT-RESPONSE-DIAGNOSIS.md; src/memory/fastPathPreferences.test.js'
   learningRow.component+=' / in-flight per-turn final-verdict reuse and concurrent metadata-only Claude preflight (offline verified; native speed unmeasured)'
+  learningRow.component+=' / independent intent and goal preparation joined before source reads / loaded memory reference disclosure and host-saved follow-up pointers (candidate; native concision and latency unverified)'
+  learningRow.evidence+='; src/intake/planningOverlap.test.js; src/memory/replySources.test.js; src/routes/memorySources.test.js; src/demo/memorySources.test.js'
   learningRow.evidence+='; src/intake/finalKnowledgeConcurrency.test.js; src/subscription/claudePreflightConcurrency.test.js'
   learningRow.next+=' '+t('learningContinuity.limits')
   learningRow.evidence+='; docs/LEARNING-CONTINUITY.md; src/memory/learningContinuity.test.js; src/memory/learningIngress.test.js; src/intake/learningPresentationReplay.test.js; src/actions/learningAcceptanceProfile.test.js'

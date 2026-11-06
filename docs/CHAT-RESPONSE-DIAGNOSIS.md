@@ -18,9 +18,9 @@ the guards and visible answer retained it. This failure does not prove memory
 deletion or failure to store the preference. The test stopped on that substantive
 formatting failure; other planned cases were not executed.
 
-The source prompt also mandates document IDs and dates. This is a plausible
+The baseline source prompt also mandates document IDs and dates. This is a plausible
 competing output instruction, not proof of the model's internal cause. IDs are
-currently parsed from previous assistant text to resolve later source references.
+parsed from previous assistant text to resolve later source references.
 Removing them without a source-reference replacement would lose follow-up context.
 
 ## Confirmed integration defect fixed in isolation
@@ -90,13 +90,44 @@ a promise of 4.560 seconds saved. Model generation and other phases remain.
    arbitrary text or hide material limitations. A prompt-only edit is not proof
    of compliance; another rewriting helper would add latency and usage.
 
-The next broader latency experiment should first use the existing measured phase data
-to design one understanding contract that can supply reusable, validated facts
-to existing Planner/Dispatcher/Policy gates. It must retain independent business
-consensus where required and fail-closed retrieval obligations. A change to
-control responsibility needs saved-output differential tests and independent
-review before any live experiment. The present patch does not implement that
-consolidation or claim the four-call path became one call.
+## Integrated preparation and source presentation
+
+The current-message semantic route and existing goal preparation now start
+independently. The route still sees no recalled material and still requires its
+existing independent opinions. Goal preparation receives the same ordered working
+context and canonical memory. Business source selection joins both outcomes, and
+answer generation also joins routing on read-disabled paths and prompt-cache hits.
+The same per-turn goal promise prevents duplicate planning. Barriers exercise both
+completion orders and failure paths; they do not measure native speed. Eligibility,
+source intersections, final verifier and dispatch authority remain unchanged. This
+does not turn four model calls into one or bypass the final knowledge obligation.
+The earlier website-intent prepass is outside this overlap, so the retained timing
+does not establish how many seconds the change will save for that exact request.
+
+The general-memory prompt now requests a compact `[memory:DOCUMENT_ID]` marker,
+not mandatory full timestamps and IDs in prose. After existing answer guards,
+only markers matching active private Owner rows actually loaded this turn can
+move into a closed source disclosure. Substantive prose, meaningful dates,
+uncertainty and limitations remain untouched. Unknown, conflicting, invalid or
+marker-only outputs stay visible. Source pointers expressly do not certify claims.
+No rewrite helper, model output schema expansion or arbitrary text truncation is
+introduced. Source-bound mail retains its separate original-quotation contract.
+
+The existing conversation store retains only validated ID/date/version/scope
+receipts beside the answer, not copied recalled bodies or model-supplied URLs.
+Both new and restored messages render them using text nodes in closed details.
+Follow-up pointers come from host-saved recent assistant receipts, not browser
+history metadata, and are re-read through the existing Gateway. The real isolated
+Gateway test demonstrates that archiving a source prevents its resurrection from
+a saved reference. Unknown dates and versions remain unknown. This extends the
+existing bounded recent-context lookup; it is not a new memory bank or approval.
+
+The original native outputs are replayed unchanged through existing guards, so
+their old verbose answer correctly remains a known failure. Separate inert-output
+integration tests exercise the new marker contract through intake, persistence,
+route and DOM rendering. They cannot prove real-model compliance or visible pixels.
+The full new candidate requires a fresh exact-commit review, and native latency
+and concise-response acceptance remain pending separately authorized deployment.
 
 ## Delivery boundary
 

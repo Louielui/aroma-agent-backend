@@ -195,7 +195,7 @@ function createConversationStore (options = {}) {
    * Called once per completed turn from the UI path and nowhere else. A turn is only
    * written after the reply exists, so a failed turn leaves no half-conversation behind.
    */
-  function appendTurn ({ id, userText, replyText, servedBy = null, now = null, images, operatingRunId = null, developmentPlanRunId = null, codeDiagnosisRunId = null, codeRepairRunId = null, projectWorkRunId = null, projectTaskRunId = null, taskPlanRunId = null, planningOffer = null, planningContext = null, investigationRunId = null, capabilityGapRunId = null, evidenceReport = null, evidenceReportAttempt = false, hrRecheckId = null, publicAnswerReceipt = null, publicCompletionRequestId = null, ownerGoal = null, ownerGoalReference = null } = {}) {
+  function appendTurn ({ id, userText, replyText, servedBy = null, memorySources = null, now = null, images, operatingRunId = null, developmentPlanRunId = null, codeDiagnosisRunId = null, codeRepairRunId = null, projectWorkRunId = null, projectTaskRunId = null, taskPlanRunId = null, planningOffer = null, planningContext = null, investigationRunId = null, capabilityGapRunId = null, evidenceReport = null, evidenceReportAttempt = false, hrRecheckId = null, publicAnswerReceipt = null, publicCompletionRequestId = null, ownerGoal = null, ownerGoalReference = null } = {}) {
     if (!isValidId(id)) throw new Error('invalid_conversation_id')
     const attachments = images === undefined ? null : require('../chat/imageAttachments').validateImages(images)
     const ts = now || new Date().toISOString()
@@ -229,6 +229,10 @@ function createConversationStore (options = {}) {
     const previousOwnerGoal=goalContract.currentGoal(conversation)
     conversation.messages.push({ role: 'user', content: String(userText == null ? '' : userText), servedBy: null, ts, ...(attachments ? { images: attachments } : {}) })
     const assistantMessage = { role: 'assistant', content: String(replyText == null ? '' : replyText), servedBy: servedBy || null, ts }
+    if (memorySources !== null) {
+      if (!require('../memory/replySources').validReceipt(memorySources)) throw Error('invalid_memory_sources')
+      assistantMessage.memorySources = structuredClone(memorySources)
+    }
     if(ownerGoal!==undefined&&ownerGoal!==null){
       const previous=knownGoals.find(g=>g.goalId===ownerGoalReference)||previousOwnerGoal
       const continuation=require('../actions/chat').parseContinuation(String(userText))
