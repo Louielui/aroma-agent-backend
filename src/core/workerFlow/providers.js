@@ -64,6 +64,8 @@ function runClaudeUnobserved (args, { cwd, timeoutMs = 90000, signal, input = ''
   return new Promise((resolve, reject) => {
     if (signal?.aborted) { reject(Error('worker_cancelled')); return }
     const child = spawnImpl(resolved.command, args, { cwd, env: buildChildEnv(process.env), windowsHide: true, shell: false, stdio: ['pipe', 'pipe', 'pipe'] })
+    // This is the actual dispatch signal forwarded from claudeClient.complete.
+    // Its preflight must not emit onDispatch: nativePermit above can still refuse.
     child.once('spawn', () => {try{budget?.permit?.dispatched('cli_process_started',child.pid);onDispatch?.()}catch(e){child.kill();finish(e)}})
     let stdout = ''; let stderrBytes = 0; let finished = false
     const cancelled = () => { child.kill(); finish(Error('worker_cancelled')) }

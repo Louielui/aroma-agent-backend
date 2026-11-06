@@ -75,6 +75,8 @@ async function complete (options = {}, input) {
   let result; const start = Date.now()
   // Bind the authenticated catalogue resolution to this host-selected call.
   // HTTP input cannot provide a resolved model or transfer another permit.
+  // providers.runClaudeUnobserved forwards options.onDispatch from its actual
+  // child.once('spawn') event, after nativePermit. Do not notify during preflight.
   try { result = await require('../actions/usageBudget').withClaudeSelection({model,effort},entry.resolvedModel,()=> (options.run || runClaude)(args, { ...options, timeoutMs: options.timeoutMs || 110000, input: wire, maxInputBytes: 9 * 1024 * 1024 })) }
   catch (error) { throw new SubscriptionError(require('../actions/usageBudget').ERRORS.has(error.code||error.message)?error.code||error.message:error.message === 'subscription_limit_reached' ? 'subscription_limit_reached' : 'subscription_unavailable') }
   if (result?.api_error_status === 429 || (result?.is_error === true && /(?:hit (?:your|the) limit|usage limit|rate.limit|out of.*usage)/i.test(result?.result || ''))) throw new SubscriptionError('subscription_limit_reached')
