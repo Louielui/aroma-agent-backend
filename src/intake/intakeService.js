@@ -1264,13 +1264,16 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
    */
   async function buildPromptFor (providerName, composeOnly = false) {
     const key = providerName + ':' + extraObservationBlocks.length + (composeOnly ? ':compose' : '')
-    if (promptCache.has(key)) { await semanticRouteReady; return promptCache.get(key) }
+    // Cache only assembled context. Writing guidance belongs at the end of each
+    // answer request, never in the planner or in the cached context itself.
+    const forAnswer = value => require('./responseWriting').forAnswer(value, opts?.interactionMode)
+    if (promptCache.has(key)) { await semanticRouteReady; return forAnswer(promptCache.get(key)) }
     return timePhase(
       { requestId, phase: PHASE.PROMPT_BUILD },
       async () => {
         const value = await buildPromptForUncached(providerName, composeOnly)
         await semanticRouteReady
-        return value
+        return forAnswer(value)
       },
       { clock: latencyClock, sink: latencySink }
     )
