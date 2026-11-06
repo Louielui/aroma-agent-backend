@@ -1265,10 +1265,29 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
     )
   }
 
+  function canLoadPersonalMemory (providerName) {
+    return opts?.interactionMode === 'chat' && providerName === 'openai' && process.env.XIANGXIANG_MEMORY === 'on' &&
+      resolveFlag(process.env, 'READ_ACCESS') === 'on' && decisionRecallSharedWith(providerName, process.env)
+  }
+
   async function buildPromptForUncached (providerName, composeOnly = false) {
-    // A proven standalone social turn needs persona + its current message only.
-    // It still goes through parsing, language, honesty and ordinary finalisation.
-    if (simpleFastPath) return baseEffPrompt
+    // Fast answers retain approved communication preferences. Only the bounded
+    // canonical preference read is needed; no topic/history recall or planner.
+    if (simpleFastPath) {
+      if (canLoadPersonalMemory(providerName)) {
+        if (hindsightCache === undefined) {
+          const memory = opts.memoryClient || require('../memory/runtime').runtime().ownerClient
+          hindsightCache = await require('../memory/context').preferencesContext({ memory,
+            timing: { requestId, clock: latencyClock, sink: latencySink } })
+          logReadSource({ source: 'hindsight', trust: hindsightCache.state === 'ok' ? 'advisory' : 'unavailable', count: hindsightCache.count,
+            usedFallback: false, error: hindsightCache.state === 'ok' ? null : 'memory_unavailable', durationMs: null })
+        }
+        if (hindsightCache.state === 'unavailable') opts.contextFailures.add('memory_unavailable')
+        hindsightUsed = hindsightCache.count > 0
+        if (hindsightCache.block) return hindsightCache.block + '\n\n' + baseEffPrompt
+      }
+      return baseEffPrompt
+    }
     // ⛔ THE CACHE KEY CARRIES THE OBSERVATION COUNT. Without it, step 2 would be handed
     // step 1's prompt and the loop would ask the same question forever — the read would
     // happen and the model would never see it.
@@ -1335,7 +1354,7 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
       }
     }
 
-    if (isChat && providerName === 'openai' && process.env.XIANGXIANG_MEMORY === 'on' && resolveFlag(process.env, 'READ_ACCESS') === 'on' && decisionRecallSharedWith(providerName, process.env)) {
+    if (canLoadPersonalMemory(providerName)) {
       if (hindsightCache === undefined) {
         const memory = opts.memoryClient || require('../memory/runtime').runtime().ownerClient
         hindsightCache = await require('../memory/context').recallContext({ enabled: true, memory, mailMemory: opts.mailMemoryClient || null, query: message, history,
