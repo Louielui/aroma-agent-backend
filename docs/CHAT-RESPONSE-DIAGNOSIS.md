@@ -1,4 +1,4 @@
-# Chat response diagnosis and preference continuity candidate
+# Chat response diagnosis, preference continuity and bounded waiting candidate
 
 ## Observed baseline
 
@@ -52,6 +52,30 @@ must not be described as the original four native sends or live UI acceptance.
 
 ## Whole-pipeline conclusions
 
+Two further waiting defects are fixed in the same isolated candidate:
+
+- The per-turn final-verdict cache formerly retained only a settled result. Eight
+  simultaneous requests therefore started eight verifiers. It now retains the
+  pending promise too: all callers share one verdict, including unavailable or
+  malformed outcomes, and no automatic retry is introduced. A new turn still
+  gets an independent verifier. The verifier input, source obligations and
+  release policy are unchanged. The retained native case used one final call;
+  this concurrency defect is not presented as the cause of that case's delay.
+- Claude completion formerly awaited authentication metadata and then model
+  catalogue metadata. Both exact metadata-only CLI operations now start together
+  and both must settle before completion dispatch. Login failure retains priority
+  if both fail. Cancellation reaches both children; failures send no completion.
+  Nothing is cached across calls, so revocation is checked on the next send. This
+  overlaps preparation, not model calls. An unauthenticated attempt can now start
+  catalogue metadata before auth finishes, but cannot dispatch a user prompt.
+
+The original seven concurrency tests had five failures before the change. The
+successful paths and refusal cases run with inert provider fixtures, with explicit
+barriers rather than timing thresholds. They prove overlap and dispatch ordering,
+not native speed. The retained case spent 4.560 seconds in total provider preflight
+across four calls; this includes more than the two metadata operations and is not
+a promise of 4.560 seconds saved. Model generation and other phases remain.
+
 1. Ordinary questions can pay for several serial control decisions before and
    after generation. The business classifier, source-planning contract and final
    knowledge requirement are different gates, so they cannot simply be removed
@@ -66,7 +90,7 @@ must not be described as the original four native sends or live UI acceptance.
    arbitrary text or hide material limitations. A prompt-only edit is not proof
    of compliance; another rewriting helper would add latency and usage.
 
-The next latency experiment should first use the existing measured phase data
+The next broader latency experiment should first use the existing measured phase data
 to design one understanding contract that can supply reusable, validated facts
 to existing Planner/Dispatcher/Policy gates. It must retain independent business
 consensus where required and fail-closed retrieval obligations. A change to

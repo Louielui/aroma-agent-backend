@@ -271,13 +271,17 @@ async function runFinalKnowledgeRequirement (input = {}) {
  */
 function createTurnFinalCache () {
   let result = null
+  let pending = null
   let calls = 0
   return {
     async get (input) {
-      if (result) return result
-      calls++
-      result = await runFinalKnowledgeRequirement(input)
-      return result
+      // Retain the in-flight work as well as its verdict. Concurrent callers must
+      // share the same obligation, including an unavailable result, without retry.
+      if (!pending) {
+        calls++
+        pending = runFinalKnowledgeRequirement(input).then(value => { result = value; return value })
+      }
+      return pending
     },
     get calls () { return calls },
     get settled () { return result !== null }
