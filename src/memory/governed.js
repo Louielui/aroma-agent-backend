@@ -181,7 +181,7 @@ function createGateway({ store, engine, readConversation, clock = () => new Date
         if (seen.has(key)) return false
         seen.add(key); return true
       })
-      .slice(0, 12).map(({ row, via }) => ({ id: row.id, documentId: row.id, text: row.text.slice(0, 4000), date: row.source.at,
+      .slice(0, 12).map(({ row, via }) => ({ id: row.id, documentId: row.id, version: row.version, text: row.text.slice(0, 4000), date: row.source.at,
         source: 'memory_gateway', type: row.type, scope: row.scope, status: row.status, provenance: row.source, approval: row.approval, via }))
     result.retrieval = { source: 'ok', semantic: !engine ? 'not_connected' : semanticFailures ? 'partial' : 'ok' }
     return result

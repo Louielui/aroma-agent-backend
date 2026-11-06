@@ -618,6 +618,10 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
    * place, so it is allowed through.
    */
   const semanticEgressOk = (opts && typeof opts.semanticCallModel === 'function') || liveEgressAllowed()
+  // Routing consumes only the current message. Planning consumes the ordered
+  // context but does not read business sources. They can run independently;
+  // every source selection and answer must join the routing promise first.
+  async function resolveSemanticRoute () {
   if (!socialFastPath && routeDecision?.reason !== 'general_knowledge' && semanticEgressOk && routeGoverns && routeDecision.route === 'CONVERSATION' && opts && opts.interactionMode === 'chat') {
     // This classifier is advisory and fail-closed. A failed provider call once
     // held an Owner investigation for 111 seconds before the unchanged Goal
@@ -728,6 +732,9 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
       timestamp: new Date().toISOString()
     }))
   } catch (_) { /* telemetry is never load-bearing */ }
+
+  }
+  const semanticRouteReady = resolveSemanticRoute()
 
   // ── STEP 1b: THE UTILITY ROUTE — LIVE, and it answers before anything else ─
   //
@@ -1257,18 +1264,41 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
    */
   async function buildPromptFor (providerName, composeOnly = false) {
     const key = providerName + ':' + extraObservationBlocks.length + (composeOnly ? ':compose' : '')
-    if (promptCache.has(key)) return promptCache.get(key)
+    if (promptCache.has(key)) { await semanticRouteReady; return promptCache.get(key) }
     return timePhase(
       { requestId, phase: PHASE.PROMPT_BUILD },
-      () => buildPromptForUncached(providerName, composeOnly),
+      async () => {
+        const value = await buildPromptForUncached(providerName, composeOnly)
+        await semanticRouteReady
+        return value
+      },
       { clock: latencyClock, sink: latencySink }
     )
   }
 
+  function canLoadPersonalMemory (providerName) {
+    return opts?.interactionMode === 'chat' && providerName === 'openai' && process.env.XIANGXIANG_MEMORY === 'on' &&
+      resolveFlag(process.env, 'READ_ACCESS') === 'on' && decisionRecallSharedWith(providerName, process.env)
+  }
+
   async function buildPromptForUncached (providerName, composeOnly = false) {
-    // A proven standalone social turn needs persona + its current message only.
-    // It still goes through parsing, language, honesty and ordinary finalisation.
-    if (simpleFastPath) return baseEffPrompt
+    // Fast answers retain approved communication preferences. Only the bounded
+    // canonical preference read is needed; no topic/history recall or planner.
+    if (simpleFastPath) {
+      if (canLoadPersonalMemory(providerName)) {
+        if (hindsightCache === undefined) {
+          const memory = opts.memoryClient || require('../memory/runtime').runtime().ownerClient
+          hindsightCache = await require('../memory/context').preferencesContext({ memory,
+            timing: { requestId, clock: latencyClock, sink: latencySink } })
+          logReadSource({ source: 'hindsight', trust: hindsightCache.state === 'ok' ? 'advisory' : 'unavailable', count: hindsightCache.count,
+            usedFallback: false, error: hindsightCache.state === 'ok' ? null : 'memory_unavailable', durationMs: null })
+        }
+        if (hindsightCache.state === 'unavailable') opts.contextFailures.add('memory_unavailable')
+        hindsightUsed = hindsightCache.count > 0
+        if (hindsightCache.block) return hindsightCache.block + '\n\n' + baseEffPrompt
+      }
+      return baseEffPrompt
+    }
     // ⛔ THE CACHE KEY CARRIES THE OBSERVATION COUNT. Without it, step 2 would be handed
     // step 1's prompt and the loop would ask the same question forever — the read would
     // happen and the model would never see it.
@@ -1335,10 +1365,10 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
       }
     }
 
-    if (isChat && providerName === 'openai' && process.env.XIANGXIANG_MEMORY === 'on' && resolveFlag(process.env, 'READ_ACCESS') === 'on' && decisionRecallSharedWith(providerName, process.env)) {
+    if (canLoadPersonalMemory(providerName)) {
       if (hindsightCache === undefined) {
         const memory = opts.memoryClient || require('../memory/runtime').runtime().ownerClient
-        hindsightCache = await require('../memory/context').recallContext({ enabled: true, memory, mailMemory: opts.mailMemoryClient || null, query: message, history,
+        hindsightCache = await require('../memory/context').recallContext({ enabled: true, memory, mailMemory: opts.mailMemoryClient || null, query: message, history, referenceIds: opts.memoryReferenceIds,
           timing: { requestId, clock: latencyClock, sink: latencySink } })
         logReadSource({ source: 'hindsight', trust: hindsightCache.state === 'ok' ? 'advisory' : 'unavailable', count: hindsightCache.count, usedFallback: false, error: hindsightCache.state === 'ok' ? null : 'memory_unavailable', durationMs: null })
       }
@@ -1372,6 +1402,8 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
         // INTERSECTED with what is enabled, never unioned: the route can only ever narrow
         // what the Owner's own switches already allow.
         const forced = deps && deps.forceSources === true // tests only, to prove the plan gate
+        const preparedGoal = goalDecomposerEnabled(process.env) && !forced ? await decomposeOnce() : null
+        await semanticRouteReady
         let all = (routeGoverns && !forced)
           ? enabled.filter((s) => routeDecision.sources.includes(s))
           : enabled
@@ -1397,7 +1429,7 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
          */
         let goalBlock = null
         if (goalDecomposerEnabled(process.env) && !forced) {
-          const plan = await decomposeOnce()
+          const plan = preparedGoal
           goalPlanObserved = plan // C1-A: capture only. Nothing downstream reads this.
           // ⛔ X2: from the usable plan when there is one; `decomposeOnce` fills it from a
           // refused plan otherwise. Either way the goal survives to the main prompt.
@@ -3877,10 +3909,12 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
       operationalInvestigation.answerPresentation={...(operationalInvestigation.answerPresentation||{}),planningAdvice:{state:'unavailable',reason:adviceReview?.state==='unavailable'?adviceReview.reason:planningView?.routeEvidenceWithheld?'unsupported_operational_claim':'presentation_not_verified',premiseReview:adviceReview}}
     }
     view.reply=require('../memory/recallReply').enforceCapturePolicyReply(view.reply,message).reply
+    const memoryPresentation = require('../memory/replySources').present(view.reply, hindsightCache?.sources)
+    view.reply = memoryPresentation.reply
     // An evidence-rendered answer must not archive the obsolete model draft.
     // Keep A-prime's third-party boundary: ordinary read views archive a neutral
     // receipt, not newly copied rows. The conversation retains the visible reply.
-    const archiveReply = adviceReview || (view.adviceBasis && turnPerSource.size === 0) || view.routeEvidenceWithheld>0 || view.publicSummaryRendered || operationalInvestigation?.readOnly === true
+    const archiveReply = (memoryPresentation.memorySources && !view.applied) || adviceReview || (view.adviceBasis && turnPerSource.size === 0) || view.routeEvidenceWithheld>0 || view.publicSummaryRendered || operationalInvestigation?.readOnly === true
       ? view.reply : view.applied ? require('./conversationEvidenceView').guardedArchiveReceipt() : guarded.reply
     const chatClaim = view.readClaim || { corrected: false, sources: [], kind: null }
     if (chatClaim.corrected) logReadClaimCorrection(chatClaim, requestId)
@@ -3890,6 +3924,7 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
       ...(demo && { demoOutcome: classifyDemoOutcome({ mode: distilled.mode, intent: distilled.intent }).outcome, contextCardWarnings: ctx.warnings }),
       ...(view.publicAnswerReceipt ? { publicAnswerReceipt: view.publicAnswerReceipt } : {}),
       ...(view.adviceBasis ? { adviceBasis: view.adviceBasis } : {}),
+      ...(memoryPresentation.memorySources ? { memorySources: memoryPresentation.memorySources } : {}),
       ...(adviceReview ? { adviceReview } : {}),
       reply: view.reply, replyForArchive: archiveReply, readClaimCorrected: chatClaim.corrected,
       judgment: '', reasons: distilled.reasons || [], offer: distilled.offer || '', decision: null, tasks: [], risks: [], next_step: '', requestId }

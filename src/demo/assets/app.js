@@ -115,21 +115,9 @@
   }
 
 
-  // THE PROVIDER PICK IS A HINT, NOT AUTHORITY. It is sent as one field; the server
-  // validates it against its own closed allowlist and ignores anything else. The page
-  // cannot select a lane, a context source or anything executable. Subscription
-  // chatModel is a closed choice, rechecked against the account per turn.
-  //
-  // WHAT THE OPTION SAYS MUST BE TRUE. Until the Owner's second GO, GPT was denied the
-  // read-context and decision-recall blocks and this note said so. That claim is now
-  // FALSE — both providers receive the same context — and a stale claim about where his
-  // data goes is worse than no claim at all. The note now states the thing that actually
-  // matters when choosing: the same data, but a second vendor receives it.
-  // contextAsymmetry.test.js pins that this stays true.
-  // THE SOURCE NAMES ARE GENERATED, NOT TYPED. Injected at build time from the same
-  // ALL_SOURCES the read layer uses (see demoHtml.js). The note used to list four by hand
-  // and had gone stale: aroma_system — the restaurant's own system, the one he reads most —
-  // was missing from a sentence whose whole job is to say where his data goes.
+  // Provider/model picks are hints, revalidated server-side per turn, never authority.
+  // Both providers receive the same context (contextAsymmetry.test.js); source names
+  // come from ALL_SOURCES via demoHtml.js, not a second handwritten inventory.
   /**
    * ⛔ THE SAME RESOLVER THE SERVER RUNS, not a second one.
    * `createResolver` and `CATALOGUE` are inlined above this script by demoHtml.js from
@@ -390,10 +378,7 @@
   /* ── conversations ────────────────────────────────────────────────────── */
   function newConversation (focus) {
     var thread = el('div', 'thread')
-    // A STABLE id for this conversation, for the Xiangxiang Lab archive.
-    // 'c1'/'c2' is a counter that restarts at 1 on every page load, so two different
-    // conversations on two different days would collide. This one does not collide, and it
-    // is the ONLY thing the archive can use to group turns - the server sees nothing else.
+    // Stable archive identity across reloads; the display counter is not a persisted ID.
     var cid = (window.crypto && window.crypto.randomUUID)
       ? window.crypto.randomUUID()
       : 'conv-' + Date.now() + '-' + Math.random().toString(16).slice(2, 10)
@@ -404,12 +389,7 @@
     if (focus !== false) msg.focus()
     return c
   }
-  // An EMPTY conversation is not history yet. Listing it produced the duplicate the Owner
-  // saw — 「新對話」 as the header and 「新對話」 again as a list entry, naming the same
-  // nothing twice. A conversation joins the list once it actually holds a turn.
-  // A conversation joins the list once it holds a turn — or once the server says it has
-  // one. An EMPTY new conversation is still not history: listing it produced the duplicate
-  // the Owner saw, 「新對話」 as the header and 「新對話」 again as a list entry.
+  // List conversations only after a local or server-confirmed turn; omit empty drafts.
   /**
    * THE EMPTY SCREEN — a greeting, the composer, and nothing else.
    *
@@ -1168,6 +1148,7 @@
             if (m[i] && m[i].codeDiagnosisRunId) renderCodeDiagnosisLink(tEl, m[i].codeDiagnosisRunId)
             // The same disclosure a live turn carries: who actually answered.
             if (m[i] && m[i].servedBy) labelServedBy(tEl, { servedBy: m[i].servedBy })
+            if (m[i] && m[i].memorySources) appendMemorySources(tEl.body, m[i].memorySources)
             c.history.push({ role: 'assistant', text: text })
           }
         }
@@ -2357,6 +2338,21 @@
     return turn
   }
 
+  function appendMemorySources (host, receipt) {
+    if (!receipt || receipt.kind !== 'memory_references_v1' || receipt.claimsVerified !== false || !Array.isArray(receipt.items) || !receipt.items.length || receipt.items.length > 12) return
+    var items = receipt.items
+    if (items.some(function (r) { return !r || !/^xx-[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/.test(r.documentId) || r.scope !== 'private:owner' || !(r.date === null || (typeof r.date === 'string' && r.date.length <= 40 && Number.isFinite(Date.parse(r.date)))) || !(r.version === null || (Number.isSafeInteger(r.version) && r.version > 0)) })) return
+    var details = el('details', 'memory-sources')
+    details.appendChild(el('summary', '', t('memory.replySources')))
+    details.appendChild(el('p', 'meta', t('memory.replySourcesContext')))
+    var list = el('ul')
+    items.forEach(function (r) {
+      list.appendChild(el('li', '', r.documentId + ' · ' + (r.date === null ? t('memory.sourceDateUnknown') : r.date) + ' · ' + (r.version === null ? t('memory.sourceVersionUnknown') : t('memory.sourceVersion', { version: r.version }))))
+    })
+    details.appendChild(list)
+    host.appendChild(details)
+  }
+
   function appendAdviceBasis (host, basis) {
     if (!basis || ['decided', 'provisional'].indexOf(basis.status) < 0 || !Array.isArray(basis.uncertainties) || !Array.isArray(basis.changeIf)) return
     var details = el('details', 'advice-basis')
@@ -2474,6 +2470,7 @@
     if (res.talkOnly === true || res.mode === 'chat' || res.mode === 'ask' || res.mode === 'recommend') {
       var chatTurn = addBot(res.reply || '', conv)
       if (res.adviceBasis) appendAdviceBasis(chatTurn.body, res.adviceBasis)
+      if (res.memorySources) appendMemorySources(chatTurn.body, res.memorySources)
       if (res.hrRecheckOffer && topicController) topicController.recheckOffer(chatTurn.body, res.hrRecheckOffer)
       if (res.followUpOffer && topicController) topicController.offer(chatTurn.body, res.followUpOffer)
       if (res.historySaved === false) addMeta(chatTurn.body, t('workflow.historyFailed'))
@@ -3882,4 +3879,5 @@
         }
       }
     })
-    .catch(function () { })})()
+    .catch(function () { })
+})()

@@ -590,11 +590,13 @@ function createDemoRouter ({ getAdapterFn = getAdapterForLane, processIntakeFn =
       // Replace it before ordinary intake; the source-bound lane rechecks access.
       let contextHistory = req.body.history
       let conversationEvidence = null
+      let memoryReferenceIds = []
       if (isValidConversationId(req.body.conversationId) && typeof conversationStore.get === 'function') {
         try {
           const saved = conversationStore.get(req.body.conversationId)
           if (saved) {
             contextHistory = saved.messages
+            memoryReferenceIds = require('../memory/replySources').savedReferences(saved)
             conversationEvidence = require('../intake/conversationEvidence').fromSavedConversation(saved, message)
           }
         } catch (_) {
@@ -1081,6 +1083,7 @@ function createDemoRouter ({ getAdapterFn = getAdapterForLane, processIntakeFn =
             investigationReceipts.record(investigationId, event)
           } catch (_) { investigationSaveFailed = true }
         }
+        if (interactionMode === 'chat') opts.memoryReferenceIds = memoryReferenceIds
         if (interactionMode === 'chat') opts.runtimeSelf = { address: req.socket.localAddress, port: req.socket.localPort }
         if (interactionMode === 'chat') opts.chatLevel = req.body.chatLevel || 'medium'
         if (interactionMode === 'chat' && req.body.chatModel !== undefined) opts.chatModel = req.body.chatModel
@@ -1446,6 +1449,7 @@ function createDemoRouter ({ getAdapterFn = getAdapterForLane, processIntakeFn =
                 userText: message,
                 replyText: shown,
                 publicAnswerReceipt: withOffer.publicAnswerReceipt || null,
+                memorySources: withOffer.memorySources || null,
                 ownerGoal: withOffer.ownerGoal || null,
                 investigationRunId: withOffer.investigationRunId || null,
                 capabilityGapRunId: withOffer.capabilityGapRunId || null,

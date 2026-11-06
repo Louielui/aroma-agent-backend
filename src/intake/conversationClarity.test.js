@@ -29,8 +29,10 @@ test('the actual advice presentation call site keeps one body when a read-state 
 })
 test('a source-rewritten view archives a neutral receipt rather than stale prose or third-party rows',()=>{
  const source=require('node:fs').readFileSync(require.resolve('./intakeService'),'utf8'),start=source.indexOf('    const archiveReply ='),code=source.slice(start,source.indexOf('    const chatClaim',start)),vm=require('node:vm')
- const ctx={adviceReview:null,view:{applied:true,reply:'Third-party data row'},turnPerSource:new Map([['source',{}]]),operationalInvestigation:null,guarded:{reply:'Unverified original draft'},require}
+ for(const memorySources of [null,{kind:'memory_references_v1',claimsVerified:false,items:[]}]){
+ const ctx={memoryPresentation:{memorySources},adviceReview:null,view:{applied:true,reply:'Third-party data row'},turnPerSource:new Map([['source',{}]]),operationalInvestigation:null,guarded:{reply:'Unverified original draft'},require}
  vm.createContext(ctx);vm.runInContext(code+'\nthis.actual=archiveReply',ctx);assert.match(ctx.actual,/archive receipt|此處不保留/);assert.doesNotMatch(ctx.actual,/Third-party|Unverified original/)
+ }
 })
 test('the real HTTP route passes saved context once to understanding and never invents an interface job',async t=>{
  const express=require('express'),{randomUUID}=require('node:crypto'),{createDemoRouter}=require('../routes/demoRouter')
