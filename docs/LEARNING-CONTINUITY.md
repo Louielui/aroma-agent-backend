@@ -4,6 +4,47 @@ This candidate connects the existing Memory Gateway, consolidation worker, intak
 evidence review and memory center. It creates no second memory system and grants no
 execution authority. Offline verification is not native learning acceptance.
 
+## PR141 native refusal and isolated follow-up
+
+PR141 was deployed as `4c674a448091428d48419c381b6e22aa02e85ba7`.
+The first governed consolidation passed the exact existing confirmation and its
+two canonical preceding messages to Hindsight. It failed before model dispatch:
+the Bridge reserved `claude-sonnet/low`, while the native CLI received the
+authenticated catalogue's concrete Sonnet version. The strict native gate rejected
+the different spelling. Hindsight retried the callback once; both reservations
+were retained as failed, zero were dispatched, and no preference was produced or
+approved. The original root remains paused, with two turns and sixteen helper
+attempts remaining. This is a failed native result, not a learning success.
+
+The follow-up binds only the trusted Claude client's catalogue resolution to its
+exact requested model and effort. An alias may resolve only within Sonnet; a
+different family, effort or another already-approved selection cannot borrow the
+permit. Both requested and native selections remain in the audit. Internal native
+retries reserve the original approved selection again, never a new allowance.
+A native selection refusal blocks further reservations in that turn; ordinary
+provider failures may still use separately metered retry attempts. The Gateway
+reads a usage refusal from the authoritative host ledger rather than trusting
+remote error prose, preserves its code, and schedules no timed consolidation
+retry for that policy failure. Existing profile definitions and hashes are unchanged.
+Indexing retains the same safe usage refusal without a timed retry, so exhaustion
+cannot become a later unscoped background indexing attempt.
+The legacy invocation ledger also marked both refused attempts dispatched early
+and omitted their usage failure code. Historical rows are retained unchanged.
+New records notify dispatch only from the existing native process-start callback,
+retain allowlisted usage reasons, and still discard arbitrary provider prose.
+
+The existing Hindsight launch also failed on the installed Windows timezone name
+`Manitoba Standard Time`. A process-only `America/Winnipeg` recovery restored it
+inside the approved maintenance window. The follow-up makes that same IANA zone
+part of the existing child's environment; it does not change the host timezone,
+database, packages, credentials or service permissions. Offline verification
+imports the installed dateparser/tzlocal with this environment. A new deployment
+and separately listed Hindsight reload are required before claiming durability.
+
+The reproduction tests execute the real Bridge, Claude catalogue client, native
+permit, persistent budget and Gateway with fake process/Hindsight responses.
+They do not call subscription models and are not formal native acceptance.
+
 ## Observed failure
 
 The retained 2026-11-05 conversation contains the Owner's complaint about verbose

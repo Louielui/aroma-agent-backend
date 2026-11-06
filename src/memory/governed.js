@@ -213,7 +213,7 @@ function createGateway({ store, engine, readConversation, clock = () => new Date
       result = { state: d.facts > 0 ? 'saved' : 'raw_only', facts: d.facts, attempts,
         reason: d.facts > 0 ? null : 'no_extracted_facts', checkedAt: clock(), nextRetryAt: null }
     } catch (e) {
-      const reason = ['memory_timeout', 'memory_rate_limited', 'memory_unauthorized', 'memory_invalid_request', 'memory_invalid_text', 'memory_invalid_result', 'memory_unconfirmed'].includes(e.message) ? e.message : 'memory_unavailable'
+      const reason = require('../actions/usageBudget').ERRORS.has(e.message)||['memory_timeout', 'memory_rate_limited', 'memory_unauthorized', 'memory_invalid_request', 'memory_invalid_text', 'memory_invalid_result', 'memory_unconfirmed'].includes(e.message) ? e.message : 'memory_unavailable'
       const retryable = ['memory_timeout', 'memory_rate_limited', 'memory_unavailable', 'memory_unconfirmed'].includes(reason)
       const delay = reason === 'memory_rate_limited' ? 15 * 60000 : reason === 'memory_timeout' ? 5 * 60000 : 30000 * 2 ** Math.min(attempts - 1, 4)
       result = { state: 'unconfirmed', facts: null, attempts, reason, failureCheckpoint:checkpoint, checkedAt: clock(),
@@ -392,10 +392,11 @@ function createGateway({ store, engine, readConversation, clock = () => new Date
         catch (e) { if (e.message !== 'revision_conflict' || retry === 2) throw e }
       }
     } catch (e) {
-      const error = ['invalid_consolidation', 'stale_evidence'].includes(e.message) ? e.message : 'consolidation_unavailable'
+      const usageFailure=require('../actions/usageBudget').ERRORS.has(e.message)
+      const error = usageFailure||['invalid_consolidation', 'stale_evidence'].includes(e.message) ? e.message : 'consolidation_unavailable'
       const failed = require('../investigation/memoryAttemptEvidence').appendAttempt('memory_consolidation',source.details.consolidation,{ ...state, state: 'failed', error, failureCheckpoint:checkpoint,
         validationCode:require('../investigation/memoryAttemptEvidence').VALIDATION.includes(e.validationCode)?e.validationCode:null,
-        checkedAt: clock(), nextRetryAt: attempts < 3 ? new Date(Date.parse(clock()) + attempts * 300000).toISOString() : null },source.id)
+        checkedAt: clock(), nextRetryAt: !usageFailure&&attempts < 3 ? new Date(Date.parse(clock()) + attempts * 300000).toISOString() : null },source.id)
       const latest = await get(actor, id)
       await store.commit([{ expected: latest.version, row: { ...latest, version: latest.version + 1, details: { ...latest.details, consolidation: failed } } }], { op: 'consolidation_failed', actor: actor.id, at: clock(), reason: error })
       await reportWorkOutcome(workTrace,'failed')

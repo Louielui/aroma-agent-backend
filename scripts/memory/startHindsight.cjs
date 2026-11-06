@@ -10,6 +10,9 @@ if (cfg.XIANGXIANG_MEMORY !== 'on' || !cfg.CODEX_CHAT_BRIDGE_TOKEN || !cfg.HINDS
 const env = { ...process.env }
 for (const key of Object.keys(env)) if (/^(OPENAI|ANTHROPIC|HINDSIGHT)_/.test(key)) delete env[key]
 Object.assign(env, {
+  // tzlocal/dateparser cannot resolve this host's Manitoba Windows zone name.
+  // Use the verified IANA zone only in this existing local child process.
+  TZ: 'America/Winnipeg',
   PYTHONUTF8: '1', PYTHONIOENCODING: 'utf-8',
   HINDSIGHT_API_LLM_PROVIDER: 'openai', HINDSIGHT_API_LLM_MODEL: 'gpt-6-astra',
   HINDSIGHT_API_LLM_BASE_URL: process.argv.includes('--acceptance') ? 'http://127.0.0.1:8094/v1' : 'http://127.0.0.1:8091/v1', HINDSIGHT_API_LLM_API_KEY: cfg.CODEX_CHAT_BRIDGE_TOKEN,
