@@ -55,12 +55,17 @@ const LEARNING_PROFILE=Object.freeze({id:'22f0a3c0-2c6b-4eaa-976f-13cb17169f92',
 // Inert latency comparison proposal. Installation cannot close the exhausted
 // learning window, transfer unused attempts or activate this separate root.
 const LATENCY_PROFILE=Object.freeze({id:'f1d1f674-3820-4619-85ed-3b8fdeb01e98',identity:'owner-chat-latency-acceptance-20261105',model:'claude-opus-5-5',effort:'medium',turns:3,helper:18,website:0})
-function isAcceptanceRoot(id){return id===PROFILE.id||id===UNDERSTANDING_PROFILE.id||id===ADVICE_PROFILE.id||id===PRIORITY_PROFILE.id||id===CONVERSATION_PROFILE.id||id===GOAL_PROFILE.id||id===CLARITY_PROFILE.id||id===PLANNING_PROFILE.id||id===CONTINUATION_PROFILE.id||id===MARKDOWN_PROFILE.id||id===DRAFT_PROFILE.id||id===HANDOFF_PROFILE.id||id===VERIFIER_PROFILE.id||id===EDIT_PROFILE.id||id===SCOPE_PROFILE.id||id===LEARNING_PROFILE.id||id===LATENCY_PROFILE.id}
+// Proposed independent retest only. The previous root must remain paused and
+// byte-preserved; deployment does not create or activate this allowance.
+const MEMORY_ARBITRATION_PROFILE=Object.freeze({id:'6181f0ad-90d7-4c89-9886-39671ce75a05',identity:'owner-memory-arbitration-acceptance-20261106',model:'claude-opus-5-5',effort:'medium',turns:1,helper:6,website:0})
+function isAcceptanceRoot(id){return id===PROFILE.id||id===UNDERSTANDING_PROFILE.id||id===ADVICE_PROFILE.id||id===PRIORITY_PROFILE.id||id===CONVERSATION_PROFILE.id||id===GOAL_PROFILE.id||id===CLARITY_PROFILE.id||id===PLANNING_PROFILE.id||id===CONTINUATION_PROFILE.id||id===MARKDOWN_PROFILE.id||id===DRAFT_PROFILE.id||id===HANDOFF_PROFILE.id||id===VERIFIER_PROFILE.id||id===EDIT_PROFILE.id||id===SCOPE_PROFILE.id||id===LEARNING_PROFILE.id||id===LATENCY_PROFILE.id||id===MEMORY_ARBITRATION_PROFILE.id}
 const SHAPES={usage_activate:['op'],usage_status:['op'],usage_pause:['op'],usage_close:['op'],usage_reconcile:['op'],usage_bind_turn:['op','turnId','conversationId']}
+SHAPES.usage_acceptance_activate=['op','rootId','predecessorHash']
 SHAPES.usage_extension_prepare=['op','workId','commit','attemptsHash']
 SHAPES.usage_extension_approve=['op','id','hash','nonce']
 const ERRORS=new Set(['usage_store_required','usage_not_enabled','usage_busy','usage_audit_unavailable','usage_run_not_active','usage_scope_required','usage_run_closed','usage_binding_conflict','usage_turn_limit_reached','usage_unresolved_work','usage_turn_replayed','usage_child_limit','usage_evidence_too_large','usage_model_not_allowed','usage_attempt_replayed','usage_limit_reached','usage_kind_mismatch','usage_api_not_allowed','usage_idle_required','usage_operation_not_allowed'])
 for(const code of ['usage_extension_unavailable','usage_extension_expired','usage_allocation_required','usage_allocation_exhausted'])ERRORS.add(code)
+ERRORS.add('usage_profile_not_allowed')
 const validInput=b=>!!b&&!Array.isArray(b)&&Object.hasOwn(SHAPES,b.op)&&Object.keys(b).sort().join(',')===SHAPES[b.op].slice().sort().join(',')&&(b.op!=='usage_bind_turn'||ID.test(b.turnId||'')&&ID.test(b.conversationId||''))
 const error=code=>Object.assign(Error(code),{code})
 const scopeKeys='childId,conversationId,requestId,rootId,turnId'
@@ -69,7 +74,13 @@ function developmentProfile(id){if(!ID.test(id||'')||isAcceptanceRoot(id))throw 
 function createUsageBudget({store,evidenceDir,now=Date.now,activationReady=null,profile=PROFILE,extensionWitness=null,approvals=require('../agent/ownerApprovalStore').createOwnerApprovalStore({now}),processAlive=pid=>{try{process.kill(pid,0);return true}catch(e){return e.code!=='ESRCH'}}}={}){
  if(!store?.lockRun)throw error('usage_store_required')
  profile=structuredClone(profile)
- if(hash(profile)!==hash(PROFILE)&&hash(profile)!==hash(UNDERSTANDING_PROFILE)&&hash(profile)!==hash(ADVICE_PROFILE)&&hash(profile)!==hash(PRIORITY_PROFILE)&&hash(profile)!==hash(CONVERSATION_PROFILE)&&hash(profile)!==hash(GOAL_PROFILE)&&hash(profile)!==hash(CLARITY_PROFILE)&&hash(profile)!==hash(PLANNING_PROFILE)&&hash(profile)!==hash(CONTINUATION_PROFILE)&&hash(profile)!==hash(MARKDOWN_PROFILE)&&hash(profile)!==hash(DRAFT_PROFILE)&&hash(profile)!==hash(HANDOFF_PROFILE)&&hash(profile)!==hash(VERIFIER_PROFILE)&&hash(profile)!==hash(EDIT_PROFILE)&&hash(profile)!==hash(SCOPE_PROFILE)&&hash(profile)!==hash(LEARNING_PROFILE)&&hash(profile)!==hash(LATENCY_PROFILE)&&hash(profile)!==hash(developmentProfile(profile.id)))throw error('usage_profile_not_allowed')
+ if(hash(profile)!==hash(PROFILE)&&hash(profile)!==hash(UNDERSTANDING_PROFILE)&&hash(profile)!==hash(ADVICE_PROFILE)&&hash(profile)!==hash(PRIORITY_PROFILE)&&hash(profile)!==hash(CONVERSATION_PROFILE)&&hash(profile)!==hash(GOAL_PROFILE)&&hash(profile)!==hash(CLARITY_PROFILE)&&hash(profile)!==hash(PLANNING_PROFILE)&&hash(profile)!==hash(CONTINUATION_PROFILE)&&hash(profile)!==hash(MARKDOWN_PROFILE)&&hash(profile)!==hash(DRAFT_PROFILE)&&hash(profile)!==hash(HANDOFF_PROFILE)&&hash(profile)!==hash(VERIFIER_PROFILE)&&hash(profile)!==hash(EDIT_PROFILE)&&hash(profile)!==hash(SCOPE_PROFILE)&&hash(profile)!==hash(LEARNING_PROFILE)&&hash(profile)!==hash(LATENCY_PROFILE)&&hash(profile)!==hash(MEMORY_ARBITRATION_PROFILE)&&hash(profile)!==hash(developmentProfile(profile.id)))throw error('usage_profile_not_allowed')
+ const independent=profile.id===MEMORY_ARBITRATION_PROFILE.id
+ function predecessorHash(){
+  const previous=createUsageBudget({store,profile:LATENCY_PROFILE}).readStatus()
+  if(previous.state!=='paused'||previous.helper.unresolved||previous.website.unresolved||previous.turns.some(t=>t.entered&&!t.finished)||store.get(LATENCY_PROFILE.id).children.some(c=>!c.finished))throw error('usage_unresolved_work')
+  return hash(store.get(LATENCY_PROFILE.id))
+ }
  const limits={turns:profile.turns,helper:profile.helper,website:profile.website}
  const acceptsModel=input=>(profile.models||[{model:profile.model,effort:profile.effort}]).some(m=>m.model===input.model&&m.effort===input.effort)
  const profileHash=hash(profile)
@@ -78,9 +89,10 @@ function createUsageBudget({store,evidenceDir,now=Date.now,activationReady=null,
   if(r.profileHash!==profileHash||r.identity!==profile.identity||JSON.stringify(r.limits)!==JSON.stringify(limits)||!['active','paused','closed'].includes(r.state)||!Array.isArray(r.turns)||r.turns.length>limits.turns||!Array.isArray(r.attempts)||!Array.isArray(r.children)||r.children.length>128||new Set(r.turns.map(t=>t.id)).size!==r.turns.length||new Set(r.attempts.map(t=>t.id)).size!==r.attempts.length||r.attempts.filter(a=>a.kind==='helper').length>limits.helper+(r.extension&&isDevelopment?2:0)||r.attempts.filter(a=>a.kind==='website').length>limits.website||r.attempts.some(a=>!ID.test(a.id||'')||!['helper','website'].includes(a.kind)||!['reserved','dispatched','succeeded','failed'].includes(a.state)||!r.turns.some(t=>t.id===a.turnId)||a.kind==='helper'&&!acceptsModel(a)))throw error('usage_audit_unavailable')
   try{if(r.extension&&(!isDevelopment||!extension.validGrant(r,profileHash))||!r.extension&&r.attempts.some(a=>a.extensionId||a.allocation))throw error('usage_audit_unavailable')}catch{throw error('usage_audit_unavailable')}
   if(r.turns.some(t=>!ID.test(t.id||'')||!ID.test(t.conversationId||'')||typeof t.entered!=='boolean'||typeof t.finished!=='boolean'||t.entered&&(!ID.test(t.requestId||'')||!Number.isSafeInteger(t.hostPid)))||r.children.some(c=>!ID.test(c.id||'')||typeof c.finished!=='boolean'||!r.turns.some(t=>t.id===c.turnId))||r.attempts.some(a=>!Number.isSafeInteger(a.hostPid)||a.dispatchedAt&&!['cli_process_started','provider_turn_start'].includes(a.dispatchBasis)))throw error('usage_audit_unavailable')
+  if(independent&&r.predecessorHash!==predecessorHash())throw error('usage_binding_conflict')
   return r
  }
- function change(fn){let release;try{release=store.lockRun(profile.id)}catch{throw error('usage_busy')};try{const r=load(true);const value=fn(r);return value}finally{release()}}
+ function change(fn){const releases=[];try{if(independent)releases.push(store.lockRun(LATENCY_PROFILE.id));releases.push(store.lockRun(profile.id))}catch{releases.reverse().forEach(release=>release());throw error('usage_busy')};try{const r=load(true);const value=fn(r);return value}finally{releases.reverse().forEach(release=>release())}}
  function save(r,event,facts={}){r.timeline.push({at:new Date(now()).toISOString(),event,...facts});try{store.save(r)}catch{throw error('usage_audit_unavailable')}}
  function assertScope(r,s){if(!r||r.state!=='active')throw error('usage_run_not_active');if(!validScope(s)||s.rootId!==r.id)throw error('usage_scope_required');const t=r.turns.find(t=>t.id===s.turnId),child=s.childId&&r.children.find(c=>c.id===s.childId&&c.turnId===s.turnId&&!c.finished);if(!t||!t.entered||t.finished&&!child||t.conversationId!==s.conversationId||t.requestId!==s.requestId||s.childId&&!child)throw error('usage_scope_required');return t}
  function statusOf(r){if(!r)return{state:'not_activated',id:profile.id,identity:profile.identity,limits:{...limits},turnsUsed:0,helper:{reserved:0,available:limits.helper},website:{reserved:0,available:limits.website}}
@@ -115,8 +127,18 @@ function createUsageBudget({store,evidenceDir,now=Date.now,activationReady=null,
  }
  function statusUnlocked(r){return{rootId:r.id,extension:structuredClone(r.extension),helperLimit:10,modelsSent:0}}
  function handle(actor,b){if(actor?.id!=='owner'||actor.role!=='owner')throw error('owner_required');if(!validInput(b))throw error('invalid_request');if(b.op==='usage_status')return{budget:status()}
+  if(b.op==='usage_acceptance_activate'&&!independent)throw error('usage_profile_not_allowed')
+  if(independent&&b.op==='usage_activate')throw error('usage_operation_not_allowed')
   if(b.op==='usage_extension_prepare'||b.op==='usage_extension_approve')return extensionAction(b)
   change(old=>{let r=old
+   if(b.op==='usage_acceptance_activate'){
+    if(b.rootId!==profile.id)throw error('usage_profile_not_allowed')
+    if(r)throw error('usage_attempt_replayed')
+    if(!/^[a-f0-9]{64}$/.test(b.predecessorHash||'')||b.predecessorHash!==predecessorHash())throw error('usage_binding_conflict')
+    if(!activationReady||activationReady()!==true)throw error('usage_idle_required')
+    r={id:profile.id,identity:profile.identity,profileHash,limits:{...limits},predecessorHash:b.predecessorHash,state:'active',turns:[],children:[],attempts:[],timeline:[]}
+    save(r,'activated',{actor:'owner',independent:true,predecessorId:LATENCY_PROFILE.id,predecessorHash:b.predecessorHash});return
+   }
    if(b.op==='usage_activate'){if(r?.state==='closed')throw error('usage_run_closed');if(r?.state==='active')return;if(!activationReady||activationReady()!==true)throw error('usage_idle_required');if(!r)r={id:profile.id,identity:profile.identity,profileHash,limits:{...limits},state:'active',turns:[],children:[],attempts:[],timeline:[]};r.state='active';save(r,'activated',{sameApproval:true});return}
    if(!r||r.state!=='active')throw error('usage_run_not_active')
    if(b.op==='usage_bind_turn'){const oldTurn=r.turns.find(t=>t.id===b.turnId);if(oldTurn){if(oldTurn.conversationId!==b.conversationId)throw error('usage_binding_conflict');return}if(r.turns.length>=r.limits.turns)throw error('usage_turn_limit_reached');r.turns.push({id:b.turnId,conversationId:b.conversationId,entered:false,finished:false});save(r,'turn_bound',{turnId:b.turnId});return}
@@ -148,6 +170,27 @@ function createUsageBudget({store,evidenceDir,now=Date.now,activationReady=null,
  function withHeader(header,token,fn){if(header===undefined)return context.run({service:api,scope:null,permit:null},fn);if(typeof header!=='string'||header.length>900||!/^[A-Za-z0-9_-]+\.[a-f0-9]{64}$/.test(header)||!/^[a-f0-9]{64}$/.test(token||''))throw error('usage_scope_required');const[data,signature]=header.split('.'),expected=crypto.createHmac('sha256',token).update('usage-scope-v1:'+data).digest('hex');if(!crypto.timingSafeEqual(Buffer.from(signature),Buffer.from(expected)))throw error('usage_scope_required');let s;try{s=JSON.parse(Buffer.from(data,'base64url'))}catch{throw error('usage_scope_required')};return withScope(s,fn)}
  const api={acceptsModel,handle,status,readStatus,enterTurn,finishTurn,withScope,withAllocation,childScope,finishChild,capture,reserve,encode,withHeader,rejection,nativeRejection,turnFailure,setActivationWitness:fn=>{activationReady=fn},isActive:()=>load()?.state==='active'};return api
 }
+// A long-lived Bridge and backend resolve the same durable selection on every
+// call, not only at boot. No selection file or second accounting store exists.
+function createIndependentAcceptanceEntry({store,evidenceDir}={}){
+ const previous=createUsageBudget({store,evidenceDir,profile:LATENCY_PROFILE}),next=createUsageBudget({store,evidenceDir,profile:MEMORY_ARBITRATION_PROFILE})
+ // Selection participates in the existing writer lock. In particular Windows
+ // readers must not hold the destination open during another host's rename.
+ const selected=()=>next.status().state==='not_activated'?previous:next
+ return new Proxy(next,{get(target,key){
+  if(key==='setActivationWitness')return fn=>next.setActivationWitness(fn)
+  if(key==='handle')return(actor,b)=>{
+   if(actor?.id!=='owner'||actor.role!=='owner')throw error('owner_required')
+   if(!validInput(b))throw error('invalid_request')
+   if(b.op==='usage_acceptance_activate')return next.handle(actor,b)
+   const current=selected()
+   if(current===previous&&b.op!=='usage_status')throw error('usage_operation_not_allowed')
+   return current.handle(actor,b)
+  }
+  if(typeof target[key]==='function')return(...args)=>selected()[key](...args)
+  return target[key]
+ }})
+}
 let ownerBudget
 // The resident LocalService and Owner bridge already share the operational data
 // directory. USERPROFILE would silently create two ledgers for these identities.
@@ -174,7 +217,7 @@ function owner(){
   const edit=verifier.readStatus().state==='closed'?createUsageBudget({store,evidenceDir,profile:EDIT_PROFILE}):verifier
   const scope=edit.readStatus().state==='closed'?createUsageBudget({store,evidenceDir,profile:SCOPE_PROFILE}):edit
   const learning=scope.readStatus().state==='closed'?createUsageBudget({store,evidenceDir,profile:LEARNING_PROFILE}):scope
-  ownerBudget=learning.readStatus().state==='closed'?createUsageBudget({store,evidenceDir,profile:LATENCY_PROFILE}):learning
+  ownerBudget=learning.readStatus().state==='closed'?createIndependentAcceptanceEntry({store,evidenceDir}):learning
  }
  return ownerBudget
 }
@@ -202,4 +245,4 @@ function blockAPI(){if(currentScope()||service().isActive())throw service().reje
 // Interactive coding CLIs can make internal turns the host cannot meter. They
 // cannot be started in this fixed, read-only conversation acceptance window.
 function blockInteractiveWorker(){if(currentScope()||service().isActive())throw service().rejection('usage_operation_not_allowed')}
-module.exports={PROFILE,UNDERSTANDING_PROFILE,ADVICE_PROFILE,PRIORITY_PROFILE,CONVERSATION_PROFILE,GOAL_PROFILE,CLARITY_PROFILE,PLANNING_PROFILE,CONTINUATION_PROFILE,MARKDOWN_PROFILE,DRAFT_PROFILE,HANDOFF_PROFILE,VERIFIER_PROFILE,EDIT_PROFILE,SCOPE_PROFILE,LEARNING_PROFILE,LATENCY_PROFILE,isAcceptanceRoot,developmentProfile,ERRORS,validInput,createUsageBudget,ownerDirectory,owner,service,currentScope,currentHeader,observe,withClaudeSelection,nativePermit,guardRPC,withRPCBudget,blockAPI,blockInteractiveWorker}
+module.exports={PROFILE,UNDERSTANDING_PROFILE,ADVICE_PROFILE,PRIORITY_PROFILE,CONVERSATION_PROFILE,GOAL_PROFILE,CLARITY_PROFILE,PLANNING_PROFILE,CONTINUATION_PROFILE,MARKDOWN_PROFILE,DRAFT_PROFILE,HANDOFF_PROFILE,VERIFIER_PROFILE,EDIT_PROFILE,SCOPE_PROFILE,LEARNING_PROFILE,LATENCY_PROFILE,MEMORY_ARBITRATION_PROFILE,isAcceptanceRoot,developmentProfile,ERRORS,validInput,createUsageBudget,createIndependentAcceptanceEntry,ownerDirectory,owner,service,currentScope,currentHeader,observe,withClaudeSelection,nativePermit,guardRPC,withRPCBudget,blockAPI,blockInteractiveWorker}

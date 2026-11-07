@@ -78,6 +78,8 @@ function buildArchitectureHtml () {
   learningRow.evidence+='; src/intake/planningOverlap.test.js; src/memory/replySources.test.js; src/routes/memorySources.test.js; src/demo/memorySources.test.js'
   learningRow.component+=' / existing final memory verdict arbitrates conflicting business clarification without releasing reads (offline candidate; native behavior unverified)'
   learningRow.evidence+='; src/intake/memoryClarification.test.js; docs/MEMORY-CLARIFICATION-ARBITRATION.md'
+  learningRow.component+=' / inert independent one-case acceptance entry preserving the paused predecessor (offline verified; new Owner activation and native acceptance pending)'
+  learningRow.evidence+='; docs/INDEPENDENT-ACCEPTANCE-ENTRY.md; src/actions/independentAcceptanceEntry.test.js'
   learningRow.evidence+='; src/intake/finalKnowledgeConcurrency.test.js; src/subscription/claudePreflightConcurrency.test.js'
   learningRow.next+=' '+t('learningContinuity.limits')
   learningRow.evidence+='; docs/LEARNING-CONTINUITY.md; src/memory/learningContinuity.test.js; src/memory/learningIngress.test.js; src/intake/learningPresentationReplay.test.js; src/actions/learningAcceptanceProfile.test.js'
