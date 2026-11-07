@@ -76,6 +76,8 @@ function buildArchitectureHtml () {
   learningRow.component+=' / in-flight per-turn final-verdict reuse and concurrent metadata-only Claude preflight (offline verified; native speed unmeasured)'
   learningRow.component+=' / independent intent and goal preparation joined before source reads / loaded memory reference disclosure and host-saved follow-up pointers (candidate; native concision and latency unverified)'
   learningRow.evidence+='; src/intake/planningOverlap.test.js; src/memory/replySources.test.js; src/routes/memorySources.test.js; src/demo/memorySources.test.js'
+  learningRow.component+=' / existing final memory verdict arbitrates conflicting business clarification without releasing reads (offline candidate; native behavior unverified)'
+  learningRow.evidence+='; src/intake/memoryClarification.test.js; docs/MEMORY-CLARIFICATION-ARBITRATION.md'
   learningRow.evidence+='; src/intake/finalKnowledgeConcurrency.test.js; src/subscription/claudePreflightConcurrency.test.js'
   learningRow.next+=' '+t('learningContinuity.limits')
   learningRow.evidence+='; docs/LEARNING-CONTINUITY.md; src/memory/learningContinuity.test.js; src/memory/learningIngress.test.js; src/intake/learningPresentationReplay.test.js; src/actions/learningAcceptanceProfile.test.js'
