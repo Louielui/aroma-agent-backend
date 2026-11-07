@@ -53,13 +53,14 @@ test('Memory Gateway receives stored owner context but never assistant claims as
   assert.doesNotMatch(searches[0], /ASSISTANT_CLAIM/)
 })
 
-test('memory opt-out and an explicit empty redaction cannot be bypassed by stored content', async () => {
+test('retention opt-out preserves transient context while explicit empty redaction stays authoritative', async () => {
   let search
   await recallContext({ enabled: true, query: '你理解我的方向嗎？', history: [
     { role: 'user', text: '', content: 'REDACTED_SECRET' },
-    { role: 'user', content: '不要保存這段對話 EXCLUDED_SECRET' }
+    { role: 'user', content: '不要保存這段對話；我的方向是減少親自追進度。' }
   ], memory: { recall: async value => { search = value; return [] } } })
-  assert.doesNotMatch(search, /REDACTED_SECRET|EXCLUDED_SECRET/)
+  assert.doesNotMatch(search, /REDACTED_SECRET/)
+  assert.match(search, /我的方向是減少親自追進度/)
   let sent = false
   assert.equal(await recallContext({ enabled: false, query: followup, history: prior, memory: { recall: async () => { sent = true } } }), null)
   assert.equal(sent, false)

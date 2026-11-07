@@ -80,6 +80,8 @@ function buildArchitectureHtml () {
   learningRow.evidence+='; src/intake/memoryClarification.test.js; docs/MEMORY-CLARIFICATION-ARBITRATION.md'
   learningRow.component+=' / inert independent one-case acceptance entry preserving the paused predecessor (offline verified; new Owner activation and native acceptance pending)'
   learningRow.evidence+='; docs/INDEPENDENT-ACCEPTANCE-ENTRY.md; src/actions/independentAcceptanceEntry.test.js'
+  learningRow.component+=' / transient opt-out recall context with unchanged long-term capture exclusion (offline verified; native recall and latency unverified)'
+  learningRow.evidence+='; docs/RECALL-RETENTION-BOUNDARY.md; src/memory/recallRetentionBoundary.test.js'
   learningRow.evidence+='; src/intake/finalKnowledgeConcurrency.test.js; src/subscription/claudePreflightConcurrency.test.js'
   learningRow.next+=' '+t('learningContinuity.limits')
   learningRow.evidence+='; docs/LEARNING-CONTINUITY.md; src/memory/learningContinuity.test.js; src/memory/learningIngress.test.js; src/intake/learningPresentationReplay.test.js; src/actions/learningAcceptanceProfile.test.js'
