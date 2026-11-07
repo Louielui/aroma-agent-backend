@@ -23,6 +23,19 @@ const INVOICES = 'aroma_system.invoices'
 const COUNTS = 'aroma_system.daily_counts'
 const INVENTORY = 'aroma_system.inventory'
 
+test('foreground answer kind prevents an operational focus from substituting for the requested deliverable', () => {
+  const raw = {question_restated:'Which AI workers can you delegate to?', investigation_focus:'background', answer_kind:'capability_explanation', facts:[{id:'f1',need:'Registered delegation capabilities',operation:'xiangxiang_operations',entity:null,fields:[],necessity:'required'}],joins:[]}
+  const r=judgeGoalPlan(raw)
+  assert.equal(r.plan.answerKind,'capability_explanation')
+  assert.equal(r.plan.investigationFocus,null)
+  assert.equal(r.plan.facts[0].operation,'xiangxiang_operations')
+  for(const answer_kind of ['operational_report',null,'invented']) {
+    const p=judgeGoalPlan({...raw,answer_kind}).plan
+    assert.equal(p.investigationFocus,'background')
+  }
+  assert.ok(goalPlanSchema().required.includes('answer_kind'))
+})
+
 // Facts default to required so existing cases keep their meaning.
 const plan = (facts, joins) => judgeGoalPlan({ question_restated: 'q', facts: facts.map((f) => Object.assign({ necessity: 'required' }, f)), joins: joins || [] })
 test('judged investigation focus is a closed report hint and never a new operation or permission', () => {
