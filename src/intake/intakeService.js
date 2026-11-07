@@ -2323,7 +2323,13 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
     requiredReadableFacts.length > 0 &&
     requiredReadableFacts.every(f => f.operation === 'xiangxiang_operations') &&
     operationalInvestigation?.sections.some(s => ['ok', 'partial'].includes(s.state) && s.records?.length > 0)
+  // Retain only a non-action conversational envelope for domain arbitration.
+  // Neither recalled text nor model prose can decide which domain wins.
+  let beforeSemanticClarify = null
+  let memoryClarificationSettled = false
   if (semanticClarify && distilled && !ownOperationsSettled) {
+    if (['chat', 'ask'].includes(distilled.mode) && !distilled.nextRead && !distilled.answerPlan &&
+        !distilled.decision && (!distilled.tasks || distilled.tasks.length === 0)) beforeSemanticClarify = distilled
     distilled = Object.assign({}, distilled, { intent: 'unclear', mode: 'ask', reply: semanticClarify, nextRead: null, answerPlan: null })
     semanticClarifyTerminal = true
   }
@@ -2473,6 +2479,16 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
       // question cannot create a live-business obligation; a business/mixed question still can.
       // Unavailable and measured-empty recall replace an unsupported answer distinctly.
       const missingReply = operationalInvestigation ? null : missingRecallReply(hindsightCache, verdict.question)
+      // The existing verifier has independently resolved Owner-authored history
+      // to past dialogue only. Restore the answer/question, not execution fields.
+      // A missing-memory result below still takes precedence. Reads stay fenced.
+      if (!operationalInvestigation && beforeSemanticClarify) {
+        distilled = Object.assign({}, distilled, { intent: beforeSemanticClarify.intent, mode: beforeSemanticClarify.mode,
+          reply: beforeSemanticClarify.reply, tasks: [], decision: null, answerPlan: null, nextRead: null })
+        semanticClarifyTerminal = false
+        memoryClarificationSettled = true
+        try { console.log('[AROMA-O1-SEMANTIC]', JSON.stringify({ requestId, event: 'memory_clarification_superseded', readExecuted: false })) } catch (_) {}
+      }
       if (missingReply) distilled = Object.assign({}, distilled, { reply: missingReply, answerPlan: null, nextRead: null })
     } else if (verdict.decision === 'clarify' && !clarifyRestrained) {
       // The ASK is legitimate — either the model already asked, or its FINAL was premature and
@@ -2665,7 +2681,7 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
   }
 
   const x4InitialSelfReadable = !!(
-    initialIsAsk && !gateAuthoredAsk &&
+    initialIsAsk && !gateAuthoredAsk && !memoryClarificationSettled &&
     distilled && distilled.mode === 'ask' && !distilled.nextRead &&
     investigationNow && investigationNow.readableNow.length > 0
   )
@@ -2676,7 +2692,7 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
   // ⛔ THE SINGLE READ-ENTRANCE GATE. distilled.nextRead is already null under clarify, but
   // initialObligation and x4InitialSelfRead are computed independently of it — which is how a
   // clarified turn still read in production. The terminal state closes all three at once.
-  const readEntranceAllowed = !semanticClarifyTerminal
+  const readEntranceAllowed = !semanticClarifyTerminal && !memoryClarificationSettled
   /**
    * ⛔ A SEMANTIC CONSENSUS IS ITSELF A REASON TO OPEN THE LOOP.
    *
