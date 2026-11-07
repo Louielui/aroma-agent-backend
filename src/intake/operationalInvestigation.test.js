@@ -2,7 +2,7 @@
 const test = require('node:test'), assert = require('node:assert/strict')
 const { processIntake } = require('./intakeService')
 
-async function turn (t, { allowed = true, question = '之前有什麼會導致不停扣 credit？', focus = null, failed = false, verdict = 'allow_final', judgment = null, semanticCallModel = undefined, workEvidence = false, unavailableFact = false, extraFacts = [], previousInvestigation = null, reference = null, history = [], investigationAnswer = undefined, semanticDecision = 'supported', evidenceSections = null, fastPath = false, taskType = 'diagnose', sources = ['xiangxiang_operations'], externalUnavailable = false, externalEmpty = false, requestedCapability = null, primaryOperation = 'xiangxiang_operations', investigationEvidence = [], captureLocalParams = false } = {}) {
+async function turn (t, { allowed = true, question = '之前有什麼會導致不停扣 credit？', focus = null, failed = false, verdict = 'allow_final', judgment = null, semanticCallModel = undefined, workEvidence = false, unavailableFact = false, extraFacts = [], previousInvestigation = null, reference = null, history = [], investigationAnswer = undefined, semanticDecision = 'supported', evidenceSections = null, fastPath = false, taskType = 'diagnose', sources = ['xiangxiang_operations'], externalUnavailable = false, externalEmpty = false, requestedCapability = null, primaryOperation = 'xiangxiang_operations', investigationEvidence = [], captureLocalParams = false, answerKind = 'operational_report', mainReply = null } = {}) {
   const old = { ...process.env }
   t.after(() => { for (const k of Object.keys(process.env)) if (!(k in old)) delete process.env[k]; Object.assign(process.env, old) })
   Object.assign(process.env, { CHAT_BACKEND: 'codex-subscription', GOAL_DECOMPOSER: 'on', READ_ACCESS: 'on', CONTEXT_XIANGXIANG_OPERATIONS: 'on', XIANGXIANG_MEMORY: 'on', TURN_ROUTER: 'on', A4_KNOWLEDGE_ROUTING: 'on', MULTI_AI_ROUTER: 'off', DECISION_RECALL: 'off', CONVERSATION_RECALL: 'off' })
@@ -11,8 +11,8 @@ async function turn (t, { allowed = true, question = '之前有什麼會導致�
   const a = { providerName: 'claude', preflight: async () => {}, complete: async (p, options = {}) => {
     calls.push({ p, schema: options.responseFormat?.name, format: options.responseFormat })
     if (options.responseFormat?.name === 'investigation_semantic_review') return {billing:'claude-subscription',model:'claude-opus-5-5',text:JSON.stringify({reviews:[{id:'c1',decision:semanticDecision,reason:'matches_reference'}]})}
-    if (options.responseFormat?.name === 'goal_plan') return { billing:'claude-subscription', model:'claude-opus-5-5', text:JSON.stringify({question_restated:question,executive_frame:fastPath?{taskType,decisionNeeded:true,successDefinition:'Explain the observed record and remaining uncertainty.',answerPosture:'evidence_first'}:undefined,requested_capability:requestedCapability,investigation_focus:focus,investigation_evidence:investigationEvidence,investigation_reference:reference,facts:[{id:'f1',need:'Investigate own previous usage and work',operation:primaryOperation,entity:null,fields:[],necessity:'required'},...(unavailableFact?[{id:'f2',need:'Runtime regression for the same failure',operation:null,entity:null,fields:[],necessity:'required'}]:[]),...extraFacts],joins:[]}) }
-    return { billing: 'claude-subscription', model: 'claude-opus-5-5', text: JSON.stringify({ mode: 'chat', intent: 'question', reply: '已找到排程設定，但實際扣款原因未確認。', nextRead: null, answerPlan: null, executiveJudgment: judgment, investigationAnswer }) }
+    if (options.responseFormat?.name === 'goal_plan') return { billing:'claude-subscription', model:'claude-opus-5-5', text:JSON.stringify({question_restated:question,answer_kind:answerKind,executive_frame:fastPath?{taskType,decisionNeeded:true,successDefinition:'Explain the observed record and remaining uncertainty.',answerPosture:'evidence_first'}:undefined,requested_capability:requestedCapability,investigation_focus:focus,investigation_evidence:investigationEvidence,investigation_reference:reference,facts:[{id:'f1',need:'Investigate own previous usage and work',operation:primaryOperation,entity:null,fields:[],necessity:'required'},...(unavailableFact?[{id:'f2',need:'Runtime regression for the same failure',operation:null,entity:null,fields:[],necessity:'required'}]:[]),...extraFacts],joins:[]}) }
+    return { billing: 'claude-subscription', model: 'claude-opus-5-5', text: JSON.stringify({ mode: 'chat', intent: 'question', reply: mainReply || '已找到排程設定，但實際扣款原因未確認。', nextRead: null, answerPlan: null, executiveJudgment: judgment, investigationAnswer }) }
   } }
   let recall = 0
   const fixtureRead = async (source, method, params) => {
@@ -38,6 +38,31 @@ async function turn (t, { allowed = true, question = '之前有什麼會導致�
   })
   return { result, events, calls, reads, recall }
 }
+
+test('capability questions retain the guarded main answer despite a conflicting background focus',async t=>{
+ for(const question of ['你可以派工的AI有哪幾個?','Which AI workers can you delegate work to?','What assistants can receive my work, and which are merely background processes?']){
+  const mainReply='Registered delegation targets require their own capability and authorization receipts. A background process list does not establish which workers can accept your task.'
+  const x=await turn(t,{question,focus:'background',answerKind:'capability_explanation',fastPath:true,taskType:'understand',mainReply,evidenceSections:[]})
+  assert.equal(x.result.reply,mainReply)
+  assert.ok(!x.result.investigation)
+  assert.equal(x.calls.filter(c=>c.schema==='goal_plan').length,1)
+  assert.equal(x.calls.length,2)
+  assert.deepEqual(x.result.tasks,[])
+  assert.doesNotMatch(x.result.reply,/已讀取的背景工作|Observed background/)
+ }
+})
+
+test('foreground capability answers keep unavailable-source and read-claim protections',async t=>{
+ const x=await turn(t,{question:'Which workers are reachable now?',focus:'background',answerKind:'capability_explanation',fastPath:true,failed:true,
+   mainReply:'The current worker reachability has not been verified.'})
+ assert.match(x.result.reply,/not been verified/)
+ assert.ok(!x.result.investigation);assert.deepEqual(x.result.tasks,[])
+ assert.equal(x.calls.length,2)
+ const y=await turn(t,{question:'What did I previously say about reply length?',focus:'background',answerKind:'personal_memory',fastPath:true,
+   mainReply:'No confirmed preference was returned in this fixture.'})
+ assert.equal(y.result.reply,'No confirmed preference was returned in this fixture.')
+ assert.ok(!y.result.investigation);assert.deepEqual(y.result.tasks,[])
+})
 
 test('bilingual intake saves the exact repair-chain gap without claiming an unrelated successful task is the fix',async t=>{
  for(const question of ['上一個開發任務為什麼失敗？現在修好了嗎？','What caused the previous development task to fail, and has it actually been fixed?']){

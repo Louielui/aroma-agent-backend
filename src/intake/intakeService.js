@@ -1439,7 +1439,7 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
           if (plan) goalUnderstandingObserved = plan
           const generalRoute = require('../investigation/generalRouter').investigationRoute(plan, authorisedSourcesFor(subscriptionAdapter?.providerName || providerName))
           // The judged requirement selects fixed sources and local evidence sections. It cannot grant access.
-          if (opts.ownerInvestigation === true && !operationalInvestigation &&
+          if (opts.ownerInvestigation === true && !operationalInvestigation && !['capability_explanation','personal_memory'].includes(plan?.answerKind) &&
               sourcesForPlan(plan, authorisedSourcesFor(subscriptionAdapter?.providerName || providerName))?.includes('xiangxiang_operations')) {
             investigationProgress({ state: 'reading', section: 'operations' })
             const connector = deps?.connector || createLiveReadConnector({ env: process.env,

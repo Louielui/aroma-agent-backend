@@ -81,6 +81,7 @@ function buildArchitectureHtml () {
   learningRow.component+=' / inert independent one-case acceptance entry preserving the paused predecessor (offline verified; new Owner activation and native acceptance pending)'
   learningRow.evidence+='; docs/INDEPENDENT-ACCEPTANCE-ENTRY.md; src/actions/independentAcceptanceEntry.test.js'
   learningRow.component+=' / transient opt-out recall context with unchanged long-term capture exclusion (offline verified; native recall and latency unverified)'
+  learningRow.component+=' / typed foreground answer kind separates capability and personal-memory answers from operational report templates (offline candidate; native behavior unverified)'
   learningRow.evidence+='; docs/RECALL-RETENTION-BOUNDARY.md; src/memory/recallRetentionBoundary.test.js'
   learningRow.evidence+='; src/intake/finalKnowledgeConcurrency.test.js; src/subscription/claudePreflightConcurrency.test.js'
   learningRow.next+=' '+t('learningContinuity.limits')
