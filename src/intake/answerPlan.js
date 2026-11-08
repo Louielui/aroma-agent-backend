@@ -626,6 +626,7 @@ function operationalRecord (row, title) {
 // never fuzzy-match across records or turn configuration into an execution grant.
 function workflowModelFact(row, field, record) {
   if(row.source!=='xiangxiang_operations'||row.trust!=='live'||row.fields?.section!=='work'||!Array.isArray(row.fields.workflows))return null
+  if(row.fields.workflows.some(r=>!r||typeof r!=='object'||Array.isArray(r)))return null
   if(record&&record.role!==field)return null
   const rows=(row.fields.workflows||[]).filter(r=>r.role===field)
   if(rows.length!==1)return null

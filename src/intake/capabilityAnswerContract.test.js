@@ -34,6 +34,15 @@ test('a fact under a different named role cannot borrow that other workflow mode
  const v=validatePlan(input.answerPlan,input)
  assert.equal(v.boundWorkflowFacts,0);assert.equal(v.droppedFacts,1)
 })
+
+test('null and non-object workflow members fail closed without crashing validation',()=>{
+ for(const member of [null,undefined,0,false,'invalid',[]]){
+  const input=data();input.itemsBySource[0].items[0].fields.workflows.unshift(member)
+  input.answerPlan.sections=[{heading:'Roles',items:[{sourceId:'xiangxiang_operations#'+input.itemsBySource[0].items[0].sourceId,title:'Roles',facts:[{field:'review',value:'not-recorded-99'}]}]}]
+  const v=validatePlan(input.answerPlan,input)
+  assert.equal(v.boundWorkflowFacts,0);assert.equal(v.droppedFacts,1)
+ }
+})
 test('withheld-only items omit empty headings while intentional title-only rows survive',()=>{
  assert.equal(renderPlanSection({heading:'Empty',items:[{title:'Workflow',facts:[],factsWithheld:true}]}),'')
  assert.match(renderPlanSection({heading:'Names',items:[{title:'A retrieved name',facts:[]}]}),/A retrieved name/)
