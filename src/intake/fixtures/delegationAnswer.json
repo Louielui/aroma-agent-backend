@@ -1,0 +1,272 @@
+{
+  "message": "你可以派工的 AI 有哪幾個？",
+  "history": [
+    {
+      "role": "user",
+      "text": "你好香香"
+    },
+    {
+      "role": "assistant",
+      "text": "Louie，你好，我在。今天想先處理哪件事？營運、採購、庫存，或者只是想先整理一下思路，都可以直接跟我說。"
+    }
+  ],
+  "goal": {
+    "question_restated": "Louie 想知道香香而家實際可以將工作派畀邊幾個 AI worker。",
+    "executive_frame": {
+      "taskType": "understand",
+      "decisionNeeded": false,
+      "successDefinition": "列出可以接收派工嘅已登記 AI worker，並講明每個係已登記、已配置定係已授權，同埋邊啲資料冇覆蓋到。",
+      "answerPosture": "evidence_first"
+    },
+    "requested_capability": null,
+    "answer_kind": "capability_explanation",
+    "investigation_focus": null,
+    "investigation_reference": null,
+    "investigation_evidence": [
+      "configuration",
+      "enablement"
+    ],
+    "facts": [
+      {
+        "id": "f1",
+        "need": "有邊啲已登記嘅派工目標 AI worker，同埋佢哋各自明確配置咗邊個模型",
+        "operation": "xiangxiang_operations",
+        "entity": null,
+        "fields": [],
+        "necessity": "required"
+      },
+      {
+        "id": "f2",
+        "need": "中央大腦嘅預設模型同歷史 worker 模型有咩分別，用嚟避免將背景元件或者以前用過嘅模型誤當成派工目標",
+        "operation": "xiangxiang_operations",
+        "entity": null,
+        "fields": [],
+        "necessity": "enriching"
+      }
+    ],
+    "joins": [],
+    "owner_outcomes": []
+  },
+  "raw": {
+    "intent": "question",
+    "mode": "chat",
+    "nextRead": null,
+    "reply": "從這次讀到的紀錄看，我目前只能把工作派給一條開發工作流：由 GPT-6.1 Sol 負責寫測試和改碼，再由 Sonnet 審核；「採用」這一步沒有設定模型。要提醒你，這只是主機的預設設定，不代表每份工作單都已指定這個模型。紀錄裡也找不到「已授權派工的 AI」正式名單，派工的總開關也沒有記錄狀態，所以我不能說它們目前一定可以接單。",
+    "answerPlan": {
+      "directAnswer": "從這次讀到的紀錄看，可以派工的只有一條開發工作流：GPT-6.1 Sol 負責測試草擬和開發，Sonnet 負責審核，「採用」這一步沒有設定模型。這些是主機的預設設定，不是正式授權名單。",
+      "answerClaims": [
+        {
+          "text": "從這次讀到的紀錄看，可以派工的只有一條開發工作流：GPT-6.1 Sol 負責測試草擬和開發，Sonnet 負責審核，「採用」這一步沒有設定模型。",
+          "claimKind": "row_local",
+          "evidenceSources": [
+            "xiangxiang_operations"
+          ],
+          "sourceIds": [
+            "xiangxiang_operations#work:e70410cfcf62e8ec"
+          ],
+          "scope": {
+            "field": null,
+            "window": null
+          }
+        },
+        {
+          "text": "這些是主機的預設設定，不是正式授權名單。",
+          "claimKind": "row_local",
+          "evidenceSources": [
+            "xiangxiang_operations"
+          ],
+          "sourceIds": [
+            "xiangxiang_operations#work:e70410cfcf62e8ec",
+            "xiangxiang_operations#configuration:1e555154cd715070"
+          ],
+          "scope": {
+            "field": null,
+            "window": null
+          }
+        }
+      ],
+      "sections": [
+        {
+          "heading": "派工工作流（主機預設設定）",
+          "items": [
+            {
+              "sourceId": "xiangxiang_operations#work:e70410cfcf62e8ec",
+              "title": "開發工作流各角色",
+              "facts": [
+                {
+                  "field": "test_draft",
+                  "value": "gpt-6.1-sol／medium，idle"
+                },
+                {
+                  "field": "development",
+                  "value": "gpt-6.1-sol，idle"
+                },
+                {
+                  "field": "review",
+                  "value": "sonnet，idle"
+                },
+                {
+                  "field": "adoption",
+                  "value": "未設定模型，idle"
+                },
+                {
+                  "field": "daily_procurement",
+                  "value": "idle"
+                },
+                {
+                  "field": "modelBasis",
+                  "value": "host_workflow_default_not_per_job_selection"
+                },
+                {
+                  "field": "近期實際工作單",
+                  "value": "2026-11-03 已完成的 Codex 隔離修正使用 gpt-6.1-sol／high，審核用 claude-sonnet-5-5，部署暫緩（deployment_held）"
+                }
+              ]
+            }
+          ],
+          "rankingClaim": null
+        },
+        {
+          "heading": "授權與開關狀態",
+          "items": [
+            {
+              "sourceId": "xiangxiang_operations#configuration:1e555154cd715070",
+              "title": "派工相關開關",
+              "facts": [
+                {
+                  "field": "WORKER_INVOCATION",
+                  "value": "null（沒有記錄）"
+                },
+                {
+                  "field": "DEVELOP_DISPATCH",
+                  "value": "null（沒有記錄）"
+                },
+                {
+                  "field": "AGENT_BRIDGE",
+                  "value": "off"
+                },
+                {
+                  "field": "說明",
+                  "value": "中央大腦 claude-opus-5-5 是我自己的對話設定，不是派工對象"
+                }
+              ]
+            }
+          ],
+          "rankingClaim": null
+        }
+      ],
+      "limitations": [
+        "紀錄裡沒有「已授權派工 AI」的正式名單，WORKER_INVOCATION 和 DEVELOP_DISPATCH 兩個開關也沒有記錄狀態，所以無法確認目前是否一定可以接單。",
+        "電郵分析、記憶索引等背景程式會用到 claude-sonnet，但它們是系統元件，不是可以派工的 Worker。",
+        "worker/adoptions 這一類紀錄這次沒有讀到。"
+      ],
+      "followUp": null,
+      "unanswerable": false,
+      "citesEvidence": true,
+      "ownerInstructions": []
+    }
+  },
+  "sourceRequest": "3e2be3d7-1f33-4ef7-aedb-390231b34525",
+  "items": [
+    {
+      "source": "xiangxiang_operations",
+      "sourceId": "configuration:1e555154cd715070",
+      "title": "configuration",
+      "fields": {
+        "section": "configuration",
+        "state": "partial",
+        "records": [
+          {
+            "role": "central_brain_default",
+            "model": "claude-opus-5-5",
+            "effort": "medium",
+            "revision": 1,
+            "bootCommit": "93b5dc39ff46d4d22958476570d08bac11d5953f",
+            "bootedAt": "2026-11-08T05:52:36.430Z",
+            "flags": {
+              "CHAT_BACKEND": "codex-subscription",
+              "WORKER_INVOCATION": null,
+              "DEVELOP_DISPATCH": null,
+              "AGENT_BRIDGE": "off",
+              "COMPUTER_OPERATOR": null,
+              "READONLY_ENQUIRY": "on",
+              "GOAL_DECOMPOSER": "on",
+              "XIANGXIANG_MEMORY": "on"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "source": "xiangxiang_operations",
+      "sourceId": "work:e70410cfcf62e8ec",
+      "title": "work",
+      "fields": {
+        "section": "work",
+        "state": "partial",
+        "workflows": [
+          {
+            "role": "test_draft",
+            "state": "idle",
+            "model": "gpt-6.1-sol",
+            "effort": "medium",
+            "modelBasis": "host_workflow_default_not_per_job_selection",
+            "at": "2026-11-08T06:04:22.607Z"
+          },
+          {
+            "role": "development",
+            "state": "idle",
+            "model": "gpt-6.1-sol",
+            "effort": null,
+            "modelBasis": "host_workflow_default_not_per_job_selection",
+            "at": "2026-11-08T06:04:22.607Z"
+          },
+          {
+            "role": "review",
+            "state": "idle",
+            "model": "sonnet",
+            "effort": null,
+            "modelBasis": "host_workflow_default_not_per_job_selection",
+            "at": "2026-11-08T06:04:22.607Z"
+          },
+          {
+            "role": "adoption",
+            "state": "idle",
+            "model": null,
+            "effort": null,
+            "modelBasis": "host_workflow_default_not_per_job_selection",
+            "at": "2026-11-08T06:04:22.607Z"
+          },
+          {
+            "role": "daily_procurement",
+            "state": "idle"
+          }
+        ]
+      }
+    }
+  ],
+  "evidenceSets": [
+    {
+      "source": "xiangxiang_operations",
+      "trust": "live",
+      "shownCount": 7,
+      "matchingTotal": 7,
+      "sourceTotal": null,
+      "completeWithinScope": false,
+      "truncated": null,
+      "queryScope": {
+        "field": "fixed local source sections",
+        "window": null
+      },
+      "dataAsOf": "2026-11-08T06:04:22.476Z",
+      "note": "Section receipts; each section has its own read state. Not a complete account audit.",
+      "retrievalCompleteness": "unknown",
+      "contextShownCount": 7,
+      "contextCompleteness": "complete",
+      "completeness": "complete",
+      "usedFallback": false,
+      "selectedBy": "api_order",
+      "readKey": "xiangxiang_operations"
+    }
+  ]
+}

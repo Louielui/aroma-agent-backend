@@ -99,6 +99,8 @@ function buildArchitectureHtml () {
     rows.find(row => row.id === 'universal-assistant').evidence += '; docs/ADVICE-ENUMERATION-GUARD-REPAIR.md; src/intake/adviceEnumerationGuard.test.js'
     rows.find(row => row.id === 'universal-assistant').evidence += '; docs/CONTEXT-ANSWER-FLOW-REPAIR.md; src/intake/postdeploymentAnswerReplay.test.js; src/memory/captureDescription.test.js'
     rows.find(row => row.id === 'universal-assistant').current += ' ' + t('conversationClarity.current')
+    rows.find(row => row.id === 'universal-assistant').current += ' ' + t('assistant.capabilityAnswerCandidate')
+    rows.find(row => row.id === 'universal-assistant').evidence += '; docs/CAPABILITY-ANSWER-CONTRACT.md; src/intake/capabilityAnswerContract.test.js'
     rows.find(row => row.id === 'universal-assistant').evidence += '; docs/CONVERSATION-CLARITY.md; src/intake/conversationClarity.test.js'
     rows.find(row => row.id === 'universal-assistant').evidence += '; docs/CORRESPONDENCE-REQUEST-SCOPE.md; src/intake/correspondenceScope.test.js'
     rows.find(row => row.id === 'universal-assistant').evidence += '; docs/FOREGROUND-PLANNING-ADVICE.md; src/intake/foregroundPlanningReplay.test.js; src/investigation/planningAdvice.test.js; docs/PROPOSAL-DRAFT-INTENT.md; src/intake/proposalDraftIntentReplay.test.js; docs/PLANNING-CONTEXT-HANDOFF.md; src/intake/planningContextReplay.test.js; docs/FINAL-VERIFIER-CONTEXT.md; src/intake/finalVerifierContextReplay.test.js; docs/ADVICE-EDIT-CONTRACT.md; src/intake/adviceDeletionReplay.test.js; docs/PROPOSAL-CLAUSE-SCOPE.md; src/intake/proposalClauseScopeReplay.test.js'

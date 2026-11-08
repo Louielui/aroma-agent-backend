@@ -411,6 +411,8 @@ const CATALOGUE = Object.freeze({
   'investigation.schedules': { zh: '排程與自動工作', en: 'Schedules and automations' },
   'investigation.work': { zh: '香香工作紀錄', en: 'Imagine work records' },
   'investigation.testDraftWorkflow': { zh: '測試草稿流程', en: 'Test drafting workflow' },
+  'rrv.capabilityScope': { zh: '此處是已讀來源中的流程預設模型；本次未測試接單，實際模型與授權以工作單回執為準。', en: 'These are workflow defaults in the sources read; dispatch was not tested this turn. Actual models and authorization require the work-order receipt.' },
+  'assistant.capabilityAnswerCandidate': { zh: '隔離候選將工作角色綁定到已讀來源的預設模型，保留逐值證據驗證、缺失及省略紀錄；能力說明主回覆保留結論與限制，明細沿用判斷依據。純本機、非行動的已判定目標可重用首次讀取，混合或不確定問題維持既有流程。正式對話品質、速度及接單狀態仍待驗收。', en: 'The isolated candidate binds workflow roles to observed default-model fields while retaining evidence validation, gaps and omission records. Capability replies retain the conclusion and limits with details in the existing evidence disclosure. Judged, purely local non-action goals can reuse the initial read; mixed or uncertain goals keep the existing pipeline. Live answer quality, latency and dispatch availability remain unverified.' },
   'investigation.developmentWorkflow': { zh: '開發流程', en: 'Development workflow' },
   'investigation.reviewWorkflow': { zh: '審閱流程', en: 'Review workflow' },
   'investigation.adoptionWorkflow': { zh: '本機採納流程', en: 'Local adoption workflow' },

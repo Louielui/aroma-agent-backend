@@ -399,6 +399,7 @@ function logAnswerPlan (entry, sink) {
     provider: entry.provider == null ? null : String(entry.provider),
     droppedItems: Number.isFinite(entry.droppedItems) ? entry.droppedItems : 0,
     droppedFacts: Number.isFinite(entry.droppedFacts) ? entry.droppedFacts : 0,
+    boundWorkflowFacts: Number.isFinite(entry.boundWorkflowFacts) ? entry.boundWorkflowFacts : 0,
     droppedSentences: Number.isFinite(entry.droppedSentences) ? entry.droppedSentences : 0,
     // Counted since 2026-08-05: a limitation removed by the filter used to leave no trace.
     droppedLimitations: Number.isFinite(entry.droppedLimitations) ? entry.droppedLimitations : 0,
@@ -616,8 +617,31 @@ function operationalValues (fields) {
 
 function operationalRecord (row, title) {
   if (row.source !== 'xiangxiang_operations' || typeof title !== 'string') return null
-  const matches = [...(row.fields?.records || []), ...(row.fields?.workflows || [])].filter(record => record.name === title || record.sourceId === title || record.role === title)
+  const matches = [...(Array.isArray(row.fields?.records)?row.fields.records:[]), ...(Array.isArray(row.fields?.workflows)?row.fields.workflows:[])].filter(record => record && (record.name === title || record.sourceId === title || record.role === title))
   return matches.length === 1 ? matches[0] : null
+}
+
+// A workflow role is a source-owned column binding, like a declared metric.
+// Correct a composite/model-authored value from that exact role's scalar fields;
+// never fuzzy-match across records or turn configuration into an execution grant.
+function workflowModelFact(row, field, record) {
+  if(row.source!=='xiangxiang_operations'||row.trust!=='live'||row.fields?.section!=='work'||!Array.isArray(row.fields.workflows))return null
+  if(row.fields.workflows.some(r=>!r||typeof r!=='object'||Array.isArray(r)))return null
+  if(record&&record.role!==field)return null
+  const rows=(row.fields.workflows||[]).filter(r=>r.role===field)
+  if(rows.length!==1)return null
+  const r=rows[0]
+  if(r.modelBasis!=='host_workflow_default_not_per_job_selection'||typeof r.model!=='string'||
+    !/^[a-z0-9][a-z0-9._-]{0,99}$/i.test(r.model))return null
+  let label
+  switch(field){
+    case 'test_draft':label=t('investigation.testDraftWorkflow');break
+    case 'development':label=t('investigation.developmentWorkflow');break
+    case 'review':label=t('investigation.reviewWorkflow');break
+    default:return null
+  }
+  const effort=['low','medium','high','xhigh','max','ultra'].includes(r.effort)?' / '+r.effort:''
+  return {field:label,value:r.model+effort}
 }
 
 function operationalTitle (row, record) {
@@ -1508,6 +1532,7 @@ function validatePlan (plan, { evidenceSets = [], itemsBySource = [], message = 
   // rather than merely thin. An unprovable value and a row that does not exist are not the
   // same event and no longer report as one.
   let droppedFacts = 0
+  let boundWorkflowFacts = 0
   let droppedItems = 0
   let droppedSentences = 0
   // WHAT was dropped, not just how much. IDENTIFIERS ONLY — a sourceId and a field name.
@@ -1664,6 +1689,8 @@ function validatePlan (plan, { evidenceSets = [], itemsBySource = [], message = 
         const isDerived = derivMap.has(String(f.field))
         if (isDerived) { if (derivedUsed >= LIMITS.maxDerivationsPerItem) continue; derivedUsed++ } else { if (ordinaryUsed >= LIMITS.maxFactsPerItem) continue; ordinaryUsed++ }
         const field = String(f.field)
+        const workflowFact=workflowModelFact(row,field,record)
+        if(workflowFact){facts.push(workflowFact);boundWorkflowFacts++;continue}
 
         // ── A QUANTITY IS THE SERVER'S, NOT THE MODEL'S ─────────────────────────
         // The title already works this way and a number deserves it more: it is the fact
@@ -1748,6 +1775,7 @@ function validatePlan (plan, { evidenceSets = [], itemsBySource = [], message = 
         sourceId,
         title: operationalTitle(row, record) || String(it.title || ''),
         facts,
+        ...(facts.length===0&&Array.isArray(it.facts)&&it.facts.length>0?{factsWithheld:true}:{}),
         canonical: canonicalOf(row),
         readKey: (typeof row.readKey === 'string' && row.readKey) ? row.readKey : null
       })
@@ -2148,6 +2176,7 @@ function validatePlan (plan, { evidenceSets = [], itemsBySource = [], message = 
     },
     droppedFacts,
     droppedItems,
+    boundWorkflowFacts,
     droppedSentences,
     droppedLimitations,
     // The model said it cites nothing and then supplied rows. The rows are gone; the
