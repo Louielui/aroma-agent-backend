@@ -58,7 +58,10 @@ const LATENCY_PROFILE=Object.freeze({id:'f1d1f674-3820-4619-85ed-3b8fdeb01e98',i
 // Proposed independent retest only. The previous root must remain paused and
 // byte-preserved; deployment does not create or activate this allowance.
 const MEMORY_ARBITRATION_PROFILE=Object.freeze({id:'6181f0ad-90d7-4c89-9886-39671ce75a05',identity:'owner-memory-arbitration-acceptance-20261106',model:'claude-opus-5-5',effort:'medium',turns:1,helper:6,website:0})
-function isAcceptanceRoot(id){return id===PROFILE.id||id===UNDERSTANDING_PROFILE.id||id===ADVICE_PROFILE.id||id===PRIORITY_PROFILE.id||id===CONVERSATION_PROFILE.id||id===GOAL_PROFILE.id||id===CLARITY_PROFILE.id||id===PLANNING_PROFILE.id||id===CONTINUATION_PROFILE.id||id===MARKDOWN_PROFILE.id||id===DRAFT_PROFILE.id||id===HANDOFF_PROFILE.id||id===VERIFIER_PROFILE.id||id===EDIT_PROFILE.id||id===SCOPE_PROFILE.id||id===LEARNING_PROFILE.id||id===LATENCY_PROFILE.id||id===MEMORY_ARBITRATION_PROFILE.id}
+// Inert AI-list acceptance proposal. Both historical windows stay paused;
+// neither installation nor deployment creates this ledger or transfers capacity.
+const DELEGATION_LIST_PROFILE=Object.freeze({id:'c31f97a9-f3d5-4510-a04f-ec257a843747',identity:'owner-ai-delegation-list-acceptance-20261108',model:'claude-opus-5-5',effort:'medium',turns:1,helper:6,website:0})
+function isAcceptanceRoot(id){return id===PROFILE.id||id===UNDERSTANDING_PROFILE.id||id===ADVICE_PROFILE.id||id===PRIORITY_PROFILE.id||id===CONVERSATION_PROFILE.id||id===GOAL_PROFILE.id||id===CLARITY_PROFILE.id||id===PLANNING_PROFILE.id||id===CONTINUATION_PROFILE.id||id===MARKDOWN_PROFILE.id||id===DRAFT_PROFILE.id||id===HANDOFF_PROFILE.id||id===VERIFIER_PROFILE.id||id===EDIT_PROFILE.id||id===SCOPE_PROFILE.id||id===LEARNING_PROFILE.id||id===LATENCY_PROFILE.id||id===MEMORY_ARBITRATION_PROFILE.id||id===DELEGATION_LIST_PROFILE.id}
 const SHAPES={usage_activate:['op'],usage_status:['op'],usage_pause:['op'],usage_close:['op'],usage_reconcile:['op'],usage_bind_turn:['op','turnId','conversationId']}
 SHAPES.usage_acceptance_activate=['op','rootId','predecessorHash']
 SHAPES.usage_extension_prepare=['op','workId','commit','attemptsHash']
@@ -74,12 +77,15 @@ function developmentProfile(id){if(!ID.test(id||'')||isAcceptanceRoot(id))throw 
 function createUsageBudget({store,evidenceDir,now=Date.now,activationReady=null,profile=PROFILE,extensionWitness=null,approvals=require('../agent/ownerApprovalStore').createOwnerApprovalStore({now}),processAlive=pid=>{try{process.kill(pid,0);return true}catch(e){return e.code!=='ESRCH'}}}={}){
  if(!store?.lockRun)throw error('usage_store_required')
  profile=structuredClone(profile)
- if(hash(profile)!==hash(PROFILE)&&hash(profile)!==hash(UNDERSTANDING_PROFILE)&&hash(profile)!==hash(ADVICE_PROFILE)&&hash(profile)!==hash(PRIORITY_PROFILE)&&hash(profile)!==hash(CONVERSATION_PROFILE)&&hash(profile)!==hash(GOAL_PROFILE)&&hash(profile)!==hash(CLARITY_PROFILE)&&hash(profile)!==hash(PLANNING_PROFILE)&&hash(profile)!==hash(CONTINUATION_PROFILE)&&hash(profile)!==hash(MARKDOWN_PROFILE)&&hash(profile)!==hash(DRAFT_PROFILE)&&hash(profile)!==hash(HANDOFF_PROFILE)&&hash(profile)!==hash(VERIFIER_PROFILE)&&hash(profile)!==hash(EDIT_PROFILE)&&hash(profile)!==hash(SCOPE_PROFILE)&&hash(profile)!==hash(LEARNING_PROFILE)&&hash(profile)!==hash(LATENCY_PROFILE)&&hash(profile)!==hash(MEMORY_ARBITRATION_PROFILE)&&hash(profile)!==hash(developmentProfile(profile.id)))throw error('usage_profile_not_allowed')
- const independent=profile.id===MEMORY_ARBITRATION_PROFILE.id
+ if(hash(profile)!==hash(PROFILE)&&hash(profile)!==hash(UNDERSTANDING_PROFILE)&&hash(profile)!==hash(ADVICE_PROFILE)&&hash(profile)!==hash(PRIORITY_PROFILE)&&hash(profile)!==hash(CONVERSATION_PROFILE)&&hash(profile)!==hash(GOAL_PROFILE)&&hash(profile)!==hash(CLARITY_PROFILE)&&hash(profile)!==hash(PLANNING_PROFILE)&&hash(profile)!==hash(CONTINUATION_PROFILE)&&hash(profile)!==hash(MARKDOWN_PROFILE)&&hash(profile)!==hash(DRAFT_PROFILE)&&hash(profile)!==hash(HANDOFF_PROFILE)&&hash(profile)!==hash(VERIFIER_PROFILE)&&hash(profile)!==hash(EDIT_PROFILE)&&hash(profile)!==hash(SCOPE_PROFILE)&&hash(profile)!==hash(LEARNING_PROFILE)&&hash(profile)!==hash(LATENCY_PROFILE)&&hash(profile)!==hash(MEMORY_ARBITRATION_PROFILE)&&hash(profile)!==hash(DELEGATION_LIST_PROFILE)&&hash(profile)!==hash(developmentProfile(profile.id)))throw error('usage_profile_not_allowed')
+ const predecessors=profile.id===DELEGATION_LIST_PROFILE.id?[LATENCY_PROFILE,MEMORY_ARBITRATION_PROFILE]:profile.id===MEMORY_ARBITRATION_PROFILE.id?[LATENCY_PROFILE]:[],independent=predecessors.length>0
  function predecessorHash(){
-  const previous=createUsageBudget({store,profile:LATENCY_PROFILE}).readStatus()
-  if(previous.state!=='paused'||previous.helper.unresolved||previous.website.unresolved||previous.turns.some(t=>t.entered&&!t.finished)||store.get(LATENCY_PROFILE.id).children.some(c=>!c.finished))throw error('usage_unresolved_work')
-  return hash(store.get(LATENCY_PROFILE.id))
+  const bindings=predecessors.map(p=>{
+   const previous=createUsageBudget({store,profile:p}).readStatus(),row=store.get(p.id)
+   if(previous.state!=='paused'||previous.helper.unresolved||previous.website.unresolved||previous.turns.some(t=>t.entered&&!t.finished)||row.children.some(c=>!c.finished))throw error('usage_unresolved_work')
+   return{rootId:p.id,hash:hash(row)}
+  })
+  return bindings.length===1?bindings[0].hash:hash(bindings)
  }
  const limits={turns:profile.turns,helper:profile.helper,website:profile.website}
  const acceptsModel=input=>(profile.models||[{model:profile.model,effort:profile.effort}]).some(m=>m.model===input.model&&m.effort===input.effort)
@@ -92,7 +98,7 @@ function createUsageBudget({store,evidenceDir,now=Date.now,activationReady=null,
   if(independent&&r.predecessorHash!==predecessorHash())throw error('usage_binding_conflict')
   return r
  }
- function change(fn){const releases=[];try{if(independent)releases.push(store.lockRun(LATENCY_PROFILE.id));releases.push(store.lockRun(profile.id))}catch{releases.reverse().forEach(release=>release());throw error('usage_busy')};try{const r=load(true);const value=fn(r);return value}finally{releases.reverse().forEach(release=>release())}}
+ function change(fn){const releases=[];try{for(const p of predecessors)releases.push(store.lockRun(p.id));releases.push(store.lockRun(profile.id))}catch{releases.reverse().forEach(release=>release());throw error('usage_busy')};try{const r=load(true);const value=fn(r);return value}finally{releases.reverse().forEach(release=>release())}}
  function save(r,event,facts={}){r.timeline.push({at:new Date(now()).toISOString(),event,...facts});try{store.save(r)}catch{throw error('usage_audit_unavailable')}}
  function assertScope(r,s){if(!r||r.state!=='active')throw error('usage_run_not_active');if(!validScope(s)||s.rootId!==r.id)throw error('usage_scope_required');const t=r.turns.find(t=>t.id===s.turnId),child=s.childId&&r.children.find(c=>c.id===s.childId&&c.turnId===s.turnId&&!c.finished);if(!t||!t.entered||t.finished&&!child||t.conversationId!==s.conversationId||t.requestId!==s.requestId||s.childId&&!child)throw error('usage_scope_required');return t}
  function statusOf(r){if(!r)return{state:'not_activated',id:profile.id,identity:profile.identity,limits:{...limits},turnsUsed:0,helper:{reserved:0,available:limits.helper},website:{reserved:0,available:limits.website}}
@@ -137,7 +143,7 @@ function createUsageBudget({store,evidenceDir,now=Date.now,activationReady=null,
     if(!/^[a-f0-9]{64}$/.test(b.predecessorHash||'')||b.predecessorHash!==predecessorHash())throw error('usage_binding_conflict')
     if(!activationReady||activationReady()!==true)throw error('usage_idle_required')
     r={id:profile.id,identity:profile.identity,profileHash,limits:{...limits},predecessorHash:b.predecessorHash,state:'active',turns:[],children:[],attempts:[],timeline:[]}
-    save(r,'activated',{actor:'owner',independent:true,predecessorId:LATENCY_PROFILE.id,predecessorHash:b.predecessorHash});return
+    save(r,'activated',{actor:'owner',independent:true,predecessorId:predecessors.at(-1).id,...(predecessors.length>1?{predecessorIds:predecessors.map(p=>p.id)}:{}),predecessorHash:b.predecessorHash});return
    }
    if(b.op==='usage_activate'){if(r?.state==='closed')throw error('usage_run_closed');if(r?.state==='active')return;if(!activationReady||activationReady()!==true)throw error('usage_idle_required');if(!r)r={id:profile.id,identity:profile.identity,profileHash,limits:{...limits},state:'active',turns:[],children:[],attempts:[],timeline:[]};r.state='active';save(r,'activated',{sameApproval:true});return}
    if(!r||r.state!=='active')throw error('usage_run_not_active')
@@ -173,16 +179,16 @@ function createUsageBudget({store,evidenceDir,now=Date.now,activationReady=null,
 // A long-lived Bridge and backend resolve the same durable selection on every
 // call, not only at boot. No selection file or second accounting store exists.
 function createIndependentAcceptanceEntry({store,evidenceDir}={}){
- const previous=createUsageBudget({store,evidenceDir,profile:LATENCY_PROFILE}),next=createUsageBudget({store,evidenceDir,profile:MEMORY_ARBITRATION_PROFILE})
+ const previous=createUsageBudget({store,evidenceDir,profile:LATENCY_PROFILE}),next=createUsageBudget({store,evidenceDir,profile:MEMORY_ARBITRATION_PROFILE}),delegation=createUsageBudget({store,evidenceDir,profile:DELEGATION_LIST_PROFILE})
  // Selection participates in the existing writer lock. In particular Windows
  // readers must not hold the destination open during another host's rename.
- const selected=()=>next.status().state==='not_activated'?previous:next
+ const selected=()=>delegation.status().state!=='not_activated'?delegation:next.status().state==='not_activated'?previous:next
  return new Proxy(next,{get(target,key){
-  if(key==='setActivationWitness')return fn=>next.setActivationWitness(fn)
+  if(key==='setActivationWitness')return fn=>{next.setActivationWitness(fn);delegation.setActivationWitness(fn)}
   if(key==='handle')return(actor,b)=>{
    if(actor?.id!=='owner'||actor.role!=='owner')throw error('owner_required')
    if(!validInput(b))throw error('invalid_request')
-   if(b.op==='usage_acceptance_activate')return next.handle(actor,b)
+   if(b.op==='usage_acceptance_activate')return(b.rootId===DELEGATION_LIST_PROFILE.id?delegation:next).handle(actor,b)
    const current=selected()
    if(current===previous&&b.op!=='usage_status')throw error('usage_operation_not_allowed')
    return current.handle(actor,b)
@@ -245,4 +251,4 @@ function blockAPI(){if(currentScope()||service().isActive())throw service().reje
 // Interactive coding CLIs can make internal turns the host cannot meter. They
 // cannot be started in this fixed, read-only conversation acceptance window.
 function blockInteractiveWorker(){if(currentScope()||service().isActive())throw service().rejection('usage_operation_not_allowed')}
-module.exports={PROFILE,UNDERSTANDING_PROFILE,ADVICE_PROFILE,PRIORITY_PROFILE,CONVERSATION_PROFILE,GOAL_PROFILE,CLARITY_PROFILE,PLANNING_PROFILE,CONTINUATION_PROFILE,MARKDOWN_PROFILE,DRAFT_PROFILE,HANDOFF_PROFILE,VERIFIER_PROFILE,EDIT_PROFILE,SCOPE_PROFILE,LEARNING_PROFILE,LATENCY_PROFILE,MEMORY_ARBITRATION_PROFILE,isAcceptanceRoot,developmentProfile,ERRORS,validInput,createUsageBudget,createIndependentAcceptanceEntry,ownerDirectory,owner,service,currentScope,currentHeader,observe,withClaudeSelection,nativePermit,guardRPC,withRPCBudget,blockAPI,blockInteractiveWorker}
+module.exports={PROFILE,UNDERSTANDING_PROFILE,ADVICE_PROFILE,PRIORITY_PROFILE,CONVERSATION_PROFILE,GOAL_PROFILE,CLARITY_PROFILE,PLANNING_PROFILE,CONTINUATION_PROFILE,MARKDOWN_PROFILE,DRAFT_PROFILE,HANDOFF_PROFILE,VERIFIER_PROFILE,EDIT_PROFILE,SCOPE_PROFILE,LEARNING_PROFILE,LATENCY_PROFILE,MEMORY_ARBITRATION_PROFILE,DELEGATION_LIST_PROFILE,isAcceptanceRoot,developmentProfile,ERRORS,validInput,createUsageBudget,createIndependentAcceptanceEntry,ownerDirectory,owner,service,currentScope,currentHeader,observe,withClaudeSelection,nativePermit,guardRPC,withRPCBudget,blockAPI,blockInteractiveWorker}
