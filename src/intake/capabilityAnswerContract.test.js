@@ -2,7 +2,7 @@
 const test=require('node:test'),assert=require('node:assert/strict')
 const saved=require('./fixtures/delegationAnswer.json')
 const {validatePlan}=require('./answerPlan'),{buildReadResultReply,renderPlanSection}=require('./readResultView')
-const data=()=>({message:saved.message,answerKind:'capability_explanation',reply:saved.raw.reply,answerPlan:structuredClone(saved.raw.answerPlan),evidenceSets:saved.evidenceSets,itemsBySource:[{source:'xiangxiang_operations',items:structuredClone(saved.items).map(r=>({...r,trust:'live'})).sort((a,b)=>Number(b.fields.section==='work')-Number(a.fields.section==='work'))}],perSource:[{source:'xiangxiang_operations',trust:'live',shownCount:2,status:'ok'}]})
+const data=()=>({message:saved.message,answerKind:'capability_explanation',allowCapabilityPreview:true,reply:saved.raw.reply,answerPlan:structuredClone(saved.raw.answerPlan),evidenceSets:saved.evidenceSets,itemsBySource:[{source:'xiangxiang_operations',items:structuredClone(saved.items).map(r=>({...r,trust:'live'})).sort((a,b)=>Number(b.fields.section==='work')-Number(a.fields.section==='work'))}],perSource:[{source:'xiangxiang_operations',trust:'live',shownCount:2,status:'ok'}]})
 test('saved real answer binds composed workflow cells to exact source-owned role models',()=>{
  const input=data(),v=validatePlan(input.answerPlan,input),facts=v.plan.sections[0].items[0].facts
  assert.equal(v.boundWorkflowFacts,3)
@@ -37,6 +37,31 @@ test('a fact under a different named role cannot borrow that other workflow mode
 test('withheld-only items omit empty headings while intentional title-only rows survive',()=>{
  assert.equal(renderPlanSection({heading:'Empty',items:[{title:'Workflow',facts:[],factsWithheld:true}]}),'')
  assert.match(renderPlanSection({heading:'Names',items:[{title:'A retrieved name',facts:[]}]}),/A retrieved name/)
+})
+
+test('compact details retain verified item identity and source attribution',()=>{
+ const view=buildReadResultReply(data())
+ assert.match(view.answerDetails,/香香工作紀錄/)
+ const text=renderPlanSection({heading:'Roles',items:[{title:'Verified role A',readKey:'gmail',facts:[{field:'model',value:'recorded'}]}]},true)
+ assert.match(text,/Verified role A/);assert.match(text,/recorded/)
+})
+
+test('workflow scope notes require bound workflow evidence rather than capability kind alone',()=>{
+ const input=data();input.itemsBySource[0].items[0].fields.workflows=[]
+ const view=buildReadResultReply(input)
+ assert.doesNotMatch(view.reply,/此處是已讀來源中的流程預設模型/)
+ assert.equal(view.answerDetails,undefined)
+})
+
+test('callers without a guaranteed disclosure retain full validated limitations in the foreground',()=>{
+ for(const option of [false,undefined]){
+  const input=data();input.allowCapabilityPreview=option
+  input.answerPlan.limitations=['本次沒有測試接單。']
+  const view=buildReadResultReply(input)
+  assert.equal(view.answerDetails,undefined)
+  assert.match(view.reply,/AGENT_BRIDGE off/)
+  assert.match(view.reply,/本次沒有測試接單/)
+ }
 })
 test('capability first read needs a judged, fully local non-action goal; mixed and unknown goals keep existing gates',()=>{
  const {judgeGoalPlan}=require('./goal/goalPlanContract'),route=require('../investigation/generalRouter')

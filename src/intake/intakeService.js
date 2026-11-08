@@ -3791,6 +3791,9 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
     const view = buildReadResultReply({
       ownerGoalReporting:!!opts.ownerGoal,
       noReadRecommendation:!!adviceReview,
+      // Only this chat path guarantees the existing details disclosure. Other
+      // paths and an existing investigation retain the complete foreground.
+      allowCapabilityPreview:!operationalInvestigation,
       reviewedNoReadAdvice:adviceReview?.state==='supported'||adviceReview?.state==='revised',
       conversationEvidence:opts.conversationEvidence,
       adviceReview,

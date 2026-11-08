@@ -299,7 +299,7 @@ function renderPlanSection (sec, compact = false) {
     // Fail soft: a row whose provenance the server never resolved gets NO label, never a guess.
     const src = attributeItems ? itemSourceLabel(it.readKey, labelFor) : null
     const title = src ? `［${src}］${it.title}` : it.title
-    lines.push(compact ? (facts?`- ${facts}`:title) : facts ? `**${title}**\n${facts}` : `**${title}**`)
+    lines.push(facts ? `**${title}**\n${facts}` : `**${title}**`)
   }
   return lines.join('\n\n')
 }
@@ -592,7 +592,7 @@ function renderValidatedPlan (input) {
   // decision to render sections had drifted into two different tests of the same thing.
   const fellBack = (!v.answerSurvived && !rowsSurvived) || contentLost
   const sections = fellBack ? [] : v.plan.sections
-  const compact = input.answerKind === 'capability_explanation'
+  const compact = input.answerKind === 'capability_explanation' && v.boundWorkflowFacts > 0
   for (const sec of sections) out.push(renderPlanSection(sec, compact))
 
   // WHAT WAS REMOVED IS SAID ON SCREEN, not only in a log the Owner never reads. A silently
@@ -678,7 +678,7 @@ function renderValidatedPlan (input) {
   // Keep validated details in the existing investigation disclosure. The face
   // retains the supported answer, scope and actual omissions, never a cut-off
   // substring. Failed read/route corrections keep their full foreground output.
-  const capabilityPreview=compact&&v.answerSurvived&&v.boundWorkflowFacts>0&&!guarded.corrected
+  const capabilityPreview=input.allowCapabilityPreview===true&&compact&&v.answerSurvived&&!guarded.corrected
     ? [v.plan.directAnswer,t('rrv.capabilityScope'),...omissions,v.plan.followUp].filter(Boolean).join('\n\n') : null
   return {
     reply: capabilityPreview||fullReply,
