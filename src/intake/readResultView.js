@@ -279,14 +279,14 @@ function labelFor (operation, readKey, source) {
  * three renderer mutations then survived a green suite, because nothing was exercising the
  * renderer at all.
  */
-function renderPlanSection (sec) {
-  const items = (sec && Array.isArray(sec.items)) ? sec.items : []
+function renderPlanSection (sec, compact = false) {
+  const items = ((sec && Array.isArray(sec.items)) ? sec.items : []).filter(it=>!it.factsWithheld)
   if (!items.length) return ''
   const judged = judgeSectionHeading({ heading: sec && sec.heading, items })
   const headingSurvives = judged.verdict === VERDICT.ALLOW
   // A blanked heading (one the validator would not stand behind) is omitted, not printed as a
   // bare '###'. A refused source claim is omitted for the same reason.
-  const lines = (sec && sec.heading && headingSurvives) ? [`### ${sec.heading}`] : []
+  const lines = (!compact && sec && sec.heading && headingSurvives) ? [`### ${sec.heading}`] : []
   /**
    * ⛔ SOMETHING TRUE REPLACES WHAT WAS REMOVED. Dropping the heading alone would leave six
    * rows under nothing, and he still could not tell the two appointments from the four
@@ -299,7 +299,7 @@ function renderPlanSection (sec) {
     // Fail soft: a row whose provenance the server never resolved gets NO label, never a guess.
     const src = attributeItems ? itemSourceLabel(it.readKey, labelFor) : null
     const title = src ? `［${src}］${it.title}` : it.title
-    lines.push(facts ? `**${title}**\n${facts}` : `**${title}**`)
+    lines.push(compact ? (facts?`- ${facts}`:title) : facts ? `**${title}**\n${facts}` : `**${title}**`)
   }
   return lines.join('\n\n')
 }
@@ -492,6 +492,7 @@ function renderValidatedPlan (input) {
     provider: input.provider || null,
     droppedItems: v.droppedItems,
     droppedFacts: v.droppedFacts,
+    boundWorkflowFacts: v.boundWorkflowFacts,
     droppedSentences: v.droppedSentences,
     // ADDED 2026-08-05. validatePlan has counted this since the day the silent
     // limitation drop was closed; the log projection has read it since the same day; it
@@ -591,7 +592,8 @@ function renderValidatedPlan (input) {
   // decision to render sections had drifted into two different tests of the same thing.
   const fellBack = (!v.answerSurvived && !rowsSurvived) || contentLost
   const sections = fellBack ? [] : v.plan.sections
-  for (const sec of sections) out.push(renderPlanSection(sec))
+  const compact = input.answerKind === 'capability_explanation'
+  for (const sec of sections) out.push(renderPlanSection(sec, compact))
 
   // WHAT WAS REMOVED IS SAID ON SCREEN, not only in a log the Owner never reads. A silently
   // shorter answer looks exactly like a complete one; a stated omission is a number he can
@@ -620,9 +622,10 @@ function renderValidatedPlan (input) {
   // turn and are appended afterwards, where nothing can reach them. See scopeNotes.js for
   // what is proven here and what is keyword-anchored.
   const limitations = scopePrune.kept.concat(omissions)
+  if(compact)limitations.push(t('rrv.capabilityScope'))
 
-  if (limitations.length) out.push(`### ${H.limits}\n\n` + limitations.join('\n'))
-  if (v.plan.followUp) out.push(`### ${H.next}\n\n${v.plan.followUp}`)
+  if (limitations.length) out.push((compact?'':`### ${H.limits}\n\n`) + limitations.join(compact?' ':'\n'))
+  if (v.plan.followUp) out.push((compact?'':`### ${H.next}\n\n`)+v.plan.followUp)
 
   // ── THE GUARD JUDGES WHAT IS SHOWN ──────────────────────────────────────────
   // `input.correction` was produced by running the guard over the model's `reply` prose —
@@ -671,9 +674,15 @@ function renderValidatedPlan (input) {
    * stop guessing from the draft.
    */
   if (guarded.corrected && guarded.correction) out.push(guarded.correction.trim())
-
+  const fullReply=out.join('\n\n')
+  // Keep validated details in the existing investigation disclosure. The face
+  // retains the supported answer, scope and actual omissions, never a cut-off
+  // substring. Failed read/route corrections keep their full foreground output.
+  const capabilityPreview=compact&&v.answerSurvived&&v.boundWorkflowFacts>0&&!guarded.corrected
+    ? [v.plan.directAnswer,t('rrv.capabilityScope'),...omissions,v.plan.followUp].filter(Boolean).join('\n\n') : null
   return {
-    reply: out.join('\n\n'),
+    reply: capabilityPreview||fullReply,
+    ...(capabilityPreview?{answerDetails:fullReply,capabilityValidation:{boundWorkflowFacts:v.boundWorkflowFacts,droppedFacts:v.droppedFacts,droppedItems:v.droppedItems,droppedLimitations:v.droppedLimitations,sourceIds:v.plan.sections.flatMap(s=>s.items.map(i=>i.canonical))}}:{}),
     applied: true,
     intent: null,
     validated: !lostSomething && !contentLost,

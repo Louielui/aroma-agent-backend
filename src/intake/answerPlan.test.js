@@ -319,7 +319,7 @@ test('the log carries counts, enums and drop IDENTITY — never a value', () => 
    * a value, the user message and a credential through it and asserts none appears.
    */
   assert.deepEqual(Object.keys(l).sort(),
-    ['dropped', 'droppedFacts', 'droppedItems', 'droppedLimitations', 'droppedSentences', 'event', 'keptItemCount', 'modelItemCount', 'outcome', 'provider', 'rankingClaims', 'rankingGate', 'rankingSalvage', 'reason', 'requestId', 'timestamp'])
+    ['boundWorkflowFacts', 'dropped', 'droppedFacts', 'droppedItems', 'droppedLimitations', 'droppedSentences', 'event', 'keptItemCount', 'modelItemCount', 'outcome', 'provider', 'rankingClaims', 'rankingGate', 'rankingSalvage', 'reason', 'requestId', 'timestamp'])
   assert.equal(l.modelItemCount, 3)
   assert.equal(l.keptItemCount, 2)
   assert.equal(l.droppedItems, 1)

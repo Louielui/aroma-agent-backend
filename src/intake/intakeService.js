@@ -876,6 +876,7 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
    * the counts report as null rather than as zero.
    */
   let goalPlanObserved = null
+  let capabilityReadSettled = false
   /**
    * ⛔ X2 — THE UNDERSTANDING OUTLIVES THE FACT PLAN.
    *
@@ -1437,6 +1438,25 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
           // ⛔ X2: from the usable plan when there is one; `decomposeOnce` fills it from a
           // refused plan otherwise. Either way the goal survives to the main prompt.
           if (plan) goalUnderstandingObserved = plan
+          const capabilitySections = opts.ownerInvestigation === true && subscriptionMode
+            ? require('../investigation/generalRouter').capabilityReadSections(plan, authorisedSourcesFor(subscriptionAdapter?.providerName || providerName)) : null
+          if (capabilitySections && !turnPerSource.has('xiangxiang_operations')) {
+            const connector = deps?.connector || createLiveReadConnector({ env: process.env }).connector
+            const rc = await timePhase({requestId,phase:PHASE.LIVE_READ_CONTEXT,within:PHASE.PROMPT_BUILD},
+              () => buildReadContext({connector,message,sources:['xiangxiang_operations'],env:process.env,investigationSections:capabilitySections}),
+              {clock:latencyClock,sink:latencySink})
+            for(const row of rc.perSource||[]) { turnPerSource.set(row.source,row);recordOperation(row.source,row.trust) }
+            for(const g of rc.itemsBySource||[])turnItems.set(g.source,g)
+            for(const g of rc.retrievedItemsBySource||[])turnRetrievedItems.set(g.source,g)
+            for(const e of rc.evidenceSets||[])turnEvidence.set(e.source,e)
+            if(rc.block)extraObservationBlocks.push(rc.block)
+            const rows=rc.itemsBySource?.find(g=>g.source==='xiangxiang_operations')?.items||[]
+            capabilityReadSettled=rc.status!=='TRUNCATED'&&rc.perSource?.some(r=>r.source==='xiangxiang_operations'&&r.trust==='live')&&
+              capabilitySections.every(section=>rows.some(r=>r.fields?.section===section&&['ok','partial'].includes(r.fields.state)))
+            if(rc.perSource?.some(r=>r.source==='xiangxiang_operations'&&r.trust==='live'))modelDirectedLiveOperations.add('xiangxiang_operations')
+            if(rc.status==='TRUNCATED')turnTruncated=true
+            extraObservationBlocks.push('CAPABILITY EVIDENCE CONTRACT: Answer the requested abilities, not a background inventory. Workflow records are configured roles, not grants or proof of a new dispatch. In answerPlan cite the fresh work section and use the exact workflow role as facts.field; the host binds that role to its recorded default model. Do not combine model, effort and occupancy in facts.value. Unknown model/effort stays unknown. Keep a short conclusion and only relevant supporting facts; retain material source/authorization gaps. Do not infer subscription-Bridge availability from legacy AGENT_BRIDGE flags. The main answer still decides the wording; these records never authorize execution.')
+          }
           const generalRoute = require('../investigation/generalRouter').investigationRoute(plan, authorisedSourcesFor(subscriptionAdapter?.providerName || providerName))
           // The judged requirement selects fixed sources and local evidence sections. It cannot grant access.
           if (opts.ownerInvestigation === true && !operationalInvestigation && !['capability_explanation','personal_memory'].includes(plan?.answerKind) &&
@@ -2322,7 +2342,7 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
     modelDirectedLiveOperations.has('xiangxiang_operations') &&
     requiredReadableFacts.length > 0 &&
     requiredReadableFacts.every(f => f.operation === 'xiangxiang_operations') &&
-    operationalInvestigation?.sections.some(s => ['ok', 'partial'].includes(s.state) && s.records?.length > 0)
+    (capabilityReadSettled || operationalInvestigation?.sections.some(s => ['ok', 'partial'].includes(s.state) && s.records?.length > 0))
   // Retain only a non-action conversational envelope for domain arbitration.
   // Neither recalled text nor model prose can decide which domain wins.
   let beforeSemanticClarify = null
@@ -2334,13 +2354,13 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
     semanticClarifyTerminal = true
   }
   if (semanticClarify && ownOperationsSettled) {
-    try { console.log('[AROMA-INVESTIGATION]', JSON.stringify({ requestId, event: 'legacy_business_clarification_superseded_by_observed_owner_plan', sections: operationalInvestigation.sections.length })) } catch (_) {}
+    try { console.log('[AROMA-INVESTIGATION]', JSON.stringify({ requestId, event: 'legacy_business_clarification_superseded_by_observed_owner_plan', sections: operationalInvestigation?.sections.length || turnItems.size })) } catch (_) {}
   }
 
   const initialTerminalMode = (distilled && typeof distilled.mode === 'string') ? distilled.mode : null
   const initialIsAsk = initialTerminalMode === 'ask'
 
-  const initialFinalGate = !simpleFastPath && interactionMode === 'chat' && distilled && !distilled.nextRead &&
+  const initialFinalGate = !simpleFastPath && !capabilityReadSettled && interactionMode === 'chat' && distilled && !distilled.nextRead &&
     a4SemanticRoutingEnabled(process.env) && initialTerminalMode !== 'commit'
 
   /**
@@ -3608,6 +3628,7 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
       // The model's own plan, when it sent one. answerPlan.js validates it against the
       // evidence; nothing here trusts it, and every fall-through is logged.
       answerPlan: distilled.answerPlan || null,
+      answerKind: goalPlanObserved?.answerKind || null,
       evidenceSets: Array.from(turnEvidence.values()),
       provider: (llmResult && llmResult.provider) || null,
       requestId,
@@ -3783,6 +3804,7 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
       // The model's own plan, when it sent one. answerPlan.js validates it against the
       // evidence; nothing here trusts it, and every fall-through is logged.
       answerPlan: distilled.answerPlan || null,
+      answerKind: goalPlanObserved?.answerKind || null,
       evidenceSets: Array.from(turnEvidence.values()),
       provider: (llmResult && llmResult.provider) || null,
       requestId,
@@ -3937,9 +3959,12 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
       ? view.reply : view.applied ? require('./conversationEvidenceView').guardedArchiveReceipt() : guarded.reply
     const chatClaim = view.readClaim || { corrected: false, sources: [], kind: null }
     if (chatClaim.corrected) logReadClaimCorrection(chatClaim, requestId)
+    const capabilityPresentation = view.answerDetails && !view.routeEvidenceWithheld && !chatClaim.corrected
+      ? {readOnly:true,focus:'capability',state:'partial',sections:[],answerDetails:view.answerDetails,
+        answerPresentation:{kind:'validated_capability_explanation',validation:view.capabilityValidation,modelProseUsed:true,dispatchVerified:false}} : null
     return { blocked: false, mode: distilled.mode, intent: distilled.intent,
       ...(gapForTurn() && { capabilityGap: gapForTurn() }),
-      ...(operationalInvestigation && { investigation: operationalInvestigation }),
+      ...((operationalInvestigation||capabilityPresentation) && { investigation: operationalInvestigation||capabilityPresentation }),
       ...(demo && { demoOutcome: classifyDemoOutcome({ mode: distilled.mode, intent: distilled.intent }).outcome, contextCardWarnings: ctx.warnings }),
       ...(view.publicAnswerReceipt ? { publicAnswerReceipt: view.publicAnswerReceipt } : {}),
       ...(view.adviceBasis ? { adviceBasis: view.adviceBasis } : {}),
