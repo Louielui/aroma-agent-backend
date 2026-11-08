@@ -43,6 +43,12 @@ refused before the substitute provider is invoked. These are accounting and
 entry tests, not proof of real model classification, list accuracy, UI quality,
 provider availability or latency.
 
+If the independent-review subscription preflight reports `claude_login_required`,
+retain the failed workflow as failure evidence: this does not establish quota
+exhaustion. The Owner completes subscription sign-in personally; never substitute
+an API key or replay/relabel the failed run. Revalidate the accepted source and
+prepare fresh exact-commit test/review evidence before requesting deployment.
+
 After full-commit independent review and exact-version deployment approval,
 technical checks must first verify the installed source and that no new ledger
 exists. Only separately approved acceptance may activate the fixed new root.
