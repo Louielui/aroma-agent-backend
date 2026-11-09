@@ -67,6 +67,17 @@ test('settled required gaps survive compact, full, zero-binding, absent and inva
  assert.equal(buildReadResultReply(input).capabilityCoverage,undefined,'unsettled reads do not mint a settled receipt')
 })
 
+test('source-recorded scalar values cannot bypass an ambiguous operational item title',()=>{
+ for(const title of ['development','開發','Development workflow'])for(const value of ['sonnet','gpt-6.1-sol','historical-only-model']){
+  const input=data(),work=input.itemsBySource[0].items.find(r=>r.fields.section==='work')
+  work.fields.records.push({name:title,sourceId:'historical-name-collision',model:'historical-only-model'})
+  input.answerPlan.sections=[{heading:'Role',items:[{sourceId:'xiangxiang_operations#'+work.sourceId,title,facts:[{field:'開發',value}]}]}]
+  const v=validatePlan(input.answerPlan,input)
+  assert.equal(v.boundWorkflowFacts,0);assert.equal(v.droppedFacts,1,title+' / '+value)
+  assert.deepEqual(v.plan.sections[0].items[0].facts,[])
+ }
+})
+
 function setup(t){const old={...process.env};t.after(()=>{for(const k of Object.keys(process.env))if(!(k in old))delete process.env[k];Object.assign(process.env,old)})
  Object.assign(process.env,{CHAT_BACKEND:'codex-subscription',GOAL_DECOMPOSER:'on',READ_ACCESS:'on',CONTEXT_DECISIONS_OPENAI:'on',CONTEXT_XIANGXIANG_OPERATIONS:'on',XIANGXIANG_MEMORY:'on',TURN_ROUTER:'on',A4_KNOWLEDGE_ROUTING:'on',MULTI_AI_ROUTER:'off',DECISION_RECALL:'off',CONVERSATION_RECALL:'off'})}
 const preference='Use a brief conclusion, three short points and one final limitation.'

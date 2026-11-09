@@ -1693,6 +1693,7 @@ function validatePlan (plan, { evidenceSets = [], itemsBySource = [], message = 
         continue
       }
       const record = operationalRecord(row, it.title)
+      const ambiguousOperationalRecord = operationalMatches(row, it.title).length > 1
       const facts = []
       const labels = metrics.get(row.source) || EMPTY_LABELS
       // TWO ALLOWANCES, COUNTED SEPARATELY. The ordinary cap is unchanged; a declared
@@ -1705,6 +1706,14 @@ function validatePlan (plan, { evidenceSets = [], itemsBySource = [], message = 
         const isDerived = derivMap.has(String(f.field))
         if (isDerived) { if (derivedUsed >= LIMITS.maxDerivationsPerItem) continue; derivedUsed++ } else { if (ordinaryUsed >= LIMITS.maxFactsPerItem) continue; ordinaryUsed++ }
         const field = String(f.field)
+        // Refuse ambiguous identity before every projection and scalar fallback.
+        // A value appearing somewhere in the section cannot assign it to one
+        // of several records with this title.
+        if(ambiguousOperationalRecord){
+          droppedFacts++
+          drops.push({kind:'fact',sourceId:sourceId.slice(0,LIMITS.maxDropIdChars),field:field.slice(0,LIMITS.maxDropIdChars),why:'ambiguous_operational_record'})
+          continue
+        }
         const workflowFact=workflowModelFact(row,field,record,it.title)
         if(workflowFact){facts.push(workflowFact);boundWorkflowFacts++;continue}
 
