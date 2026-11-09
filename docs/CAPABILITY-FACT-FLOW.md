@@ -6,6 +6,8 @@ PR152 saved request `b8a12e90-50d8-4375-a071-1a8c635afb5f` supplied a correct ro
 
 The existing answer validator recognizes a bounded, exact workflow-column vocabulary (canonical role IDs, the saved Chinese column names, and the existing translated UI labels). This is schema normalization, not a question keyword exception or value similarity search. A model value is replaced by the unique live work record's scalar model/effort. Ambiguous, malformed, absent, untrusted and cross-role records fail closed. Configuration is not a grant or successful dispatch.
 
+Title ambiguity is checked across both historical records and configured workflows. If a title names more than one record, including a historical job sharing a localized workflow name, the projection is refused. An unresolved title cannot silently select the default model from an otherwise unique workflow role. The saved real-output replay and the additional canonical/localized/English collision regressions cover separate conditions.
+
 The existing compact capability preview still requires a validated answer, bound workflow evidence, no read-state correction, and the caller's guaranteed existing details disclosure. The foreground retains the answer, scope, explicit host coverage gaps and actual omission counts. Optional next-step offers remain in the details, not repeated in the preview. Full validated rows, limitations, source identities and follow-up remain available in that disclosure. Other render paths retain the full foreground.
 
 ## Bounded read and unresolved requirements

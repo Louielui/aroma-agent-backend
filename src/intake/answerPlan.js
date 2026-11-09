@@ -624,9 +624,12 @@ function workflowRole (field) {
     default: return null
   }
 }
+function operationalMatches (row, title) {
+  if (row.source !== 'xiangxiang_operations' || typeof title !== 'string') return []
+  return [...(Array.isArray(row.fields?.records)?row.fields.records:[]), ...(Array.isArray(row.fields?.workflows)?row.fields.workflows:[])].filter(record => record && (record.name === title || record.sourceId === title || record.role === title || (workflowRole(title) && record.role === workflowRole(title))))
+}
 function operationalRecord (row, title) {
-  if (row.source !== 'xiangxiang_operations' || typeof title !== 'string') return null
-  const matches = [...(Array.isArray(row.fields?.records)?row.fields.records:[]), ...(Array.isArray(row.fields?.workflows)?row.fields.workflows:[])].filter(record => record && (record.name === title || record.sourceId === title || record.role === title || (workflowRole(title) && record.role === workflowRole(title))))
+  const matches = operationalMatches(row, title)
   return matches.length === 1 ? matches[0] : null
 }
 
@@ -636,6 +639,9 @@ function operationalRecord (row, title) {
 function workflowModelFact(row, field, record, title) {
   if(row.source!=='xiangxiang_operations'||row.trust!=='live'||row.fields?.section!=='work'||!Array.isArray(row.fields.workflows))return null
   if(row.fields.workflows.some(r=>!r||typeof r!=='object'||Array.isArray(r)))return null
+  // An unresolved item title must not silently become a workflow column. In
+  // particular a same-named historical job and configured role are ambiguous.
+  if(operationalMatches(row,title).length>1)return null
   const role=workflowRole(field)
   if(!role||record&&record.role!==role||workflowRole(title)&&workflowRole(title)!==role)return null
   const rows=(row.fields.workflows||[]).filter(r=>r.role===role)

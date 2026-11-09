@@ -35,6 +35,20 @@ test('judged unavailable requirements keep a bounded local read and an explicit 
  assert.equal(route.capabilityReadSections(p,[]),null)
 })
 
+test('a title shared by a historical record and a workflow cannot select a workflow default',()=>{
+ for(const title of ['development','開發','Development workflow']){
+  const input=data(),work=input.itemsBySource[0].items.find(r=>r.fields.section==='work')
+  work.fields.records.push({name:title,sourceId:'historical-name-collision',model:'historical-only-model'})
+  input.answerPlan.sections=[{heading:'Role',items:[{sourceId:'xiangxiang_operations#'+work.sourceId,title,facts:[{field:'開發',value:'unrecorded-model'}]}]}]
+  const v=validatePlan(input.answerPlan,input)
+  assert.equal(v.boundWorkflowFacts,0,title);assert.equal(v.droppedFacts,1,title)
+ }
+ const input=data(),work=input.itemsBySource[0].items.find(r=>r.fields.section==='work')
+ work.fields.records.push({name:'Same title'},{name:'Same title'})
+ input.answerPlan.sections=[{heading:'Role',items:[{sourceId:'xiangxiang_operations#'+work.sourceId,title:'Same title',facts:[{field:'review',value:'unrecorded-model'}]}]}]
+ assert.equal(validatePlan(input.answerPlan,input).boundWorkflowFacts,0)
+})
+
 function setup(t){const old={...process.env};t.after(()=>{for(const k of Object.keys(process.env))if(!(k in old))delete process.env[k];Object.assign(process.env,old)})
  Object.assign(process.env,{CHAT_BACKEND:'codex-subscription',GOAL_DECOMPOSER:'on',READ_ACCESS:'on',CONTEXT_DECISIONS_OPENAI:'on',CONTEXT_XIANGXIANG_OPERATIONS:'on',XIANGXIANG_MEMORY:'on',TURN_ROUTER:'on',A4_KNOWLEDGE_ROUTING:'on',MULTI_AI_ROUTER:'off',DECISION_RECALL:'off',CONVERSATION_RECALL:'off'})}
 const preference='Use a brief conclusion, three short points and one final limitation.'
