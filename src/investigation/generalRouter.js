@@ -17,7 +17,7 @@ const BASE = Object.freeze({
 })
 const SOURCES = new Set(['xiangxiang_operations','gmail','drive','calendar','github'])
 // Reuse the judged goal for a narrow first read, not another meaning classifier.
-// Every fact must remain within this authorised local source; mixed, unknown,
+// Every readable fact must remain within this authorised local source; mixed,
 // historical/runtime diagnosis and action goals retain their existing loop.
 function capabilityReadSections(plan, authorised=[]) {
   if(plan?.answerKind!=='capability_explanation'||plan.investigationFocus||plan.investigationReference||
@@ -25,9 +25,19 @@ function capabilityReadSections(plan, authorised=[]) {
     !authorised.includes('xiangxiang_operations')||
     !['understand','retrieve'].includes(plan.executiveFrame?.taskType)||plan.executiveFrame?.decisionNeeded!==false)return null
   const facts=plan.facts||[],needs=plan.investigationEvidence||[]
-  if(!facts.some(f=>f.necessity==='required')||facts.some(f=>f.operation!=='xiangxiang_operations')||
+  if(!facts.some(f=>f.necessity==='required'&&f.operation==='xiangxiang_operations')||
+    facts.some(f=>f.operation!=='xiangxiang_operations'&&!unmappedCapabilityFact(f))||
     needs.some(n=>!['configuration','enablement','work_history'].includes(n)))return null
   return ['configuration','work']
+}
+function unmappedCapabilityFact(f) {
+  return f.operation===null&&f.status==='UNAVAILABLE'&&f.reason==='no_operation_in_this_system_carries_this'
+}
+// Coverage gaps are host receipts, never evidence or permission. Retain them
+// even when the available configuration read lets the main answer proceed.
+function capabilityReadGaps(plan) {
+  return (plan?.facts||[]).filter(f=>f.necessity==='required'&&unmappedCapabilityFact(f))
+    .map(f=>({id:f.id,need:f.need,status:f.status,reason:f.reason}))
 }
 function investigationRoute(plan, authorised=[]) {
   if(!plan || !Object.hasOwn(BASE,plan.investigationFocus)) return null
@@ -63,4 +73,4 @@ function refreshRequiredSourceGaps(report) {
   report.gaps.push(...(report.routing?.unmappedFacts || []).filter(f => f.necessity === 'required')
     .map(f => ({section:'fact_' + f.id, state:f.status, reason:f.operation?'unmapped_operation':'unknown_operation', coverage:'unmapped_required_need'})))
 }
-module.exports={NEEDS,investigationRoute,capabilityReadSections,requiredSourceCoverage,refreshRequiredSourceGaps}
+module.exports={NEEDS,investigationRoute,capabilityReadSections,capabilityReadGaps,requiredSourceCoverage,refreshRequiredSourceGaps}

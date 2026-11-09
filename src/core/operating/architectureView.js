@@ -100,6 +100,8 @@ function buildArchitectureHtml () {
     rows.find(row => row.id === 'universal-assistant').evidence += '; docs/CONTEXT-ANSWER-FLOW-REPAIR.md; src/intake/postdeploymentAnswerReplay.test.js; src/memory/captureDescription.test.js'
     rows.find(row => row.id === 'universal-assistant').current += ' ' + t('conversationClarity.current')
     rows.find(row => row.id === 'universal-assistant').current += ' ' + t('assistant.capabilityAnswerCandidate')
+    rows.find(row => row.id === 'universal-assistant').current += ' ' + t('assistant.capabilityFactFlow')
+    rows.find(row => row.id === 'universal-assistant').evidence += '; docs/CAPABILITY-FACT-FLOW.md; src/intake/capabilityFactFlow.test.js'
     rows.find(row => row.id === 'universal-assistant').evidence += '; docs/CAPABILITY-ANSWER-CONTRACT.md; src/intake/capabilityAnswerContract.test.js'
     rows.find(row => row.id === 'universal-assistant').evidence += '; docs/CONVERSATION-CLARITY.md; src/intake/conversationClarity.test.js'
     rows.find(row => row.id === 'universal-assistant').evidence += '; docs/CORRESPONDENCE-REQUEST-SCOPE.md; src/intake/correspondenceScope.test.js'

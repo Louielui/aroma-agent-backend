@@ -1281,8 +1281,12 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
   }
 
   function canLoadPersonalMemory (providerName) {
-    return opts?.interactionMode === 'chat' && providerName === 'openai' && process.env.XIANGXIANG_MEMORY === 'on' &&
-      resolveFlag(process.env, 'READ_ACCESS') === 'on' && decisionRecallSharedWith(providerName, process.env)
+    // The same subscription request starts with the logical primary provider
+    // and continues with its adapter name. Preserve that turn's sharing gate
+    // and cached approved preferences; do not export to another provider.
+    const contextProvider = subscriptionAdapter && providerName === subscriptionAdapter.providerName ? primaryProvider : providerName
+    return opts?.interactionMode === 'chat' && contextProvider === 'openai' && process.env.XIANGXIANG_MEMORY === 'on' &&
+      resolveFlag(process.env, 'READ_ACCESS') === 'on' && decisionRecallSharedWith(contextProvider, process.env)
   }
 
   async function buildPromptForUncached (providerName, composeOnly = false) {
@@ -3619,6 +3623,8 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
     if(opts.ownerGoal&&(gateAuthoredAsk||semanticClarifyTerminal))opts.onOwnerClarification?.(guarded.reply)
     const view = buildReadResultReply({
       ownerGoalReporting:!!opts.ownerGoal,
+      capabilityReadSettled,
+      capabilityGaps:capabilityReadSettled ? require('../investigation/generalRouter').capabilityReadGaps(goalPlanObserved) : [],
       reply: guarded.reply,
       correction: guarded.correction || null,
       // E2: the sources/kind the DRAFT judgment named, so a carried note stays as specific in
@@ -3652,6 +3658,7 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
       blocked: false, mode: 'chat', talkOnly: true, interactionMode: 'chat',
       ...(gapForTurn() && { capabilityGap: gapForTurn() }),
       ...(operationalInvestigation && { investigation: operationalInvestigation }),
+      ...(view.capabilityCoverage ? {capabilityCoverage:view.capabilityCoverage} : {}),
       ...(view.publicAnswerReceipt ? { publicAnswerReceipt: view.publicAnswerReceipt } : {}),
       reply: view.reply, replyForArchive: view.publicSummaryRendered ? view.reply : guarded.reply, readClaimCorrected: claim.corrected,
       decision: null, tasks: [], risks: [], next_step: '', requestId
@@ -3794,6 +3801,8 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
       // Only this chat path guarantees the existing details disclosure. Other
       // paths and an existing investigation retain the complete foreground.
       allowCapabilityPreview:!operationalInvestigation,
+      capabilityReadSettled,
+      capabilityGaps:capabilityReadSettled ? require('../investigation/generalRouter').capabilityReadGaps(goalPlanObserved) : [],
       reviewedNoReadAdvice:adviceReview?.state==='supported'||adviceReview?.state==='revised',
       conversationEvidence:opts.conversationEvidence,
       adviceReview,
@@ -3968,6 +3977,7 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
     return { blocked: false, mode: distilled.mode, intent: distilled.intent,
       ...(gapForTurn() && { capabilityGap: gapForTurn() }),
       ...((operationalInvestigation||capabilityPresentation) && { investigation: operationalInvestigation||capabilityPresentation }),
+      ...(view.capabilityCoverage ? {capabilityCoverage:view.capabilityCoverage} : {}),
       ...(demo && { demoOutcome: classifyDemoOutcome({ mode: distilled.mode, intent: distilled.intent }).outcome, contextCardWarnings: ctx.warnings }),
       ...(view.publicAnswerReceipt ? { publicAnswerReceipt: view.publicAnswerReceipt } : {}),
       ...(view.adviceBasis ? { adviceBasis: view.adviceBasis } : {}),

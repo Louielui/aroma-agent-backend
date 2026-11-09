@@ -679,7 +679,7 @@ function renderValidatedPlan (input) {
   // retains the supported answer, scope and actual omissions, never a cut-off
   // substring. Failed read/route corrections keep their full foreground output.
   const capabilityPreview=input.allowCapabilityPreview===true&&compact&&v.answerSurvived&&!guarded.corrected
-    ? [v.plan.directAnswer,t('rrv.capabilityScope'),...omissions,v.plan.followUp].filter(Boolean).join('\n\n') : null
+    ? [v.plan.directAnswer,t('rrv.capabilityScope'),...omissions].filter(Boolean).join('\n\n') : null
   return {
     reply: capabilityPreview||fullReply,
     ...(capabilityPreview?{answerDetails:fullReply,capabilityValidation:{boundWorkflowFacts:v.boundWorkflowFacts,droppedFacts:v.droppedFacts,droppedItems:v.droppedItems,droppedLimitations:v.droppedLimitations,sourceIds:v.plan.sections.flatMap(s=>s.items.map(i=>i.canonical))}}:{}),
@@ -719,6 +719,17 @@ function buildReadResultReply (input = {}) {
   // but no model action narrative. This reuses the existing evidence formatter.
   if(input.ownerGoalReporting===true)input={...input,reply:'',answerPlan:null,correction:null}
   const out = buildReadResultReplyInner(input)
+  // Coverage is a host receipt from the settled read, independent of whether
+  // the model produced a usable plan or bound any workflow columns. Apply it
+  // to every render path before the existing final evidence/read-state guards.
+  const capabilityGaps = input.capabilityReadSettled === true && input.answerKind === 'capability_explanation' && Array.isArray(input.capabilityGaps) ? input.capabilityGaps : []
+  const gapNotes = capabilityGaps.map(g=>t('rrv.capabilityUnmapped',{need:g.need}))
+  if(gapNotes.length){
+    out.reply=[out.reply,...gapNotes].filter(Boolean).join('\n\n')
+    out.capabilityCoverage={state:'partial',unresolvedNeeds:capabilityGaps}
+    if(out.answerDetails)out.answerDetails=[out.answerDetails,...gapNotes].join('\n\n')
+    if(out.capabilityValidation)out.capabilityValidation={...out.capabilityValidation,unresolvedNeeds:capabilityGaps}
+  }
   if(input.adviceReview?.state==='unavailable')out.reply=t('advice.reviewUnavailable')+'\n\n'+out.reply
   const routed = enforceRouteEvidence({
     reply: out && typeof out.reply === 'string' ? out.reply : '',
@@ -744,7 +755,7 @@ function buildReadResultReply (input = {}) {
   const publicView = require('./publicProvenance')
   const summary = publicView.publicSummary(input)
   const provenance = summary ? null : publicView.publicProvenance(input)
-  if (summary) afterRoute = { ...afterRoute, reply: summary, publicSummaryRendered: true, publicAnswerReceipt: require('../topics/publicAnswerFollowups').createReceipt(input) }
+  if (summary) afterRoute = { ...afterRoute, reply: [summary,...gapNotes].join('\n\n'), publicSummaryRendered: true, publicAnswerReceipt: require('../topics/publicAnswerFollowups').createReceipt(input) }
   else if (provenance) afterRoute = { ...afterRoute, reply: afterRoute.reply + '\n\n' + provenance }
   const finished=withFinalReadStateBoundary(afterRoute, input)
   const quotes=require('./answerPlan').ownerInstructions(input.answerPlan,input.message)
