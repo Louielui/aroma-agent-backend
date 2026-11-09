@@ -10,6 +10,8 @@ Title ambiguity is checked across both historical records and configured workflo
 
 The existing compact capability preview still requires a validated answer, bound workflow evidence, no read-state correction, and the caller's guaranteed existing details disclosure. The foreground retains the answer, scope, explicit host coverage gaps and actual omission counts. Optional next-step offers remain in the details, not repeated in the preview. Full validated rows, limitations, source identities and follow-up remain available in that disclosure. Other render paths retain the full foreground.
 
+Required coverage notes belong to the common render wrapper, not compact-preview eligibility. When a capability read settles with an unmapped required need, full, zero-binding, absent-plan and invalid-plan answers retain the visible unverified note and a partial `capabilityCoverage` receipt. The existing evidence and read-state guards still process the composed reply. A missing model plan cannot hide an unresolved requirement or mint a successful coverage/dispatch claim.
+
 ## Bounded read and unresolved requirements
 
 The raw saved goal's `investigation_focus: general` is normalized to null by the existing goal judge for a capability explanation. It is not the cause of this case's final rendering. The actual first-read blocker is a required fact with no mapped operation. Previously that fact prevented even the separately authorized configuration/work read.

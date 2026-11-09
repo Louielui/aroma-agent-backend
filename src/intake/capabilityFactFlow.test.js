@@ -49,13 +49,31 @@ test('a title shared by a historical record and a workflow cannot select a workf
  assert.equal(validatePlan(input.answerPlan,input).boundWorkflowFacts,0)
 })
 
+test('settled required gaps survive compact, full, zero-binding, absent and invalid answer plans',()=>{
+ const gaps=route.capabilityReadGaps(judgeGoalPlan(saved.goal).plan)
+ for(const shape of ['compact','full','zero-binding','absent','invalid']){
+  const input={...data(),capabilityReadSettled:true,capabilityGaps:gaps}
+  if(shape==='full')input.allowCapabilityPreview=false
+  if(shape==='zero-binding')input.answerPlan.sections=[]
+  if(shape==='absent')input.answerPlan=null
+  if(shape==='invalid')input.answerPlan={sections:'invalid'}
+  const view=buildReadResultReply(input)
+  assert.match(view.reply,/未能核實/,shape);assert.ok(view.reply.includes(gaps[0].need),shape)
+  assert.equal(view.reply.split('未能核實').length-1,1,shape)
+  assert.deepEqual(view.capabilityCoverage,{state:'partial',unresolvedNeeds:gaps},shape)
+  if(view.answerDetails)assert.equal(view.answerDetails.split('未能核實').length-1,1)
+ }
+ const input={...data(),answerPlan:null,capabilityReadSettled:false,capabilityGaps:gaps}
+ assert.equal(buildReadResultReply(input).capabilityCoverage,undefined,'unsettled reads do not mint a settled receipt')
+})
+
 function setup(t){const old={...process.env};t.after(()=>{for(const k of Object.keys(process.env))if(!(k in old))delete process.env[k];Object.assign(process.env,old)})
  Object.assign(process.env,{CHAT_BACKEND:'codex-subscription',GOAL_DECOMPOSER:'on',READ_ACCESS:'on',CONTEXT_DECISIONS_OPENAI:'on',CONTEXT_XIANGXIANG_OPERATIONS:'on',XIANGXIANG_MEMORY:'on',TURN_ROUTER:'on',A4_KNOWLEDGE_ROUTING:'on',MULTI_AI_ROUTER:'off',DECISION_RECALL:'off',CONVERSATION_RECALL:'off'})}
 const preference='Use a brief conclusion, three short points and one final limitation.'
-async function exercise(t,{sharing='on',failRead=false,boundedRead=true}={}){
+async function exercise(t,{sharing='on',failRead=false,boundedRead=true,raw=saved.raw}={}){
  setup(t);process.env.CONTEXT_DECISIONS_OPENAI=sharing
  const calls=[],reads=[];let classifiers=0,worlds=0,recalls=0,prefs=0
- const a={providerName:'claude',preflight:async()=>{},complete:async(prompt,o={})=>{calls.push({prompt,schema:o.responseFormat?.name});return{billing:'claude-subscription',model:'claude-opus-5-5',text:JSON.stringify(o.responseFormat?.name==='goal_plan'?saved.goal:prompt.includes('<external_read_context>')?saved.raw:{mode:'chat',intent:'question',reply:'Read configured workers first.',nextRead:{capability:'xiangxiang_operations',args:{query:saved.message,freshness:'current',location:null}}})}}}
+ const a={providerName:'claude',preflight:async()=>{},complete:async(prompt,o={})=>{calls.push({prompt,schema:o.responseFormat?.name});return{billing:'claude-subscription',model:'claude-opus-5-5',text:JSON.stringify(o.responseFormat?.name==='goal_plan'?saved.goal:prompt.includes('<external_read_context>')?raw:{mode:'chat',intent:'question',reply:'Read configured workers first.',nextRead:{capability:'xiangxiang_operations',args:{query:saved.message,freshness:'current',location:null}}})}}}
  const result=await require('./intakeService').processIntake(saved.message,{complete:async()=>assert.fail('API forbidden')},saved.history,{demo:true,interactionMode:'chat',ownerInvestigation:boundedRead,openaiAdapter:a,controlAdapter:{complete:async()=>assert.fail('API control forbidden')},semanticCallModel:async()=>{classifiers++;return JSON.stringify({intent:'NONE',confidence:'HIGH'})},memoryClient:{recall:async()=>{recalls++;return[]},preferences:async()=>{prefs++;return{state:'ok',total:1,items:[{documentId:'xx-20000000-0000-4000-8000-000000000002',type:'preference',scope:'private:owner',text:preference,approval:{kind:'owner',actor:'owner',contentHash:crypto.createHash('sha256').update(preference).digest('hex')}}]}}},readContextDeps:{sources:['xiangxiang_operations','public_knowledge'],connector:{read:async(source,method,params)=>{reads.push({source,params});if(failRead)throw Error('offline read unavailable');return{results:saved.items.map(r=>({...r,trust:'live',retrievedAt:'2026-11-08T11:44:43.906Z'}))}}},sourceIntentResolver:async()=>{worlds++;return JSON.stringify({intent:'internal',question:null})},finalVerifier:async()=>({decision:'allow_final'})}})
  return{calls,reads,classifiers,worlds,recalls,prefs,result}
 }
@@ -82,4 +100,12 @@ test('failed reads cannot become a settled capability answer',async t=>{
  const x=await exercise(t,{failRead:true})
  assert.equal(x.result.investigation?.answerPresentation,undefined)
  assert.doesNotMatch(x.result.reply,/目前紀錄只顯示/);assert.deepEqual(x.result.tasks,[])
+})
+
+test('full intake retains host gaps and no actions when the main model returns no plan',async t=>{
+ const raw={mode:'chat',intent:'question',reply:'Configured models are defaults; dispatch is untested.',nextRead:null}
+ const x=await exercise(t,{raw})
+ assert.match(x.result.reply,/未能核實/)
+ assert.equal(x.result.capabilityCoverage.state,'partial');assert.equal(x.result.capabilityCoverage.unresolvedNeeds[0].id,'f3')
+ assert.equal(x.calls.length,2);assert.equal(x.reads.length,1);assert.deepEqual(x.result.tasks,[])
 })
