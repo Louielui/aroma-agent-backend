@@ -1281,8 +1281,12 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
   }
 
   function canLoadPersonalMemory (providerName) {
-    return opts?.interactionMode === 'chat' && providerName === 'openai' && process.env.XIANGXIANG_MEMORY === 'on' &&
-      resolveFlag(process.env, 'READ_ACCESS') === 'on' && decisionRecallSharedWith(providerName, process.env)
+    // The same subscription request starts with the logical primary provider
+    // and continues with its adapter name. Preserve that turn's sharing gate
+    // and cached approved preferences; do not export to another provider.
+    const contextProvider = subscriptionAdapter && providerName === subscriptionAdapter.providerName ? primaryProvider : providerName
+    return opts?.interactionMode === 'chat' && contextProvider === 'openai' && process.env.XIANGXIANG_MEMORY === 'on' &&
+      resolveFlag(process.env, 'READ_ACCESS') === 'on' && decisionRecallSharedWith(contextProvider, process.env)
   }
 
   async function buildPromptForUncached (providerName, composeOnly = false) {
@@ -3794,6 +3798,7 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
       // Only this chat path guarantees the existing details disclosure. Other
       // paths and an existing investigation retain the complete foreground.
       allowCapabilityPreview:!operationalInvestigation,
+      capabilityGaps:capabilityReadSettled ? require('../investigation/generalRouter').capabilityReadGaps(goalPlanObserved) : [],
       reviewedNoReadAdvice:adviceReview?.state==='supported'||adviceReview?.state==='revised',
       conversationEvidence:opts.conversationEvidence,
       adviceReview,

@@ -615,26 +615,36 @@ function operationalValues (fields) {
   return out
 }
 
+// Exact column vocabulary for the existing workflow schema, not utterance routing.
+function workflowRole (field) {
+  switch(field) {
+    case 'test_draft': case '測試草擬': case '測試草稿流程': case 'Test drafting workflow': return 'test_draft'
+    case 'development': case '開發': case '開發流程': case 'Development workflow': return 'development'
+    case 'review': case '審核': case '審閱流程': case 'Review workflow': return 'review'
+    default: return null
+  }
+}
 function operationalRecord (row, title) {
   if (row.source !== 'xiangxiang_operations' || typeof title !== 'string') return null
-  const matches = [...(Array.isArray(row.fields?.records)?row.fields.records:[]), ...(Array.isArray(row.fields?.workflows)?row.fields.workflows:[])].filter(record => record && (record.name === title || record.sourceId === title || record.role === title))
+  const matches = [...(Array.isArray(row.fields?.records)?row.fields.records:[]), ...(Array.isArray(row.fields?.workflows)?row.fields.workflows:[])].filter(record => record && (record.name === title || record.sourceId === title || record.role === title || (workflowRole(title) && record.role === workflowRole(title))))
   return matches.length === 1 ? matches[0] : null
 }
 
 // A workflow role is a source-owned column binding, like a declared metric.
 // Correct a composite/model-authored value from that exact role's scalar fields;
 // never fuzzy-match across records or turn configuration into an execution grant.
-function workflowModelFact(row, field, record) {
+function workflowModelFact(row, field, record, title) {
   if(row.source!=='xiangxiang_operations'||row.trust!=='live'||row.fields?.section!=='work'||!Array.isArray(row.fields.workflows))return null
   if(row.fields.workflows.some(r=>!r||typeof r!=='object'||Array.isArray(r)))return null
-  if(record&&record.role!==field)return null
-  const rows=(row.fields.workflows||[]).filter(r=>r.role===field)
+  const role=workflowRole(field)
+  if(!role||record&&record.role!==role||workflowRole(title)&&workflowRole(title)!==role)return null
+  const rows=(row.fields.workflows||[]).filter(r=>r.role===role)
   if(rows.length!==1)return null
   const r=rows[0]
   if(r.modelBasis!=='host_workflow_default_not_per_job_selection'||typeof r.model!=='string'||
     !/^[a-z0-9][a-z0-9._-]{0,99}$/i.test(r.model))return null
   let label
-  switch(field){
+  switch(role){
     case 'test_draft':label=t('investigation.testDraftWorkflow');break
     case 'development':label=t('investigation.developmentWorkflow');break
     case 'review':label=t('investigation.reviewWorkflow');break
@@ -1689,7 +1699,7 @@ function validatePlan (plan, { evidenceSets = [], itemsBySource = [], message = 
         const isDerived = derivMap.has(String(f.field))
         if (isDerived) { if (derivedUsed >= LIMITS.maxDerivationsPerItem) continue; derivedUsed++ } else { if (ordinaryUsed >= LIMITS.maxFactsPerItem) continue; ordinaryUsed++ }
         const field = String(f.field)
-        const workflowFact=workflowModelFact(row,field,record)
+        const workflowFact=workflowModelFact(row,field,record,it.title)
         if(workflowFact){facts.push(workflowFact);boundWorkflowFacts++;continue}
 
         // ── A QUANTITY IS THE SERVER'S, NOT THE MODEL'S ─────────────────────────
