@@ -678,8 +678,25 @@ function renderValidatedPlan (input) {
   // Keep validated details in the existing investigation disclosure. The face
   // retains the supported answer, scope and actual omissions, never a cut-off
   // substring. Failed read/route corrections keep their full foreground output.
-  const capabilityPreview=input.allowCapabilityPreview===true&&compact&&v.answerSurvived&&!guarded.corrected
-    ? [v.plan.directAnswer,t('rrv.capabilityScope'),...omissions].filter(Boolean).join('\n\n') : null
+  const workflowModels=Array.isArray(v.workflowModels)?v.workflowModels:[]
+  const missingWorkflowLabels=(v.workflowModelCoverage?.missingModels||[]).map(role=>{
+    switch(role){
+      case 'test_draft':return t('investigation.testDraftWorkflow')
+      case 'development':return t('investigation.developmentWorkflow')
+      case 'review':return t('investigation.reviewWorkflow')
+      case 'adoption':return t('investigation.adoptionWorkflow')
+      default:return null
+    }
+  }).filter(Boolean)
+  const workflowNotes=[
+    ...(missingWorkflowLabels.length?[t('rrv.capabilityMissingModels',{roles:missingWorkflowLabels.join(' / ')})]:[]),
+    ...((v.workflowModelCoverage?.background||[]).includes('daily_procurement')?[t('rrv.capabilityBackground')]:[])
+  ]
+  // The existing bounded model-column bindings own these required facts.
+  // A role-only directAnswer must not hide them behind the details disclosure.
+  // Other capability answers keep their existing prose/validation path.
+  const capabilityPreview=input.allowCapabilityPreview===true&&compact&&workflowModels.length>0&&v.answerSurvived&&!guarded.corrected
+    ? [t('rrv.capabilityModels'),workflowModels.map(f=>'- '+f.field+': '+f.value).join('\n'),workflowNotes.join(' '),[t('rrv.capabilityScope'),...omissions].join(' ')].filter(Boolean).join('\n\n') : null
   return {
     reply: capabilityPreview||fullReply,
     ...(capabilityPreview?{answerDetails:fullReply,capabilityValidation:{boundWorkflowFacts:v.boundWorkflowFacts,droppedFacts:v.droppedFacts,droppedItems:v.droppedItems,droppedLimitations:v.droppedLimitations,sourceIds:v.plan.sections.flatMap(s=>s.items.map(i=>i.canonical))}}:{}),

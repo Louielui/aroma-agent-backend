@@ -1,0 +1,725 @@
+{
+  "provenance": {
+    "requestId": "4ad0bab5-f1ca-46a1-a31f-3e19b02e2bba",
+    "runtimeCommit": "48d2b776e27395bb60c2befb861524c06972fe09",
+    "evidenceSha256": "80a607479fb49adc22d156d28d6c7f4fc6fa8a7e567917ac1676e60e7f56c218",
+    "projection": "Exact saved planner/final output and the two complete cited source lines from the native final prompt; no new provider call or reconstructed connector response."
+  },
+  "message": "你可以派工的 AI 有哪幾個？",
+  "history": [
+    {
+      "role": "user",
+      "text": "你好香香"
+    },
+    {
+      "role": "assistant",
+      "text": "Louie，你好，我在。今天想先處理哪件事？營運、採購、庫存，或者只是想先整理一下思路，都可以直接跟我說。"
+    }
+  ],
+  "goal": {
+    "question_restated": "Owner 想知道我（香香）而家可以派工俾邊幾個 AI worker，即係有登記、而且可以收工單嘅派工對象。",
+    "executive_frame": {
+      "taskType": "understand",
+      "decisionNeeded": false,
+      "successDefinition": "清楚列出現時已登記、可以收工單嘅 AI worker，並分清楚：有登記、已設定、而家連唔連得到、有冇授權。冇覆蓋到嘅部分要照實講明。",
+      "answerPosture": "evidence_first"
+    },
+    "requested_capability": null,
+    "answer_kind": "capability_explanation",
+    "investigation_focus": null,
+    "investigation_reference": null,
+    "investigation_evidence": [
+      "configuration",
+      "enablement"
+    ],
+    "facts": [
+      {
+        "id": "f1",
+        "need": "現時已登記、可以收工單嘅 AI worker 同佢哪個名單",
+        "operation": "xiangxiang_operations",
+        "entity": null,
+        "fields": [],
+        "necessity": "required"
+      },
+      {
+        "id": "f2",
+        "need": "每個 worker 設定咗用邊個模型、係咪已啟用，同中央大腦嘅預設模型有咩分別",
+        "operation": "xiangxiang_operations",
+        "entity": null,
+        "fields": [],
+        "necessity": "enriching"
+      }
+    ],
+    "joins": [],
+    "owner_outcomes": []
+  },
+  "raw": {
+    "intent": "question",
+    "nextRead": null,
+    "mode": "chat",
+    "reply": "目前派工流程設定了四個 AI 工作角色：test_draft（擬測試）、development（開發）、review（審查）和 adoption（採用），另外還有一個固定的 daily_procurement（每日採購）排程。這次讀取時，全部都是閒置狀態。不過這只代表角色已經設定好，並不等於已經授權。每一次派工都只限已登記的範圍，而且要先經你批准，才可以開始。",
+    "answerPlan": {
+      "directAnswer": "目前派工流程設定了四個 AI 工作角色：test_draft、development、review、adoption，另外還有一個固定的 daily_procurement 排程。這次讀取時，全部都是閒置狀態。",
+      "answerClaims": [
+        {
+          "text": "目前派工流程設定了四個 AI 工作角色：test_draft、development、review、adoption，另外還有一個固定的 daily_procurement 排程。",
+          "claimKind": "set_scoped",
+          "evidenceSources": [
+            "xiangxiang_operations"
+          ],
+          "sourceIds": [],
+          "scope": {
+            "field": "work.workflows.role",
+            "window": "2026-11-11T00:01:14Z snapshot"
+          }
+        },
+        {
+          "text": "這次讀取時，全部都是閒置狀態。",
+          "claimKind": "set_scoped",
+          "evidenceSources": [
+            "xiangxiang_operations"
+          ],
+          "sourceIds": [],
+          "scope": {
+            "field": "work.workflows.state",
+            "window": "2026-11-11T00:01:14Z snapshot"
+          }
+        }
+      ],
+      "sections": [
+        {
+          "heading": "已設定的派工角色（目前狀態）",
+          "items": [
+            {
+              "sourceId": "xiangxiang_operations#work:03381e2eb7fdf1ba",
+              "title": "Aroma 派工流程角色",
+              "facts": [
+                {
+                  "field": "test_draft",
+                  "value": "閒置（idle）"
+                },
+                {
+                  "field": "development",
+                  "value": "閒置（idle）"
+                },
+                {
+                  "field": "review",
+                  "value": "閒置（idle）"
+                },
+                {
+                  "field": "adoption",
+                  "value": "閒置（idle）；系統沒有記錄預設模型"
+                },
+                {
+                  "field": "daily_procurement",
+                  "value": "閒置（idle）；固定的每日採購排程，不能購買或下單"
+                }
+              ]
+            }
+          ],
+          "rankingClaim": null
+        }
+      ],
+      "limitations": [
+        "這些只是已設定的角色，不代表已經授權。每次派工都只限已登記的本機範圍，而且要先經 Louie 批准。",
+        "上面列出的模型只是系統預設，每一張工作單實際用哪個模型，要看該工作單的回執。adoption 的預設模型沒有記錄。",
+        "這次沒有讀到 adoption 的工作紀錄（worker/adoptions 缺失），所以 adoption 有沒有用過、用得怎樣，目前無法確認。"
+      ],
+      "followUp": null,
+      "unanswerable": false,
+      "citesEvidence": true,
+      "ownerInstructions": []
+    }
+  },
+  "items": [
+    {
+      "source": "xiangxiang_operations",
+      "sourceId": "configuration:e6d23919bba07b81",
+      "title": "configuration",
+      "content": "{\"section\":\"configuration\",\"state\":\"partial\",\"evidenceState\":\"confirmed\",\"records\":[{\"role\":\"central_brain_default\",\"model\":\"claude-opus-5-5\",\"effort\":\"medium\",\"revision\":1,\"bootCommit\":\"48d2b776e27395bb60c2befb861524c06972fe09\",\"bootedAt\":\"2026-11-10T23:50:56.087Z\",\"flags\":{\"CHAT_BACKEND\":\"codex-subscription\",\"WORKER_INVOCATION\":null,\"DEVELOP_DISPATCH\":null,\"AGENT_BRIDGE\":\"off\",\"COMPUTER_OPERATOR\":null,\"READONLY_ENQUIRY\":\"on\",\"GOAL_DECOMPOSER\":\"on\",\"XIANGXIANG_MEMORY\":\"on\"}},{\"sourceId\":\"bridge:chat_completion\",\"role\":\"chat_completion\",\"at\":\"2026-11-11T00:01:15.275Z\",\"model\":null,\"effort\":null,\"configuredModel\":null,\"configuredEffort\":null,\"provider\":null,\"enabled\":true,\"currentRunningState\":\"idle\",\"startedAt\":null,\"evidenceBasis\":\"live_process_snapshot\",\"modelBasis\":\"bridge_route_configuration\"},{\"sourceId\":\"bridge:memory_completion\",\"role\":\"memory_completion\",\"at\":\"2026-11-11T00:01:15.275Z\",\"model\":\"claude-sonnet\",\"effort\":\"low\",\"configuredModel\":\"claude-sonnet\",\"configuredEffort\":\"low\",\"provider\":\"claude\",\"enabled\":true,\"currentRunningState\":\"idle\",\"startedAt\":null,\"evidenceBasis\":\"live_process_snapshot\",\"modelBasis\":\"bridge_route_configuration\"}],\"runtimeCoverage\":{\"bridge\":\"partial\",\"backend\":\"unconnected\"},\"note\":\"Central default is configuration, not a per-job model. Background rows are instantaneous registered-process observations; their configured bridge route is not proof of completed inference or charges. Nominal Hindsight GPT API labels are not the routed provider. External jobs and provider billing are not connected.\",\"readDurationMs\":840,\"sha256\":\"e6d23919bba07b817219c2b0663ed53effe4d7378f12279e1bad4bd397ad7f11\"}",
+      "fields": {
+        "section": "configuration",
+        "state": "partial",
+        "evidenceState": "confirmed",
+        "records": [
+          {
+            "role": "central_brain_default",
+            "model": "claude-opus-5-5",
+            "effort": "medium",
+            "revision": 1,
+            "bootCommit": "48d2b776e27395bb60c2befb861524c06972fe09",
+            "bootedAt": "2026-11-10T23:50:56.087Z",
+            "flags": {
+              "CHAT_BACKEND": "codex-subscription",
+              "WORKER_INVOCATION": null,
+              "DEVELOP_DISPATCH": null,
+              "AGENT_BRIDGE": "off",
+              "COMPUTER_OPERATOR": null,
+              "READONLY_ENQUIRY": "on",
+              "GOAL_DECOMPOSER": "on",
+              "XIANGXIANG_MEMORY": "on"
+            }
+          },
+          {
+            "sourceId": "bridge:chat_completion",
+            "role": "chat_completion",
+            "at": "2026-11-11T00:01:15.275Z",
+            "model": null,
+            "effort": null,
+            "configuredModel": null,
+            "configuredEffort": null,
+            "provider": null,
+            "enabled": true,
+            "currentRunningState": "idle",
+            "startedAt": null,
+            "evidenceBasis": "live_process_snapshot",
+            "modelBasis": "bridge_route_configuration"
+          },
+          {
+            "sourceId": "bridge:memory_completion",
+            "role": "memory_completion",
+            "at": "2026-11-11T00:01:15.275Z",
+            "model": "claude-sonnet",
+            "effort": "low",
+            "configuredModel": "claude-sonnet",
+            "configuredEffort": "low",
+            "provider": "claude",
+            "enabled": true,
+            "currentRunningState": "idle",
+            "startedAt": null,
+            "evidenceBasis": "live_process_snapshot",
+            "modelBasis": "bridge_route_configuration"
+          }
+        ],
+        "runtimeCoverage": {
+          "bridge": "partial",
+          "backend": "unconnected"
+        },
+        "note": "Central default is configuration, not a per-job model. Background rows are instantaneous registered-process observations; their configured bridge route is not proof of completed inference or charges. Nominal Hindsight GPT API labels are not the routed provider. External jobs and provider billing are not connected.",
+        "readDurationMs": 840,
+        "sha256": "e6d23919bba07b817219c2b0663ed53effe4d7378f12279e1bad4bd397ad7f11"
+      },
+      "trust": "live"
+    },
+    {
+      "source": "xiangxiang_operations",
+      "sourceId": "work:03381e2eb7fdf1ba",
+      "title": "work",
+      "content": "{\"section\":\"work\",\"records\":[{\"sourceId\":\"e2956489-cc4e-4927-852a-efc9354b9c3d\",\"kind\":\"worker/project-runs\",\"name\":\"受控驗收子工作：只將 src/subscription/workThreadTitles.js 中 titleFor 回傳標題的固定前綴 Xiangxiang 改為 香香派工，保留其餘內容與行為。僅隔離改碼，不套用、不合併、不部署。Codex App 的實際可見性及進度由主機另行核對，不得以本子工作的單元測試宣稱 App 已驗證。\\nOwner acceptance criteria:\\n1. titleFor 回傳字串必須以「香香派工 | 」開頭，移除原本「Xiangxiang\",\"goal\":\"受控驗收子工作：只將 src/subscription/workThreadTitles.js 中 titleFor 回傳標題的固定前綴 Xiangxiang 改為 香香派工，保留其餘內容與行為。僅隔離改碼，不套用、不合併、不部署。Codex App 的實際可見性及進度由主機另行核對，不得以本子工作的單元測試宣稱 App 已驗證。\\nOwner acceptance criteria:\\n1. titleFor 回傳字串必須以「香香派工 | 」開頭，移除原本「Xiangxiang\",\"state\":\"completed\",\"at\":\"2026-11-03T07:11:51.777Z\",\"startedAt\":\"2026-11-03T07:08:48.263Z\",\"finishedAt\":\"2026-11-03T07:11:51.777Z\",\"reason\":null,\"model\":\"gpt-6.1-sol\",\"effort\":\"high\",\"reviewModel\":\"claude-sonnet-5-5\",\"recipe\":\"registered-task-ffff22af-a65e-403d-840d-ba4993a929e7\",\"registeredTaskId\":\"ffff22af-a65e-403d-840d-ba4993a929e7\",\"taskRunId\":null,\"workRunId\":null,\"requestId\":\"e718e207-c711-42a7-aefb-25937e123f57\",\"action\":null,\"sourceRevision\":\"a495d6e84e6e400769eb1f12203c6ce096ce2d54\",\"commit\":null,\"loadedCommit\":null,\"sourceFiles\":[],\"sourceFilesComplete\":false,\"tests\":{\"total\":6,\"passed\":6,\"failed\":0,\"exitCode\":0,\"skipped\":0,\"cancelled\":0},\"baseline\":{\"total\":6,\"passed\":1,\"failed\":5,\"exitCode\":1,\"skipped\":0,\"cancelled\":0},\"reviewVerdict\":\"pass\",\"testBinding\":null,\"workerRuns\":[{\"trace\":{\"workId\":\"work:b44c7ea7a8926519a73e8e5942ccc953847e413c62cd9d991688b9e655f95c91\",\"runId\":\"65c4df42-4c94-4452-ab17-b97bfa833091\",\"recordId\":\"e2956489-cc4e-4927-852a-efc9354b9c3d\",\"kind\":\"project-runs\",\"attempt\":1},\"startedAt\":\"2026-11-03T07:10:08.581Z\",\"finishedAt\":\"2026-11-03T07:11:51.786Z\",\"state\":\"completed\"}],\"repairOf\":null,\"liveBaseline\":null,\"liveVerification\":null,\"appliedToLive\":false,\"failureDiagnostic\":null,\"steps\":[{\"id\":\"reviewing\",\"state\":null,\"at\":\"2026-11-03T07:11:46.453Z\",\"reason\":null,\"model\":null,\"verdict\":null},{\"id\":\"candidate_reviewed\",\"state\":null,\"at\":\"2026-11-03T07:11:51.776Z\",\"reason\":null,\"model\":null,\"verdict\":\"pass\"},{\"id\":\"completed\",\"state\":null,\"at\":\"2026-11-03T07:11:51.777Z\",\"reason\":null,\"model\":null,\"verdict\":null},{\"id\":\"deployment_held\",\"state\":null,\"at\":\"2026-11-03T07:11:51.796Z\",\"reason\":null,\"model\":null,\"verdict\":null}],\"currentRunningState\":\"unknown\",\"fixedInCurrentVersion\":null},{\"sourceId\":\"ffff22af-a65e-403d-840d-ba4993a929e7\",\"kind\":\"worker/project-tasks\",\"name\":\"受控驗收子工作：只將 src/subscription/workThreadTitles.js 中 titleFor 回傳標題的固定前綴 Xiangxiang 改為 香香派工，保留其餘內容與行為。僅隔離改碼，不套用、不合併、不部署。Codex App 的實際可見性及進度由主機另行核對，不得以本子工作的單元測試宣稱 App 已驗證。\",\"goal\":\"受控驗收子工作：只將 src/subscription/workThreadTitles.js 中 titleFor 回傳標題的固定前綴 Xiangxiang 改為 香香派工，保留其餘內容與行為。僅隔離改碼，不套用、不合併、不部署。Codex App 的實際可見性及進度由主機另行核對，不得以本子工作的單元測試宣稱 App 已驗證。\",\"state\":\"registered\",\"at\":\"2026-11-03T07:08:01.775Z\",\"startedAt\":\"2026-11-03T07:01:05.938Z\",\"finishedAt\":\"2026-11-03T07:08:01.775Z\",\"reason\":null,\"model\":\"gpt-6.1-sol\",\"effort\":\"high\",\"reviewModel\":\"claude-sonnet-5-5\",\"recipe\":\"registered-task-ffff22af-a65e-403d-840d-ba4993a929e7\",\"registeredTaskId\":null,\"taskRunId\":null,\"workRunId\":\"e2956489-cc4e-4927-852a-efc9354b9c3d\",\"requestId\":\"f1662d2a-e7e1-46b1-a067-585738a0c8a1\",\"action\":null,\"sourceRevision\":\"a495d6e84e6e400769eb1f12203c6ce096ce2d54\",\"commit\":null,\"loadedCommit\":null,\"sourceFiles\":[],\"sourceFilesComplete\":false,\"tests\":null,\"baseline\":null,\"reviewVerdict\":\"pass\",\"testBinding\":null,\"workerRuns\":[{\"trace\":{\"workId\":\"work:ad94c3788c1df581d5896970871cda9391cf5acb90dfb7fb0192ca464b581c85\",\"runId\":\"1f3936c7-25df-4736-9de6-acaf31947aab\",\"recordId\":\"ffff22af-a65e-403d-840d-ba4993a929e7\",\"kind\":\"project-tasks\",\"attempt\":1},\"startedAt\":\"2026-11-03T07:01:07.164Z\",\"finishedAt\":\"2026-11-03T07:08:01.776Z\",\"state\":\"awaiting_approval\"}],\"repairOf\":null,\"liveBaseline\":null,\"liveVerification\":null,\"appliedToLive\":null,\"failureDiagnostic\":null,\"steps\":[{\"id\":\"draft_ready\",\"state\":null,\"at\":\"2026-11-03T07:08:01.773Z\",\"reason\":null,\"model\":\"gpt-6.1-sol\",\"verdict\":null},{\"id\":\"registered\",\"state\":null,\"at\":\"2026-11-03T07:08:41.233Z\",\"reason\":null,\"model\":null,\"verdict\":null},{\"id\":\"prepare_requested\",\"state\":null,\"at\":\"2026-11-03T07:08:41.822Z\",\"reason\":null,\"model\":null,\"verdict\":null},{\"id\":\"work_prepared\",\"state\":null,\"at\":\"2026-11-03T07:08:48.264Z\",\"reason\":null,\"model\":null,\"verdict\":null}],\"currentRunningState\":\"unknown\",\"fixedInCurrentVersion\":null},{\"sourceId\":\"ceb79374-ecc1-4ae0-be42-290bb72e63da\",\"kind\":\"worker/project-runs\",\"name\":\"請派 Codex 建立並完成一個隔離小修正：程式診斷與派工頁面目前寫「診斷使用最新 Sol 與標準推理」，但真實工作單回執使用 GPT-6.1 Sol／High，說明不一致。將該說明改為「診斷使用的模型與思考等級，以本次工作單的實際回執為準。」只修改這段介面文案及必要的相鄰驗證，不改模型設定、派工邏輯、權限或資料。開發指定 GPT-6.1 Sol／High，因為需要沿用現有隔離修正流程核對來源和結果。先定位實際來源及提出可審閱範圍，再按既有入口準備來源與用量批准卡；不自行擴權\",\"goal\":\"請派 Codex 建立並完成一個隔離小修正：程式診斷與派工頁面目前寫「診斷使用最新 Sol 與標準推理」，但真實工作單回執使用 GPT-6.1 Sol／High，說明不一致。將該說明改為「診斷使用的模型與思考等級，以本次工作單的實際回執為準。」只修改這段介面文案及必要的相鄰驗證，不改模型設定、派工邏輯、權限或資料。開發指定 GPT-6.1 Sol／High，因為需要沿用現有隔離修正流程核對來源和結果。先定位實際來源及提出可審閱範圍，再按既有入口準備來源與用量批准卡；不自行擴權\",\"state\":\"completed\",\"at\":\"2026-11-03T05:41:15.573Z\",\"startedAt\":\"2026-11-01T06:57:54.264Z\",\"finishedAt\":\"2026-11-03T05:41:15.573Z\",\"reason\":null,\"model\":\"gpt-6.1-sol\",\"effort\":\"high\",\"reviewModel\":\"claude-sonnet-5-5\",\"recipe\":\"registered-task-bce88bcd-5660-43b5-b418-02c13e40e62e\",\"registeredTaskId\":\"bce88bcd-5660-43b5-b418-02c13e40e62e\",\"taskRunId\":null,\"workRunId\":null,\"requestId\":\"3e453921-7f2e-43b9-9489-ab109b80d4dc\",\"action\":null,\"sourceRevision\":\"226fbd6518b3128d2154c5c99ac7b87a97e6bce3\",\"commit\":null,\"loadedCommit\":null,\"sourceFiles\":[],\"sourceFilesComplete\":false,\"tests\":{\"total\":4,\"passed\":4,\"failed\":0,\"exitCode\":0,\"skipped\":0,\"cancelled\":0},\"baseline\":{\"total\":4,\"passed\":1,\"failed\":3,\"exitCode\":1,\"skipped\":0,\"cancelled\":0},\"reviewVerdict\":\"pass\",\"testBinding\":null,\"workerRuns\":[{\"trace\":{\"workId\":\"work:728f26cce4b0774b14bc72b6d2d2324770ad2f70566ee8f885d74425854f9a4f\",\"runId\":\"dacb52e3-8eab-4673-960e-135b7343d7e1\",\"recordId\":\"ceb79374-ecc1-4ae0-be42-290bb72e63da\",\"kind\":\"project-runs\",\"attempt\":1},\"startedAt\":\"2026-11-01T06:59:04.978Z\",\"finishedAt\":\"2026-11-01T07:01:46.062Z\",\"state\":\"failed\"},{\"trace\":{\"workId\":\"work:728f26cce4b0774b14bc72b6d2d2324770ad2f70566ee8f885d74425854f9a4f\",\"runId\":\"3884df0a-f99f-4301-8ac2-39a02f78d33d\",\"recordId\":\"ceb79374-ecc1-4ae0-be42-290bb72e63da\",\"kind\":\"project-runs\",\"attempt\":2},\"startedAt\":\"2026-11-03T05:39:27.331Z\",\"finishedAt\":\"2026-11-03T05:41:15.588Z\",\"state\":\"completed\"}],\"repairOf\":null,\"liveBaseline\":null,\"liveVerification\":null,\"appliedToLive\":false,\"failureDiagnostic\":null,\"steps\":[{\"id\":\"candidate_reviewed\",\"state\":null,\"at\":\"2026-11-03T05:41:15.559Z\",\"reason\":null,\"model\":null,\"verdict\":\"pass\"},{\"id\":\"completed\",\"state\":null,\"at\":\"2026-11-03T05:41:15.573Z\",\"reason\":null,\"model\":null,\"verdict\":null},{\"id\":\"coding_recovery_finished\",\"state\":null,\"at\":\"2026-11-03T05:41:15.611Z\",\"reason\":null,\"model\":null,\"verdict\":null},{\"id\":\"deployment_held\",\"state\":null,\"at\":\"2026-11-03T05:41:15.626Z\",\"reason\":null,\"model\":null,\"verdict\":null}],\"currentRunningState\":\"unknown\",\"fixedInCurrentVersion\":null},{\"sourceId\":\"bce88bcd-5660-43b5-b418-02c13e40e62e\",\"kind\":\"worker/project-tasks\",\"name\":\"請派 Codex 建立並完成一個隔離小修正：程式診斷與派工頁面目前寫「診斷使用最新 Sol 與標準推理」，但真實工作單回執使用 GPT-6.1 Sol／High，說明不一致。將該說明改為「診斷使用的模型與思考等級，以本次工作單的實際回執為準。」只修改這段介面文案及必要的相鄰驗證，不改模型設定、派工邏輯、權限或資料。開發指定 GPT-6.1 Sol／High，因為需要沿用現有隔離修正流程核對來源和結果。先定位實際來源及提出可審閱範圍，再按既有入口準備來源與用量批准卡；不自行擴權\",\"goal\":\"請派 Codex 建立並完成一個隔離小修正：程式診斷與派工頁面目前寫「診斷使用最新 Sol 與標準推理」，但真實工作單回執使用 GPT-6.1 Sol／High，說明不一致。將該說明改為「診斷使用的模型與思考等級，以本次工作單的實際回執為準。」只修改這段介面文案及必要的相鄰驗證，不改模型設定、派工邏輯、權限或資料。開發指定 GPT-6.1 Sol／High，因為需要沿用現有隔離修正流程核對來源和結果。先定位實際來源及提出可審閱範圍，再按既有入口準備來源與用量批准卡；不自行擴權\",\"state\":\"registered\",\"at\":\"2026-11-01T06:56:08.937Z\",\"startedAt\":\"2026-11-01T06:49:54.941Z\",\"finishedAt\":\"2026-11-01T06:56:08.937Z\",\"reason\":null,\"model\":null,\"effort\":\"high\",\"reviewModel\":\"claude-sonnet-5-5\",\"recipe\":\"registered-task-bce88bcd-5660-43b5-b418-02c13e40e62e\",\"registeredTaskId\":null,\"taskRunId\":null,\"workRunId\":\"ceb79374-ecc1-4ae0-be42-290bb72e63da\",\"requestId\":\"8645b6d5-9ad8-4bed-b6af-483fc877c066\",\"action\":null,\"sourceRevision\":\"226fbd6518b3128d2154c5c99ac7b87a97e6bce3\",\"commit\":null,\"loadedCommit\":null,\"sourceFiles\":[],\"sourceFilesComplete\":false,\"tests\":null,\"baseline\":null,\"reviewVerdict\":\"pass\",\"testBinding\":null,\"workerRuns\":[{\"trace\":{\"workId\":\"work:af46b96b9f04e911247802bae89f35f719fb8dd5c6f6a33375805a8e78b4112b\",\"runId\":\"0f82c30d-06b5-417c-82ff-83832dbc16d5\",\"recordId\":\"bce88bcd-5660-43b5-b418-02c13e40e62e\",\"kind\":\"project-tasks\",\"attempt\":1},\"startedAt\":\"2026-11-01T06:52:20.672Z\",\"finishedAt\":\"2026-11-01T06:56:08.942Z\",\"state\":\"awaiting_approval\"}],\"repairOf\":null,\"liveBaseline\":null,\"liveVerification\":null,\"appliedToLive\":null,\"failureDiagnostic\":null,\"steps\":[{\"id\":\"registration_approval_renewed\",\"state\":null,\"at\":\"2026-11-01T06:56:51.674Z\",\"reason\":null,\"model\":null,\"verdict\":null},{\"id\":\"registered\",\"state\":null,\"at\":\"2026-11-01T06:57:28.977Z\",\"reason\":null,\"model\":null,\"verdict\":null},{\"id\":\"prepare_requested\",\"state\":null,\"at\":\"2026-11-01T06:57:47.515Z\",\"reason\":null,\"model\":null,\"verdict\":null},{\"id\":\"work_prepared\",\"state\":null,\"at\":\"2026-11-01T06:57:54.266Z\",\"reason\":null,\"model\":null,\"verdict\":null}],\"currentRunningState\":\"unknown\",\"fixedInCurrentVersion\":null},{\"sourceId\":\"076ae7cf-e93d-4cf1-ba59-0072746b9bda\",\"kind\":\"worker/project-tasks\",\"name\":\"請派 Codex 使用 GPT-6.1 Sol／High，唯讀調查香香現有派工流程，因為需要跨模組程式分析。僅限已登記的八個檔案，不改碼、不部署、不轉 API。請回報工作單 ID、實際接單狀態和來源核驗結果。\",\"goal\":\"請派 Codex 使用 GPT-6.1 Sol／High，唯讀調查香香現有派工流程，因為需要跨模組程式分析。僅限已登記的八個檔案，不改碼、不部署、不轉 API。請回報工作單 ID、實際接單狀態和來源核驗結果。\",\"state\":\"awaiting_scope\",\"at\":\"2026-11-01T06:19:32.117Z\",\"startedAt\":\"2026-11-01T06:19:32.117Z\",\"finishedAt\":null,\"reason\":null,\"model\":\"gpt-6.1-sol\",\"effort\":null,\"reviewModel\":null,\"recipe\":null,\"registeredTaskId\":null,\"taskRunId\":null,\"workRunId\":null,\"requestId\":\"447f3358-ff4f-4168-a93c-35f8c08239bc\",\"action\":null,\"sourceRevision\":\"a737c80282d522a7077d40fd32f1caf4bd927b6a\",\"commit\":null,\"loadedCommit\":null,\"sourceFiles\":[],\"sourceFilesComplete\":false,\"tests\":null,\"baseline\":null,\"reviewVerdict\":null,\"testBinding\":null,\"workerRuns\":[],\"repairOf\":null,\"liveBaseline\":null,\"liveVerification\":null,\"appliedToLive\":null,\"failureDiagnostic\":null,\"steps\":[{\"id\":\"requested\",\"state\":null,\"at\":\"2026-11-01T06:19:32.117Z\",\"reason\":null,\"model\":\"gpt-6.1-sol\",\"verdict\":null}],\"currentRunningState\":\"unknown\",\"fixedInCurrentVersion\":null}],\"selection\":\"latest_failure_explicit_links_and_recent_work\",\"omitted\":3,\"latestFailureId\":null,\"state\":\"partial\",\"coverage\":[{\"kind\":\"worker/project-tasks\",\"state\":\"ok\",\"scanned\":5,\"failed\":0,\"omitted\":0},{\"kind\":\"worker/project-runs\",\"state\":\"ok\",\"scanned\":3,\"failed\":0,\"omitted\":0},{\"kind\":\"worker/adoptions\",\"state\":\"missing\",\"scanned\":0,\"failed\":null,\"omitted\":null},{\"kind\":\"worker/runs\",\"state\":\"ok\",\"scanned\":0,\"failed\":0,\"omitted\":0}],\"scanned\":8,\"workflows\":[{\"role\":\"test_draft\",\"state\":\"idle\",\"model\":\"gpt-6.1-sol\",\"effort\":\"medium\",\"modelBasis\":\"host_workflow_default_not_per_job_selection\",\"at\":\"2026-11-11T00:01:14.471Z\"},{\"role\":\"development\",\"state\":\"idle\",\"model\":\"gpt-6.1-sol\",\"effort\":null,\"modelBasis\":\"host_workflow_default_not_per_job_selection\",\"at\":\"2026-11-11T00:01:14.471Z\"},{\"role\":\"review\",\"state\":\"idle\",\"model\":\"sonnet\",\"effort\":null,\"modelBasis\":\"host_workflow_default_not_per_job_selection\",\"at\":\"2026-11-11T00:01:14.471Z\"},{\"role\":\"adoption\",\"state\":\"idle\",\"model\":null,\"effort\":null,\"modelBasis\":\"host_workflow_default_not_per_job_selection\",\"at\":\"2026-11-11T00:01:14.471Z\"},{\"role\":\"daily_procurement\",\"state\":\"idle\"}],\"retrievedAt\":\"2026-11-11T00:01:14.471Z\",\"provesCharge\":false,\"scope\":\"fixed_owner_worker_records\",\"note\":\"Host-projected work metadata and live bridge workflow occupancy only. Occupied may include waiting for a restart; it is not a named scheduler execution witness. Model defaults do not establish per-job selection. Candidate tests and source comparisons do not establish the same failure fixed.\",\"evidenceState\":\"confirmed\",\"readDurationMs\":63,\"sha256\":\"03381e2eb7fdf1ba8ea40f5c6f0f83164bbe8997b05a701ca64389212dad2f45\"}",
+      "fields": {
+        "section": "work",
+        "records": [
+          {
+            "sourceId": "e2956489-cc4e-4927-852a-efc9354b9c3d",
+            "kind": "worker/project-runs",
+            "name": "受控驗收子工作：只將 src/subscription/workThreadTitles.js 中 titleFor 回傳標題的固定前綴 Xiangxiang 改為 香香派工，保留其餘內容與行為。僅隔離改碼，不套用、不合併、不部署。Codex App 的實際可見性及進度由主機另行核對，不得以本子工作的單元測試宣稱 App 已驗證。\nOwner acceptance criteria:\n1. titleFor 回傳字串必須以「香香派工 | 」開頭，移除原本「Xiangxiang",
+            "goal": "受控驗收子工作：只將 src/subscription/workThreadTitles.js 中 titleFor 回傳標題的固定前綴 Xiangxiang 改為 香香派工，保留其餘內容與行為。僅隔離改碼，不套用、不合併、不部署。Codex App 的實際可見性及進度由主機另行核對，不得以本子工作的單元測試宣稱 App 已驗證。\nOwner acceptance criteria:\n1. titleFor 回傳字串必須以「香香派工 | 」開頭，移除原本「Xiangxiang",
+            "state": "completed",
+            "at": "2026-11-03T07:11:51.777Z",
+            "startedAt": "2026-11-03T07:08:48.263Z",
+            "finishedAt": "2026-11-03T07:11:51.777Z",
+            "reason": null,
+            "model": "gpt-6.1-sol",
+            "effort": "high",
+            "reviewModel": "claude-sonnet-5-5",
+            "recipe": "registered-task-ffff22af-a65e-403d-840d-ba4993a929e7",
+            "registeredTaskId": "ffff22af-a65e-403d-840d-ba4993a929e7",
+            "taskRunId": null,
+            "workRunId": null,
+            "requestId": "e718e207-c711-42a7-aefb-25937e123f57",
+            "action": null,
+            "sourceRevision": "a495d6e84e6e400769eb1f12203c6ce096ce2d54",
+            "commit": null,
+            "loadedCommit": null,
+            "sourceFiles": [],
+            "sourceFilesComplete": false,
+            "tests": {
+              "total": 6,
+              "passed": 6,
+              "failed": 0,
+              "exitCode": 0,
+              "skipped": 0,
+              "cancelled": 0
+            },
+            "baseline": {
+              "total": 6,
+              "passed": 1,
+              "failed": 5,
+              "exitCode": 1,
+              "skipped": 0,
+              "cancelled": 0
+            },
+            "reviewVerdict": "pass",
+            "testBinding": null,
+            "workerRuns": [
+              {
+                "trace": {
+                  "workId": "work:b44c7ea7a8926519a73e8e5942ccc953847e413c62cd9d991688b9e655f95c91",
+                  "runId": "65c4df42-4c94-4452-ab17-b97bfa833091",
+                  "recordId": "e2956489-cc4e-4927-852a-efc9354b9c3d",
+                  "kind": "project-runs",
+                  "attempt": 1
+                },
+                "startedAt": "2026-11-03T07:10:08.581Z",
+                "finishedAt": "2026-11-03T07:11:51.786Z",
+                "state": "completed"
+              }
+            ],
+            "repairOf": null,
+            "liveBaseline": null,
+            "liveVerification": null,
+            "appliedToLive": false,
+            "failureDiagnostic": null,
+            "steps": [
+              {
+                "id": "reviewing",
+                "state": null,
+                "at": "2026-11-03T07:11:46.453Z",
+                "reason": null,
+                "model": null,
+                "verdict": null
+              },
+              {
+                "id": "candidate_reviewed",
+                "state": null,
+                "at": "2026-11-03T07:11:51.776Z",
+                "reason": null,
+                "model": null,
+                "verdict": "pass"
+              },
+              {
+                "id": "completed",
+                "state": null,
+                "at": "2026-11-03T07:11:51.777Z",
+                "reason": null,
+                "model": null,
+                "verdict": null
+              },
+              {
+                "id": "deployment_held",
+                "state": null,
+                "at": "2026-11-03T07:11:51.796Z",
+                "reason": null,
+                "model": null,
+                "verdict": null
+              }
+            ],
+            "currentRunningState": "unknown",
+            "fixedInCurrentVersion": null
+          },
+          {
+            "sourceId": "ffff22af-a65e-403d-840d-ba4993a929e7",
+            "kind": "worker/project-tasks",
+            "name": "受控驗收子工作：只將 src/subscription/workThreadTitles.js 中 titleFor 回傳標題的固定前綴 Xiangxiang 改為 香香派工，保留其餘內容與行為。僅隔離改碼，不套用、不合併、不部署。Codex App 的實際可見性及進度由主機另行核對，不得以本子工作的單元測試宣稱 App 已驗證。",
+            "goal": "受控驗收子工作：只將 src/subscription/workThreadTitles.js 中 titleFor 回傳標題的固定前綴 Xiangxiang 改為 香香派工，保留其餘內容與行為。僅隔離改碼，不套用、不合併、不部署。Codex App 的實際可見性及進度由主機另行核對，不得以本子工作的單元測試宣稱 App 已驗證。",
+            "state": "registered",
+            "at": "2026-11-03T07:08:01.775Z",
+            "startedAt": "2026-11-03T07:01:05.938Z",
+            "finishedAt": "2026-11-03T07:08:01.775Z",
+            "reason": null,
+            "model": "gpt-6.1-sol",
+            "effort": "high",
+            "reviewModel": "claude-sonnet-5-5",
+            "recipe": "registered-task-ffff22af-a65e-403d-840d-ba4993a929e7",
+            "registeredTaskId": null,
+            "taskRunId": null,
+            "workRunId": "e2956489-cc4e-4927-852a-efc9354b9c3d",
+            "requestId": "f1662d2a-e7e1-46b1-a067-585738a0c8a1",
+            "action": null,
+            "sourceRevision": "a495d6e84e6e400769eb1f12203c6ce096ce2d54",
+            "commit": null,
+            "loadedCommit": null,
+            "sourceFiles": [],
+            "sourceFilesComplete": false,
+            "tests": null,
+            "baseline": null,
+            "reviewVerdict": "pass",
+            "testBinding": null,
+            "workerRuns": [
+              {
+                "trace": {
+                  "workId": "work:ad94c3788c1df581d5896970871cda9391cf5acb90dfb7fb0192ca464b581c85",
+                  "runId": "1f3936c7-25df-4736-9de6-acaf31947aab",
+                  "recordId": "ffff22af-a65e-403d-840d-ba4993a929e7",
+                  "kind": "project-tasks",
+                  "attempt": 1
+                },
+                "startedAt": "2026-11-03T07:01:07.164Z",
+                "finishedAt": "2026-11-03T07:08:01.776Z",
+                "state": "awaiting_approval"
+              }
+            ],
+            "repairOf": null,
+            "liveBaseline": null,
+            "liveVerification": null,
+            "appliedToLive": null,
+            "failureDiagnostic": null,
+            "steps": [
+              {
+                "id": "draft_ready",
+                "state": null,
+                "at": "2026-11-03T07:08:01.773Z",
+                "reason": null,
+                "model": "gpt-6.1-sol",
+                "verdict": null
+              },
+              {
+                "id": "registered",
+                "state": null,
+                "at": "2026-11-03T07:08:41.233Z",
+                "reason": null,
+                "model": null,
+                "verdict": null
+              },
+              {
+                "id": "prepare_requested",
+                "state": null,
+                "at": "2026-11-03T07:08:41.822Z",
+                "reason": null,
+                "model": null,
+                "verdict": null
+              },
+              {
+                "id": "work_prepared",
+                "state": null,
+                "at": "2026-11-03T07:08:48.264Z",
+                "reason": null,
+                "model": null,
+                "verdict": null
+              }
+            ],
+            "currentRunningState": "unknown",
+            "fixedInCurrentVersion": null
+          },
+          {
+            "sourceId": "ceb79374-ecc1-4ae0-be42-290bb72e63da",
+            "kind": "worker/project-runs",
+            "name": "請派 Codex 建立並完成一個隔離小修正：程式診斷與派工頁面目前寫「診斷使用最新 Sol 與標準推理」，但真實工作單回執使用 GPT-6.1 Sol／High，說明不一致。將該說明改為「診斷使用的模型與思考等級，以本次工作單的實際回執為準。」只修改這段介面文案及必要的相鄰驗證，不改模型設定、派工邏輯、權限或資料。開發指定 GPT-6.1 Sol／High，因為需要沿用現有隔離修正流程核對來源和結果。先定位實際來源及提出可審閱範圍，再按既有入口準備來源與用量批准卡；不自行擴權",
+            "goal": "請派 Codex 建立並完成一個隔離小修正：程式診斷與派工頁面目前寫「診斷使用最新 Sol 與標準推理」，但真實工作單回執使用 GPT-6.1 Sol／High，說明不一致。將該說明改為「診斷使用的模型與思考等級，以本次工作單的實際回執為準。」只修改這段介面文案及必要的相鄰驗證，不改模型設定、派工邏輯、權限或資料。開發指定 GPT-6.1 Sol／High，因為需要沿用現有隔離修正流程核對來源和結果。先定位實際來源及提出可審閱範圍，再按既有入口準備來源與用量批准卡；不自行擴權",
+            "state": "completed",
+            "at": "2026-11-03T05:41:15.573Z",
+            "startedAt": "2026-11-01T06:57:54.264Z",
+            "finishedAt": "2026-11-03T05:41:15.573Z",
+            "reason": null,
+            "model": "gpt-6.1-sol",
+            "effort": "high",
+            "reviewModel": "claude-sonnet-5-5",
+            "recipe": "registered-task-bce88bcd-5660-43b5-b418-02c13e40e62e",
+            "registeredTaskId": "bce88bcd-5660-43b5-b418-02c13e40e62e",
+            "taskRunId": null,
+            "workRunId": null,
+            "requestId": "3e453921-7f2e-43b9-9489-ab109b80d4dc",
+            "action": null,
+            "sourceRevision": "226fbd6518b3128d2154c5c99ac7b87a97e6bce3",
+            "commit": null,
+            "loadedCommit": null,
+            "sourceFiles": [],
+            "sourceFilesComplete": false,
+            "tests": {
+              "total": 4,
+              "passed": 4,
+              "failed": 0,
+              "exitCode": 0,
+              "skipped": 0,
+              "cancelled": 0
+            },
+            "baseline": {
+              "total": 4,
+              "passed": 1,
+              "failed": 3,
+              "exitCode": 1,
+              "skipped": 0,
+              "cancelled": 0
+            },
+            "reviewVerdict": "pass",
+            "testBinding": null,
+            "workerRuns": [
+              {
+                "trace": {
+                  "workId": "work:728f26cce4b0774b14bc72b6d2d2324770ad2f70566ee8f885d74425854f9a4f",
+                  "runId": "dacb52e3-8eab-4673-960e-135b7343d7e1",
+                  "recordId": "ceb79374-ecc1-4ae0-be42-290bb72e63da",
+                  "kind": "project-runs",
+                  "attempt": 1
+                },
+                "startedAt": "2026-11-01T06:59:04.978Z",
+                "finishedAt": "2026-11-01T07:01:46.062Z",
+                "state": "failed"
+              },
+              {
+                "trace": {
+                  "workId": "work:728f26cce4b0774b14bc72b6d2d2324770ad2f70566ee8f885d74425854f9a4f",
+                  "runId": "3884df0a-f99f-4301-8ac2-39a02f78d33d",
+                  "recordId": "ceb79374-ecc1-4ae0-be42-290bb72e63da",
+                  "kind": "project-runs",
+                  "attempt": 2
+                },
+                "startedAt": "2026-11-03T05:39:27.331Z",
+                "finishedAt": "2026-11-03T05:41:15.588Z",
+                "state": "completed"
+              }
+            ],
+            "repairOf": null,
+            "liveBaseline": null,
+            "liveVerification": null,
+            "appliedToLive": false,
+            "failureDiagnostic": null,
+            "steps": [
+              {
+                "id": "candidate_reviewed",
+                "state": null,
+                "at": "2026-11-03T05:41:15.559Z",
+                "reason": null,
+                "model": null,
+                "verdict": "pass"
+              },
+              {
+                "id": "completed",
+                "state": null,
+                "at": "2026-11-03T05:41:15.573Z",
+                "reason": null,
+                "model": null,
+                "verdict": null
+              },
+              {
+                "id": "coding_recovery_finished",
+                "state": null,
+                "at": "2026-11-03T05:41:15.611Z",
+                "reason": null,
+                "model": null,
+                "verdict": null
+              },
+              {
+                "id": "deployment_held",
+                "state": null,
+                "at": "2026-11-03T05:41:15.626Z",
+                "reason": null,
+                "model": null,
+                "verdict": null
+              }
+            ],
+            "currentRunningState": "unknown",
+            "fixedInCurrentVersion": null
+          },
+          {
+            "sourceId": "bce88bcd-5660-43b5-b418-02c13e40e62e",
+            "kind": "worker/project-tasks",
+            "name": "請派 Codex 建立並完成一個隔離小修正：程式診斷與派工頁面目前寫「診斷使用最新 Sol 與標準推理」，但真實工作單回執使用 GPT-6.1 Sol／High，說明不一致。將該說明改為「診斷使用的模型與思考等級，以本次工作單的實際回執為準。」只修改這段介面文案及必要的相鄰驗證，不改模型設定、派工邏輯、權限或資料。開發指定 GPT-6.1 Sol／High，因為需要沿用現有隔離修正流程核對來源和結果。先定位實際來源及提出可審閱範圍，再按既有入口準備來源與用量批准卡；不自行擴權",
+            "goal": "請派 Codex 建立並完成一個隔離小修正：程式診斷與派工頁面目前寫「診斷使用最新 Sol 與標準推理」，但真實工作單回執使用 GPT-6.1 Sol／High，說明不一致。將該說明改為「診斷使用的模型與思考等級，以本次工作單的實際回執為準。」只修改這段介面文案及必要的相鄰驗證，不改模型設定、派工邏輯、權限或資料。開發指定 GPT-6.1 Sol／High，因為需要沿用現有隔離修正流程核對來源和結果。先定位實際來源及提出可審閱範圍，再按既有入口準備來源與用量批准卡；不自行擴權",
+            "state": "registered",
+            "at": "2026-11-01T06:56:08.937Z",
+            "startedAt": "2026-11-01T06:49:54.941Z",
+            "finishedAt": "2026-11-01T06:56:08.937Z",
+            "reason": null,
+            "model": null,
+            "effort": "high",
+            "reviewModel": "claude-sonnet-5-5",
+            "recipe": "registered-task-bce88bcd-5660-43b5-b418-02c13e40e62e",
+            "registeredTaskId": null,
+            "taskRunId": null,
+            "workRunId": "ceb79374-ecc1-4ae0-be42-290bb72e63da",
+            "requestId": "8645b6d5-9ad8-4bed-b6af-483fc877c066",
+            "action": null,
+            "sourceRevision": "226fbd6518b3128d2154c5c99ac7b87a97e6bce3",
+            "commit": null,
+            "loadedCommit": null,
+            "sourceFiles": [],
+            "sourceFilesComplete": false,
+            "tests": null,
+            "baseline": null,
+            "reviewVerdict": "pass",
+            "testBinding": null,
+            "workerRuns": [
+              {
+                "trace": {
+                  "workId": "work:af46b96b9f04e911247802bae89f35f719fb8dd5c6f6a33375805a8e78b4112b",
+                  "runId": "0f82c30d-06b5-417c-82ff-83832dbc16d5",
+                  "recordId": "bce88bcd-5660-43b5-b418-02c13e40e62e",
+                  "kind": "project-tasks",
+                  "attempt": 1
+                },
+                "startedAt": "2026-11-01T06:52:20.672Z",
+                "finishedAt": "2026-11-01T06:56:08.942Z",
+                "state": "awaiting_approval"
+              }
+            ],
+            "repairOf": null,
+            "liveBaseline": null,
+            "liveVerification": null,
+            "appliedToLive": null,
+            "failureDiagnostic": null,
+            "steps": [
+              {
+                "id": "registration_approval_renewed",
+                "state": null,
+                "at": "2026-11-01T06:56:51.674Z",
+                "reason": null,
+                "model": null,
+                "verdict": null
+              },
+              {
+                "id": "registered",
+                "state": null,
+                "at": "2026-11-01T06:57:28.977Z",
+                "reason": null,
+                "model": null,
+                "verdict": null
+              },
+              {
+                "id": "prepare_requested",
+                "state": null,
+                "at": "2026-11-01T06:57:47.515Z",
+                "reason": null,
+                "model": null,
+                "verdict": null
+              },
+              {
+                "id": "work_prepared",
+                "state": null,
+                "at": "2026-11-01T06:57:54.266Z",
+                "reason": null,
+                "model": null,
+                "verdict": null
+              }
+            ],
+            "currentRunningState": "unknown",
+            "fixedInCurrentVersion": null
+          },
+          {
+            "sourceId": "076ae7cf-e93d-4cf1-ba59-0072746b9bda",
+            "kind": "worker/project-tasks",
+            "name": "請派 Codex 使用 GPT-6.1 Sol／High，唯讀調查香香現有派工流程，因為需要跨模組程式分析。僅限已登記的八個檔案，不改碼、不部署、不轉 API。請回報工作單 ID、實際接單狀態和來源核驗結果。",
+            "goal": "請派 Codex 使用 GPT-6.1 Sol／High，唯讀調查香香現有派工流程，因為需要跨模組程式分析。僅限已登記的八個檔案，不改碼、不部署、不轉 API。請回報工作單 ID、實際接單狀態和來源核驗結果。",
+            "state": "awaiting_scope",
+            "at": "2026-11-01T06:19:32.117Z",
+            "startedAt": "2026-11-01T06:19:32.117Z",
+            "finishedAt": null,
+            "reason": null,
+            "model": "gpt-6.1-sol",
+            "effort": null,
+            "reviewModel": null,
+            "recipe": null,
+            "registeredTaskId": null,
+            "taskRunId": null,
+            "workRunId": null,
+            "requestId": "447f3358-ff4f-4168-a93c-35f8c08239bc",
+            "action": null,
+            "sourceRevision": "a737c80282d522a7077d40fd32f1caf4bd927b6a",
+            "commit": null,
+            "loadedCommit": null,
+            "sourceFiles": [],
+            "sourceFilesComplete": false,
+            "tests": null,
+            "baseline": null,
+            "reviewVerdict": null,
+            "testBinding": null,
+            "workerRuns": [],
+            "repairOf": null,
+            "liveBaseline": null,
+            "liveVerification": null,
+            "appliedToLive": null,
+            "failureDiagnostic": null,
+            "steps": [
+              {
+                "id": "requested",
+                "state": null,
+                "at": "2026-11-01T06:19:32.117Z",
+                "reason": null,
+                "model": "gpt-6.1-sol",
+                "verdict": null
+              }
+            ],
+            "currentRunningState": "unknown",
+            "fixedInCurrentVersion": null
+          }
+        ],
+        "selection": "latest_failure_explicit_links_and_recent_work",
+        "omitted": 3,
+        "latestFailureId": null,
+        "state": "partial",
+        "coverage": [
+          {
+            "kind": "worker/project-tasks",
+            "state": "ok",
+            "scanned": 5,
+            "failed": 0,
+            "omitted": 0
+          },
+          {
+            "kind": "worker/project-runs",
+            "state": "ok",
+            "scanned": 3,
+            "failed": 0,
+            "omitted": 0
+          },
+          {
+            "kind": "worker/adoptions",
+            "state": "missing",
+            "scanned": 0,
+            "failed": null,
+            "omitted": null
+          },
+          {
+            "kind": "worker/runs",
+            "state": "ok",
+            "scanned": 0,
+            "failed": 0,
+            "omitted": 0
+          }
+        ],
+        "scanned": 8,
+        "workflows": [
+          {
+            "role": "test_draft",
+            "state": "idle",
+            "model": "gpt-6.1-sol",
+            "effort": "medium",
+            "modelBasis": "host_workflow_default_not_per_job_selection",
+            "at": "2026-11-11T00:01:14.471Z"
+          },
+          {
+            "role": "development",
+            "state": "idle",
+            "model": "gpt-6.1-sol",
+            "effort": null,
+            "modelBasis": "host_workflow_default_not_per_job_selection",
+            "at": "2026-11-11T00:01:14.471Z"
+          },
+          {
+            "role": "review",
+            "state": "idle",
+            "model": "sonnet",
+            "effort": null,
+            "modelBasis": "host_workflow_default_not_per_job_selection",
+            "at": "2026-11-11T00:01:14.471Z"
+          },
+          {
+            "role": "adoption",
+            "state": "idle",
+            "model": null,
+            "effort": null,
+            "modelBasis": "host_workflow_default_not_per_job_selection",
+            "at": "2026-11-11T00:01:14.471Z"
+          },
+          {
+            "role": "daily_procurement",
+            "state": "idle"
+          }
+        ],
+        "retrievedAt": "2026-11-11T00:01:14.471Z",
+        "provesCharge": false,
+        "scope": "fixed_owner_worker_records",
+        "note": "Host-projected work metadata and live bridge workflow occupancy only. Occupied may include waiting for a restart; it is not a named scheduler execution witness. Model defaults do not establish per-job selection. Candidate tests and source comparisons do not establish the same failure fixed.",
+        "evidenceState": "confirmed",
+        "readDurationMs": 63,
+        "sha256": "03381e2eb7fdf1ba8ea40f5c6f0f83164bbe8997b05a701ca64389212dad2f45"
+      },
+      "trust": "live"
+    }
+  ],
+  "evidenceSets": [
+    "xiangxiang_operations"
+  ],
+  "finalReply": "目前派工流程設定了四個 AI 工作角色：test_draft、development、review、adoption，另外還有一個固定的 daily_procurement 排程。這次讀取時，全部都是閒置狀態。\n\n此處是已讀來源中的流程預設模型；本次未測試接單，實際模型與授權以工作單回執為準。\n\n有 1 個數值無法核對，未顯示。",
+  "expectedDetails": "目前派工流程設定了四個 AI 工作角色：test_draft、development、review、adoption，另外還有一個固定的 daily_procurement 排程。這次讀取時，全部都是閒置狀態。\n\n**香香工作紀錄**\n測試草稿流程 gpt-6.1-sol / medium｜開發流程 gpt-6.1-sol｜審閱流程 sonnet\n\n上面列出的模型只是系統預設，每一張工作單實際用哪個模型，要看該工作單的回執。adoption 的預設模型沒有記錄。 這次沒有讀到 adoption 的工作紀錄（worker/adoptions 缺失），所以 adoption 有沒有用過、用得怎樣，目前無法確認。 有 1 個數值無法核對，未顯示。 此處是已讀來源中的流程預設模型；本次未測試接單，實際模型與授權以工作單回執為準。"
+}

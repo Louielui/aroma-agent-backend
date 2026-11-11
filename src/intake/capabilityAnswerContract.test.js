@@ -9,7 +9,7 @@ test('saved real answer binds composed workflow cells to exact source-owned role
  assert.equal(facts.length,3);assert.match(facts[0].value,/gpt-6\.1-sol.*medium/)
  assert.equal(facts[1].value,'gpt-6.1-sol');assert.equal(facts[2].value,'sonnet')
  const view=buildReadResultReply(input)
- assert.match(view.reply,/GPT-6\.1 Sol/);assert.match(view.reply,/Sonnet/)
+ assert.match(view.reply,/GPT-6\.1[ -]Sol/i);assert.match(view.reply,/Sonnet/i)
  assert.doesNotMatch(view.reply,/###|\*\*香香工作紀錄\*\*/)
  assert.match(view.reply,/未測試接單|dispatch was not tested/)
  assert.match(view.answerDetails,/gpt-6\.1-sol.*medium/);assert.match(view.answerDetails,/AGENT_BRIDGE off/)
@@ -87,7 +87,7 @@ test('actual intake uses judged authorised capability read before main answer an
  const result=await require('./intakeService').processIntake(saved.message,{complete:async()=>{throw Error('API forbidden')}},saved.history,{demo:true,interactionMode:'chat',ownerInvestigation:true,openaiAdapter:a,controlAdapter:{complete:async()=>{throw Error('API control forbidden')}},semanticCallModel:async()=>JSON.stringify({intent:'NONE',confidence:'HIGH'}),
   memoryClient:{recall:async()=>[]},readContextDeps:{sources:['xiangxiang_operations','public_knowledge'],connector:{read:async(source,method,params)=>{reads.push({source,method,params});assert.equal(source,'xiangxiang_operations');return{results:saved.items.map(r=>({...r,trust:'live',retrievedAt:'2026-11-08T06:04:22.475Z',content:JSON.stringify(r.fields)}))}}},finalVerifier:async()=>{verifiers++;return{decision:'allow_final'}},sourceIntentResolver:async()=>{worlds++;return JSON.stringify({intent:'internal'})}}})
  assert.equal(calls.length,2);assert.equal(reads.length,1);assert.deepEqual(reads[0].params.sections,['configuration','work']);assert.equal(worlds,0);assert.equal(verifiers,0)
- assert.match(calls[1].prompt,/gpt-6\.1-sol/);assert.match(result.reply,/GPT-6\.1 Sol/);assert.match(result.reply,/Sonnet/)
+ assert.match(calls[1].prompt,/gpt-6\.1-sol/);assert.match(result.reply,/GPT-6\.1[ -]Sol/i);assert.match(result.reply,/Sonnet/i)
  assert.equal(result.investigation.answerPresentation.kind,'validated_capability_explanation');assert.match(result.investigation.answerDetails,/AGENT_BRIDGE off/)
  assert.doesNotMatch(result.reply,/###|已讀取的背景工作/);assert.deepEqual(result.tasks,[])
 })
