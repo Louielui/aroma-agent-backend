@@ -66,6 +66,8 @@ function buildArchitectureHtml () {
   ]
   rows.push({id:'gmail-reply-preview',state:'partial',title:t('gmailReply.title'),purpose:t('gmailReply.purpose'),component:'Browser Context V3 / exact account, message and thread / existing read-only ToolGateway / U1 shadow draft / Owner Goal',current:t('gmailReply.current'),next:t('gmailReply.limits'),evidence:'src/browserRead/gmailReplyTask.js; src/context/gmailReplyRead.js; src/browserRead/gmailReply.test.js; src/browserRead/gmailReplyPanel.test.js; src/browserRead/packagedHost.test.js (actual offline installer and compiled native transport); docs/GMAIL-REPLY-PREVIEW-E1.md'})
   const investigationRow = rows.find(row => row.id === 'operational-investigation')
+  investigationRow.component+=' / retained native role-only failure replay / source-bound model and role facts on the compact foreground / explicit unrecorded models and separate background schedules (isolated candidate; production answer quality remains unaccepted)'
+  investigationRow.evidence+='; src/intake/capabilityForeground.test.js; src/intake/fixtures/capabilityForegroundAnswer.json; docs/CAPABILITY-MODEL-FOREGROUND.md'
   const learningRow=rows.find(row=>row.id==='memory')
   learningRow.current+=' '+t('learningContinuity.current')
   learningRow.current+=' '+t('chatLatency.current')

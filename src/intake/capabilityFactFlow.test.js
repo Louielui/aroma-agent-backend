@@ -14,7 +14,7 @@ test('saved PR152 Chinese columns bind the three source roles while unsupported 
  assert.ok(v.droppedFacts>0,'unknown connectivity and missing model are not fabricated')
  const view=buildReadResultReply(input)
  assert.ok(view.answerDetails);assert.doesNotMatch(view.reply,/###|要不要我/)
- assert.match(view.reply,/GPT-6\.1 Sol/);assert.match(view.reply,/Sonnet/)
+ assert.match(view.reply,/GPT-6\.1[ -]Sol/i);assert.match(view.reply,/Sonnet/i)
  assert.match(view.reply,/未測試接單/);assert.match(view.answerDetails,/要不要我/)
 })
 

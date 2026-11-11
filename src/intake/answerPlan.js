@@ -1549,6 +1549,7 @@ function validatePlan (plan, { evidenceSets = [], itemsBySource = [], message = 
   // same event and no longer report as one.
   let droppedFacts = 0
   let boundWorkflowFacts = 0
+  const workflowBindings = []
   let droppedItems = 0
   let droppedSentences = 0
   // WHAT was dropped, not just how much. IDENTIFIERS ONLY — a sourceId and a field name.
@@ -1715,7 +1716,7 @@ function validatePlan (plan, { evidenceSets = [], itemsBySource = [], message = 
           continue
         }
         const workflowFact=workflowModelFact(row,field,record,it.title)
-        if(workflowFact){facts.push(workflowFact);boundWorkflowFacts++;continue}
+        if(workflowFact){facts.push(workflowFact);workflowBindings.push({fact:workflowFact,row,role:workflowRole(field)});boundWorkflowFacts++;continue}
 
         // ── A QUANTITY IS THE SERVER'S, NOT THE MODEL'S ─────────────────────────
         // The title already works this way and a number deserves it more: it is the fact
@@ -2182,6 +2183,22 @@ function validatePlan (plan, { evidenceSets = [], itemsBySource = [], message = 
   const { verifyClaimBindings } = require('./claimBinding')
   const claimBindings = verifyClaimBindings(plan.answerClaims, { evidenceSets, itemsBySource })
 
+  // Only bindings still present in the final validated sections may supply the
+  // compact face. Keep the source identity; model text cannot supply a binding.
+  const workflowModels = []
+  const missingWorkflowModels = new Set(), backgroundWorkflows = new Set()
+  for(const binding of workflowBindings){
+    const {fact,row,role}=binding,canonical=canonicalOf(row)
+    if(!sections.some(s=>s.items.some(i=>i.canonical===canonical&&i.facts.includes(fact))))continue
+    if(!workflowModels.some(f=>f.canonical===canonical&&f.role===role))workflowModels.push({canonical,role,field:fact.field,value:fact.value})
+    const workflows=row.fields.workflows
+    for(const key of ['test_draft','development','review','adoption']){
+      const matches=workflows.filter(w=>w.role===key)
+      if(matches.length===1&&matches[0].modelBasis==='host_workflow_default_not_per_job_selection'&&matches[0].model==null)missingWorkflowModels.add(key)
+    }
+    if(workflows.filter(w=>w.role==='daily_procurement').length===1)backgroundWorkflows.add('daily_procurement')
+  }
+
   return {
     plan: { directAnswer, sections, limitations, followUp, unanswerable: plan.unanswerable === true, citesEvidence,
       ownerInstructions: ownerInstructions(plan,message) },
@@ -2202,6 +2219,8 @@ function validatePlan (plan, { evidenceSets = [], itemsBySource = [], message = 
     droppedFacts,
     droppedItems,
     boundWorkflowFacts,
+    workflowModels,
+    workflowModelCoverage:{missingModels:[...missingWorkflowModels],background:[...backgroundWorkflows]},
     droppedSentences,
     droppedLimitations,
     // The model said it cites nothing and then supplied rows. The rows are gone; the
