@@ -5,6 +5,7 @@ const fs=require('node:fs'),path=require('node:path'),crypto=require('node:crypt
 const {ID,hash}=require('./contract')
 const extension=require('./usageExtension')
 const context=new AsyncLocalStorage()
+const {performance}=require('node:perf_hooks'),lockSleeper=new Int32Array(new SharedArrayBuffer(4))
 const PROFILE=Object.freeze({id:'a57b0b98-3638-42b2-8e65-d5f220261031',identity:'owner-context-understanding-acceptance-20261031',model:'claude-opus-5-5',effort:'medium',turns:9,helper:40,website:2})
 // A separate, initially inert window. Deploying this definition neither activates
 // it nor reopens the historical acceptance. The authenticated Owner action and
@@ -83,8 +84,9 @@ const error=code=>Object.assign(Error(code),{code})
 const scopeKeys='childId,conversationId,requestId,rootId,turnId'
 function validScope(s){return !!s&&Object.keys(s).sort().join(',')===scopeKeys&&[s.rootId,s.turnId,s.conversationId,s.requestId].every(v=>ID.test(v||''))&&(s.childId===null||ID.test(s.childId||''))}
 function developmentProfile(id){if(!ID.test(id||'')||isAcceptanceRoot(id))throw error('usage_profile_not_allowed');return{id,identity:'owner-repository-repair:'+id,turns:1,helper:8,website:0,models:[{model:'gpt-6.1-sol',effort:'high'},{model:'claude-sonnet-5-5',effort:'medium'}]}}
-function createUsageBudget({store,evidenceDir,now=Date.now,activationReady=null,profile=PROFILE,extensionWitness=null,approvals=require('../agent/ownerApprovalStore').createOwnerApprovalStore({now}),processAlive=pid=>{try{process.kill(pid,0);return true}catch(e){return e.code!=='ESRCH'}}}={}){
+function createUsageBudget({store,evidenceDir,now=Date.now,activationReady=null,profile=PROFILE,extensionWitness=null,lockWaitMs=250,approvals=require('../agent/ownerApprovalStore').createOwnerApprovalStore({now}),processAlive=pid=>{try{process.kill(pid,0);return true}catch(e){return e.code!=='ESRCH'}}}={}){
  if(!store?.lockRun)throw error('usage_store_required')
+ if(!Number.isInteger(lockWaitMs)||lockWaitMs<0||lockWaitMs>1000)throw error('invalid_request')
  profile=structuredClone(profile)
  if(hash(profile)!==hash(PROFILE)&&hash(profile)!==hash(UNDERSTANDING_PROFILE)&&hash(profile)!==hash(ADVICE_PROFILE)&&hash(profile)!==hash(PRIORITY_PROFILE)&&hash(profile)!==hash(CONVERSATION_PROFILE)&&hash(profile)!==hash(GOAL_PROFILE)&&hash(profile)!==hash(CLARITY_PROFILE)&&hash(profile)!==hash(PLANNING_PROFILE)&&hash(profile)!==hash(CONTINUATION_PROFILE)&&hash(profile)!==hash(MARKDOWN_PROFILE)&&hash(profile)!==hash(DRAFT_PROFILE)&&hash(profile)!==hash(HANDOFF_PROFILE)&&hash(profile)!==hash(VERIFIER_PROFILE)&&hash(profile)!==hash(EDIT_PROFILE)&&hash(profile)!==hash(SCOPE_PROFILE)&&hash(profile)!==hash(LEARNING_PROFILE)&&hash(profile)!==hash(LATENCY_PROFILE)&&hash(profile)!==hash(MEMORY_ARBITRATION_PROFILE)&&hash(profile)!==hash(DELEGATION_LIST_PROFILE)&&hash(profile)!==hash(DELEGATION_RETEST_PROFILE)&&hash(profile)!==hash(SPEED_PROFILE)&&hash(profile)!==hash(FOREGROUND_PROFILE)&&hash(profile)!==hash(LEAN_PROFILE)&&hash(profile)!==hash(developmentProfile(profile.id)))throw error('usage_profile_not_allowed')
  const predecessors=profile.id===LEAN_PROFILE.id?[LATENCY_PROFILE,MEMORY_ARBITRATION_PROFILE,DELEGATION_LIST_PROFILE,DELEGATION_RETEST_PROFILE,SPEED_PROFILE,FOREGROUND_PROFILE]:profile.id===FOREGROUND_PROFILE.id?[LATENCY_PROFILE,MEMORY_ARBITRATION_PROFILE,DELEGATION_LIST_PROFILE,DELEGATION_RETEST_PROFILE,SPEED_PROFILE]:profile.id===SPEED_PROFILE.id?[LATENCY_PROFILE,MEMORY_ARBITRATION_PROFILE,DELEGATION_LIST_PROFILE,DELEGATION_RETEST_PROFILE]:profile.id===DELEGATION_RETEST_PROFILE.id?[LATENCY_PROFILE,MEMORY_ARBITRATION_PROFILE,DELEGATION_LIST_PROFILE]:profile.id===DELEGATION_LIST_PROFILE.id?[LATENCY_PROFILE,MEMORY_ARBITRATION_PROFILE]:profile.id===MEMORY_ARBITRATION_PROFILE.id?[LATENCY_PROFILE]:[],independent=predecessors.length>0
@@ -107,7 +109,28 @@ function createUsageBudget({store,evidenceDir,now=Date.now,activationReady=null,
   if(independent&&r.predecessorHash!==predecessorHash())throw error('usage_binding_conflict')
   return r
  }
- function change(fn){const releases=[];try{for(const p of predecessors)releases.push(store.lockRun(p.id));releases.push(store.lockRun(profile.id))}catch{releases.reverse().forEach(release=>release());throw error('usage_busy')};try{const r=load(true);const value=fn(r);return value}finally{releases.reverse().forEach(release=>release())}}
+ function lockFailure(code,cause,phase,failedRoot,attempts,elapsedMs,evidence=null){
+  const s=context.getStore()?.scope,id=crypto.randomUUID(),diagnostic={kind:'usage_lock_failure',bound:false,at:new Date(now()).toISOString(),rootId:profile.id,turnId:s?.turnId||null,requestId:s?.requestId||null,phase,failedRoot,code,lockCode:['EEXIST','EACCES','EPERM','ENOSPC','EIO','EMFILE','ENFILE','EROFS'].includes(cause?.lockCode||cause?.code)?cause.lockCode||cause.code:'UNKNOWN',holderPid:Number.isSafeInteger(cause?.lockOwnerPid)?cause.lockOwnerPid:null,attempts,elapsedMs:Math.round(elapsedMs),evidenceId:evidence?.id||null,evidenceKind:evidence?.kind||null}
+  let saved=false
+  if(evidenceDir)try{fs.mkdirSync(evidenceDir,{recursive:true});fs.writeFileSync(path.join(evidenceDir,'lock-failure-'+id+'.json'),JSON.stringify(diagnostic),{flag:'wx',mode:0o600});saved=true}catch(_){}
+  return Object.assign(error(code),{lockDiagnostic:{...diagnostic,diagnosticId:id,diagnosticSaved:saved}})
+ }
+ function change(fn){
+  const started=performance.now();let attempts=0
+  for(;;){
+   const releases=[];let failedRoot=profile.id;attempts++
+   const releaseAll=()=>{let failure;for(const release of releases.reverse())try{release()}catch(e){failure||=e}return failure}
+   try{for(const p of [...predecessors,profile]){failedRoot=p.id;releases.push(store.lockRun(p.id))}}
+   catch(e){
+    const cleanup=releaseAll();if(cleanup)throw lockFailure('usage_audit_unavailable',cleanup,'release',failedRoot,attempts,performance.now()-started)
+    const remaining=lockWaitMs-(performance.now()-started)
+    // Retry only lock acquisition, never a loaded callback, mutation or provider send.
+    if(e.lockContention===true&&remaining>0){Atomics.wait(lockSleeper,0,0,Math.min(5,remaining));continue}
+    throw lockFailure(e.lockContention===true?'usage_busy':'usage_audit_unavailable',e,'acquire',failedRoot,attempts,performance.now()-started)
+   }
+   try{return fn(load(true))}finally{const cleanup=releaseAll();if(cleanup)throw lockFailure('usage_audit_unavailable',cleanup,'release',failedRoot,attempts,performance.now()-started)}
+  }
+ }
  function save(r,event,facts={}){r.timeline.push({at:new Date(now()).toISOString(),event,...facts});try{store.save(r)}catch{throw error('usage_audit_unavailable')}}
  function assertScope(r,s){if(!r||r.state!=='active')throw error('usage_run_not_active');if(!validScope(s)||s.rootId!==r.id)throw error('usage_scope_required');const t=r.turns.find(t=>t.id===s.turnId),child=s.childId&&r.children.find(c=>c.id===s.childId&&c.turnId===s.turnId&&!c.finished);if(!t||!t.entered||t.finished&&!child||t.conversationId!==s.conversationId||t.requestId!==s.requestId||s.childId&&!child)throw error('usage_scope_required');return t}
  function statusOf(r){if(!r)return{state:'not_activated',id:profile.id,identity:profile.identity,limits:{...limits},turnsUsed:0,helper:{reserved:0,available:limits.helper},website:{reserved:0,available:limits.website}}
@@ -171,7 +194,17 @@ function createUsageBudget({store,evidenceDir,now=Date.now,activationReady=null,
  function turnFailure(s){const r=load();return r?.turns.find(t=>t.id===s.turnId)?.blocked||null}
  function childScope(id){const s=context.getStore()?.scope;if(!ID.test(id||''))throw error('usage_scope_required');change(r=>{assertScope(r,s);const prior=r.children.find(c=>c.id===id);if(prior&&(prior.turnId!==s.turnId||prior.finished))throw error('usage_binding_conflict');if(!prior){if(r.children.length>=128)throw error('usage_child_limit');r.children.push({id,turnId:s.turnId,finished:false});save(r,'child_bound',{childId:id,turnId:s.turnId})}});return Object.freeze({...s,childId:id})}
  function finishChild(s){change(r=>{assertScope(r,s);const c=r.children.find(c=>c.id===s.childId);if(!c)throw error('usage_scope_required');c.finished=true;save(r,'child_finished',{childId:s.childId})})}
- function capture(kind,value,s=context.getStore()?.scope){if(!s)return null;const bytes=JSON.stringify(value===undefined?null:value);if(Buffer.byteLength(bytes)>2000000)throw error('usage_evidence_too_large');if(!/^[a-z_]{1,40}$/.test(kind)||!evidenceDir)throw error('usage_audit_unavailable');const id=crypto.randomUUID(),file=path.join(evidenceDir,id+'.json');fs.mkdirSync(evidenceDir,{recursive:true});fs.writeFileSync(file,bytes,{flag:'wx',mode:0o600});const ref={id,kind,sha256:crypto.createHash('sha256').update(bytes).digest('hex'),bytes:Buffer.byteLength(bytes)};change(r=>{assertScope(r,s);save(r,'evidence',{turnId:s.turnId,...ref})});return ref}
+ function capture(kind,value,s=context.getStore()?.scope){
+  if(!s)return null;const bytes=JSON.stringify(value===undefined?null:value)
+  if(Buffer.byteLength(bytes)>2000000)throw error('usage_evidence_too_large');if(!/^[a-z_]{1,40}$/.test(kind)||!evidenceDir)throw error('usage_audit_unavailable')
+  const id=crypto.randomUUID(),file=path.join(evidenceDir,id+'.json'),ref={id,kind,sha256:crypto.createHash('sha256').update(bytes).digest('hex'),bytes:Buffer.byteLength(bytes)}
+  return change(r=>{
+   assertScope(r,s)
+   try{fs.mkdirSync(evidenceDir,{recursive:true});fs.writeFileSync(file,bytes,{flag:'wx',mode:0o600});save(r,'evidence',{turnId:s.turnId,...ref})}
+   catch(e){throw lockFailure('usage_audit_unavailable',e,'evidence_register',profile.id,1,0,ref)}
+   return ref
+  })
+ }
  function reserve(kind,input={},attemptId=crypto.randomUUID()){
   const s=context.getStore()?.scope,r=load();if(!s&&(!r||r.state!=='active'))return null;if(!s)throw error('usage_scope_required');if(!['helper','website'].includes(kind)||!ID.test(attemptId||''))throw error('invalid_request');if(kind==='helper'&&!acceptsModel(input))throw rejection('usage_model_not_allowed')
   const blocked=assertScope(r,s).nativeBlocked;if(blocked)throw error(blocked)
@@ -187,8 +220,8 @@ function createUsageBudget({store,evidenceDir,now=Date.now,activationReady=null,
 }
 // A long-lived Bridge and backend resolve the same durable selection on every
 // call, not only at boot. No selection file or second accounting store exists.
-function createIndependentAcceptanceEntry({store,evidenceDir}={}){
- const previous=createUsageBudget({store,evidenceDir,profile:LATENCY_PROFILE}),next=createUsageBudget({store,evidenceDir,profile:MEMORY_ARBITRATION_PROFILE}),delegation=createUsageBudget({store,evidenceDir,profile:DELEGATION_LIST_PROFILE}),retest=createUsageBudget({store,evidenceDir,profile:DELEGATION_RETEST_PROFILE}),speed=createUsageBudget({store,evidenceDir,profile:SPEED_PROFILE}),foreground=createUsageBudget({store,evidenceDir,profile:FOREGROUND_PROFILE}),lean=createUsageBudget({store,evidenceDir,profile:LEAN_PROFILE})
+function createIndependentAcceptanceEntry({store,evidenceDir,lockWaitMs}={}){
+ const previous=createUsageBudget({store,evidenceDir,lockWaitMs,profile:LATENCY_PROFILE}),next=createUsageBudget({store,evidenceDir,lockWaitMs,profile:MEMORY_ARBITRATION_PROFILE}),delegation=createUsageBudget({store,evidenceDir,lockWaitMs,profile:DELEGATION_LIST_PROFILE}),retest=createUsageBudget({store,evidenceDir,lockWaitMs,profile:DELEGATION_RETEST_PROFILE}),speed=createUsageBudget({store,evidenceDir,lockWaitMs,profile:SPEED_PROFILE}),foreground=createUsageBudget({store,evidenceDir,lockWaitMs,profile:FOREGROUND_PROFILE}),lean=createUsageBudget({store,evidenceDir,lockWaitMs,profile:LEAN_PROFILE})
  // Selection participates in the existing writer lock. In particular Windows
  // readers must not hold the destination open during another host's rename.
  const selected=()=>lean.status().state!=='not_activated'?lean:foreground.status().state!=='not_activated'?foreground:speed.status().state!=='not_activated'?speed:retest.status().state!=='not_activated'?retest:delegation.status().state!=='not_activated'?delegation:next.status().state==='not_activated'?previous:next

@@ -17,10 +17,16 @@ function createStore ({ dir = path.join(require('../store/dataDir').resolveDataD
   }
   function lockRun(id){if(!ID.test(id||''))throw Error('invalid_request');return acquire('run-'+id)}
   function acquire(targetId){
-    fs.mkdirSync(dir,{recursive:true}); const p=path.join(dir,targetId+'.lock'),tmp=p+'.'+randomUUID()+'.tmp';let fd
+    fs.mkdirSync(dir,{recursive:true}); const p=path.join(dir,targetId+'.lock'),tmp=p+'.'+randomUUID()+'.tmp';let fd,phase='prepare'
     // Publish only a complete, flushed identity. Exclusive hard-link creation cannot
     // replace another holder; a crash before publication leaves only an inert temp.
-    try{fd=fs.openSync(tmp,'wx',0o600);fs.writeFileSync(fd,JSON.stringify({pid:process.pid,at:new Date().toISOString()}));fs.fsyncSync(fd);fs.linkSync(tmp,p)}catch(_){if(fd!=null)fs.closeSync(fd);try{fs.unlinkSync(tmp)}catch(_){}throw Error('target_locked')}
+    try{fd=fs.openSync(tmp,'wx',0o600);fs.writeFileSync(fd,JSON.stringify({pid:process.pid,at:new Date().toISOString()}));fs.fsyncSync(fd);phase='publish';fs.linkSync(tmp,p)}catch(e){
+      if(fd!=null)fs.closeSync(fd);try{fs.unlinkSync(tmp)}catch(_){}
+      const lockContention=phase==='publish'&&e.code==='EEXIST';let lockOwnerPid=null
+      if(lockContention)try{const owner=JSON.parse(fs.readFileSync(p,'utf8'));if(Number.isSafeInteger(owner.pid)&&owner.pid>0)lockOwnerPid=owner.pid}catch(_){}
+      // Preserve only bounded diagnostics, never OS messages, paths or credentials.
+      throw Object.assign(Error('target_locked'),{lockContention,lockOwnerPid,lockCode:['EEXIST','EACCES','EPERM','ENOSPC','EIO','EMFILE','ENFILE','EROFS'].includes(e.code)?e.code:'UNKNOWN'})
+    }
     try{fs.unlinkSync(tmp)}catch(_){}
     // A crash leaves the lock in place. No unattended retry or stale-lock deletion.
     return () => {fs.closeSync(fd);fs.unlinkSync(p)}
