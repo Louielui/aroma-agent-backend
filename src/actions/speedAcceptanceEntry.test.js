@@ -85,7 +85,7 @@ test('independent Node hosts cannot over-reserve or reset the new root',async t=
 
 test('two real hosts yield through more than 150 busy locks and complete after release',async t=>{
  const f=fixture(t);f.entry.handle(OWNER,f.activate);const s=turn(f.entry),unlock=f.store.lockRun(PROFILE.id)
- const script="const b=require(process.argv[1]).createIndependentAcceptanceEntry({store:require(process.argv[2]).createStore({dir:process.argv[3]})}),s=JSON.parse(process.argv[4]);require(process.argv[5]).reserveUntilCap({budget:b,scope:s,onBusy:n=>{if(n===151)process.send({busy:n})}}).then(r=>{process.stdout.write(JSON.stringify(r));process.disconnect()}).catch(e=>{console.error(e.code||e.message);process.disconnect();process.exitCode=1})"
+ const script="const b=require(process.argv[1]).createIndependentAcceptanceEntry({store:require(process.argv[2]).createStore({dir:process.argv[3]}),lockWaitMs:0}),s=JSON.parse(process.argv[4]);require(process.argv[5]).reserveUntilCap({budget:b,scope:s,onBusy:n=>{if(n===151)process.send({busy:n})}}).then(r=>{process.stdout.write(JSON.stringify(r));process.disconnect()}).catch(e=>{console.error(e.code||e.message);process.disconnect();process.exitCode=1})"
  const run=()=>{
   const p=cp.spawn(process.execPath,['-e',script,require.resolve('./usageBudget'),require.resolve('./store'),f.dir,JSON.stringify(s),require.resolve('./fixtures/reservationContender.cjs')],{windowsHide:true,stdio:['ignore','pipe','pipe','ipc']});let out='',err='',notify,rejectReady
   const ready=new Promise((resolve,reject)=>{notify=resolve;rejectReady=reject})
