@@ -68,6 +68,8 @@ function buildArchitectureHtml () {
   const investigationRow = rows.find(row => row.id === 'operational-investigation')
   investigationRow.component+=' / retained native role-only failure replay / source-bound model and role facts on the compact foreground / explicit unrecorded models and separate background schedules (isolated candidate; production answer quality remains unaccepted)'
   investigationRow.evidence+='; src/intake/capabilityForeground.test.js; src/intake/fixtures/capabilityForegroundAnswer.json; docs/CAPABILITY-MODEL-FOREGROUND.md'
+  investigationRow.component+=' / judged capability coverage-gap read reuses local enrichment once; prompt-only historical-work omission retains original evidence (offline candidate; real latency unverified)'
+  investigationRow.evidence+='; src/intake/capabilityContext.js; src/intake/leanCapability.test.js; docs/LEAN-CAPABILITY-CONTEXT.md'
   const learningRow=rows.find(row=>row.id==='memory')
   learningRow.current+=' '+t('learningContinuity.current')
   learningRow.current+=' '+t('chatLatency.current')
