@@ -1,0 +1,298 @@
+{
+  "scope": "Retained real goal and raw answer; source workflow/configuration fields retained. Historical work contents omitted from public fixture; private complete source replay recorded separately.",
+  "message": "你可以派工的 AI 有哪幾個？",
+  "history": [
+    {
+      "role": "user",
+      "text": "你好香香"
+    },
+    {
+      "role": "assistant",
+      "text": "Louie，你好，我在。今天想先處理哪件事？營運、採購、庫存，或者只是想先整理一下思路，都可以直接跟我說。"
+    }
+  ],
+  "goal": {
+    "question_restated": "Louie 想知道我（香香）而家可以將工作派畀邊幾個 AI 去做。",
+    "executive_frame": {
+      "taskType": "understand",
+      "decisionNeeded": false,
+      "successDefinition": "清楚講出邊啲 AI 已登記做派工對象，並分開講可以揀嘅模型、預設設定、而家連唔連得到同有冇授權；未知嘅部分要直接講明，唔好作出嚟。",
+      "answerPosture": "provisional"
+    },
+    "requested_capability": null,
+    "answer_kind": "capability_explanation",
+    "investigation_focus": "general",
+    "investigation_reference": null,
+    "investigation_evidence": [
+      "configuration",
+      "enablement"
+    ],
+    "facts": [
+      {
+        "id": "f1",
+        "need": "已登記、可以接收派工嘅 AI 對象名單同佢哋嘅授權狀態",
+        "operation": null,
+        "entity": null,
+        "fields": [],
+        "necessity": "required"
+      },
+      {
+        "id": "f2",
+        "need": "現時設定好嘅中央大腦預設模型、明確指定嘅模型，同埋以前用過嘅 worker 模型，用嚟分清楚可以揀嘅模型同真正派工對象",
+        "operation": "xiangxiang_operations",
+        "entity": null,
+        "fields": [],
+        "necessity": "enriching"
+      }
+    ],
+    "joins": [],
+    "owner_outcomes": []
+  },
+  "raw": {
+    "intent": "question",
+    "mode": "chat",
+    "nextRead": null,
+    "reply": "系統裡找不到正式的「已授權派工 AI」名單。目前看得到的只有一條開發派工流程：GPT-6.1 Sol 負責寫測試草稿和開發，Sonnet 負責審核，「採用（adoption）」這一步沒有設定模型；這次讀取時全部都是閒置狀態。\n\n### 香香睇法\n最近兩張開發工作單都由 GPT-6.1 Sol／High 完成，再經 Sonnet 審核通過，最後都停在「暫緩部署」，沒有套用到正式環境，說明這條流程走得通。不過派工的兩個開關都沒有記錄狀態，所以我現在不能保證下一張單一定會被接。\n\n### 下一步\n你想不想讓我用一張很小的唯讀工作單試一次，確認這條流程現在是不是真的接得到單？",
+    "answerPlan": {
+      "directAnswer": "系統裡沒有正式的「已授權派工 AI」名單；目前看得到的只有一條開發派工流程：test_draft 和 development 由 GPT-6.1 Sol 負責，review 由 Sonnet 負責，adoption 沒有設定模型，讀取時全部閒置。這些是主機的預設設定，不等於已經授權，也不保證現在一定接得到單。",
+      "answerClaims": null,
+      "sections": [
+        {
+          "heading": "派工流程（主機預設設定）",
+          "items": [
+            {
+              "sourceId": "xiangxiang_operations#work:5db88f9ac8f76583",
+              "title": "開發工作流角色",
+              "facts": [
+                {
+                  "field": "test_draft",
+                  "value": "gpt-6.1-sol（medium），閒置"
+                },
+                {
+                  "field": "development",
+                  "value": "gpt-6.1-sol，閒置"
+                },
+                {
+                  "field": "review",
+                  "value": "sonnet，閒置"
+                },
+                {
+                  "field": "adoption",
+                  "value": "沒有設定模型，閒置"
+                },
+                {
+                  "field": "daily_procurement",
+                  "value": "閒置"
+                },
+                {
+                  "field": "最近工作單實際使用",
+                  "value": "gpt-6.1-sol／high 開發，claude-sonnet-5-5 審核，結果都是暫緩部署，沒有套用到正式環境"
+                }
+              ]
+            }
+          ],
+          "rankingClaim": null
+        },
+        {
+          "heading": "授權與開關狀態",
+          "items": [
+            {
+              "sourceId": "xiangxiang_operations#configuration:a49fa4846cdc43f0",
+              "title": "目前開關",
+              "facts": [
+                {
+                  "field": "WORKER_INVOCATION",
+                  "value": "沒有記錄"
+                },
+                {
+                  "field": "DEVELOP_DISPATCH",
+                  "value": "沒有記錄"
+                },
+                {
+                  "field": "AGENT_BRIDGE",
+                  "value": "off"
+                },
+                {
+                  "field": "中央大腦預設模型",
+                  "value": "claude-opus-5-5（medium），這是設定值，不是派工對象"
+                }
+              ]
+            }
+          ],
+          "rankingClaim": null
+        }
+      ],
+      "limitations": [
+        "系統沒有任何讀取操作可以提供正式的「已授權派工 AI」名單；WORKER_INVOCATION 和 DEVELOP_DISPATCH 兩個開關都沒有記錄，所以不能確認現在接不接得到單。"
+      ],
+      "followUp": "你想不想讓我用一張很小的唯讀工作單試一次，確認這條流程現在是不是真的接得到單？",
+      "unanswerable": false,
+      "citesEvidence": true,
+      "ownerInstructions": []
+    }
+  },
+  "items": [
+    {
+      "source": "xiangxiang_operations",
+      "sourceId": "configuration:a49fa4846cdc43f0",
+      "title": "configuration",
+      "retrievedAt": "2026-11-12T02:45:07.344Z",
+      "trust": "live",
+      "fields": {
+        "section": "configuration",
+        "state": "partial",
+        "evidenceState": "confirmed",
+        "records": [
+          {
+            "role": "central_brain_default",
+            "model": "claude-opus-5-5",
+            "effort": "medium",
+            "revision": 1,
+            "bootCommit": "133b7e872f027e737d78e55572cd367de331d3ac",
+            "bootedAt": "2026-11-12T02:32:14.519Z",
+            "flags": {
+              "CHAT_BACKEND": "codex-subscription",
+              "WORKER_INVOCATION": null,
+              "DEVELOP_DISPATCH": null,
+              "AGENT_BRIDGE": "off",
+              "COMPUTER_OPERATOR": null,
+              "READONLY_ENQUIRY": "on",
+              "GOAL_DECOMPOSER": "on",
+              "XIANGXIANG_MEMORY": "on"
+            }
+          },
+          {
+            "sourceId": "bridge:chat_completion",
+            "role": "chat_completion",
+            "at": "2026-11-12T02:45:08.674Z",
+            "model": null,
+            "effort": null,
+            "configuredModel": null,
+            "configuredEffort": null,
+            "provider": null,
+            "enabled": true,
+            "currentRunningState": "idle",
+            "startedAt": null,
+            "evidenceBasis": "live_process_snapshot",
+            "modelBasis": "bridge_route_configuration"
+          },
+          {
+            "sourceId": "bridge:memory_completion",
+            "role": "memory_completion",
+            "at": "2026-11-12T02:45:08.674Z",
+            "model": "claude-sonnet",
+            "effort": "low",
+            "configuredModel": "claude-sonnet",
+            "configuredEffort": "low",
+            "provider": "claude",
+            "enabled": true,
+            "currentRunningState": "idle",
+            "startedAt": null,
+            "evidenceBasis": "live_process_snapshot",
+            "modelBasis": "bridge_route_configuration"
+          }
+        ],
+        "runtimeCoverage": {
+          "bridge": "partial",
+          "backend": "unconnected"
+        },
+        "note": "Central default is configuration, not a per-job model. Background rows are instantaneous registered-process observations; their configured bridge route is not proof of completed inference or charges. Nominal Hindsight GPT API labels are not the routed provider. External jobs and provider billing are not connected.",
+        "readDurationMs": 1332,
+        "sha256": "a49fa4846cdc43f01e25a1ba87fc613f33b0cf09b36d94283fdbc9a7df7b4a27"
+      },
+      "content": "{\"section\":\"configuration\",\"state\":\"partial\",\"evidenceState\":\"confirmed\",\"records\":[{\"role\":\"central_brain_default\",\"model\":\"claude-opus-5-5\",\"effort\":\"medium\",\"revision\":1,\"bootCommit\":\"133b7e872f027e737d78e55572cd367de331d3ac\",\"bootedAt\":\"2026-11-12T02:32:14.519Z\",\"flags\":{\"CHAT_BACKEND\":\"codex-subscription\",\"WORKER_INVOCATION\":null,\"DEVELOP_DISPATCH\":null,\"AGENT_BRIDGE\":\"off\",\"COMPUTER_OPERATOR\":null,\"READONLY_ENQUIRY\":\"on\",\"GOAL_DECOMPOSER\":\"on\",\"XIANGXIANG_MEMORY\":\"on\"}},{\"sourceId\":\"bridge:chat_completion\",\"role\":\"chat_completion\",\"at\":\"2026-11-12T02:45:08.674Z\",\"model\":null,\"effort\":null,\"configuredModel\":null,\"configuredEffort\":null,\"provider\":null,\"enabled\":true,\"currentRunningState\":\"idle\",\"startedAt\":null,\"evidenceBasis\":\"live_process_snapshot\",\"modelBasis\":\"bridge_route_configuration\"},{\"sourceId\":\"bridge:memory_completion\",\"role\":\"memory_completion\",\"at\":\"2026-11-12T02:45:08.674Z\",\"model\":\"claude-sonnet\",\"effort\":\"low\",\"configuredModel\":\"claude-sonnet\",\"configuredEffort\":\"low\",\"provider\":\"claude\",\"enabled\":true,\"currentRunningState\":\"idle\",\"startedAt\":null,\"evidenceBasis\":\"live_process_snapshot\",\"modelBasis\":\"bridge_route_configuration\"}],\"runtimeCoverage\":{\"bridge\":\"partial\",\"backend\":\"unconnected\"},\"note\":\"Central default is configuration, not a per-job model. Background rows are instantaneous registered-process observations; their configured bridge route is not proof of completed inference or charges. Nominal Hindsight GPT API labels are not the routed provider. External jobs and provider billing are not connected.\",\"readDurationMs\":1332,\"sha256\":\"a49fa4846cdc43f01e25a1ba87fc613f33b0cf09b36d94283fdbc9a7df7b4a27\"}"
+    },
+    {
+      "source": "xiangxiang_operations",
+      "sourceId": "work:5db88f9ac8f76583",
+      "title": "work",
+      "retrievedAt": "2026-11-12T02:45:07.344Z",
+      "trust": "live",
+      "fields": {
+        "section": "work",
+        "records": [],
+        "selection": "latest_failure_explicit_links_and_recent_work",
+        "omitted": 3,
+        "latestFailureId": null,
+        "state": "partial",
+        "coverage": [
+          {
+            "kind": "worker/project-tasks",
+            "state": "ok",
+            "scanned": 5,
+            "failed": 0,
+            "omitted": 0
+          },
+          {
+            "kind": "worker/project-runs",
+            "state": "ok",
+            "scanned": 3,
+            "failed": 0,
+            "omitted": 0
+          },
+          {
+            "kind": "worker/adoptions",
+            "state": "missing",
+            "scanned": 0,
+            "failed": null,
+            "omitted": null
+          },
+          {
+            "kind": "worker/runs",
+            "state": "ok",
+            "scanned": 0,
+            "failed": 0,
+            "omitted": 0
+          }
+        ],
+        "scanned": 8,
+        "workflows": [
+          {
+            "role": "test_draft",
+            "state": "idle",
+            "model": "gpt-6.1-sol",
+            "effort": "medium",
+            "modelBasis": "host_workflow_default_not_per_job_selection",
+            "at": "2026-11-12T02:45:07.514Z"
+          },
+          {
+            "role": "development",
+            "state": "idle",
+            "model": "gpt-6.1-sol",
+            "effort": null,
+            "modelBasis": "host_workflow_default_not_per_job_selection",
+            "at": "2026-11-12T02:45:07.514Z"
+          },
+          {
+            "role": "review",
+            "state": "idle",
+            "model": "sonnet",
+            "effort": null,
+            "modelBasis": "host_workflow_default_not_per_job_selection",
+            "at": "2026-11-12T02:45:07.514Z"
+          },
+          {
+            "role": "adoption",
+            "state": "idle",
+            "model": null,
+            "effort": null,
+            "modelBasis": "host_workflow_default_not_per_job_selection",
+            "at": "2026-11-12T02:45:07.514Z"
+          },
+          {
+            "role": "daily_procurement",
+            "state": "idle"
+          }
+        ],
+        "retrievedAt": "2026-11-12T02:45:07.514Z",
+        "provesCharge": false,
+        "scope": "fixed_owner_worker_records",
+        "note": "Host-projected work metadata and live bridge workflow occupancy only. Occupied may include waiting for a restart; it is not a named scheduler execution witness. Model defaults do not establish per-job selection. Candidate tests and source comparisons do not establish the same failure fixed.",
+        "evidenceState": "confirmed",
+        "readDurationMs": 199,
+        "sha256": "5db88f9ac8f76583d4de04a6b5ecca1dbd0ce6ee58b7f42fd4cbfba30d3e22cb"
+      },
+      "content": "{\"section\":\"work\",\"records\":[],\"selection\":\"latest_failure_explicit_links_and_recent_work\",\"omitted\":3,\"latestFailureId\":null,\"state\":\"partial\",\"coverage\":[{\"kind\":\"worker/project-tasks\",\"state\":\"ok\",\"scanned\":5,\"failed\":0,\"omitted\":0},{\"kind\":\"worker/project-runs\",\"state\":\"ok\",\"scanned\":3,\"failed\":0,\"omitted\":0},{\"kind\":\"worker/adoptions\",\"state\":\"missing\",\"scanned\":0,\"failed\":null,\"omitted\":null},{\"kind\":\"worker/runs\",\"state\":\"ok\",\"scanned\":0,\"failed\":0,\"omitted\":0}],\"scanned\":8,\"workflows\":[{\"role\":\"test_draft\",\"state\":\"idle\",\"model\":\"gpt-6.1-sol\",\"effort\":\"medium\",\"modelBasis\":\"host_workflow_default_not_per_job_selection\",\"at\":\"2026-11-12T02:45:07.514Z\"},{\"role\":\"development\",\"state\":\"idle\",\"model\":\"gpt-6.1-sol\",\"effort\":null,\"modelBasis\":\"host_workflow_default_not_per_job_selection\",\"at\":\"2026-11-12T02:45:07.514Z\"},{\"role\":\"review\",\"state\":\"idle\",\"model\":\"sonnet\",\"effort\":null,\"modelBasis\":\"host_workflow_default_not_per_job_selection\",\"at\":\"2026-11-12T02:45:07.514Z\"},{\"role\":\"adoption\",\"state\":\"idle\",\"model\":null,\"effort\":null,\"modelBasis\":\"host_workflow_default_not_per_job_selection\",\"at\":\"2026-11-12T02:45:07.514Z\"},{\"role\":\"daily_procurement\",\"state\":\"idle\"}],\"retrievedAt\":\"2026-11-12T02:45:07.514Z\",\"provesCharge\":false,\"scope\":\"fixed_owner_worker_records\",\"note\":\"Host-projected work metadata and live bridge workflow occupancy only. Occupied may include waiting for a restart; it is not a named scheduler execution witness. Model defaults do not establish per-job selection. Candidate tests and source comparisons do not establish the same failure fixed.\",\"evidenceState\":\"confirmed\",\"readDurationMs\":199,\"sha256\":\"5db88f9ac8f76583d4de04a6b5ecca1dbd0ce6ee58b7f42fd4cbfba30d3e22cb\"}"
+    }
+  ]
+}

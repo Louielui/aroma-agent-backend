@@ -25,7 +25,13 @@ function capabilityReadSections(plan, authorised=[]) {
     !authorised.includes('xiangxiang_operations')||
     !['understand','retrieve'].includes(plan.executiveFrame?.taskType)||plan.executiveFrame?.decisionNeeded!==false)return null
   const facts=plan.facts||[],needs=plan.investigationEvidence||[]
-  if(!facts.some(f=>f.necessity==='required'&&f.operation==='xiangxiang_operations')||
+  // A judged missing required need can coexist with useful local enrichment.
+  // Read that already-authorised context once; keep the missing need as a gap,
+  // never promote enrichment into proof of the unavailable requirement.
+  const requiredLocal=facts.some(f=>f.necessity==='required'&&f.operation==='xiangxiang_operations')
+  const gapWithLocalContext=facts.some(f=>f.necessity==='required'&&unmappedCapabilityFact(f))&&
+    facts.some(f=>f.necessity==='enriching'&&f.operation==='xiangxiang_operations'&&f.status==='PARTIAL')
+  if((!requiredLocal&&!gapWithLocalContext)||
     facts.some(f=>f.operation!=='xiangxiang_operations'&&!unmappedCapabilityFact(f))||
     needs.some(n=>!['configuration','enablement','work_history'].includes(n)))return null
   return ['configuration','work']

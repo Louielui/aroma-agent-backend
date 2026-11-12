@@ -1453,7 +1453,7 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
             for(const g of rc.itemsBySource||[])turnItems.set(g.source,g)
             for(const g of rc.retrievedItemsBySource||[])turnRetrievedItems.set(g.source,g)
             for(const e of rc.evidenceSets||[])turnEvidence.set(e.source,e)
-            if(rc.block)extraObservationBlocks.push(rc.block)
+            if(rc.block)extraObservationBlocks.push(require('./capabilityContext').capabilityContext(rc))
             const rows=rc.itemsBySource?.find(g=>g.source==='xiangxiang_operations')?.items||[]
             capabilityReadSettled=rc.status!=='TRUNCATED'&&rc.perSource?.some(r=>r.source==='xiangxiang_operations'&&r.trust==='live')&&
               capabilitySections.every(section=>rows.some(r=>r.fields?.section===section&&['ok','partial'].includes(r.fields.state)))
@@ -2344,7 +2344,7 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
   const requiredReadableFacts = (goalPlanObserved?.facts || []).filter(f => f.necessity === 'required' && f.operation)
   const ownOperationsSettled = opts.ownerInvestigation === true &&
     modelDirectedLiveOperations.has('xiangxiang_operations') &&
-    requiredReadableFacts.length > 0 &&
+    (requiredReadableFacts.length > 0 || capabilityReadSettled) &&
     requiredReadableFacts.every(f => f.operation === 'xiangxiang_operations') &&
     (capabilityReadSettled || operationalInvestigation?.sections.some(s => ['ok', 'partial'].includes(s.state) && s.records?.length > 0))
   // Retain only a non-action conversational envelope for domain arbitration.
