@@ -10,6 +10,8 @@ const { makeContextResult } = require('../contextResult')
 const { projectWorkRecord, selectWorkSample } = require('../../investigation/workEvidence')
 const SOURCE = 'xiangxiang_operations'
 const SECTIONS = Object.freeze(['configuration', 'schedules', 'work', 'history', 'execution', 'usage', 'billing'])
+// Delegation metadata may touch subscription catalogues: read it only when selected.
+const ALLOWED_SECTIONS=Object.freeze([...SECTIONS,'delegation'])
 const WORK_DIRS = Object.freeze(['project-work-runs', 'project-task-runs', 'project-adoption-runs', 'task-plan-runs', 'code-repair-runs', 'development-plan-runs', 'manager-runs'])
 const LIMIT = 5
 const ID = /^[a-z0-9][a-z0-9-]{7,63}\.json$/i
@@ -61,9 +63,16 @@ function createXiangxiangOperationsReadAdapter (options = {}) {
   const executionReader = options.executionReader || (isTestProcess() ? null : () => require('../../adapters/CodexSubscriptionAdapter').localRequest('/execution-metadata', {}, env,AbortSignal.timeout(10000)))
   const invocationReader = options.invocationReader || (isTestProcess() ? null : () => require('../../adapters/CodexSubscriptionAdapter').localRequest('/invocation-metadata', {}, env,AbortSignal.timeout(10000)))
   const workReader = options.workReader || (isTestProcess() ? null : () => require('../../adapters/CodexSubscriptionAdapter').localRequest('/work-metadata', {}, env,AbortSignal.timeout(10000)))
+  const delegationReader=options.delegationReader || (isTestProcess()?null:()=>require('../../investigation/delegationEvidence').readDelegation({env}))
   const subscriptionReader = options.subscriptionReader || (isTestProcess() ? null : () => require('../../adapters/CodexSubscriptionAdapter').localRequest('/subscription-metadata', {}, env,AbortSignal.timeout(30000)))
   async function section (name, query, runtime) {
     try {
+      if(name==='delegation'){
+        if(!delegationReader)return {state:'unconnected',records:[],dispatchVerified:false,permissionsVerified:false}
+        const view=await delegationReader()
+        if(!require('../../investigation/delegationEvidence').validReceipt(view))throw Error('invalid_delegation_receipt')
+        return view
+      }
       if (name === 'billing') return { state: 'unconnected', evidenceState: 'not_established', records: [], provesCharge: false, note: 'No provider billing ledger or execution-to-charge correlation is connected. Actual charges and their causes are NOT ESTABLISHED.' }
       if (name === 'execution') {
         const read = async reader => {
@@ -82,7 +91,7 @@ function createXiangxiangOperationsReadAdapter (options = {}) {
       if (name === 'configuration') {
         const d = readJson(path.join(dataDir, 'model-center.json'))
         if (!d.brain || typeof d.brain.model !== 'string') throw Error('invalid_config')
-        const allowedFlags = ['CHAT_BACKEND', 'WORKER_INVOCATION', 'DEVELOP_DISPATCH', 'AGENT_BRIDGE', 'COMPUTER_OPERATOR', 'READONLY_ENQUIRY', 'GOAL_DECOMPOSER', 'XIANGXIANG_MEMORY']
+        const allowedFlags = ['CHAT_BACKEND', 'XIANGXIANG_WORKER_FLOW', 'WORKER_INVOCATION', 'DEVELOP_DISPATCH', 'AGENT_BRIDGE', 'COMPUTER_OPERATOR', 'READONLY_ENQUIRY', 'GOAL_DECOMPOSER', 'XIANGXIANG_MEMORY']
         const flags = Object.fromEntries(allowedFlags.map(k => [k, ['on', 'off', 'codex-subscription'].includes(env[k]) ? env[k] : null]))
         const { BOOT_COMMIT, BOOTED_AT } = require('../../governance/bootCommit')
         const [bridge, backend] = await Promise.all([runtime(), Promise.resolve().then(()=>options.backgroundReader?.()).catch(()=>null)])
@@ -144,7 +153,7 @@ function createXiangxiangOperationsReadAdapter (options = {}) {
     const retrievedAt = clock()
     let runtimePending
     const runtime = () => runtimePending || (runtimePending=Promise.resolve().then(()=>runtimeReader?.()).catch(()=>null))
-    if (params.sections !== undefined && (!Array.isArray(params.sections) || !params.sections.length || params.sections.length > SECTIONS.length || params.sections.some(n=>!SECTIONS.includes(n)))) throw Error('invalid_investigation_sections')
+    if (params.sections !== undefined && (!Array.isArray(params.sections) || !params.sections.length || params.sections.length > ALLOWED_SECTIONS.length || params.sections.some(n=>!ALLOWED_SECTIONS.includes(n)))) throw Error('invalid_investigation_sections')
     const selected = params.sections === undefined ? SECTIONS : [...new Set(params.sections)]
     const results = await Promise.all(selected.map(async name => {
       const started = performance.now()

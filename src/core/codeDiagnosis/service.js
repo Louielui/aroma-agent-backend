@@ -30,7 +30,7 @@ function createCodeDiagnosis ({ source, provider, workers = [{ id: 'codex-code-d
   if (new Set(workers.map(w => w.id)).size !== workers.length) throw Error('diagnosis_not_configured')
   const configured = workers.map(w => {
     if (!/^[a-z][a-z0-9-]{1,70}$/.test(w.id || '') || typeof w.name !== 'string' || !w.name || w.name.length > 80 || !/^[a-z][a-z0-9.-]{1,100}$/.test(w.model || '') || !['chatgpt-subscription', 'claude-subscription'].includes(w.billing) || typeof w.provider?.preflight !== 'function' || typeof w.provider?.complete !== 'function') throw Error('diagnosis_not_configured')
-    registerAgent({ id: w.id, role: 'Read-only code diagnosis', adapter: 'bounded-subscription-text', availability: 'local', status: 'active', provides: [{ capability: CAPABILITY, version: 1, seed_quality: 0, seed_cost: 'unknown' }] })
+    registerAgent({ id: w.id, role: 'Read-only code diagnosis', adapter: 'bounded-subscription-text', availability: 'local', status: 'active', delegation: {model:w.model,effort:w.provider.effort||null,selection:'fixed',permissions:WORK_ORDER.permissions,scope:WORK_ORDER.profile,files:FILES.length}, provides: [{ capability: CAPABILITY, version: 1, seed_quality: 0, seed_cost: 'unknown' }] })
     return Object.freeze({ ...w })
   })
   const rows = new Map(), controls = new Map(); let activeId = null

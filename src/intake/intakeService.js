@@ -3973,7 +3973,7 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
     if (chatClaim.corrected) logReadClaimCorrection(chatClaim, requestId)
     const capabilityPresentation = view.answerDetails && !view.routeEvidenceWithheld && !chatClaim.corrected
       ? {readOnly:true,focus:'capability',state:'partial',sections:[],answerDetails:view.answerDetails,
-        answerPresentation:{kind:'validated_capability_explanation',validation:view.capabilityValidation,modelProseUsed:true,dispatchVerified:false}} : null
+        answerPresentation:{kind:'validated_capability_explanation',validation:view.capabilityValidation,modelProseUsed:view.capabilityValidation?.kind!=='delegation_source_projection',dispatchVerified:false}} : null
     return { blocked: false, mode: distilled.mode, intent: distilled.intent,
       ...(gapForTurn() && { capabilityGap: gapForTurn() }),
       ...((operationalInvestigation||capabilityPresentation) && { investigation: operationalInvestigation||capabilityPresentation }),

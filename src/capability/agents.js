@@ -262,6 +262,8 @@ registerAgent({
 })
 
 module.exports = {
+  // Detached read view of the existing manifest map; no registration or routing.
+  listManifests: () => [...agents.values()].map(a => structuredClone(a)),
   AVAILABILITIES,
   STATUSES,
   HEALTH_AVAILABILITIES,

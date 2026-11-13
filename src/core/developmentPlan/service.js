@@ -62,7 +62,7 @@ function validateProposal (result, evidence) {
 function createDevelopmentPlan ({ source, provider, store, timeoutMs = 120000, clock = () => new Date().toISOString(), onFinish = () => {} }) {
   if (typeof source?.read !== 'function' || typeof source?.verify !== 'function' || !store) throw Error('development_plan_not_configured')
   register({ id: CAPABILITY, version: 1, lifecycle: 'active', risk_tier: 'low', input_schema: { type: 'object', required: ['evidence'] }, output_schema: PROPOSAL_SCHEMA })
-  registerAgent({ id: AGENT, role: 'Read-only development planner', adapter: 'codex-subscription-text', availability: 'local', status: 'active', provides: [{ capability: CAPABILITY, version: 1, seed_quality: 0, seed_cost: 'unknown' }] })
+  registerAgent({ id: AGENT, role: 'Read-only development planner', adapter: 'codex-subscription-text', availability: 'local', status: 'active', delegation:{model:provider._model||null,effort:provider.effort||null,selection:'fixed',permissions:WORK_ORDER.permissions,scope:WORK_ORDER.sources.join(', ')}, provides: [{ capability: CAPABILITY, version: 1, seed_quality: 0, seed_cost: 'unknown' }] })
   const rows = new Map(); const controls = new Map(); let activeId = null
   const owner = actor => { if (actor?.role !== 'owner' || actor.id !== 'owner') throw Error('permission_denied'); source.verify(actor) }
   const save = run => { try { store.save(run); rows.set(run.id, structuredClone(run)) } catch (_) { throw Error('run_store_unavailable') } }

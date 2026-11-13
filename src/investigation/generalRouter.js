@@ -5,7 +5,7 @@ const NEEDS = Object.freeze({
   live_runtime:['configuration','schedules','work'], execution_history:['execution'],
   work_failure:['work'], work_history:['work'], source_revision:['work','configuration'],
   test_results:['work'], repair_verification:['work','configuration'],
-  memory_failures:['configuration'],
+  memory_failures:['configuration'], delegation:['delegation'],
   history:['history'], usage:['execution','usage'], billing:['billing'],
   correspondence:[], documents:[], code_history:[], events:[]
 })
@@ -33,8 +33,8 @@ function capabilityReadSections(plan, authorised=[]) {
     facts.some(f=>f.necessity==='enriching'&&f.operation==='xiangxiang_operations'&&f.status==='PARTIAL')
   if((!requiredLocal&&!gapWithLocalContext)||
     facts.some(f=>f.operation!=='xiangxiang_operations'&&!unmappedCapabilityFact(f))||
-    needs.some(n=>!['configuration','enablement','work_history'].includes(n)))return null
-  return ['configuration','work']
+    needs.some(n=>!['configuration','enablement','work_history','delegation'].includes(n)))return null
+  return needs.includes('delegation')?['configuration','work','delegation']:['configuration','work']
 }
 function unmappedCapabilityFact(f) {
   return f.operation===null&&f.status==='UNAVAILABLE'&&f.reason==='no_operation_in_this_system_carries_this'

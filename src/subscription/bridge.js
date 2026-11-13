@@ -30,7 +30,7 @@ function validateInput (input) {
   return input
 }
 
-function createBridge ({ token, clientOptions, memoryClientOptions = clientOptions, completeFn = complete, claudeFn = require('./claudeClient').complete, claudeCheckFn = require('./claudeClient').checkSubscription, claudeModelsFn = require('./claudeClient').listModels, backgroundModel = null, checkFn = checkSubscription, modelsFn = listSubscriptionModels, subscriptionFn = require('./subscriptionEvidence').readCodexEvidence, workerFlow = null, workerProviders = null, websiteEnabled = false, memoryEnabled = false, memoryStore = null, codeSourceFactory = null, taskPlanSource = null, codeRepair = null, projectWork = null, projectAdoption = null, projectTasks = null, schedulerActions = null, executionReader = null, workReader = null, schedulerReader = null, invocationLedger = null, publicSearchEnabled = false, publicSearchFn = require('./publicSearch').search, findWebsiteFn = require('./websiteClient').findWebsite, usageBudget = require('../actions/usageBudget').owner() }) {
+function createBridge ({ token, clientOptions, memoryClientOptions = clientOptions, completeFn = complete, claudeFn = require('./claudeClient').complete, claudeCheckFn = require('./claudeClient').checkSubscription, claudeModelsFn = require('./claudeClient').listModels, backgroundModel = null, checkFn = checkSubscription, modelsFn = listSubscriptionModels, subscriptionFn = require('./subscriptionEvidence').readCodexEvidence, workerFlow = null, workerProviders = null, websiteEnabled = false, memoryEnabled = false, memoryStore = null, codeSourceFactory = null, taskPlanSource = null, codeRepair = null, projectWork = null, projectAdoption = null, projectTasks = null, schedulerActions = null, executionReader = null, workReader = null, schedulerReader = null, invocationLedger = null, publicSearchEnabled = false, publicSearchFn = require('./publicSearch').search, findWebsiteFn = require('./websiteClient').findWebsite, usageBudget = require('../actions/usageBudget').owner(), bootCommit = require('../governance/bootCommit').BOOT_COMMIT }) {
   if (!validToken(token)) throw new Error('bridge requires a 256-bit local token')
   let busy = false; let memoryBusy = false
   const activeCalls = new Map()
@@ -105,10 +105,10 @@ function createBridge ({ token, clientOptions, memoryClientOptions = clientOptio
       if (!res.destroyed) { res.writeHead(status, { 'content-type': 'application/json', 'cache-control': 'no-store' }); res.end(JSON.stringify(body)) }
     }
     if (!authenticated(req.headers.authorization, token) || req.headers.origin) { reply(401, { code: 'subscription_unavailable' }); req.resume(); return }
-    if (req.method !== 'POST' || !['/execution-health', '/complete', '/status', '/models', '/workers', '/website', '/v1/chat/completions', '/memory-store', '/code-diagnosis-source', '/task-plan-source', '/code-repair', '/project-work', '/project-adoption', '/project-tasks', '/execution-metadata', '/work-metadata', '/runtime-metadata', '/invocation-metadata','/work-outcome','/subscription-metadata','/scheduler-action', '/procurement-tick', '/public-search'].includes(req.url)) { reply(404, { code: 'subscription_unavailable' }); req.resume(); return }
+    if (req.method !== 'POST' || !['/delegation-metadata', '/execution-health', '/complete', '/status', '/models', '/workers', '/website', '/v1/chat/completions', '/memory-store', '/code-diagnosis-source', '/task-plan-source', '/code-repair', '/project-work', '/project-adoption', '/project-tasks', '/execution-metadata', '/work-metadata', '/runtime-metadata', '/invocation-metadata','/work-outcome','/subscription-metadata','/scheduler-action', '/procurement-tick', '/public-search'].includes(req.url)) { reply(404, { code: 'subscription_unavailable' }); req.resume(); return }
     const isMemory = req.url === '/v1/chat/completions'
     const isStore = req.url === '/memory-store'||req.url==='/work-outcome'
-    const isCatalogue = req.url === '/public-search' || req.url === '/execution-health' || req.url === '/scheduler-action' || req.url === '/procurement-tick' || req.url === '/models' || req.url === '/execution-metadata' || req.url === '/work-metadata' || req.url === '/runtime-metadata' || req.url === '/invocation-metadata' || req.url === '/subscription-metadata'
+    const isCatalogue = req.url === '/delegation-metadata' || req.url === '/public-search' || req.url === '/execution-health' || req.url === '/scheduler-action' || req.url === '/procurement-tick' || req.url === '/models' || req.url === '/execution-metadata' || req.url === '/work-metadata' || req.url === '/runtime-metadata' || req.url === '/invocation-metadata' || req.url === '/subscription-metadata'
     // Closed account metadata uses its own single-flight session. Reading it
     // neither acquires nor releases the execution lane or dispatches a turn.
     if (!isStore && !isCatalogue && ((isMemory ? memoryBusy : busy) || (!isMemory && req.url !== '/project-tasks' && projectTasks?.isActive()) || (!isMemory && req.url !== '/code-repair' && codeRepair?.isActive()) || (!isMemory && !['/project-work', '/project-adoption', '/project-tasks'].includes(req.url) && projectWork?.isActive()) || (!isMemory && req.url !== '/workers' && workerFlow?.isActive?.()) || (!isMemory && !['/project-adoption', '/project-work', '/project-tasks'].includes(req.url) && projectAdoption?.isActive()))) { reply(503, { code: 'subscription_unavailable' }); req.resume(); return }
@@ -147,6 +147,14 @@ function createBridge ({ token, clientOptions, memoryClientOptions = clientOptio
       }else if (req.url === '/invocation-metadata') {
         if (!input || typeof input !== 'object' || Array.isArray(input) || Object.keys(input).length) { reply(400,{code:'context_unavailable'}); return }
         reply(200,invocationLedger ? invocationLedger.read() : {state:'unconnected',records:[],provesCharge:false})
+      } else if (req.url === '/delegation-metadata') {
+        if (!input || typeof input !== 'object' || Array.isArray(input) || Object.keys(input).length) { reply(400,{code:'context_unavailable'}); return }
+        const catalogue=projectWork?.catalogue({id:'owner',role:'owner'})
+        reply(200,require('../investigation/delegationEvidence').bridgeSnapshot({
+          bootCommit,
+          providers:workerProviders?.describe?.()||[],enabled:catalogue?.enabled===true,
+          recipes:catalogue?.workOrders||[],models:await readCatalogue()
+        }))
       } else if (req.url === '/execution-health') {
         if (!input || typeof input !== 'object' || Array.isArray(input) || Object.keys(input).length) { reply(400,{code:'context_unavailable'}); return }
         reply(200,{component:'execution-bridge',state:'ready',checkedAt:new Date().toISOString(),pid:process.pid,bootCommit:require('../governance/bootCommit').BOOT_COMMIT,supervisor:require('../actions/executionHealth').supervisorEvidence()})

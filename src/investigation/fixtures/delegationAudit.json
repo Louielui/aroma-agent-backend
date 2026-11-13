@@ -1,0 +1,669 @@
+{
+  "basis": "Retained real PR160 outputs and read-only audit receipts; injected new-schema declarations in tests are offline candidate projections, not new live acceptance.",
+  "runtime": "5172f30b633e60f024a188c35556f569c035f426",
+  "message": "你可以派工的 AI 有哪幾個？",
+  "goal": {
+    "question_restated": "你想知道我（香香）而家可以把工作派畀邊幾個 AI 去做。",
+    "executive_frame": {
+      "taskType": "understand",
+      "decisionNeeded": false,
+      "successDefinition": "清楚列出已登記、可以接派工嘅 AI 有邊幾個，分清已登記、預設設定、而家連唔連得到同有冇授權，冇覆蓋到嘅部分要講明。",
+      "answerPosture": "evidence_first"
+    },
+    "requested_capability": null,
+    "answer_kind": "capability_explanation",
+    "investigation_focus": null,
+    "investigation_reference": null,
+    "investigation_evidence": [
+      "configuration",
+      "enablement"
+    ],
+    "facts": [
+      {
+        "id": "f1",
+        "need": "已設定嘅中央大腦預設模型，同排程或工作定義入面明確指定嘅 worker 模型",
+        "operation": "xiangxiang_operations",
+        "entity": null,
+        "fields": [],
+        "necessity": "required"
+      },
+      {
+        "id": "f2",
+        "need": "已登記、可以接派工嘅 AI worker 名單，包括每個而家連唔連得到、有冇授權",
+        "operation": null,
+        "entity": null,
+        "fields": [],
+        "necessity": "required"
+      },
+      {
+        "id": "f3",
+        "need": "以前做開發工作時用過邊啲 worker 模型（只係背景參考，唔可以當派工對象嘅證明）",
+        "operation": "xiangxiang_operations",
+        "entity": null,
+        "fields": [],
+        "necessity": "enriching"
+      }
+    ],
+    "joins": [],
+    "owner_outcomes": []
+  },
+  "raw": {
+    "intent": "question",
+    "mode": "chat",
+    "nextRead": null,
+    "reply": "目前的工作流程設定裡有四個可以接派工的 AI 角色，其中三個有記錄預設模型。不過這只是設定，我沒有辦法確認這些 AI 現在是否連得上，也無法確認它們是否已獲授權。",
+    "answerPlan": {
+      "directAnswer": "按工作流程設定，test_draft 和 development 兩個角色預設使用 gpt-6.1-sol，review 預設使用 sonnet，adoption 角色有登記，但沒有記錄用哪個模型。這些只是預設設定，目前讀不到已授權的 worker 名單，所以無法確認每個 AI 現在是否連得上、是否已獲授權。",
+      "answerClaims": [
+        {
+          "text": "按工作流程設定，test_draft 和 development 兩個角色預設使用 gpt-6.1-sol，review 預設使用 sonnet，adoption 角色有登記，但沒有記錄用哪個模型。",
+          "claimKind": "row_local",
+          "evidenceSources": [
+            "xiangxiang_operations"
+          ],
+          "sourceIds": [
+            "xiangxiang_operations#work:7c49144c93532c4b"
+          ],
+          "scope": {
+            "field": null,
+            "window": null
+          }
+        },
+        {
+          "text": "這些只是預設設定，目前讀不到已授權的 worker 名單，所以無法確認每個 AI 現在是否連得上、是否已獲授權。",
+          "claimKind": "row_local",
+          "evidenceSources": [
+            "xiangxiang_operations"
+          ],
+          "sourceIds": [
+            "xiangxiang_operations#work:7c49144c93532c4b"
+          ],
+          "scope": {
+            "field": null,
+            "window": null
+          }
+        }
+      ],
+      "sections": [
+        {
+          "heading": "工作流程角色與預設模型",
+          "items": [
+            {
+              "sourceId": "xiangxiang_operations#work:7c49144c93532c4b",
+              "title": "派工流程的預設設定",
+              "facts": [
+                {
+                  "field": "test_draft",
+                  "value": "gpt-6.1-sol"
+                },
+                {
+                  "field": "development",
+                  "value": "gpt-6.1-sol"
+                },
+                {
+                  "field": "review",
+                  "value": "sonnet"
+                },
+                {
+                  "field": "adoption",
+                  "value": "沒有記錄模型"
+                }
+              ]
+            }
+          ],
+          "rankingClaim": null
+        }
+      ],
+      "limitations": [
+        "系統裡沒有讀取操作能提供已授權 worker 名單，無法確認每個角色目前是否連得上、是否已獲授權。",
+        "上面列的是工作流程的預設模型，不代表每一份工作實際用的模型。",
+        "daily_procurement 是固定的背景排程，不是 AI worker，所以沒有列入。",
+        "真正派工仍需要你批准，並且只限已登記的範圍。"
+      ],
+      "followUp": null,
+      "unanswerable": false,
+      "citesEvidence": true,
+      "ownerInstructions": []
+    }
+  },
+  "models": {
+    "billing": "subscriptions",
+    "defaultModel": "claude-sonnet",
+    "providers": {
+      "claude": {
+        "state": "ready",
+        "code": null
+      }
+    },
+    "models": [
+      {
+        "model": "claude-opus-5-5",
+        "resolvedModel": "claude-opus-5-5",
+        "name": "Claude Opus 5.5",
+        "provider": "claude",
+        "billing": "claude-subscription",
+        "available": true,
+        "supportsEffort": true,
+        "efforts": [
+          "low",
+          "medium",
+          "high",
+          "xhigh",
+          "max"
+        ],
+        "defaultEffort": "medium"
+      },
+      {
+        "model": "claude-fable-5-2",
+        "resolvedModel": "claude-fable-5-2",
+        "name": "Claude Fable 5.2",
+        "provider": "claude",
+        "billing": "claude-subscription",
+        "available": true,
+        "supportsEffort": true,
+        "efforts": [
+          "low",
+          "medium",
+          "high",
+          "xhigh",
+          "max"
+        ],
+        "defaultEffort": "medium"
+      },
+      {
+        "model": "claude-sonnet",
+        "resolvedModel": "claude-sonnet-5-5",
+        "name": "Claude Sonnet 5.5",
+        "provider": "claude",
+        "billing": "claude-subscription",
+        "available": true,
+        "supportsEffort": true,
+        "efforts": [
+          "low",
+          "medium",
+          "high",
+          "xhigh",
+          "max"
+        ],
+        "defaultEffort": "medium"
+      },
+      {
+        "model": "claude-haiku-5-5",
+        "resolvedModel": "claude-haiku-5-5",
+        "name": "Claude Haiku 5.5",
+        "provider": "claude",
+        "billing": "claude-subscription",
+        "available": true,
+        "supportsEffort": true,
+        "efforts": [
+          "low",
+          "medium",
+          "high",
+          "xhigh",
+          "max"
+        ],
+        "defaultEffort": "medium"
+      },
+      {
+        "model": "claude-fable-5-1",
+        "resolvedModel": "claude-fable-5-1",
+        "name": "Claude Fable 5.1",
+        "provider": "claude",
+        "billing": "claude-subscription",
+        "available": true,
+        "supportsEffort": true,
+        "efforts": [
+          "low",
+          "medium",
+          "high",
+          "xhigh",
+          "max"
+        ],
+        "defaultEffort": "medium"
+      },
+      {
+        "model": "claude-haiku-4-5-20251001",
+        "resolvedModel": "claude-haiku-4-5-20251001",
+        "name": "Claude Haiku 4.5",
+        "provider": "claude",
+        "billing": "claude-subscription",
+        "available": true,
+        "supportsEffort": false,
+        "efforts": [],
+        "defaultEffort": "auto"
+      },
+      {
+        "model": "claude-sonnet-5",
+        "resolvedModel": "claude-sonnet-5",
+        "name": "Claude Sonnet 5",
+        "provider": "claude",
+        "billing": "claude-subscription",
+        "available": true,
+        "supportsEffort": true,
+        "efforts": [
+          "low",
+          "medium",
+          "high",
+          "xhigh",
+          "max"
+        ],
+        "defaultEffort": "medium"
+      },
+      {
+        "model": "claude-opus-5",
+        "resolvedModel": "claude-opus-5",
+        "name": "Claude Opus 5",
+        "provider": "claude",
+        "billing": "claude-subscription",
+        "available": true,
+        "supportsEffort": true,
+        "efforts": [
+          "low",
+          "medium",
+          "high",
+          "xhigh",
+          "max"
+        ],
+        "defaultEffort": "medium"
+      },
+      {
+        "model": "claude-fable-5",
+        "resolvedModel": "claude-fable-5",
+        "name": "Claude Fable 5",
+        "provider": "claude",
+        "billing": "claude-subscription",
+        "available": true,
+        "supportsEffort": true,
+        "efforts": [
+          "low",
+          "medium",
+          "high",
+          "xhigh",
+          "max"
+        ],
+        "defaultEffort": "medium"
+      },
+      {
+        "model": "claude-opus-4-8",
+        "resolvedModel": "claude-opus-4-8",
+        "name": "Claude Opus 4.8",
+        "provider": "claude",
+        "billing": "claude-subscription",
+        "available": true,
+        "supportsEffort": true,
+        "efforts": [
+          "low",
+          "medium",
+          "high",
+          "xhigh",
+          "max"
+        ],
+        "defaultEffort": "medium"
+      },
+      {
+        "model": "claude-opus-4-7",
+        "resolvedModel": "claude-opus-4-7",
+        "name": "Claude Opus 4.7",
+        "provider": "claude",
+        "billing": "claude-subscription",
+        "available": true,
+        "supportsEffort": true,
+        "efforts": [
+          "low",
+          "medium",
+          "high",
+          "xhigh",
+          "max"
+        ],
+        "defaultEffort": "medium"
+      },
+      {
+        "model": "claude-opus-4-6",
+        "resolvedModel": "claude-opus-4-6",
+        "name": "Claude Opus 4.6",
+        "provider": "claude",
+        "billing": "claude-subscription",
+        "available": true,
+        "supportsEffort": true,
+        "efforts": [
+          "low",
+          "medium",
+          "high",
+          "max"
+        ],
+        "defaultEffort": "medium"
+      },
+      {
+        "model": "claude-sonnet-4-6",
+        "resolvedModel": "claude-sonnet-4-6",
+        "name": "Claude Sonnet 4.6",
+        "provider": "claude",
+        "billing": "claude-subscription",
+        "available": true,
+        "supportsEffort": true,
+        "efforts": [
+          "low",
+          "medium",
+          "high",
+          "max"
+        ],
+        "defaultEffort": "medium"
+      },
+      {
+        "model": "gpt-6.1-sol",
+        "name": "GPT-6.1 Sol",
+        "noteKey": "provider.solLatestNote",
+        "provider": "openai",
+        "defaultEffort": "medium",
+        "available": true,
+        "efforts": [
+          "low",
+          "medium",
+          "high",
+          "xhigh",
+          "max",
+          "ultra"
+        ]
+      },
+      {
+        "model": "gpt-6-astra",
+        "name": "GPT-6 Astra",
+        "noteKey": "provider.astraNote",
+        "provider": "openai",
+        "defaultEffort": "medium",
+        "available": true,
+        "efforts": [
+          "low",
+          "medium",
+          "high",
+          "xhigh",
+          "max",
+          "ultra"
+        ]
+      },
+      {
+        "model": "gpt-6-luna",
+        "name": "GPT-6 Luna",
+        "noteKey": "provider.lunaNote",
+        "provider": "openai",
+        "defaultEffort": "medium",
+        "available": true,
+        "efforts": [
+          "low",
+          "medium",
+          "high",
+          "xhigh",
+          "max"
+        ]
+      },
+      {
+        "model": "gpt-6-sol",
+        "name": "GPT-6 Sol",
+        "noteKey": "provider.solPreviousNote",
+        "provider": "openai",
+        "defaultEffort": "medium",
+        "available": true,
+        "efforts": [
+          "low",
+          "medium",
+          "high",
+          "xhigh",
+          "max",
+          "ultra"
+        ]
+      }
+    ]
+  },
+  "workflow": {
+    "projects": {
+      "enabled": true,
+      "workOrders": [
+        {
+          "recipe": "context-fields-snapshot-v1",
+          "allowedFiles": [
+            "src/context/contextResult.js"
+          ],
+          "scope": "current_committed_backend_source_offline_nodejs"
+        },
+        {
+          "recipe": "context-provenance-snapshot-v2",
+          "allowedFiles": [
+            "src/context/contextResult.js",
+            "src/context/toolGateway.js"
+          ],
+          "scope": "current_committed_backend_source_offline_nodejs"
+        },
+        {
+          "recipe": "context-coverage-snapshot-v3",
+          "allowedFiles": [
+            "src/context/contextResult.js",
+            "src/context/toolGateway.js"
+          ],
+          "scope": "current_committed_backend_source_offline_nodejs"
+        },
+        {
+          "recipe": "context-unavailable-snapshot-v4",
+          "allowedFiles": [
+            "src/context/toolGateway.js"
+          ],
+          "scope": "current_committed_backend_source_offline_nodejs"
+        },
+        {
+          "recipe": "registered-task-19738991-455b-4ca7-a72c-72310c6b0c04",
+          "allowedFiles": [
+            "src/intake/websiteFlow.js"
+          ],
+          "scope": "current_committed_backend_source_offline_nodejs"
+        },
+        {
+          "recipe": "registered-task-bce88bcd-5660-43b5-b418-02c13e40e62e",
+          "allowedFiles": [
+            "src/i18n/catalogue.js"
+          ],
+          "scope": "current_committed_backend_source_offline_nodejs"
+        },
+        {
+          "recipe": "registered-task-ffff22af-a65e-403d-840d-ba4993a929e7",
+          "allowedFiles": [
+            "src/subscription/workThreadTitles.js"
+          ],
+          "scope": "current_committed_backend_source_offline_nodejs"
+        }
+      ]
+    }
+  },
+  "legacy": [
+    {
+      "id": "architect",
+      "role": "Architect / Designer",
+      "provider": "Claude",
+      "engine": "llm",
+      "responsibilities": [
+        "系統設計",
+        "UI / UX",
+        "PRD",
+        "文件",
+        "複雜推理",
+        "架構審查"
+      ],
+      "capabilities": [
+        "architecture",
+        "design",
+        "ui_ux",
+        "prd",
+        "documentation",
+        "reasoning",
+        "review",
+        "analysis",
+        "verification",
+        "planning",
+        "research",
+        "writing",
+        "product",
+        "ops"
+      ],
+      "connected": true,
+      "active_count": 0
+    },
+    {
+      "id": "engineer",
+      "role": "Software Engineer",
+      "provider": "Claude Code",
+      "engine": "external",
+      "responsibilities": [
+        "Coding",
+        "Refactor",
+        "Bug Fix",
+        "Test",
+        "Build",
+        "PR"
+      ],
+      "capabilities": [
+        "coding",
+        "software",
+        "refactor",
+        "bugfix",
+        "test",
+        "build",
+        "pr"
+      ],
+      "connected": false,
+      "active_count": 0
+    },
+    {
+      "id": "advisor",
+      "role": "Technical Advisor / Strategy",
+      "provider": "GPT",
+      "engine": "external",
+      "responsibilities": [
+        "技術規劃",
+        "產品策略",
+        "架構討論",
+        "商業邏輯分析"
+      ],
+      "capabilities": [
+        "strategy",
+        "product_strategy",
+        "business_logic",
+        "planning_technical"
+      ],
+      "connected": false,
+      "active_count": 0
+    },
+    {
+      "id": "qa",
+      "role": "Engineering QA",
+      "provider": "Codex",
+      "engine": "external",
+      "responsibilities": [
+        "Code Review",
+        "靜態分析",
+        "回歸風險",
+        "改進建議"
+      ],
+      "capabilities": [
+        "code_review",
+        "static_analysis",
+        "regression",
+        "quality"
+      ],
+      "connected": false,
+      "active_count": 0
+    },
+    {
+      "id": "automation",
+      "role": "Automation Specialist",
+      "provider": "Manus",
+      "engine": "external",
+      "responsibilities": [
+        "瀏覽器自動化",
+        "長流程",
+        "研究",
+        "資料蒐集",
+        "多步驟執行"
+      ],
+      "capabilities": [
+        "browser",
+        "web",
+        "research_web",
+        "data_collection",
+        "workflow"
+      ],
+      "connected": false,
+      "active_count": 0
+    },
+    {
+      "id": "operator",
+      "role": "Computer Operator",
+      "provider": "Windows Agent",
+      "engine": "external",
+      "responsibilities": [
+        "Git",
+        "VS Code",
+        "終端機",
+        "部署",
+        "本機指令",
+        "檔案操作"
+      ],
+      "capabilities": [
+        "git",
+        "terminal",
+        "deploy",
+        "file_ops",
+        "local_commands",
+        "execution",
+        "desktop",
+        "ssh"
+      ],
+      "connected": false,
+      "active_count": 0
+    },
+    {
+      "id": "openclaw",
+      "role": "Controlled Research / Verification Executor",
+      "provider": "OpenClaw",
+      "engine": "external",
+      "responsibilities": [
+        "Repository audit (read-only)",
+        "Code review",
+        "Tests inside an isolated clone",
+        "Log inspection",
+        "Document analysis"
+      ],
+      "capabilities": [
+        "openclaw_repo_audit",
+        "openclaw_code_review",
+        "openclaw_test_run",
+        "openclaw_log_inspection",
+        "openclaw_document_analysis"
+      ],
+      "connected": false,
+      "active_count": 0
+    }
+  ],
+  "dispatch": {
+    "dispatch": {
+      "enabled": true,
+      "reason": null,
+      "scope": "dispatch-v1",
+      "githubRequired": false
+    },
+    "capabilities": [
+      {
+        "id": "codex-code-diagnosis",
+        "name": "Codex",
+        "capability": "CodeDiagnosis",
+        "version": 1,
+        "model": "gpt-6.1-sol",
+        "billing": "chatgpt-subscription",
+        "state": "configured",
+        "permissions": "supplied_committed_code_only"
+      }
+    ],
+    "worker": {
+      "state": "not_probed",
+      "canAccept": null,
+      "readinessBasis": "subscription_preflight_on_dispatch_only"
+    }
+  }
+}

@@ -93,6 +93,7 @@ const FILE_CLASS = Object.freeze({
   'context/sevenShiftsComparison.js': CLASS.MATCHING, // Bounded bilingual intent guards and deterministic comparison output; no model instructions.
   'intake/readObligationGap.js': CLASS.INTERFACE,
   'investigation/ownerBrief.js': CLASS.INTERFACE,
+  'investigation/delegationEvidenceView.js': CLASS.INTERFACE, // Receipt-bound roster display only; source projection and admission remain separate.
   'actions/view.js': CLASS.INTERFACE,
     'actions/chat.js': CLASS.INTERFACE,
     'actions/understanding.js': CLASS.MODEL, // Structured interpretation prompt and bounded input matching; no display strings.

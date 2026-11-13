@@ -199,6 +199,12 @@ function createProviders ({ executable, root, allowCredits = false }) {
   }
   return {
     testOrder: pack => executor.run(pack),
+    // Metadata from the same constants/CLI arguments used by actual execution.
+    describe: () => [
+      {id:'test_draft',role:'Test drafting',model:require('../projectTasks/provider').MODEL,effort:require('../projectTasks/provider').EFFORT,selection:'workflow_default',permissions:'protected_test_draft_only'},
+      {id:'development',role:'Isolated development',model:require('../../workers/execution/isolatedCoding').MODEL,effort:'per_work_order',selection:'workflow_default',permissions:'approved_registered_files_only'},
+      {id:'review',role:'Result review',model:claudeArgs()[claudeArgs().indexOf('--model')+1],effort:null,selection:'workflow_default',permissions:'supplied_packet_only'}
+    ],
     executionBusy: () => executor.isBusy(),
     isolation,
     async status () {
