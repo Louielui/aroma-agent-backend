@@ -736,6 +736,12 @@ function buildReadResultReply (input = {}) {
   // but no model action narrative. This reuses the existing evidence formatter.
   if(input.ownerGoalReporting===true)input={...input,reply:'',answerPlan:null,correction:null}
   const out = buildReadResultReplyInner(input)
+  const delegation=require('../investigation/delegationEvidenceView').renderDelegation(input)
+  if(delegation){
+    out.answerDetails=[delegation.details,out.answerDetails||out.reply].filter(Boolean).join('\n\n')
+    out.reply=delegation.reply
+    out.capabilityValidation=delegation.validation
+  }
   // Coverage is a host receipt from the settled read, independent of whether
   // the model produced a usable plan or bound any workflow columns. Apply it
   // to every render path before the existing final evidence/read-state guards.

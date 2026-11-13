@@ -22,7 +22,26 @@ const os = require('node:os')
 const path = require('node:path')
 const crypto = require('node:crypto')
 
+// The revision boundary uses a real, disposable committed repository. Reading the
+// developer checkout here makes this HTTP test depend on unrelated working edits.
+// The real producer still pins HEAD, reads committed bytes and rejects dirty files.
+const { execFileSync } = require('node:child_process')
+const revisionRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'lane-revision-'))
+const revisionFiles = ['src/agent/enquiryStore.test.js', require('../investigation/enquiryOffer').FILE]
+const revisionText = '// line 1\nconst TIMEOUT = 0\nmodule.exports = { TIMEOUT }\n'
+for (const file of revisionFiles) {
+  fs.mkdirSync(path.dirname(path.join(revisionRoot, file)), { recursive: true })
+  fs.writeFileSync(path.join(revisionRoot, file), revisionText)
+}
+const fixtureGit = (...args) => execFileSync('git', args, { cwd: revisionRoot, windowsHide: true, encoding: 'utf8' }).trim()
+fixtureGit('init', '-q')
+fixtureGit('add', '--', ...revisionFiles)
+fixtureGit('-c', 'user.name=Offline fixture', '-c', 'user.email=fixture@example.invalid', 'commit', '-q', '-m', 'Committed enquiry source fixture')
+const producer = require('../agent/workOrderProducer')
+const realProduce = producer.proposeWorkOrder
+producer.proposeWorkOrder = input => realProduce({ ...input, repoRoot: revisionRoot })
 const { createApp } = require('../app')
+producer.proposeWorkOrder = realProduce
 const { hashWorkOrder } = require('../agent/workOrder')
 
 const ORIGIN = 'http://127.0.0.1:8090'
@@ -199,6 +218,22 @@ test('a saved investigation prepares the registered enquiry without asking for a
     } finally { rebooted.server.close(); rebooted.restore() }
     assert.equal(ctx.app.locals.approvalAuditLog.some(e => e.approvalId === res.json.approvalId && e.outcome === 'refused' && e.reason === 'read_only_enquiry_accepted'), false)
   } finally { ctx.server.close(); ctx.restore() }
+})
+
+test('a dirty registered enquiry source is refused before a work order or dispatch', async () => {
+  const ctx = await startApp()
+  const file = path.join(revisionRoot, require('../investigation/enquiryOffer').FILE)
+  fs.appendFileSync(file, '// uncommitted edit\n')
+  try {
+    const receipts = require('../investigation/receipts').createReceipts(), id = crypto.randomUUID()
+    receipts.begin(id, 'fixture'); receipts.finish(id, { investigation: { goal: 'What consumed credits?', sections: [{ section: 'billing', state: 'unconnected' }] } })
+    const res = await req(ctx, { url: '/api/v1/owner/investigations/' + id + '/work-order', headers: { ...GOOD, authorization: 'Bearer test-token' }, body: {} })
+    assert.equal(res.status, 422)
+    assert.equal(res.json.error, 'work_order_rejected')
+    assert.match(res.json.errors.join(' '), /uncommitted|未提交/)
+    assert.equal(ctx.spy.dispatches, 0)
+    assert.equal(receipts.get(id).enquiryApprovalId || null, null)
+  } finally { fs.writeFileSync(file, revisionText); ctx.server.close(); ctx.restore() }
 })
 
 /* ── the tests ────────────────────────────────────────────────────────────── */

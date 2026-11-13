@@ -17,7 +17,9 @@ function eligibleRecipe (message) {
 function createPlanner ({ source, provider, providerFor, store, bootCommit, prepareWork, registerTask, findTask, executionRpc, executionPollMs, timeoutMs = 120000, onFinish = () => ({ state: 'not_connected' }) }) {
   const capability = 'TaskPlanning', worker = 'codex-task-planner'
   register({ id: capability, version: 2, lifecycle: 'active', risk_tier: 'low', input_schema: { type: 'object', required: ['evidence'], properties: { evidence: { type: 'object' } } }, output_schema: SCHEMA })
-  registerAgent({ id: worker, role: 'Read-only task planner', adapter: 'bounded-subscription-text', availability: 'local', status: 'active', provides: [{ capability, version: 2, seed_quality: 0, seed_cost: 'unknown' }] })
+  // Same default used by start below. Selection remains per request, not a grant.
+  const defaultModel='gpt-6.1-sol'
+  registerAgent({ id: worker, role: 'Read-only task planner', adapter: 'bounded-subscription-text', availability: 'local', status: 'active', delegation:{model:defaultModel,effort:DEFAULT_EFFORT,selection:'per_request',permissions:'read_only_committed_profile',scope:Object.keys(require('./contract').READ_PROFILES).join(', ')}, provides: [{ capability, version: 2, seed_quality: 0, seed_cost: 'unknown' }] })
   const controls = new Map(); let active = null
   const owner = actor => { if (actor?.id !== 'owner' || actor.role !== 'owner') throw Error('permission_denied'); source.verify(actor) }
   const save = r => store.save(r)
@@ -84,7 +86,7 @@ function createPlanner ({ source, provider, providerFor, store, bootCommit, prep
     owner(actor)
     if (!input || !['conversationId,message,requestId','conversationId,effort,message,requestId','conversationId,dialogue,effort,message,requestId','conversationId,dialogue,effort,message,model,requestId','conversationId,effort,message,model,requestId'].includes(Object.keys(input).sort().join(',')) || !ID.test(input.requestId || '') || !/^[a-z0-9][a-z0-9-]{7,63}$/.test(input.conversationId || '') || !classify(input.message)?.profile) throw Error('invalid_request')
     if (input.dialogue && !require('./dialogueContext').validDialogue(input.dialogue, bootCommit, input.conversationId, classify(input.message).profile)) throw Error('invalid_request')
-    const model = input.model || 'gpt-6.1-sol'
+    const model = input.model || defaultModel
     if (!require('../../subscription/chatModels').isBrainModel(model)) throw Error('invalid_request')
     const effort = Object.hasOwn(input, 'effort') ? input.effort : DEFAULT_EFFORT
     if (!REASONING_EFFORTS.includes(effort)) throw Error('invalid_request')
