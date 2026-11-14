@@ -2,8 +2,9 @@
 const fs = require('node:fs')
 const path = require('node:path')
 const { t } = require('../i18n/t')
-function buildHtml() {
+function buildHtml({ localOnly = false,productionLocal=false } = {}) {
   const labels = {
+    localOnly:localOnly===true,storageLabel:'PostgreSQL',retrievalLabel:'pgvector',
     backupStatus:t('memoryOps.backupStatus'),backupVerified:t('memoryOps.backupVerified'),backupRunning:t('memoryOps.backupRunning'),backupFailed:t('memoryOps.backupFailed'),backupHelp:t('memoryOps.backupHelp'),backupAttempt:t('memoryOps.backupAttempt'),backupProof:t('memoryOps.backupProof'),backupScheduled:t('memoryOps.backupScheduled'),backupManual:t('memoryOps.backupManual'),backupSucceededAt:t('memoryOps.backupSucceededAt'),backupNextAt:t('memoryOps.backupNextAt'),retainedOriginals:t('memoryOps.retainedOriginals'),rebuild:t('memoryOps.rebuild'),rebuildHelp:t('memoryOps.rebuildHelp'),
     operations:t('memoryOps.title'),operationsHelp:t('memoryOps.help'),bridge:t('memoryOps.bridge'),database:t('memoryOps.database'),hindsight:t('memoryOps.hindsight'),
     degraded:t('memoryOps.degraded'),foreign:t('memoryOps.foreign'),notMeasured:t('memoryOps.notMeasured'),receipts:t('memoryOps.receipts'),coverageUnavailable:t('memoryOps.coverageUnavailable'),
@@ -33,6 +34,15 @@ function buildHtml() {
     pending: t('mem6.pending'), unconfirmed: t('mem6.unconfirmed'), saved: t('mem6.saved'), loaded: t('mem6.loaded'),
     raw_only: t('mem6.rawOnly'), source_only: t('mem6.sourceOnly'), retrying: t('mem6.retrying'), nextRetry: t('mem6.nextRetry')
   }
+  if(localOnly===true)Object.assign(labels,{
+    storageLabel:'隔離 SQLite',retrievalLabel:'字詞檢索；無向量索引',
+    consolidationHelp:'使用本機模型，從有明確來源的隔離對話提出偏好、決定、經驗與待辦。候選須另行批准才成為有效記憶；不會自動派工或回退雲端。',
+    operationsHelp:'本頁只涵蓋隔離副本的本機記憶抽取及整理。正式記憶、電郵覆蓋、備份及 Agent 授權不在本頁操作範圍。',
+    evidence:'先勾選同一範圍的有效記憶。本機模型整理結果仍須批准。',
+    indexes:'字詞來源索引',index:'建立／重試字詞來源索引',saved:'已建立來源索引',
+    localEngine:'本機抽取與整理模型',localQueue:'待處理保存佇列',localBusy:'本機記憶處理中'
+  })
+  if(productionLocal)Object.assign(labels,{productionLocal:true,storageLabel:'PostgreSQL',indexes:'來源索引回執（既有引擎與本機）',saved:'已保存索引回執',consolidationHelp:'本機模型透過既有 Memory Gateway 整理有來源的記憶；偏好及決定候選須另行批准。',operationsHelp:'正式主資料保留在 PostgreSQL；本機字詞索引與推理登記另行持久保存。不使用雲端推理；既有索引回執不代表已由本機重新處理。'})
   return fs.readFileSync(path.join(__dirname, 'governedView.html'), 'utf8').replace('/*LABELS*/', JSON.stringify(labels).replace(/</g, '\\u003c'))
 }
 module.exports = { buildHtml }

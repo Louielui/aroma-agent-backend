@@ -75,6 +75,9 @@ const CLASS = Object.freeze({
  * the test checks COVERAGE (is every such file listed), never the number.
  */
 const FILE_CLASS = Object.freeze({
+  'localBrain/fixtures.js': CLASS.MODEL, // Synthetic source evidence and adversarial acceptance text, never translated.
+  'localBrain/server.js': CLASS.INTERFACE, // Isolated host status and model catalogue labels.
+  'localBrain/view.html': CLASS.INTERFACE, // Local acceptance interface, no prompt or permission text parsing.
   'actions/procurementContract.js': CLASS.MATCHING, // Fixed Owner intent guards; never translated.
   'core/codeDiagnosis/chat.js': CLASS.MATCHING, // Bounded command and constraint admission, never display copy.
   'actions/procurementChat.js': CLASS.INTERFACE, // Owner result/proposal presentation; exact intent guards stay in the contract.

@@ -11,7 +11,7 @@ function inventory (locale) {
     { role: t('brain.roleRouting', undefined, locale), selection: t('brain.routingSelection', undefined, locale), status: t('brain.fixedWorker', undefined, locale) }
   ]
 }
-function createModelCenterRouter ({ center, catalogue, receipts = require('../investigation/receipts').createReceipts() }) {
+function createModelCenterRouter ({ center, catalogue, roles = inventory, receipts = require('../investigation/receipts').createReceipts() }) {
   const router = express.Router()
   router.get('/model-center', (req, res) => res.type('html').send(require('./view').page()))
   router.use('/api/v1/model-center', (req, res, next) => {
@@ -25,7 +25,7 @@ function createModelCenterRouter ({ center, catalogue, receipts = require('../in
   }
   router.get('/api/v1/model-center', handle(async req => {
     const settings = center.read(), models = await catalogue()
-    return { revision: settings.revision, brain: settings.brain, models: models.models, billing: models.billing, roles: inventory(req.query.lang), autoFallback: false }
+    return { revision: settings.revision, brain: settings.brain, models: models.models, billing: models.billing, roles: roles(req.query.lang), autoFallback: false }
   }))
   router.put('/api/v1/model-center/brain', handle(async req => {
     if (!req.body || !['effort,model,revision', 'effort,investigationId,model,revision'].includes(Object.keys(req.body).sort().join(','))) throw Error('invalid_request')

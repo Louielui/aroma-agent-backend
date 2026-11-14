@@ -14,6 +14,7 @@ function subscriptionChatEnabled (env = process.env, lane) {
 
 // Fixed loopback destination, no redirects or proxies, and no provider API credential.
 function localRequest (route, input, env, signal) {
+  if(process.env.LOCAL_BRAIN_ONLY==='1')throw new (require('./LocalAdapter').LocalModelError)('local_capability_unavailable')
   assertLiveEgressAllowed('openai-codex')
   if (!validToken(env.CODEX_CHAT_BRIDGE_TOKEN)) return Promise.reject(new SubscriptionError())
   return new Promise((resolve, reject) => {

@@ -165,7 +165,7 @@ function createGateway({ store, engine, readConversation, clock = () => new Date
     if (engine) await Promise.all(selectedScopes.map(async scope => {
       try {
         const rows = await engine.forScope(scope).recall(query)
-        for (const hit of rows) { const row = records.find(r => r.id === hit.documentId && r.scope === scope); if (row) ranked.set(row.id, { row, rank: score(row) + 1, via: 'semantic' }) }
+        for (const hit of rows) { const row = records.find(r => r.id === hit.documentId && r.scope === scope); if (row) ranked.set(row.id, { row, rank: score(row) + 1, via: engine.retrievalKind === 'lexical' ? 'lexical' : 'semantic' }) }
       } catch (_) { semanticFailures++ }
     }))
     const refreshed = new Map((await list(actor, options)).filter(current).map(r => [r.id, r]))
@@ -285,7 +285,7 @@ function createGateway({ store, engine, readConversation, clock = () => new Date
     if (!result || !text(result.text, 30000)) throw Error('reflection_unavailable')
     return create(actor, { type: 'semantic', subject, text: result.text, scope,
       source: { kind: 'reflection', id: randomUUID(), at: clock(), attribution: 'derived', evidence: evidence.map(r => r.id) },
-      details: { query, mentalModel: true, evidenceVersions: evidence.map(r => ({ id: r.id, version: r.version, contentHash: evidenceHash(r) })), engine: 'hindsight', modelId: modelId || null },
+      details: { query, mentalModel: true, evidenceVersions: evidence.map(r => ({ id: r.id, version: r.version, contentHash: evidenceHash(r) })), engine: engine.engine || 'hindsight', modelId: modelId || null },
       ...(modelId ? { supersedes: modelId } : {}) }, false)
   }
   async function status(actor) {
@@ -366,7 +366,7 @@ function createGateway({ store, engine, readConversation, clock = () => new Date
           subject: target?.subject || plan.subject, text: plan.text,
           source: { kind: 'consolidation', id: source.id, at: source.source.at, attribution: 'derived', evidence: evidence.map(r=>r.id) },
           details: { category: plan.kind, reason: plan.reason, quote: plan.quote, taskState: plan.taskState, sourceId: source.id,
-            engine: 'hindsight', learningContext: context.map(r=>({id:r.id,text:r.text,source:r.source})),
+            engine: engine.engine || 'hindsight', learningContext: context.map(r=>({id:r.id,text:r.text,source:r.source})),
             evidenceVersions: [...evidence, ...(target ? [target] : [])].map(r => ({ id: r.id, contentHash: evidenceHash(r),
               learningContextHash:learningHash(r) })),
             ...(target ? { replaces: { id: target.id, text: target.text, sourceAt: target.source.at } } : {}) },

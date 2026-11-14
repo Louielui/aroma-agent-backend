@@ -467,7 +467,10 @@ function renderValidatedPlan (input) {
 
   // `message` travels so rule 7 can honour the Owner's carve-out: a row title HE typed is
   // not laundering, so it is not barred from her prose.
-  const v = validatePlan(input.answerPlan, { evidenceSets, itemsBySource, message: input.message })
+  const plan = process.env.LOCAL_BRAIN_ONLY === '1'
+    ? require('../localBrain/evidenceSchema').completeDerivedSelections(input.answerPlan, itemsBySource, evidenceSets)
+    : input.answerPlan
+  const v = validatePlan(plan, { evidenceSets, itemsBySource, message: input.message })
   const out = []
 
   // THE ANSWER OFFERED ROWS AND NONE OF THEM WERE REAL. Distinct from an unsupported
@@ -893,7 +896,13 @@ function buildReadResultReplyInner (input = {}) {
   // Nothing relevant AND nothing to report about why: leave the reply alone.
   if (groups.length === 0 && !limits) return { reply: original, applied: false, intent }
 
-  const out = [renderSummary(intent, groups)]
+  // An unsuccessful read is not an empty search. With no usable rows, keep
+  // the host's precise read status instead of inventing a no-match summary
+  // or a next question that assumes the unavailable data can be inspected.
+  const relevantFailure = (Array.isArray(input.perSource) ? input.perSource : [])
+    .some(r => intent.sources.includes(r.source) && r.trust !== 'live')
+  const failedWithoutRows = groups.length === 0 && relevantFailure
+  const out = failedWithoutRows ? [] : [renderSummary(intent, groups)]
   for (const g of groups) out.push(renderSection(g.operation || g.readKey, g.items, g.source))
 
   /**
@@ -925,9 +934,9 @@ function buildReadResultReplyInner (input = {}) {
   if (!serverOwnedRows) {
     if (limits) out.push(limits)
     // Her reading of what is above — after the data, before the question.
-    const opinion = extractOpinion(original)
+    const opinion = failedWithoutRows ? '' : extractOpinion(original)
     if (opinion) out.push(`### ${H.opinion}\n\n${opinion}`)
-    out.push(`### ${H.next}\n\n${oneQuestion(splitModelReply(original).next, intent)}`)
+    if (!failedWithoutRows) out.push(`### ${H.next}\n\n${oneQuestion(splitModelReply(original).next, intent)}`)
   }
 
   // A CORRECTION SURVIVES THE RESTRUCTURING. readStateGuard's note is a safety control,

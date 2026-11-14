@@ -76,6 +76,7 @@ const BLOCKED_MARKER = '[AROMA-LIVE-EGRESS-BLOCKED]'
  * @returns {boolean}
  */
 function liveEgressAllowed (env = process.env, argv = process.argv, mainFile) {
+  if (env.LOCAL_BRAIN_ONLY === '1') return false
   const main = mainFile === undefined ? ((require.main && require.main.filename) || null) : mainFile
   // ⛔ ORDINARY RUNTIME FIRST, AND IT RETURNS BEFORE THE OPT-IN IS EVEN READ.
   if (!isTestProcess(env, argv, main)) return true

@@ -1,6 +1,12 @@
 'use strict'
 const test=require('node:test'),assert=require('node:assert/strict')
 const {parseTests,cleanTestEnv,readReview}=require('./checks')
+test('only the entire pinned initial local transport addition avoids a false business-write classification',()=>{
+ const {contentRiskText}=require('./checks'),{classifyChanges}=require('./policy'),fs=require('node:fs'),path=require('node:path'),name='src/adapters/LocalAdapter.js',text=fs.readFileSync(path.join(__dirname,'../adapters/LocalAdapter.js'),'utf8').replace(/\r\n/g,'\n')
+ const piece=(file,body)=>'diff --git a/'+file+' b/'+file+'\nnew file mode 100644\n--- /dev/null\n+++ b/'+file+'\n@@ -0,0 +1,'+body.trimEnd().split('\n').length+' @@\n'+body.trimEnd().split('\n').map(l=>'+'+l).join('\n')+'\n'
+ const safe=contentRiskText([piece(name,text)]);assert.ok(!classifyChanges([name],safe.addedText).includes('business_data_write'));assert.ok(classifyChanges([name],safe.addedText).includes('security_permission_change'));assert.ok(safe.adjustments.some(a=>a.reason==='pinned_local_only_initial_transport'))
+ for(const changed of [piece(name,text+"\nfetch('https://business.example',{method:'POST'});\n"),piece('src/other.js',text),piece(name,text).replace('new file mode 100644','index forged..forged')])assert.ok(classifyChanges([name],contentRiskText([changed]).addedText).includes('business_data_write'))
+})
 test('test evidence records counts, exact skip names and log hash without inheriting paid credentials',()=>{
   const result=parseTests('ok 1 - normal\nok 2 - paid test # SKIP opt in\n# tests 2\n# pass 1\n# fail 0\n# cancelled 0\n# skipped 1\n',0)
   assert.equal(result.total,2);assert.equal(result.passed,1);assert.deepEqual(result.skipNames,['paid test']);assert.match(result.logHash,/^[a-f0-9]{64}$/)

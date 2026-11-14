@@ -55,12 +55,34 @@ function deadlineLine(line){
   if(/[^\s\d\[\](),?:=!<>]/.test(expression)||/(^|[^=!<>])=([^=]|$)/.test(expression))return null
   return match[1]+'<pure-deadline>'+match[3]
 }
+// These initial additions only POST to validated loopback inference/tokenizer or
+// authenticated isolated chat endpoints. Hash the entire added Git blob, not a
+// diff-supplied index header. Any content/path change restores the write gate.
+// Full executable diffs still go to review and protected-path scope still applies.
+const LOCAL_TRANSPORT_BLOBS=Object.freeze({
+ 'scripts/localBrain/accept.cjs':'d37c28dce41fc55065d3806187ff6d90e441b96c',
+ 'scripts/localBrain/probe.cjs':'aa37f02ecad684177a6b8e07fce448b312d3f4a9',
+ 'src/adapters/LocalAdapter.js':'d7d840cee7352dded95fafb1d37245a4486e2a3b',
+ 'src/localBrain/view.html':'f0c360d1ab6f7c4a2bd758b6b34ad57ce3de7453'
+})
+function pinnedLocalAddition(piece){
+ const expected=LOCAL_TRANSPORT_BLOBS[diffPath(piece)],lines=piece.split('\n'),hunks=lines.filter(l=>l.startsWith('@@'))
+ if(!expected||!lines.includes('new file mode 100644')||hunks.length!==1||!/^@@ -0,0 \+1,\d+ @@$/.test(hunks[0]))return false
+ const content=lines.filter(l=>l.startsWith('+')&&!l.startsWith('+++')).map(l=>l.slice(1)),count=Number(hunks[0].match(/\+1,(\d+)/)[1])
+ if(content.length!==count)return false
+ const bytes=Buffer.from(content.join('\n')+(lines.includes('\\ No newline at end of file')?'':'\n'))
+ return require('node:crypto').createHash('sha1').update(Buffer.from('blob '+bytes.length+'\0')).update(bytes).digest('hex')===expected
+}
 function contentRiskText(pieces){
   const added=[],adjustments=[]
-  for(const piece of pieces){const lines=piece.split('\n')
+  for(const piece of pieces){const lines=piece.split('\n'),localOnly=pinnedLocalAddition(piece)
     for(let i=0;i<lines.length;i++)if(lines[i].startsWith('+')&&!lines[i].startsWith('+++')){
       let value=lines[i].slice(1),previous=lines[i-1],before=lines[i-2],after=lines[i+1]
       const normalized=deadlineLine(value)
+      if(localOnly&&/\bmethod:\s*['"]POST['"]/.test(value)){
+        value=value.replace(/\bmethod:\s*['"]POST['"]/g,'pinned_local_transport_method')
+        adjustments.push({file:diffPath(piece),reason:'pinned_local_only_initial_transport'})
+      }
       if(normalized&&previous?.startsWith('-')&&!previous.startsWith('---')&&deadlineLine(previous.slice(1))===normalized&&before?.startsWith(' ')&&/,\s*\{\s*$/.test(before)&&after?.startsWith(' ')&&/\bheaders\s*:/.test(after)&&/\bbody\s*:/.test(after)){
         value=value.replace(/\bmethod:\s*['"](?:POST|PUT|PATCH|DELETE)['"]/,'previously_reviewed_transport_method')
         adjustments.push({file:diffPath(piece),reason:'identical_transport_pure_deadline_change'})

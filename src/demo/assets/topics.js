@@ -277,5 +277,16 @@
       submitted: function () { if (hrTools) { hrTools.open = false; tracking.open = false } }
     }
   }
-  root.XiangxiangTopics = { mount: mount }
+  async function readStream(response,container,t){
+    var phase=document.createElement('div');phase.className='meta';phase.textContent=t('localBrain.processing');container.appendChild(phase)
+    var reader=response.body.getReader(),decoder=new TextDecoder(),buffer='',received=0,final=null
+    try{for(;;){var chunk=await reader.read();if(chunk.done)break;received+=chunk.value.byteLength;if(received>2000000)throw Error('local_stream_limit')
+      buffer+=decoder.decode(chunk.value,{stream:true});var lines=buffer.split('\n');buffer=lines.pop()
+      lines.forEach(function(line){if(!line.startsWith('data: '))return;var event=JSON.parse(line.slice(6));if(event.type==='memory_complete')phase.textContent=t('localBrain.memoryRead');if(event.type==='model_start')phase.textContent=t('localBrain.processing');if(event.type==='final')final=event.body})
+    }
+    if(!final)throw Error('local_stream_incomplete');return{status:response.status,body:final}
+    }finally{await reader.cancel().catch(function(){});reader.releaseLock()}
+  }
+  function localCompany(select,t){var option=document.createElement('option');option.textContent=t('localBrain.title');option.value='local';select.replaceChildren(option)}
+  root.XiangxiangTopics = { mount: mount,readStream:readStream,localCompany:localCompany }
 })(typeof window === 'object' ? window : this)

@@ -19,12 +19,13 @@
   }
   function models (chosen) {
     by('model').replaceChildren()
-    data.models.filter(function (r) { return (r.model.startsWith('claude-') ? 'claude' : 'openai') === by('company').value }).forEach(function (r) { option(by('model'), r.model, r.name, !r.available) })
+    data.models.filter(function (r) { return (r.model.startsWith('local:')?'local':r.model.startsWith('claude-') ? 'claude' : 'openai') === by('company').value }).forEach(function (r) { option(by('model'), r.model, r.name, !r.available) })
     if (Array.from(by('model').options).some(function (o) { return o.value === chosen })) by('model').value = chosen
     efforts(data.brain.model === by('model').value ? data.brain.effort : 'medium')
   }
   function render () {
-    by('company').value = data.brain.model.startsWith('claude-') ? 'claude' : 'openai'; models(data.brain.model)
+    if(data.brain.model.startsWith('local:')){by('company').replaceChildren();option(by('company'),'local',t('localBrain.title'));by('billing').textContent=t('localBrain.limits')}
+    by('company').value = data.brain.model.startsWith('local:')?'local':data.brain.model.startsWith('claude-') ? 'claude' : 'openai'; models(data.brain.model)
     var row = data.models.find(function (r) { return r.model === data.brain.model })
     by('effective').textContent = t('brain.effective', { model: row ? row.name : data.brain.model, effort: data.brain.effort })
     by('roles').replaceChildren(); (data.roles || []).forEach(function (r) { var div = document.createElement('div'), title = document.createElement('strong'), value = document.createElement('span'), status = document.createElement('small'); div.className = 'role'; title.textContent = r.role; value.textContent = r.selection; status.textContent = r.status; div.append(title, value, status); by('roles').append(div) })

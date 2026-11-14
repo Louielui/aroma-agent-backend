@@ -537,6 +537,7 @@ function createAromaRouter ({ runStore, proposalStore, workerDeps, authorize, re
  */
 function createApp (options = {}) {
   const opts = options || {}
+  const localBrain=opts.localBrain||require('./localBrain/production').runtime()
 
   // B2-9 flag-scope containment. The productionDispatcher (real-repo Claude
   // Develop) is NO LONGER the implicit default. A real Develop dispatcher exists
@@ -869,9 +870,9 @@ function createApp (options = {}) {
     ? process.env.XIANGXIANG_COMPANY_ACCESS === '1' : opts.companyAccessEnabled === true
   const companyRegistry = opts.companyOptions?.registry || require('./company/access').createRegistry()
   const companyMailbox = opts.companyOptions?.mailbox || require('./company/mailbox').createMailbox({ registry: companyRegistry })
-  const governedMemory = opts.governedMemory || (!process.env.NODE_TEST_CONTEXT && process.env.XIANGXIANG_MEMORY === 'on' ? require('./memory/runtime').runtime() : null)
+  const governedMemory = localBrain?.memory?.runtime || opts.governedMemory || (!process.env.NODE_TEST_CONTEXT && process.env.XIANGXIANG_MEMORY === 'on' ? require('./memory/runtime').runtime() : null)
   let mailForeground = 0; let mailForegroundUntil = 0
-  const companyMailMemory = opts.companyOptions?.mailMemory || (companyAccessEnabled && governedMemory ? require('./company/mailMemory').createMailMemory({
+  const companyMailMemory = localBrain ? null : opts.companyOptions?.mailMemory || (companyAccessEnabled && governedMemory ? require('./company/mailMemory').createMailMemory({
     analyzer: require('./company/mailAnalysis').createMailAnalyzer(),
     engine: require('./memory/hindsight').createHindsight(),
     foreground: () => mailForeground > 0 || Date.now() < mailForegroundUntil,
@@ -1045,18 +1046,23 @@ function createApp (options = {}) {
   app.use('/memory', requireOwner)
   app.use('/api/v1/memory', requireOwner)
   if (governedMemory && !process.env.NODE_TEST_CONTEXT) governedMemory.start()
-  const memoryClient = opts.memoryClient || governedMemory?.ownerClient || require('./memory/hindsight').createHindsight()
+  const baseMemoryClient = opts.memoryClient || governedMemory?.ownerClient || require('./memory/hindsight').createHindsight()
+  const memoryClient = localBrain ? require('./localBrain/productionStream').measuredMemory(baseMemoryClient) : baseMemoryClient
   const memoryCapture = opts.memoryCapture || require('./memory/capture').createCapture({ client: memoryClient,
     available: () => process.env.XIANGXIANG_MEMORY === 'on' && !process.env.NODE_TEST_CONTEXT })
-  if (!process.env.NODE_TEST_CONTEXT) memoryCapture.start()
+  if (!process.env.NODE_TEST_CONTEXT && !localBrain) memoryCapture.start()
+  // Governed outbox is the sole capture/index owner in local mode. The legacy
+  // Hindsight capture worker must not race it or trigger hidden subscriptions.
+  if(localBrain)app.use(requireOwner,require('./localBrain/production').routeBoundary)
   const memoryRecovery = opts.memoryBackupScheduler || (governedMemory && !process.env.NODE_TEST_CONTEXT ? require('./memory/backupScheduler').createBackupScheduler({backup:()=>governedMemory.backup()}) : null)
   memoryRecovery?.start?.()
   const memoryOperations = opts.memoryOperations || (governedMemory ? require('./memory/operations').createMemoryOperations({
     gateway:governedMemory.gateway,runtime:governedMemory,mailMemory:companyMailMemory,mailHistory,recovery:memoryRecovery,
-    ...(process.env.NODE_TEST_CONTEXT ? {probe:async()=>({state:'not_measured',services:null})} : {})
+    ...(localBrain?{probe:async()=>({state:'local',services:{provider:'local',model:localBrain.profile.model,cloudFallback:false}})}:process.env.NODE_TEST_CONTEXT ? {probe:async()=>({state:'not_measured',services:null})} : {})
   }) : null)
   if (governedMemory) app.use(require('./memory/governedRoutes').createGovernedRouter({ gateway: governedMemory.gateway, runtime: governedMemory, operations:memoryOperations, recovery:memoryRecovery }))
-  app.use(require('./memory/routes').createMemoryRouter({ client: memoryClient, capture: memoryCapture, governed: Boolean(governedMemory) }))
+  app.use(require('./memory/routes').createMemoryRouter({ client: memoryClient, capture: memoryCapture, governed: Boolean(governedMemory),productionLocal:Boolean(localBrain) }))
+  if(localBrain)app.get('/api/local/status',requireOwner,(req,res)=>res.set('Cache-Control','no-store').json({scope:'production',provider:'local',model:localBrain.profile.model,cloudFallback:false,background:governedMemory?{capture:governedMemory.status(),consolidation:governedMemory.consolidation.status(),engine:localBrain.memory.engine.status()}:null}))
   app.use('/workers', requireOwner)
   app.use('/api/v1/worker-flow', requireOwner)
   app.use(require('./core/workerFlow/routes').createWorkerRouter(opts.workerFlowOptions))
@@ -1223,10 +1229,10 @@ function createApp (options = {}) {
     }
   })
 
-  const capturedConversationStore = require('./memory/capture').wrapConversationStore(realConversationStore, memoryCapture)
+  const capturedConversationStore = localBrain ? realConversationStore : require('./memory/capture').wrapConversationStore(realConversationStore, memoryCapture)
   const topicStore = require('./topics/workspaces').createTopicStore({ dataDir: require('./store/dataDir').resolveDataDir() })
-  const brainCatalogue = () => new (require('./adapters/CodexSubscriptionAdapter').CodexSubscriptionAdapter)().models()
-  const modelCenter = require('./modelCenter/service').createModelCenter({ dataDir: require('./store/dataDir').resolveDataDir(), catalogue: brainCatalogue, topicForConversation: topicStore.topicForConversation })
+  const brainCatalogue = localBrain?.catalogue || (() => new (require('./adapters/CodexSubscriptionAdapter').CodexSubscriptionAdapter)().models())
+  const modelCenter = require('./modelCenter/service').createModelCenter({ dataDir: require('./store/dataDir').resolveDataDir(), catalogue: brainCatalogue, topicForConversation: topicStore.topicForConversation,...(localBrain?{selectionPolicy:localBrain.selectionPolicy,localProfile:true}:{}) })
   const readTask = opts.readTask || require('./intake/readTask').createReadTask({audit:{append:event=>{
     const fs=require('node:fs'),dir=path.join(require('./store/dataDir').resolveDataDir(),'read-task-audit')
     fs.mkdirSync(dir,{recursive:true});fs.writeFileSync(path.join(dir,require('node:crypto').randomUUID()+'.json'),JSON.stringify({...event,at:new Date().toISOString()}),{flag:'wx',mode:0o600})
@@ -1284,7 +1290,7 @@ function createApp (options = {}) {
   app.use('/api/v1/procurement', (req,res,next)=>req.path==='/tick'?next():requireOwner(req,res,next))
   app.use(require('./actions/procurementRoutes').createRouter({chat:procurementChat,serviceGuard:requireServiceToken}))
   app.use('/api/v1/model-center', requireOwner)
-  app.use(require('./modelCenter/routes').createModelCenterRouter({ center: modelCenter, catalogue: brainCatalogue }))
+  app.use(require('./modelCenter/routes').createModelCenterRouter({ center: modelCenter, catalogue: brainCatalogue,...(localBrain?{roles:localBrain.roles}:{}) }))
   const sevenShiftsReport = opts.sevenShiftsReport || require('./context/sevenShiftsReport').createSevenShiftsReport()
   const hrRechecks = require('./topics/rechecks').createRechecks({ store: topicStore, reader: sevenShiftsReport })
   app.use('/api/v1/topic-workspaces', requireOwner, require('./topics/routes').createTopicRouter({
@@ -1314,8 +1320,10 @@ function createApp (options = {}) {
   })
   app.use('/api/v1/capability-gaps', requireOwner)
   app.use(require('./capabilities/gapRoutes').createGapRouter({service:capabilityGaps}))
+  if(localBrain)app.use('/api/v1/demo/intake',requireOwner,require('./localBrain/productionStream').middleware({dataDir:require('./store/dataDir').resolveDataDir()}))
   app.use(createDemoRouter({
-    processIntakeFn: require('./intake/readTask').createIntakeHandler({task:readTask,fallback:require('./intake/intakeService').processIntake}),
+    ...(localBrain?{getAdapterFn:()=>localBrain.provider,modelsFn:brainCatalogue}:{}),
+    processIntakeFn: require('./intake/readTask').createIntakeHandler({task:readTask,fallback:(message,adapter,history,context)=>require('./intake/intakeService').processIntake(message,adapter,history,{...context,...(localBrain?{memoryClient,latencySink:require('./localBrain/productionStream').pipelineTiming}:{} )})}),
     hrRechecks,
     capabilityGaps,
     sevenShiftsReport,
@@ -1330,7 +1338,7 @@ function createApp (options = {}) {
     codeRepair,
     chatWork,
     chatTasks:opts.chatTasks||require('./core/projectTasks/chat').createChatTasks({bootCommit:BOOT_COMMIT,...opts.projectWorkOptions}),
-    mailChat: companyAccessEnabled ? require('./company/mailChat').createMailChat({ mailbox: companyMailbox, memory: companyMailMemory }) : null,
+    mailChat: !localBrain && companyAccessEnabled ? require('./company/mailChat').createMailChat({ mailbox: companyMailbox, memory: companyMailMemory }) : null,
     operatingManager,
     memoryJournal: governedMemory,
     conversationStore: capturedConversationStore,

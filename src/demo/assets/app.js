@@ -87,7 +87,7 @@
     })
   }
   function queueImages(files) {
-    if (!SUBSCRIPTION_CHAT || !active || attachedKind) { imageNotice(t('imageChat.context')); return }
+    if (LOCAL_BRAIN || !SUBSCRIPTION_CHAT || !active || attachedKind) { imageNotice(t('imageChat.context')); return }
     if (pending || active.imagePreparing) { imageNotice(t('imageChat.reading')); return }
     var conv = active, existing = conv.pendingImages || []
     if (files.length + existing.length > 4) { imageNotice(t('imageChat.limit')); return }
@@ -115,15 +115,11 @@
   }
 
 
-  // Provider/model picks are hints, revalidated server-side per turn, never authority.
-  // Both providers receive the same context (contextAsymmetry.test.js); source names
-  // come from ALL_SOURCES via demoHtml.js, not a second handwritten inventory.
+  // Model hints grant no authority. The host and ALL_SOURCES own context.
   /**
    * ⛔ THE SAME RESOLVER THE SERVER RUNS, not a second one.
-   * `createResolver` and `CATALOGUE` are inlined above this script by demoHtml.js from
-   * src/i18n/browserResolver.js — the server's own function object, serialised. Two renderings
-   * could disagree; one function cannot disagree with itself, and browserResolver.test.js
-   * proves it over every key in both languages.
+   * demoHtml.js inlines the server's browserResolver and catalogue. The resolver
+   * tests cover every key in both languages; there is no second implementation.
    *
    * ⛔ AND IT IS NAMED `t`, WHICH COST 57 RENAMES IN THIS FILE. `t` was a local for DOM nodes
    * throughout (now `tEl`). The source scan that keeps data out of the translator looks for
@@ -147,6 +143,7 @@
   var SOURCE_TEXT = READ_SOURCES.join(t('punct.sourceSep')) + t('provider.pastDecisions')
 
   var SUBSCRIPTION_CHAT = /*SUBSCRIPTION_CHAT*/
+  var LOCAL_BRAIN = /*LOCAL_BRAIN*/
   var CENTRAL_MODELS = /*MODEL_CENTER*/
   var brainSelection = null, brainSaving = false, brainReady = false, modelsPromise = null, modelProviderStates = {}
   var brainMode = document.getElementById('brain-mode'), brainStatus = document.getElementById('brain-status')
@@ -165,7 +162,8 @@
   var companyPicker = document.getElementById('brain-company')
   var lastCompanyModel = { claude: 'claude-sonnet', openai: 'gpt-6.1-sol' }
   var modelEfforts = {}
-  function brainCompany (model) { return /^claude-/.test(model) ? 'claude' : 'openai' }
+  function brainCompany (model) { return /^local:/.test(model) ? 'local' : /^claude-/.test(model) ? 'claude' : 'openai' }
+  if(LOCAL_BRAIN&&companyPicker)XiangxiangTopics.localCompany(companyPicker,t)
   // The lane of the turn just rendered. Sent back so a short reply like 「1」 continues
   // what was happening instead of arriving as a fresh, contentless input. It is a lane
   // NAME only; the server re-validates it and refuses to continue into the proposal lane.
@@ -2246,7 +2244,7 @@
 
     var requestOptions = {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json',...(LOCAL_BRAIN&&!pictures.length?{Accept:'text/event-stream'}:{}) },
       credentials: 'same-origin',
       // No interactionMode unless a shortcut forced one — the SERVER routes. Sending a
       // lane the Owner never chose would put the old upfront decision back, invisibly.
@@ -2263,7 +2261,8 @@
     }
     var response = pictures.length ? fetch('/api/v1/demo/image-intake', requestOptions) : fetch('/api/v1/demo/intake', requestOptions)
     if (topicController) topicController.submitted()
-    response.then(function (r) {
+    response.then(async function (r) {
+      if((r.headers.get('content-type')||'').includes('text/event-stream'))return XiangxiangTopics.readStream(r,typing.root,t)
       return r.json().catch(function () { return {} }).then(function (j) { return { status: r.status, body: j } })
     }).then(function (o) {
       stopWebsitePoll()
@@ -3305,7 +3304,7 @@
     modelsPromise = fetch('/api/v1/demo/models', { credentials: 'same-origin', headers: selectionHeaders })
       .then(function (r) { if (!r.ok) throw Error('models_unavailable'); return r.json() })
       .then(function (catalog) {
-        if (!['subscriptions', 'chatgpt-subscription'].includes(catalog.billing) || !Array.isArray(catalog.models) || !catalog.models.length) throw Error('models_unavailable')
+        if (!['subscriptions', 'chatgpt-subscription',...(LOCAL_BRAIN?['local']:[])].includes(catalog.billing) || !Array.isArray(catalog.models) || !catalog.models.length) throw Error('models_unavailable')
         if (CENTRAL_MODELS && loadingConversation && (!catalog.selection || !catalog.selection.effective)) throw Error('models_unavailable')
         if (CENTRAL_MODELS && loadingConversation !== (active && active.cid)) return
         modelProviderStates = catalog.providers || {}
@@ -3314,7 +3313,7 @@
         PROVIDERS = catalog.models.map(function (row) {
           return { id: brainCompany(row.model), efforts: row.efforts || [], supportsEffort: row.supportsEffort, defaultEffort: row.defaultEffort, model: row.model, modelName: row.name, available: row.available === true, warn: false,
             name: t('provider.subscriptionModel', { model: row.name }),
-            note: row.available ? (notes[row.model] || (brainCompany(row.model) === 'claude' ? t('provider.claudeSubscriptionNote') : t('provider.subscriptionNote'))) : t('provider.modelUnavailable') }
+            note: LOCAL_BRAIN ? (row.available?t('localBrain.limits'):t('localBrain.unavailable')) : row.available ? (notes[row.model] || (brainCompany(row.model) === 'claude' ? t('provider.claudeSubscriptionNote') : t('provider.subscriptionNote'))) : t('provider.modelUnavailable') }
         })
         if (CENTRAL_MODELS && catalog.selection) {
           brainSelection = catalog.selection; chatModel = brainSelection.effective.model; modelEfforts[chatModel] = brainSelection.effective.effort

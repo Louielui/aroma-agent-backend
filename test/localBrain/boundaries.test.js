@@ -1,0 +1,41 @@
+'use strict'
+const {test}=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path'),vm=require('node:vm')
+const {LocalAdapter,events,partialReply}=require('../../src/adapters/LocalAdapter')
+const output=()=>new Response('{"message":{"content":"{}"}}\n{"done":true}\n')
+test('parallel calls share a pre-send bound; failure does not refund a sent attempt',async()=>{
+  let sent=0;const audit=[],context=e=>audit.push(e);context.budget={sent:0,limit:2}
+  const adapter=new LocalAdapter({env:{},fetchFn:async()=>{sent++;await new Promise(r=>setTimeout(r,10));throw Error('transport failure')}})
+  const results=await events.run(context,()=>Promise.allSettled(Array.from({length:5},()=>adapter.complete('hello'))))
+  assert.equal(sent,2);assert.equal(context.budget.sent,2)
+  assert.equal(results.filter(r=>r.reason.code==='local_turn_call_limit').length,3)
+  assert.equal(audit.filter(e=>e.type==='model_failed'&&e.sent).length,2)
+  assert.equal(audit.filter(e=>e.type==='model_failed'&&!e.sent).length,3)
+})
+test('cancelled request and capacity failure are diagnosed before inference',async()=>{
+  const audit=[],context=e=>audit.push(e);context.signal=AbortSignal.abort();context.budget={sent:0,limit:2}
+  let sent=0;const adapter=new LocalAdapter({env:{},fetchFn:async()=>{sent++;return output()}})
+  await assert.rejects(events.run(context,()=>adapter.complete('hello')),{code:'local_cancelled'})
+  await assert.rejects(events.run(context,()=>adapter.complete('x'.repeat(20000))),{code:'local_context_capacity_exceeded'})
+  assert.equal(sent,0);assert.equal(context.budget.sent,0);assert.equal(audit.filter(e=>e.type==='model_failed').length,2)
+})
+test('partial answer preview decodes escapes without evaluating markup or incomplete escape sequences',()=>{
+  assert.equal(partialReply('{"reply":"你好\\nChef'), '你好\nChef')
+  assert.equal(partialReply('{"reply":"<script>alert(1)</script>'), '<script>alert(1)</script>')
+  assert.equal(partialReply('{"reply":"test\\u00'),null)
+  assert.equal(partialReply('{"decision":"allow"}'),null)
+  const html=fs.readFileSync(path.join(__dirname,'../../src/localBrain/view.html'),'utf8')
+  assert.doesNotThrow(()=>new vm.Script(html.match(/<script>([\s\S]*?)<\/script>/)[1]))
+  assert.equal(/innerHTML\s*=/.test(html),false)
+})
+test('synthetic connector cannot write and preserves missing, failure and injection distinctions',async()=>{
+  const audit=[],context=e=>audit.push(e)
+  const connector=require('../../src/localBrain/fixtures').createFixtureConnector({context:()=>context})
+  const result=await connector.read('aroma_system','listInventory')
+  assert.equal(result.results[0].fields.currentStock,'7.5');assert.equal(result.evidence.fixture,true)
+  assert.deepEqual(result.evidence.derivations['缺口'].minus,['parLevel','currentStock'])
+  await assert.rejects(connector.read('aroma_system','createOrder'),/local_tool_not_authorized/)
+  context.scenario='missing_data';assert.equal((await connector.read('aroma_system','listInventory')).count,0)
+  context.scenario='tool_failure';await assert.rejects(connector.read('aroma_system','listInventory'),/local_fixture_tool_unavailable/)
+  context.scenario='injection';assert.match((await connector.read('aroma_system','listInventory')).results[0].content,/UNTRUSTED RECORD/)
+  assert.equal(audit.length,5)
+})

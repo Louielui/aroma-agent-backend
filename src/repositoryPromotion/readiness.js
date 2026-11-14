@@ -23,7 +23,7 @@ async function validateReadiness({artifacts,readinessId,commit,tree},dependencie
  if(await fileHash(path.join(restore,'canonical.json'))!==manifest.canonical.sha256)throw Error('backup_restore_proof_unconfirmed')
  const seen=new Set()
  for(const entry of manifest.files){
-  if(typeof entry.path!=='string'||entry.path.includes('\\')||entry.path.split('/').includes('..')||path.isAbsolute(entry.path)||seen.has(entry.path)||!(/^(?:memory-outbox|memory-capture|memory-consolidation|conversations)\/.+\.json$/.test(entry.path)||entry.path==='company-access.json'))throw Error('readiness_path_unconfirmed')
+  if(typeof entry.path!=='string'||entry.path.includes('\\')||entry.path.split('/').includes('..')||path.isAbsolute(entry.path)||seen.has(entry.path)||!(/^(?:memory-outbox|memory-capture|memory-consolidation|conversations)\/.+\.json$/.test(entry.path)||['company-access.json','model-center-local.json','memory-local-index/memory.sqlite'].includes(entry.path)||/^local-brain\/[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}\.json$/.test(entry.path)))throw Error('readiness_path_unconfirmed')
   seen.add(entry.path);const restoredFile=path.join(restore,'data',entry.path);inside(restore,restoredFile)
   const objectFile=path.join(bundle,'objects',entry.sha256);inside(bundle,objectFile)
   if(fs.statSync(restoredFile).size!==entry.bytes||await fileHash(restoredFile)!==entry.sha256||fs.statSync(objectFile).size!==entry.bytes||await fileHash(objectFile)!==entry.sha256)throw Error('backup_restore_proof_unconfirmed')

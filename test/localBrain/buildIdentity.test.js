@@ -1,0 +1,18 @@
+'use strict'
+const test=require('node:test'),assert=require('node:assert/strict')
+const fs=require('node:fs'),os=require('node:os'),path=require('node:path')
+const {buildIdentity}=require('../../src/localBrain/buildIdentity')
+test('runtime identity detects source changes and ignores private acceptance records',t=>{
+ const root=fs.mkdtempSync(path.join(os.tmpdir(),'local-identity-'))
+ t.after(()=>fs.rmSync(root,{recursive:true,force:true}))
+ fs.mkdirSync(path.join(root,'src'));fs.mkdirSync(path.join(root,'scripts/localBrain'),{recursive:true})
+ fs.writeFileSync(path.join(root,'src/adapter.js'),'one')
+ const before=buildIdentity(root)
+ fs.writeFileSync(path.join(root,'receipt.json'),'private acceptance data')
+ assert.equal(buildIdentity(root),before)
+ fs.writeFileSync(path.join(root,'src/adapter.js'),'two')
+ assert.notEqual(buildIdentity(root),before)
+ const changed=buildIdentity(root)
+ fs.writeFileSync(path.join(root,'scripts/localBrain/launch.cjs'),'new launcher')
+ assert.notEqual(buildIdentity(root),changed)
+})

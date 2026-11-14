@@ -34,7 +34,7 @@ function createCoordinator ({root,runtimeRoot,artifacts,privateRefs=[],invocatio
     return receipt
   }
   function body (row) {
-    return `Promote the accepted Imagine tranche at \`${row.committed.commit}\` into the formal baseline. Repository history and working files were preserved before integration; the runtime is limited to the local assistant.\n\nFull isolated suite: ${row.tests.passed} passed, ${row.tests.failed} failed, ${row.tests.skipped} explicitly recorded skips. Independent Claude review and policy checks are bound to the exact commit and tested tree.\n\nRollback point: \`${row.runtimeSnapshot.head}\`. Deployment requires exact merged-tree agreement, idle witnesses, health/bridge SHA checks and isolated regression tests. A failed verification triggers a forward-history rollback. Owner exceptions are retained; no force push, reset, branch deletion or business-data write is available.\n\nSee docs/AUTONOMOUS-REPOSITORY-PROMOTION.md for policy scope and completion evidence.`
+    return `Prepare the accepted Imagine tranche at \`${row.committed.commit}\` for the formal baseline. Repository history and working files were preserved before integration; the runtime is limited to the local assistant.\n\nFull isolated suite: ${row.tests.passed} passed, ${row.tests.failed} failed, ${row.tests.skipped} explicitly recorded skips. Independent Claude review and policy checks are bound to the exact commit and tested tree.\n\nRecovery source: \`${row.runtimeSnapshot.head}\`. Deployment requires exact merged-tree agreement, idle witnesses, health/bridge SHA checks and isolated regression tests. Recovery uses forward history, but a local-to-cloud recovery is refused pending a concrete Owner decision. Owner exceptions are retained; no force push, reset, branch deletion or business-data write is available.\n\nSee docs/AUTONOMOUS-REPOSITORY-PROMOTION.md for policy scope and completion evidence.`
   }
   function adapter (options={}) {
     const {files,message='Accepted Imagine development tranche'}=options
@@ -140,6 +140,7 @@ function createCoordinator ({root,runtimeRoot,artifacts,privateRefs=[],invocatio
         return runtime.restart(row.merge.commit,{guard:()=>authority?.assertForward(material)})
       },
       rollback:async row=>{
+        require('../localBrain/recovery').assertLocalRecovery(repository,row)
         if(authority){authority.assertRecovery(material);authority.note('rollback')}
         const guard=()=>authority?.assertRecovery(material)
         if(await github.main()!==row.merge.commit)throw Error('rollback_ref_drift')

@@ -102,6 +102,7 @@ function computeBuildStamp (overrides = {}) {
    */
   h.update('i18n')
   h.update(String(process.env.CHAT_BACKEND === 'codex-subscription'))
+  h.update(String(process.env.CHAT_BACKEND === 'local'))
   h.update(require('../i18n/browserResolver').browserI18nSource())
   h.update(SCRIPT_BOUNDARY)
   return h.digest('hex').slice(0, 12)
@@ -133,7 +134,7 @@ function buildDemoHtml () {
   return assemblePage({ template: readAsset('index.html'), i18n: require('../i18n/browserResolver').browserI18nSource(),
     css: readAsset('app.css'), sidebarCss: readAsset('sidebar.css'), sidebar: readAsset('sidebar.js'), topics: readAsset('topics.js'), app: readAsset('app.js'),
     dot: inlineSvg('dot.svg'), favicon: iconDataUri(), sourceLabels: JSON.parse(readSourceLabelsJson()), buildStamp: BUILD_STAMP,
-    subscription: process.env.CHAT_BACKEND === 'codex-subscription', modelCenter: true })
+    subscription: ['codex-subscription','local'].includes(process.env.CHAT_BACKEND), modelCenter: true,localBrain:process.env.CHAT_BACKEND==='local' })
 }
 
 const DEMO_HTML = buildDemoHtml()

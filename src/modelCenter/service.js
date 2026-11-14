@@ -5,9 +5,14 @@ const { isBrainModel, REASONING_EFFORTS } = require('../subscription/chatModels'
 const exact = (o, keys) => o && typeof o === 'object' && !Array.isArray(o) && Object.keys(o).sort().join(',') === keys.slice().sort().join(',')
 const validChoice = v => v && isBrainModel(v.model) && REASONING_EFFORTS.includes(v.effort)
 const rev = v => Number.isInteger(v) && v >= 0
-function createModelCenter ({ dataDir, catalogue, topicForConversation = () => null }) {
-  const file = path.join(dataDir, 'model-center.json')
-  const fresh = () => ({ version: 1, revision: 0, brain: { model: 'claude-sonnet', effort: 'medium' }, scopes: {}, audit: [] })
+function createModelCenter ({ dataDir, catalogue, topicForConversation = () => null, selectionPolicy = null,localProfile=false }) {
+  // Composition-owned policy; never supplied by an HTTP request. Cloud hosts
+  // retain their existing allowlist and defaults.
+  const validChoice = selectionPolicy ? selectionPolicy.validChoice : v => v && isBrainModel(v.model) && REASONING_EFFORTS.includes(v.effort)
+  const initialBrain = selectionPolicy ? selectionPolicy.initialBrain : { model: 'claude-sonnet', effort: 'medium' }
+  if (!validChoice(initialBrain)) throw Error('invalid_model_selection')
+  const file = path.join(dataDir, localProfile ? 'model-center-local.json' : 'model-center.json')
+  const fresh = () => ({ version: 1, revision: 0, brain: { ...initialBrain }, scopes: {}, audit: [] })
   function key (kind, id) {
     if (kind === 'topic' ? !TOPICS.includes(id) : kind !== 'conversation' || !isValidId(id)) throw Error('invalid_scope')
     return kind + ':' + id
