@@ -54,6 +54,6 @@ function createLocalEngine({database,adapter}){
     });return {text:r.text,basedOn:r.evidenceIds}
    }}
  }
- return {engine:'local',forScope,status:()=>({busy,lastFailure,provider:'local',semanticSearch:false,inference:database.inferenceStatus()})}
+ return {engine:'local',retrievalKind:'lexical',forScope,status:()=>({busy,lastFailure,provider:'local',semanticSearch:false,inference:database.inferenceStatus()})}
 }
 module.exports={createLocalEngine}

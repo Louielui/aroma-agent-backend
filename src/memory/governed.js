@@ -165,7 +165,7 @@ function createGateway({ store, engine, readConversation, clock = () => new Date
     if (engine) await Promise.all(selectedScopes.map(async scope => {
       try {
         const rows = await engine.forScope(scope).recall(query)
-        for (const hit of rows) { const row = records.find(r => r.id === hit.documentId && r.scope === scope); if (row) ranked.set(row.id, { row, rank: score(row) + 1, via: 'semantic' }) }
+        for (const hit of rows) { const row = records.find(r => r.id === hit.documentId && r.scope === scope); if (row) ranked.set(row.id, { row, rank: score(row) + 1, via: engine.retrievalKind === 'lexical' ? 'lexical' : 'semantic' }) }
       } catch (_) { semanticFailures++ }
     }))
     const refreshed = new Map((await list(actor, options)).filter(current).map(r => [r.id, r]))

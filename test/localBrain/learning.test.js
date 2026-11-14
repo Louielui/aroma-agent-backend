@@ -13,6 +13,7 @@ test('isolated learning reuses gateway approval, durable indexing, opt-out and b
  const {OWNER}=require('../../src/memory/governed')
  const source=await x.gateway.get(OWNER,queued.id)
  assert.equal(source.index.state,'saved')
+ assert.equal((await x.gateway.recall(require('../../src/memory/governed').OWNER,text)).find(r=>r.documentId===source.id).via,'lexical')
  const candidates=await x.gateway.list(OWNER,{status:'candidate'})
  assert.equal(candidates.length,1);assert.equal(candidates[0].text,text)
  assert.equal((await x.gateway.preferences(OWNER)).items.length,0)
