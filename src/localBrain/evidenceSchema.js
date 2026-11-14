@@ -44,4 +44,34 @@ function projectMemoryReferences(text,schema){
   delete body.memoryReferences
   return JSON.stringify(body)
 }
-module.exports={withEvidenceFields,withMemoryReferences,projectMemoryReferences}
+// Complete a selected operand pair with its declared computed column. This only
+// selects a label; answerPlan's existing validator still resolves the exact row,
+// rejects ambiguous/missing operands and computes the number. No prose parsing,
+// model arithmetic, new formulas, cross-row joins or tool calls are introduced.
+function completeDerivedSelections(plan,groups=[],evidence=[]){
+  if(!Array.isArray(plan?.sections))return plan
+  const out=structuredClone(plan)
+  for(const section of out.sections)for(const item of section?.items||[]){
+    if(!Array.isArray(item?.facts))continue
+    const matches=[]
+    for(const group of groups)for(const row of group?.items||[]){
+      const source=row.source||group.source,key=row.readKey||group.readKey||source
+      if(`${key}#${row.sourceId}`===item.sourceId)matches.push({row,source})
+    }
+    if(matches.length!==1)continue
+    const {row,source}=matches[0],selected=new Set(item.facts.map(f=>f.field))
+    const declarations=evidence.filter(e=>e.source===source)
+    const labels=new Map()
+    for(const e of declarations)for(const [label,spec] of Object.entries(e.derivations||{})){
+      if(!Array.isArray(spec?.minus)||spec.minus.length!==2||!spec.minus.every(x=>typeof x==='string'))continue
+      const old=labels.get(label)
+      labels.set(label,old===null||old&&JSON.stringify(old)!==JSON.stringify(spec.minus)?null:spec.minus)
+    }
+    for(const [label,operands] of labels){
+      if(!operands||selected.has(label)||!operands.every(name=>selected.has(name)&&Object.hasOwn(row.fields||{},name)))continue
+      item.facts.push({field:label,value:'0'});selected.add(label)
+    }
+  }
+  return out
+}
+module.exports={withEvidenceFields,withMemoryReferences,projectMemoryReferences,completeDerivedSelections}

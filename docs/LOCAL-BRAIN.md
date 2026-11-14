@@ -77,6 +77,15 @@ be reported separately from local inference acceptance.
 
 ## Measurement and acceptance
 
+The local presenter completes a selected pair of operand fields with the matching
+source-declared computed column on that exact row. This repairs a captured case
+where the model put arithmetic only in prose and the guard correctly removed it.
+Completion adds a field selection with a discarded placeholder, never a computed
+number. The existing answer-plan validator still owns arithmetic, row identity,
+numeric availability and output limits. A single operand, ambiguous row or
+conflicting declaration does not select a new computed field. Cloud presentation
+is unchanged. This is not a general inference of missing business formulas.
+
 Private `turns.jsonl` contains received time, source lookup durations, complete
 model inputs, model IDs, first model token, load/prompt/generation durations,
 tool durations, errors and final guarded output. The browser streams a clearly

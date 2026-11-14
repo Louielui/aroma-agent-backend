@@ -467,7 +467,10 @@ function renderValidatedPlan (input) {
 
   // `message` travels so rule 7 can honour the Owner's carve-out: a row title HE typed is
   // not laundering, so it is not barred from her prose.
-  const v = validatePlan(input.answerPlan, { evidenceSets, itemsBySource, message: input.message })
+  const plan = process.env.LOCAL_BRAIN_ONLY === '1'
+    ? require('../localBrain/evidenceSchema').completeDerivedSelections(input.answerPlan, itemsBySource, evidenceSets)
+    : input.answerPlan
+  const v = validatePlan(plan, { evidenceSets, itemsBySource, message: input.message })
   const out = []
 
   // THE ANSWER OFFERED ROWS AND NONE OF THEM WERE REAL. Distinct from an unsupported
