@@ -11,7 +11,8 @@ test('offline full intake reads delegation once and renders the bounded roster w
  const adapter={providerName:'claude',preflight:async()=>{},complete:async(prompt,o={})=>{calls.push(o.responseFormat?.name);return{billing:'claude-subscription',model:'claude-opus-5-5',text:JSON.stringify(o.responseFormat?.name==='goal_plan'?goal:saved.raw)}}}
  const result=await require('./intakeService').processIntake(saved.message,{complete:async()=>assert.fail('API forbidden')},[],{demo:true,interactionMode:'chat',ownerInvestigation:true,openaiAdapter:adapter,controlAdapter:{complete:async()=>assert.fail('API control forbidden')},semanticCallModel:async()=>JSON.stringify({intent:'NONE',confidence:'HIGH'}),readContextDeps:{sources:['xiangxiang_operations'],connector:{read:async(source,method,params)=>{reads.push({source,method,params});return{results:params.sections.map(section=>({source:'xiangxiang_operations',sourceId:section+':offline',title:section,trust:'live',retrievedAt:at,fields:section==='delegation'?{section,...view}:{section,state:'ok',records:[],workflows:[]}}))}}},sourceIntentResolver:async()=>assert.fail('extra classifier forbidden'),finalVerifier:async()=>({decision:'allow_final'})}})
  assert.equal(reads.length,1);assert.deepEqual(reads[0].params.sections,['configuration','work','delegation'])
- assert.equal(calls.length,2,'existing goal and final-answer calls; metadata adds no model call')
+ assert.equal(calls.length,1,'understanding remains; the existing trusted projection replaces the discarded final-answer call')
+ assert.equal(result.investigation.answerPresentation.answerCallSkipped,true)
  assert.match(result.reply,/gpt-6\.1-sol/);assert.match(result.reply,/claude-sonnet-5-5/)
  assert.deepEqual(result.tasks,[]);assert.equal(result.investigation.answerPresentation.dispatchVerified,false)
  assert.equal(result.investigation.answerPresentation.validation.boundDelegationFacts,2)

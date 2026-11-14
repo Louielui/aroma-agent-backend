@@ -71,6 +71,8 @@ function buildArchitectureHtml () {
   investigationRow.evidence+='; src/intake/capabilityForeground.test.js; src/intake/fixtures/capabilityForegroundAnswer.json; docs/CAPABILITY-MODEL-FOREGROUND.md'
   investigationRow.component+=' / judged capability coverage-gap read reuses local enrichment once; prompt-only historical-work omission retains original evidence (offline candidate; real latency unverified)'
   investigationRow.evidence+='; src/intake/capabilityContext.js; src/intake/leanCapability.test.js; docs/LEAN-CAPABILITY-CONTEXT.md'
+  investigationRow.component+=' / settled, complete registered delegation metadata reuses the existing source projection before a discarded final draft; goal/intent, authorised read and final guards retained (offline candidate; undeployed; native latency unmeasured)'
+  investigationRow.evidence+='; src/intake/delegationDirectReplay.test.js; src/intake/fixtures/delegationDirectReplay.json; src/investigation/answerFastPath.js; docs/DELEGATION-DIRECT-ANSWER.md'
   const learningRow=rows.find(row=>row.id==='memory')
   learningRow.current+=' '+t('learningContinuity.current')
   learningRow.current+=' '+t('chatLatency.current')

@@ -877,6 +877,7 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
    */
   let goalPlanObserved = null
   let capabilityReadSettled = false
+  let directCapabilityAnswer = null
   /**
    * ⛔ X2 — THE UNDERSTANDING OUTLIVES THE FACT PLAN.
    *
@@ -2061,6 +2062,9 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
       operationsLive: modelDirectedLiveOperations.has('xiangxiang_operations'),
       ownerInvestigation: opts.ownerInvestigation === true, subscriptionMode,
       interactionMode: opts.interactionMode, previousInvestigation: opts.previousInvestigation,
+      capabilityReadSettled, truncated: turnTruncated, ownerGoalReporting: !!opts.ownerGoal,
+      authorisedSources: authorisedSourcesFor(providerName),
+      itemsBySource: Array.from(turnItems.values()), perSource: Array.from(turnPerSource.values()),
       onDecision: reason => { if (operationalInvestigation) operationalInvestigation.answerCallGate = reason }
     })
     if (!direct) return false
@@ -2068,14 +2072,15 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
     // model result is fabricated: answer-call provenance remains absent.
     distilled = { mode: 'chat', intent: 'question', reply: direct.reply,
       nextRead: null, answerPlan: null, tasks: [], reasons: [], offer: '' }
-    operationalInvestigation.answerPresentation = direct.presentation
+    if (operationalInvestigation) operationalInvestigation.answerPresentation = direct.presentation
+    else directCapabilityAnswer = direct.presentation
     activeProvider = providerName
     activeAdapter = providerAdapter
     tel.answerCallSkipped = 'deterministic_verified_findings'
     tel.readContextUsed = true
     tel.readContextSources = ['xiangxiang_operations']
     tel.replyCitesContext = true
-    investigationProgress({ state: 'evaluating', investigation: operationalInvestigation })
+    if (operationalInvestigation) investigationProgress({ state: 'evaluating', investigation: operationalInvestigation })
     return true
   }
 
@@ -3973,7 +3978,8 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
     if (chatClaim.corrected) logReadClaimCorrection(chatClaim, requestId)
     const capabilityPresentation = view.answerDetails && !view.routeEvidenceWithheld && !chatClaim.corrected
       ? {readOnly:true,focus:'capability',state:'partial',sections:[],answerDetails:view.answerDetails,
-        answerPresentation:{kind:'validated_capability_explanation',validation:view.capabilityValidation,modelProseUsed:view.capabilityValidation?.kind!=='delegation_source_projection',dispatchVerified:false}} : null
+        answerPresentation:{kind:'validated_capability_explanation',validation:view.capabilityValidation,modelProseUsed:view.capabilityValidation?.kind!=='delegation_source_projection',dispatchVerified:false,
+          ...(directCapabilityAnswer && {answerCallSkipped:true,skipReason:directCapabilityAnswer.skipReason})}} : null
     return { blocked: false, mode: distilled.mode, intent: distilled.intent,
       ...(gapForTurn() && { capabilityGap: gapForTurn() }),
       ...((operationalInvestigation||capabilityPresentation) && { investigation: operationalInvestigation||capabilityPresentation }),
