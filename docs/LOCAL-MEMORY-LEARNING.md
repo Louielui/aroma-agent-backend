@@ -38,7 +38,10 @@ runtime package is installed: the verified Node 24 host supplies SQLite.
 `C:\Aroma\local-brain-runtime\learning-v1` contains an explicitly isolated SQLite
 canonical copy, quote index, inference reservations, audit chains and the existing
 outbox/consolidation settings. The sourced snapshot seeds an empty copy once; it
-does not overwrite learned records on restart. Production PostgreSQL and Hindsight
+does not overwrite learned records on restart. Original index receipts are retained
+under `details.localImport`; the local copy starts index-pending until its own
+extraction succeeds. Original approval and consolidation history are retained, not
+reinterpreted as new local learning or retroactive approval. Production PostgreSQL and Hindsight
 remain untouched. This backend implements the existing structured-store injection
 contract; it is never selected as a production fallback.
 

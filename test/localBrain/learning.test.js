@@ -112,3 +112,12 @@ test('consolidation accepts the existing engine wire projection for a same-kind 
  value.candidates[0].supersedes='xx-'+require('node:crypto').randomUUID()
  await assert.rejects(engine.consolidate({...source,text:text+' Not a different grant.'},wire),/invalid_consolidation/)
 })
+test('source snapshot index evidence is retained as historical, not claimed as a local index',async t=>{
+ const dir=fs.mkdtempSync('C:/Aroma/local-brain-runtime/learning-import-'),source={id:'fixture-import',version:4,type:'episodic',status:'active',details:{},index:{state:'saved',facts:7,attempts:2}}
+ const x=require('../../src/localBrain/learning').createLearning({dir,adapter:{providerName:'local'},sourceRows:[source]})
+ t.after(()=>{x.close();fs.rmSync(dir,{recursive:true,force:true})})
+ const imported=await x.database.store.get(source.id)
+ assert.equal(imported.index.state,'pending');assert.equal(imported.index.facts,null)
+ assert.deepEqual(imported.details.localImport.originalIndex,source.index)
+ assert.equal(source.index.state,'saved');assert.equal(source.version,4)
+})
