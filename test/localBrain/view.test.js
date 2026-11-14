@@ -16,4 +16,9 @@ test('visible final state separates failure, source pointers and untrusted marku
   assert.equal(answer.textContent,'<img src=x onerror=alert(1)>');assert.equal(answer.innerHTML,undefined)
   assert.match(answer.children[0].textContent,/xx-known.*版本 4.*private:owner/)
   assert.equal(vm.runInContext('history.length',context),2)
+  context.receipt={body:{reply:'A valid guarded answer.'},memoryReceipt:'unavailable',timing:{totalMs:11}}
+  assert.equal(vm.runInContext("renderFinal(receipt,'another turn')",context),true)
+  const partial=nodes.get('#chat').children.at(-1)
+  assert.equal(partial.textContent,'A valid guarded answer.')
+  assert.match(partial.children[0].textContent,/記憶保存未確認/)
 })

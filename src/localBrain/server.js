@@ -2,6 +2,13 @@
 // Isolated composition of the existing authenticated demo intake and Memory Gateway.
 // No production app startup or dispatch worker. Local learning is explicit opt-in.
 const fs = require('node:fs'), path = require('node:path'), {performance}=require('node:perf_hooks')
+function writeLocalEvent(res,event){
+  // Intake still needs to publish its receipt headers after journaling. The
+  // request is recorded immediately, but only model/final events start the wire.
+  if(event.type==='received'||event.type==='model_input'||res.writableEnded)return
+  if(!res.headersSent)res.set({'Content-Type':'text/event-stream','Cache-Control':'no-store'})
+  res.write('data: '+JSON.stringify(event)+'\n\n')
+}
 function learningRequestAllowed(req,enabled){
  if(!enabled)return false
  if(req.method==='GET')return req.path==='/local/memory'||/^\/api\/v1\/memory\/catalog(?:\/xx-[a-f0-9-]+)?$/.test(req.path)
@@ -57,16 +64,16 @@ function createLocalApp({dataDir, sourceRows = [], ownerPassword, onEvent = () =
     const cancellation=new AbortController()
     res.on('close',()=>{if(!res.writableEnded)cancellation.abort()})
     const stream=req.headers.accept==='text/event-stream', original=res.json.bind(res)
-    const emit=event=>{trace.push({...event,atMs:performance.now()-start});onEvent(event);if(event.type==='model_input')return;if(stream&&!res.writableEnded){if(!res.headersSent)res.set({'Content-Type':'text/event-stream','Cache-Control':'no-store'});res.write('data: '+JSON.stringify(event)+'\n\n')}}
+    const emit=event=>{trace.push({...event,atMs:performance.now()-start});onEvent(event);if(stream)writeLocalEvent(res,event)}
     emit.signal=cancellation.signal
     emit.budget={sent:0,limit:12}
     const scenario=req.headers['x-local-scenario']
     if(process.env.LOCAL_TEST_FIXTURES==='1'&&['tool_failure','missing_data','injection'].includes(scenario))emit.scenario=scenario
     res.json=body=>{
-      const receipt={type:'final',body,timing:{totalMs:performance.now()-start},trace}
+      const receipt={type:'final',body,timing:{totalMs:performance.now()-start},trace,memoryReceipt:res.locals.memoryReceipt||null}
       fs.appendFileSync(path.join(dataDir,'turns.jsonl'),JSON.stringify(receipt)+'\n')
-      if(stream){emit({type:'final',body,timing:receipt.timing});res.end();return res}
-      return original({...body,localTiming:receipt.timing})
+      if(stream){emit({type:'final',body,timing:receipt.timing,memoryReceipt:receipt.memoryReceipt});res.end();return res}
+      return original({...body,localTiming:receipt.timing,memoryReceipt:receipt.memoryReceipt})
     }
     events.run(emit,()=>{emit({type:'received',provider:'local'});next()})
   })
@@ -81,4 +88,4 @@ function createLocalApp({dataDir, sourceRows = [], ownerPassword, onEvent = () =
   learning?.start()
   return {app,sessions,gateway,learning,close:()=>learning?.close()}
 }
-module.exports={createLocalApp,learningRequestAllowed}
+module.exports={createLocalApp,learningRequestAllowed,writeLocalEvent}

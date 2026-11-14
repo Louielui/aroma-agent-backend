@@ -214,6 +214,12 @@ function buildWorkRequestResolution ({ req, message, offerDecision, conversation
   return null
 }
 
+function setMemoryReceipt(res,state) {
+  // Streaming transports cannot mutate committed HTTP headers. Retain the actual
+  // capture state for their final envelope; ordinary JSON keeps its existing header.
+  res.locals ||= {};res.locals.memoryReceipt=state
+  if(!res.headersSent)res.setHeader('X-Memory-Receipt',state)
+}
 function createDemoRouter ({ getAdapterFn = getAdapterForLane, processIntakeFn = processIntake, conversationStore = INERT_CONVERSATION_STORE, readBacklogFn = null, backlogTimeoutMs = 2500, errandStoreFn = null, operatingManager = null, memoryJournal = null, mailChat = null, liveContext = null, sevenShiftsReport = null, hrRechecks = null, developmentPlan = null, codeDiagnosis = null, codeRepair = null, chatWork = null, chatTasks = null, taskPlanner = null, taskDialogue = null, schedulerChat = null, procurementChat = null, capabilityGaps = null, publicCompletion = require('../topics/publicAnswerFollowups').createService(), imageAdapterFn = selection => {
   if (process.env.CHAT_BACKEND !== 'codex-subscription') throw Error('image_chat_unavailable')
   return new (require('../adapters/CodexSubscriptionAdapter').CodexSubscriptionAdapter)(selection)
@@ -942,10 +948,10 @@ function createDemoRouter ({ getAdapterFn = getAdapterForLane, processIntakeFn =
           const conversationId = isValidConversationId(req.body.conversationId) ? req.body.conversationId : null
           const learningAnchor = require('../memory/learningContext').anchor(conversationId ? conversationStore.get?.(conversationId)?.messages : null)
           const receipt = memoryJournal.event('conversation', correlationId + ':received', message, 'owner_statement', new Date().toISOString(), { conversationId, learningAnchor })
-          res.setHeader('X-Memory-Receipt', receipt.state)
+          setMemoryReceipt(res,receipt.state)
           let working = null
           if (receipt.state === 'queued') {
-            try { working = await memoryJournal.gateway.working({ id: 'owner', role: 'owner' }, { subject: message.slice(0, 240), goal: message, project: 'Xiangxiang', worker: 'xiangxiang', runId: correlationId, context: [receipt.id], ttlSeconds: 3600, scope: 'private:owner' }) } catch (_) { res.setHeader('X-Memory-Receipt', 'partial') }
+            try { working = await memoryJournal.gateway.working({ id: 'owner', role: 'owner' }, { subject: message.slice(0, 240), goal: message, project: 'Xiangxiang', worker: 'xiangxiang', runId: correlationId, context: [receipt.id], ttlSeconds: 3600, scope: 'private:owner' }) } catch (_) { setMemoryReceipt(res,'partial') }
           }
           const sendJson = res.json.bind(res)
           res.json = body => {
@@ -954,10 +960,10 @@ function createDemoRouter ({ getAdapterFn = getAdapterForLane, processIntakeFn =
                 typeof body?.reply === 'string' ? body.reply : JSON.stringify({ httpStatus: res.statusCode, completed: res.statusCode < 400 }),
                 typeof body?.reply === 'string' ? 'assistant_claim' : 'measured_result')
               if (working) void memoryJournal.gateway.finishWork({ id: 'owner', role: 'owner' }, working.id, working.version, res.statusCode < 400 ? 'completed' : 'failed').catch(() => {})
-            } catch (_) { res.setHeader('X-Memory-Receipt', 'unavailable') }
+            } catch (_) { setMemoryReceipt(res,'unavailable') }
             return sendJson(body)
           }
-        } catch (_) { res.setHeader('X-Memory-Receipt', 'unavailable') }
+        } catch (_) { setMemoryReceipt(res,'unavailable') }
       }
 
       const briefingRequest = require('../core/operating/chatRequest')
@@ -1510,4 +1516,4 @@ function createDemoRouter ({ getAdapterFn = getAdapterForLane, processIntakeFn =
   return router
 }
 
-module.exports = { createDemoRouter, INTERACTION_MODES, historyTextOf }
+module.exports = { createDemoRouter, INTERACTION_MODES, historyTextOf, setMemoryReceipt }

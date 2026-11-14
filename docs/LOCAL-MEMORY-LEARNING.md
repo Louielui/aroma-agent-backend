@@ -59,6 +59,10 @@ Reflection/summary is an explicit Owner operation over specified active evidence
 it produces a derived candidate, not a verified fact or autonomous authority.
 
 The isolated page links to the existing memory catalogue at `/local/memory`.
+The SSE transport records receipt time immediately but defers wire headers until
+intake has attached its memory receipt. Late capture states travel in the final
+envelope rather than attempting to rewrite committed HTTP headers. A missing or
+partial memory receipt is visible separately from a valid guarded answer.
 Owner authentication and same-origin checks precede its limited route set.
 Agent-token grants, business work, backup, rebuild and credential routes are denied.
 The reused catalogue contains controls for other deployments; unsupported operations
