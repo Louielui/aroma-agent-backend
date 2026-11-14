@@ -14,6 +14,15 @@ test('formal profile selects local without accepting fixture paths or an externa
  assert.throws(()=>p.validateEnvironment({LOCAL_OLLAMA_URL:'https://example.com'}),/local_endpoint_refused/)
  assert.doesNotThrow(()=>p.validateEnvironment({}))
 })
+test('formal canonical storage reuses only the existing authenticated storage RPC without a native service-account spawn',async()=>{
+ const dir=fs.mkdtempSync(runtime+'/formal-storage-rpc-'),egress=require('../../src/adapters/liveEgressFence'),original=egress.fencedFetch,token=process.env.CODEX_CHAT_BRIDGE_TOKEN,trace=[];let local
+ try{
+  process.env.CODEX_CHAT_BRIDGE_TOKEN='a'.repeat(64)
+  egress.fencedFetch=provider=>async(url,options)=>{assert.equal(provider,'memory_gateway');trace.push({url,body:JSON.parse(options.body),authorization:options.headers.authorization});return{ok:true,json:async()=>({result:{state:'connected',database:'fixture'}})}}
+  local=require('../../src/localBrain/production').createComposition({dataDir:dir})
+  assert.equal((await local.memory.store.health()).state,'connected');assert.equal(trace.length,1);assert.equal(trace[0].url,'http://127.0.0.1:8091/memory-store');assert.deepEqual(trace[0].body,{op:'health'});assert.equal(trace[0].authorization,'Bearer '+'a'.repeat(64))
+ }finally{local?.close();egress.fencedFetch=original;if(token===undefined)delete process.env.CODEX_CHAT_BRIDGE_TOKEN;else process.env.CODEX_CHAT_BRIDGE_TOKEN=token;fs.rmSync(dir,{recursive:true,force:true})}
+})
 test('automatic recovery cannot restore a cloud baseline or hide an unknown recovery profile',()=>{
  const {assertLocalRecovery}=require('../../src/localBrain/recovery'),row={committed:{commit:'local'},runtimeSnapshot:{head:'cloud'}},git=args=>args[0]==='ls-tree'?(args[1]==='local'?'blob profile':''):JSON.stringify({mode:'local'})
  assert.throws(()=>assertLocalRecovery({git},row),/local_cloud_recovery_requires_owner/)
@@ -43,6 +52,8 @@ test('formal memory uses the canonical store, never seeds it, and persists only 
 test('formal no-cloud boundary rejects subscribed Bridge, Hindsight, HTTP redirects, raw sockets and CLI but recognizes exact business reads',()=>{
  const f=require('../../src/localBrain/productionFence')
  assert.equal(f.allowedUrl('http://127.0.0.1:11435/api/chat','POST'),true)
+ assert.equal(f.allowedUrl('http://127.0.0.1:8091/memory-store','POST'),true)
+ assert.equal(f.allowedUrl('http://127.0.0.1:8091/memory-store?route=complete','POST'),false)
  assert.equal(f.allowedUrl('https://system.aromabistro741.com/ai/inventory','POST'),false)
  for(const u of ['http://127.0.0.1:8091/chat','http://127.0.0.1:8888/v1','https://api.anthropic.com/v1/messages','https://api.openai.com/v1/responses','https://www.googleapis.com/evil'])assert.equal(f.allowedUrl(u),false,u)
  assert.equal(f.allowedUrl('https://system.aromabistro741.com/ai/inventory'),true)

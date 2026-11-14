@@ -9,6 +9,8 @@ function allowedUrl(value,method='GET'){
   const u=new URL(value);if(u.username||u.password||u.hash)return false
   if(u.origin==='http://127.0.0.1:11435')return method==='POST'?/^\/api\/(?:chat|show)$/.test(u.pathname):method==='GET'&&/^\/api\/(?:tags|ps)$/.test(u.pathname)
   if(u.origin==='http://127.0.0.1:11436')return method==='POST'&&u.pathname==='/count_tokens'
+  // Existing authenticated storage RPC only. Bridge model/worker endpoints stay closed.
+  if(u.origin==='http://127.0.0.1:8091')return method==='POST'&&u.pathname==='/memory-store'&&!u.search
   if(u.protocol!=='https:'||u.port)return false
   if(u.origin===businessOrigin)return method==='GET'&&/^\/ai\/(?:inventory|suppliers|daily-counts|order-planning|purchase-orders|invoices)(?:\/|$)/.test(u.pathname)
   if(u.hostname==='www.googleapis.com')return method==='GET'&&/^\/(?:drive\/v3|gmail\/v1|calendar\/v3|oauth2\/v\d)(?:\/|$)/.test(u.pathname)

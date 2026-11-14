@@ -35,10 +35,12 @@ be installed into production.
 
 Formal memory continues using the existing canonical PostgreSQL structured-store
 transport and its revision checks, source attribution, scopes, approvals and audit.
-The existing native Python transport is selected in local mode, avoiding the
-subscription Bridge for storage. No canonical schema migration or new database
-role is required. The process must already have access to the existing protected
-configuration; missing access fails closed and does not trigger an ACL change.
+The formal LocalService account reuses the existing authenticated Bridge storage
+RPC at exactly `127.0.0.1:8091/memory-store`. This endpoint invokes the existing
+canonical Python store, not a model client; all Bridge inference/worker endpoints
+remain blocked. LocalService need not read the private PostgreSQL instance file
+in the Owner profile. No canonical schema migration, new database role, credential
+or ACL change is required. Missing storage authorization fails closed.
 
 `data/memory-local-index/memory.sqlite` holds only derived documents and durable
 inference reservations. It never seeds or replaces the canonical store. The
@@ -60,13 +62,15 @@ Email analysis/indexing and subscribed code/delegation workers are not migrated.
 Their local-mode startup/work paths are disabled or refused, with an explicit
 unavailable result. No local model is substituted for a worker's execution rights.
 The old subscribed Bridge and Hindsight processes may serve separately authorized
-work, but this formal local process cannot submit inference to them.
+work. This formal local process can use the Bridge storage RPC but cannot submit
+inference to either process.
 
 ## Transport boundary
 
 The process-local fence is installed before importing the formal app. All HTTP,
 fetch and socket traffic needs an approved destination context. Allowed routes are
-the pinned loopback Ollama/tokenizer APIs and a narrow existing GET-only business
+the pinned loopback Ollama/tokenizer APIs, the existing authenticated memory-store
+RPC, and a narrow existing GET-only business
 read set: Aroma inventory/supplier/count/planning/order/invoice endpoints, Google
 Drive/Gmail/Calendar/Sheets reads, plus Google's existing OAuth token endpoint.
 Original source credentials, scopes, same-origin and Gateway authorization remain
@@ -75,7 +79,7 @@ business services are currently unavailable from this local composition. Adding
 another destination requires reviewed integration, not a model-provided hostname.
 
 Redirects and transport overrides cannot move an allowed request to an AI host.
-Raw sockets, subscribed Bridge/Hindsight traffic and arbitrary child processes
+Raw sockets, Bridge inference/Hindsight traffic and arbitrary child processes
 are refused. The only child allowance is the exact existing native canonical
 store/backup Python program and argument shapes; reviewed Python source hashes
 must remain unchanged. This is not an OS sandbox and does not claim to constrain

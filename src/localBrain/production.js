@@ -19,7 +19,7 @@ function createComposition({dataDir,store,adapter,readConversation,memoryEnabled
  dataDir=dataDir||require('../store/dataDir').resolveDataDir()
  const {LocalAdapter}=require('../adapters/LocalAdapter')
  const provider=adapter||new LocalAdapter()
- const memory=memoryEnabled?require('./productionMemory').createProductionMemory({store:store||require('../memory/structuredStore').createStructuredStore({local:true}),dir:path.join(dataDir,'memory-local-index'),productionDataDir:dataDir,adapter:provider,readConversation}):null
+ const memory=memoryEnabled?require('./productionMemory').createProductionMemory({store:store||require('../memory/structuredStore').createStructuredStore({local:false}),dir:path.join(dataDir,'memory-local-index'),productionDataDir:dataDir,adapter:provider,readConversation}):null
  const model='local:'+profile.model
  return {memory,provider,profile,selectionPolicy:{initialBrain:{model,effort:'auto'},validChoice:v=>v?.model===model&&v?.effort==='auto'},
   catalogue:async()=>{let available=false;try{await provider.preflight();available=true}catch{}return{billing:'local',models:[{model,name:'Local Qwen3.5 9B',provider:'local',available,efforts:['auto'],supportsEffort:false}]}},

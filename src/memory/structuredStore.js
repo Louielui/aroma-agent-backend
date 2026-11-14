@@ -6,7 +6,7 @@ function readUtf8(stream, append) {
   // A multibyte character may cross child-process pipe chunks.
   stream.setEncoding('utf8'); stream.on('data', append)
 }
-function createStructuredStore({ invoke, local = process.env.LOCAL_BRAIN_ONLY==='1', env = process.env } = {}) {
+function createStructuredStore({ invoke, local = false, env = process.env } = {}) {
   const runLocal = request => new Promise((resolve, reject) => {
     if (isTestProcess()) return reject(Error('memory_database_test_fence'))
     const backup = request.op === 'backup'
