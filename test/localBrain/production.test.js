@@ -12,6 +12,8 @@ test('formal profile selects local without accepting fixture paths or an externa
  assert.equal(p.profile.mode,'local');assert.equal(p.profile.model,'qwen3.5:9b')
  assert.throws(()=>p.validateEnvironment({LOCAL_TEST_FIXTURES:'1'}),/production_fixture_refused/)
  assert.throws(()=>p.validateEnvironment({LOCAL_OLLAMA_URL:'https://example.com'}),/local_endpoint_refused/)
+ assert.throws(()=>p.validateEnvironment({PORT:'8090',LOCAL_APP_PORT:'18092'}),/production_local_port_mismatch/)
+ assert.throws(()=>p.validateEnvironment({PORT:'invalid'}),/production_local_port_invalid/)
  assert.doesNotThrow(()=>p.validateEnvironment({}))
 })
 test('formal canonical storage reuses only the existing authenticated storage RPC without a native service-account spawn',async()=>{
@@ -68,8 +70,8 @@ test('installed formal fence refuses actual cloud transports and child process l
 test('formal entry composition activates the reviewed local profile before app creation, without a listener or cloud startup',()=>{
  const dir=fs.mkdtempSync(runtime+'/formal-boot-')
  try{
-  const code=`const p=require('./src/localBrain/production');p.activate();const app=require('./src/app');if(!p.isActive()||process.env.LLM_PROVIDER!=='local'||process.env.WORKER_INVOCATION!=='off')throw Error('boot_not_local');const r=p.runtime();if(r.memory.engine.engine!=='local')throw Error('memory_not_local');r.close();console.log('formal_local_composition_created')`
-  const r=cp.spawnSync(process.execPath,['-e',code],{cwd:root,env:{...process.env,NODE_TEST_CONTEXT:'child-v8',AROMA_DATA_DIR:dir,READ_ACCESS:'off',XIANGXIANG_MEMORY:'on'},encoding:'utf8',windowsHide:true,timeout:15000});assert.equal(r.status,0,r.stderr);assert.match(r.stdout,/formal_local_composition_created/)
+  const code=`const p=require('./src/localBrain/production');p.activate();const app=require('./src/app');if(!p.isActive()||process.env.LLM_PROVIDER!=='local'||process.env.WORKER_INVOCATION!=='off'||process.env.LOCAL_APP_PORT!=='8090')throw Error('boot_not_local');const same=require('./src/core/operating/chatRequest').sameOrigin;if(!same({get:k=>({host:'127.0.0.1:8090',origin:'http://127.0.0.1:8090'})[k]}))throw Error('formal_origin_refused');const r=p.runtime();if(r.memory.engine.engine!=='local')throw Error('memory_not_local');r.close();console.log('formal_local_composition_created')`
+  const r=cp.spawnSync(process.execPath,['-e',code],{cwd:root,env:{...process.env,PORT:'8090',LOCAL_APP_PORT:'',NODE_TEST_CONTEXT:'child-v8',AROMA_DATA_DIR:dir,READ_ACCESS:'off',XIANGXIANG_MEMORY:'on'},encoding:'utf8',windowsHide:true,timeout:15000});assert.equal(r.status,0,r.stderr);assert.match(r.stdout,/formal_local_composition_created/)
  }finally{fs.rmSync(dir,{recursive:true,force:true})}
 })
 test('permitted business transport is forwarded once and fetch cannot follow a redirect to an AI service',()=>{
@@ -82,17 +84,17 @@ test('existing canonical recovery includes a consistent derived SQLite backup an
 })
 test('formal authenticated app uses canonical memory, local models and SSE, with no duplicate legacy capture',async()=>{
  const {IncomingMessage,ServerResponse}=require('node:http'),{Duplex}=require('node:stream'),dir=fs.mkdtempSync(runtime+'/formal-app-')
- const keys=['AROMA_DATA_DIR','CHAT_BACKEND','LOCAL_BRAIN_ONLY','LOCAL_MODEL','CONVERSATION_DEMO'],saved=Object.fromEntries(keys.map(k=>[k,process.env[k]]))
+ const keys=['AROMA_DATA_DIR','CHAT_BACKEND','LOCAL_BRAIN_ONLY','LOCAL_MODEL','LOCAL_APP_PORT','CONVERSATION_DEMO'],saved=Object.fromEntries(keys.map(k=>[k,process.env[k]]))
  let local,oldIntake,intake
- async function request(app,url,body,cookie){
+ async function request(app,url,body,cookie,headers={}){
   const wire=[],socket=new Duplex({read(){},write(c,e,n){wire.push(c.toString());n()}}),req=new IncomingMessage(socket),text=body===null?'':JSON.stringify(body)
-  req.method=body===null?'GET':'POST';req.url=url;req.headers={host:'127.0.0.1:18099',origin:'http://127.0.0.1:18099',accept:body===null?'application/json':'text/event-stream',...(text?{'content-type':'application/json','content-length':String(Buffer.byteLength(text))}:{}),...(cookie?{cookie:'aroma_owner_session='+cookie}:{})};req.httpVersionMajor=1;req.httpVersionMinor=1;req.httpVersion='1.1';req.complete=true
+  req.method=body===null?'GET':'POST';req.url=url;req.headers={host:'127.0.0.1:18099',origin:'http://127.0.0.1:18099',accept:body===null?'application/json':'text/event-stream',...(text?{'content-type':'application/json','content-length':String(Buffer.byteLength(text))}:{}),...(cookie?{cookie:'aroma_owner_session='+cookie}:{}),...headers};req.httpVersionMajor=1;req.httpVersionMinor=1;req.httpVersion='1.1';req.complete=true
   const res=new ServerResponse(req);res.assignSocket(socket)
   await new Promise((resolve,reject)=>{const timer=setTimeout(()=>reject(Error('formal_request_timeout')),6000);res.once('finish',()=>{clearTimeout(timer);resolve()});app.handle(req,res,e=>{if(e){clearTimeout(timer);reject(e)}});if(text)req.push(text);req.push(null)})
   return{status:res.statusCode,wire:wire.join('')}
  }
  try{
-  Object.assign(process.env,{AROMA_DATA_DIR:dir,CHAT_BACKEND:'local',LOCAL_BRAIN_ONLY:'1',LOCAL_MODEL:'qwen3.5:9b',CONVERSATION_DEMO:'on'})
+  Object.assign(process.env,{AROMA_DATA_DIR:dir,CHAT_BACKEND:'local',LOCAL_BRAIN_ONLY:'1',LOCAL_MODEL:'qwen3.5:9b',LOCAL_APP_PORT:'18099',CONVERSATION_DEMO:'on'})
   const canonical=require('../../src/memory/structuredStore').createTestStore()
   local=require('../../src/localBrain/production').createComposition({dataDir:dir,store:canonical,adapter:{providerName:'local',model:'qwen3.5:9b',preflight:async()=>({available:true})}})
   const queued=local.memory.runtime.event('conversation','formal-fixture','Owner prefers short fixture reports.','owner_statement');await local.memory.runtime.drain()
@@ -104,6 +106,11 @@ test('formal authenticated app uses canonical memory, local models and SSE, with
   let reached=0
   intake.processIntake=async(message,adapter,history,options)=>{reached++;assert.equal(adapter,local.provider);assert.equal(options.memoryClient.engine,'memory_gateway');assert.ok((await options.memoryClient.recall('fixture reports')).some(r=>r.documentId===queued.id));require('../../src/adapters/LocalAdapter').events.getStore()({type:'model_start',phase:'answer'});return{mode:'chat',intent:'chit_chat',reply:'Fixture response with retained evidence.'}}
   const app=require('../../src/app').createApp({ownerPassword:'fixture-password-only',serviceToken:'fixture-service-token',localBrain:local}),cookie=app.locals.ownerSessions.issue()
+  assert.equal((await request(app,'/api/v1/memory/capture',{op:'enabled',value:false},cookie)).status,200)
+  assert.equal(JSON.parse(fs.readFileSync(path.join(dir,'memory-capture/settings.json'))).enabled,false)
+  assert.equal((await request(app,'/api/v1/memory/capture',{op:'enabled',value:true},null)).status,401)
+  assert.equal((await request(app,'/api/v1/memory/capture',{op:'enabled',value:true},cookie,{origin:'http://other.example'})).status,403)
+  assert.equal(JSON.parse(fs.readFileSync(path.join(dir,'memory-capture/settings.json'))).enabled,false)
   assert.equal((await request(app,'/api/v1/demo/intake',{message:'Hello'},null)).status,401)
   const denied=await request(app,'/api/v1/project-work',{op:'start'},cookie);assert.equal(denied.status,503);assert.match(denied.wire,/local_capability_unavailable/)
   const catalog=await request(app,'/api/v1/model-center',null,cookie);assert.equal(catalog.status,200);assert.match(catalog.wire,/local:qwen3.5:9b/)

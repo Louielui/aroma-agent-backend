@@ -2,6 +2,9 @@
 const fs=require('node:fs'),path=require('node:path'),profile=Object.freeze(require('./deploymentProfile.json'))
 let active=false,composition=null
 function validateEnvironment(env){
+ const port=Number(env.PORT||8081)
+ if(!Number.isInteger(port)||port<1024||port>65535)throw Error('production_local_port_invalid')
+ if(env.LOCAL_APP_PORT&&Number(env.LOCAL_APP_PORT)!==port)throw Error('production_local_port_mismatch')
  if(env.LOCAL_TEST_FIXTURES||env.LOCAL_MEMORY_SNAPSHOT||env.LOCAL_MEMORY_LEARNING||env.LOCAL_LEARNING_DIR)throw Error('production_fixture_refused')
  for(const key of ['LOCAL_MODEL_URL','LOCAL_OLLAMA_URL'])if(env[key]&&env[key]!==profile.endpoint)throw Error('local_endpoint_refused')
  if(env.LOCAL_TOKENIZER_URL)throw Error('local_tokenizer_model_mismatch')
@@ -10,7 +13,7 @@ function validateEnvironment(env){
 function activate(){
  if(active)return
  validateEnvironment(process.env)
- Object.assign(process.env,{LOCAL_BRAIN_ONLY:'1',LLM_PROVIDER:'local',CHAT_BACKEND:'local',LOCAL_MODEL:profile.model,LOCAL_MODEL_DIGEST:profile.digest,LOCAL_MODEL_URL:profile.endpoint,LOCAL_MODEL_CONTEXT:String(profile.context),WORKER_INVOCATION:'off',DEVELOP_DISPATCH:'off',AGENT_BRIDGE:'off'})
+ Object.assign(process.env,{LOCAL_BRAIN_ONLY:'1',LOCAL_APP_PORT:String(Number(process.env.PORT||8081)),LLM_PROVIDER:'local',CHAT_BACKEND:'local',LOCAL_MODEL:profile.model,LOCAL_MODEL_DIGEST:profile.digest,LOCAL_MODEL_URL:profile.endpoint,LOCAL_MODEL_CONTEXT:String(profile.context),WORKER_INVOCATION:'off',DEVELOP_DISPATCH:'off',AGENT_BRIDGE:'off'})
  const dir=path.join(require('../store/dataDir').resolveDataDir(),'local-brain')
  const audit=event=>{fs.mkdirSync(dir,{recursive:true});fs.writeFileSync(path.join(dir,require('node:crypto').randomUUID()+'.json'),JSON.stringify({...event,at:new Date().toISOString()}),{flag:'wx',mode:0o600})}
  require('./productionFence').install({audit});active=true

@@ -15,6 +15,9 @@ the old cloud settings, issue credentials or silently fall back to another model
 The existing XIANGXIANG_MEMORY switch still governs memory initialization. With
 memory disabled, startup and health remain write-free; activation does not turn
 that switch on or open an index database merely to report service health.
+Activation pins the same-origin local page port to the formal `PORT` (8081 when
+unset), refuses malformed/privileged ports and conflicting isolated port hints,
+and preserves rejection of cross-site writes.
 Every inference verifies installed alias/digest metadata before sending its chat
 request. Ollama remains resident through the existing adapter's keep_alive=-1.
 
