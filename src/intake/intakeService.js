@@ -2603,6 +2603,12 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
         initialObligation = worldAsk0.requiredWorlds
         forkTrace(FORK_STAGE.WORLD_ASK, FORK_BRANCH.RESOLVER_OBLIGATION, { intent: resolved.intent })
         } else if (resolved.intent === 'not_applicable') {
+          // A local verifier requiring evidence and a resolver denying any read
+          // domain disagree. Do not publish the ungrounded draft as success.
+          // No extra inference, guessed tool, or permission expansion resolves it.
+          if (localMode && verdict.requiredWorlds) {
+            throw new (require('../adapters/LocalAdapter').LocalModelError)('local_evidence_decision_conflict')
+          }
           /**
            * ⛔ X2 — NO WORLD, THEREFORE NO OBLIGATION AND NO QUESTION.
            *

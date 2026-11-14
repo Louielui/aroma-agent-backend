@@ -37,6 +37,9 @@ remain responsible for understanding, tool choice, exact derivations and evidenc
 checks. Ollama JSON grammar and the actual host schema are both supplied: grammar
 alone does not communicate field meanings. Unknown, incomplete, oversized or
 failed model output is an explicit local error, with no provider retry/fallback.
+If the local final verifier requires evidence but the source resolver says no
+read domain applies, the turn fails with `local_evidence_decision_conflict`.
+It does not release the unsupported draft or guess a tool to resolve disagreement.
 
 The existing Model Center persists the host-selected `local:` model through its
 revision and audit mechanism. Owner authentication, same-origin writes and a
