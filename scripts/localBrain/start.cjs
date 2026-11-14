@@ -22,7 +22,7 @@ if(process.env.LOCAL_TEST_FIXTURES==='1') {
 const port=Number(process.env.LOCAL_APP_PORT)
 const server=app.listen(port,'127.0.0.1',()=>console.log(JSON.stringify({state:'listening',address:'127.0.0.1',port,provider:'local',model:process.env.LOCAL_MODEL||'qwen3:8b',learning:!!host.learning,cloudFallback:false})))
 let stopping=false
-function stop(){if(stopping)return;stopping=true;server.close();host.learning?.runtime.stop();const timer=setInterval(()=>{try{host.close();clearInterval(timer);process.stdin.destroy()}catch(e){if(e.message!=='local_memory_busy'){clearInterval(timer);process.exitCode=1}}},100)}
+function stop(){if(stopping)return;stopping=true;let drained=false;server.close(()=>{drained=true});host.learning?.runtime.stop();const timer=setInterval(()=>{if(!drained)return;try{host.close();clearInterval(timer);process.stdin.destroy()}catch(e){if(e.message!=='local_memory_busy'){clearInterval(timer);process.exitCode=1}}},100)}
 // A closed parent pipe can only request graceful shutdown, never execute code.
 process.stdin.setEncoding('utf8');process.stdin.on('data',s=>{if(s.trim()==='stop')stop()});process.stdin.on('end',stop)
 process.on('SIGINT',stop);process.on('SIGTERM',stop)
