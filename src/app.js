@@ -1046,7 +1046,8 @@ function createApp (options = {}) {
   app.use('/memory', requireOwner)
   app.use('/api/v1/memory', requireOwner)
   if (governedMemory && !process.env.NODE_TEST_CONTEXT) governedMemory.start()
-  const memoryClient = opts.memoryClient || governedMemory?.ownerClient || require('./memory/hindsight').createHindsight()
+  const baseMemoryClient = opts.memoryClient || governedMemory?.ownerClient || require('./memory/hindsight').createHindsight()
+  const memoryClient = localBrain ? require('./localBrain/productionStream').measuredMemory(baseMemoryClient) : baseMemoryClient
   const memoryCapture = opts.memoryCapture || require('./memory/capture').createCapture({ client: memoryClient,
     available: () => process.env.XIANGXIANG_MEMORY === 'on' && !process.env.NODE_TEST_CONTEXT })
   if (!process.env.NODE_TEST_CONTEXT && !localBrain) memoryCapture.start()
@@ -1322,7 +1323,7 @@ function createApp (options = {}) {
   if(localBrain)app.use('/api/v1/demo/intake',requireOwner,require('./localBrain/productionStream').middleware({dataDir:require('./store/dataDir').resolveDataDir()}))
   app.use(createDemoRouter({
     ...(localBrain?{getAdapterFn:()=>localBrain.provider,modelsFn:brainCatalogue}:{}),
-    processIntakeFn: require('./intake/readTask').createIntakeHandler({task:readTask,fallback:(message,adapter,history,context)=>require('./intake/intakeService').processIntake(message,adapter,history,{...context,...(localBrain?{memoryClient}:{} )})}),
+    processIntakeFn: require('./intake/readTask').createIntakeHandler({task:readTask,fallback:(message,adapter,history,context)=>require('./intake/intakeService').processIntake(message,adapter,history,{...context,...(localBrain?{memoryClient,latencySink:require('./localBrain/productionStream').pipelineTiming}:{} )})}),
     hrRechecks,
     capabilityGaps,
     sevenShiftsReport,

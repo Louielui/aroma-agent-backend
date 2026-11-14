@@ -1,6 +1,12 @@
 'use strict'
 const {test}=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path'),cp=require('node:child_process')
 const root=path.resolve(__dirname,'../..'),runtime='C:/Aroma/local-brain-runtime'
+test('formal memory timing preserves methods, results and failures without logging query or contents',async()=>{
+ const {events}=require('../../src/adapters/LocalAdapter'),trace=[],client={engine:'fixture',preferences:async()=>({items:['private']}),recall:async()=>{throw Error('source_down')},retain:()=>42}
+ const wrapped=require('../../src/localBrain/productionStream').measuredMemory(client)
+ await events.run(e=>trace.push(e),async()=>{assert.deepEqual(await wrapped.preferences(),{items:['private']});await assert.rejects(wrapped.recall('secret'),/source_down/)})
+ assert.equal(wrapped.engine,'fixture');assert.equal(wrapped.retain(),42);assert.equal(trace.length,2);assert.ok(trace.every(e=>e.durationMs>=0));assert.equal(trace[1].code,'memory_read_failed');assert.doesNotMatch(JSON.stringify(trace),/secret|private|source_down/)
+})
 test('formal profile selects local without accepting fixture paths or an external inference URL',()=>{
  const p=require('../../src/localBrain/production')
  assert.equal(p.profile.mode,'local');assert.equal(p.profile.model,'qwen3.5:9b')
@@ -85,15 +91,17 @@ test('formal authenticated app uses canonical memory, local models and SSE, with
   const recalled=await local.memory.runtime.ownerClient.recall('fixture reports');assert.ok(recalled.some(r=>r.documentId===queued.id))
   intake=require('../../src/intake/intakeService');oldIntake=intake.processIntake
   let reached=0
-  intake.processIntake=async(message,adapter,history,options)=>{reached++;assert.equal(adapter,local.provider);assert.equal(options.memoryClient,local.memory.runtime.ownerClient);require('../../src/adapters/LocalAdapter').events.getStore()({type:'model_start',phase:'answer'});return{mode:'chat',intent:'chit_chat',reply:'Fixture response with retained evidence.'}}
+  intake.processIntake=async(message,adapter,history,options)=>{reached++;assert.equal(adapter,local.provider);assert.equal(options.memoryClient.engine,'memory_gateway');assert.ok((await options.memoryClient.recall('fixture reports')).some(r=>r.documentId===queued.id));require('../../src/adapters/LocalAdapter').events.getStore()({type:'model_start',phase:'answer'});return{mode:'chat',intent:'chit_chat',reply:'Fixture response with retained evidence.'}}
   const app=require('../../src/app').createApp({ownerPassword:'fixture-password-only',serviceToken:'fixture-service-token',localBrain:local}),cookie=app.locals.ownerSessions.issue()
   assert.equal((await request(app,'/api/v1/demo/intake',{message:'Hello'},null)).status,401)
   const denied=await request(app,'/api/v1/project-work',{op:'start'},cookie);assert.equal(denied.status,503);assert.match(denied.wire,/local_capability_unavailable/)
   const catalog=await request(app,'/api/v1/model-center',null,cookie);assert.equal(catalog.status,200);assert.match(catalog.wire,/local:qwen3.5:9b/)
   const response=await request(app,'/api/v1/demo/intake',{message:'Hello, do not save this turn.',history:[],interactionMode:'chat',conversationId:require('node:crypto').randomUUID(),chatModel:'local:qwen3.5:9b'},cookie)
   assert.equal(response.status,200);assert.equal(reached,1);assert.match(response.wire,/data: .*"type":"final"/);assert.match(response.wire,/Fixture response with retained evidence/)
+  assert.match(response.wire,/"type":"memory_complete"/)
   assert.equal(JSON.stringify(await canonical.get(queued.id)),before)
   const metadata=fs.readdirSync(path.join(dir,'local-brain')).map(n=>JSON.parse(fs.readFileSync(path.join(dir,'local-brain',n))));assert.equal(metadata.length,1);assert.equal(JSON.stringify(metadata).includes('Hello, do not save'),false)
+  assert.equal(metadata[0].trace[0].type,'received')
   assert.equal(fs.existsSync(path.join(dir,'model-center.json')),false)
  }finally{if(intake)intake.processIntake=oldIntake;local?.close();for(const k of keys)if(saved[k]===undefined)delete process.env[k];else process.env[k]=saved[k];fs.rmSync(dir,{recursive:true,force:true})}
 })
