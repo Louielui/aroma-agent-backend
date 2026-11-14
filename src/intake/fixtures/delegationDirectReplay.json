@@ -1,0 +1,717 @@
+{
+  "basis": "Retained real PR162 one-turn evidence, exact goal/raw reply and prompt-projected source rows. Historical work bodies were already omitted in the captured prompt. Offline replay fixes Date to the captured observation; never edits production records.",
+  "sourceReceiptSha256": "0852cf2a1eb05191447c7e03ca54a93b43a160e17b287bb6e294d53bd02e37b9",
+  "runtime": "7fd21d710c0f7374918323dccf9aec339682136e",
+  "observedAt": "2026-11-14T12:24:03.156Z",
+  "message": "你可以派工的 AI 有哪幾個？",
+  "history": [
+    {
+      "role": "user",
+      "text": "你好香香"
+    },
+    {
+      "role": "assistant",
+      "text": "Louie，你好，我在。今天想先處理哪件事？營運、採購、庫存，或者只是想先整理一下思路，都可以直接跟我說。"
+    }
+  ],
+  "goal": {
+    "question_restated": "Owner 想知道香香而家可以派工畀邊幾個 AI（已登記嘅 worker／模型），同埋佢哋係咪真係可以接工。",
+    "executive_frame": {
+      "taskType": "understand",
+      "decisionNeeded": false,
+      "successDefinition": "列出已登記、可以接受派工嘅 AI worker／模型，分清楚已登記、預設、可連接同已授權，未覆蓋嘅部分要講明。",
+      "answerPosture": "evidence_first"
+    },
+    "requested_capability": null,
+    "answer_kind": "capability_explanation",
+    "investigation_focus": null,
+    "investigation_reference": null,
+    "investigation_evidence": [
+      "delegation",
+      "configuration"
+    ],
+    "facts": [
+      {
+        "id": "f1",
+        "need": "已登記嘅 capability-agent／AI worker 聲明，同 Bridge 已登記嘅 workflow 模型同 recipe",
+        "operation": "xiangxiang_operations",
+        "entity": null,
+        "fields": [],
+        "necessity": "required"
+      },
+      {
+        "id": "f2",
+        "need": "後台規劃／診斷 provider 同中央預設模型，同 worker 分開",
+        "operation": "xiangxiang_operations",
+        "entity": null,
+        "fields": [],
+        "necessity": "required"
+      },
+      {
+        "id": "f3",
+        "need": "觀察到嘅連接覆蓋同每項工作嘅授權／預算狀態（包括未測試嘅部分）",
+        "operation": "xiangxiang_operations",
+        "entity": null,
+        "fields": [],
+        "necessity": "enriching"
+      }
+    ],
+    "joins": [],
+    "owner_outcomes": []
+  },
+  "raw": {
+    "intent": "question",
+    "mode": "chat",
+    "nextRead": null,
+    "reply": "目前已登記、可以接受派工的 AI 一共有兩類。每一項工作都要你另行批准，而且這次讀取並沒有驗證派工真的能送達。",
+    "answerPlan": {
+      "directAnswer": "已登記的派工工作流程有四個：test_draft（測試草擬）和 development（隔離開發）預設用 gpt-6.1-sol，review（結果審查）預設用 sonnet，adoption 沒有記錄模型。另外有唯讀的後台 worker：codex-development-proposal 用 gpt-6-astra，codex-code-diagnosis 和 codex-task-planner 用 gpt-6.1-sol；claude-code（Software Engineer）已經登記，但沒有記錄模型。以上全部都要每項工作另行批准，派工能否實際送達尚未驗證。",
+      "answerClaims": [
+        {
+          "text": "已登記的派工工作流程有四個：test_draft（測試草擬）和 development（隔離開發）預設用 gpt-6.1-sol，review（結果審查）預設用 sonnet，adoption 沒有記錄模型。",
+          "claimKind": "row_local",
+          "evidenceSources": [
+            "xiangxiang_operations"
+          ],
+          "sourceIds": [
+            "xiangxiang_operations#work:4905f9c3dafade7e"
+          ],
+          "scope": {
+            "field": null,
+            "window": null
+          }
+        },
+        {
+          "text": "另外有唯讀的後台 worker：codex-development-proposal 用 gpt-6-astra，codex-code-diagnosis 和 codex-task-planner 用 gpt-6.1-sol；claude-code（Software Engineer）已經登記，但沒有記錄模型。",
+          "claimKind": "row_local",
+          "evidenceSources": [
+            "xiangxiang_operations"
+          ],
+          "sourceIds": [
+            "xiangxiang_operations#delegation:7c03bb334accc4da"
+          ],
+          "scope": {
+            "field": null,
+            "window": null
+          }
+        },
+        {
+          "text": "以上全部都要每項工作另行批准，派工能否實際送達尚未驗證。",
+          "claimKind": "row_local",
+          "evidenceSources": [
+            "xiangxiang_operations"
+          ],
+          "sourceIds": [
+            "xiangxiang_operations#delegation:7c03bb334accc4da"
+          ],
+          "scope": {
+            "field": null,
+            "window": null
+          }
+        }
+      ],
+      "sections": [
+        {
+          "heading": "Bridge 工作流程（預設模型）",
+          "items": [
+            {
+              "sourceId": "xiangxiang_operations#work:4905f9c3dafade7e",
+              "title": "已登記工作流程",
+              "facts": [
+                {
+                  "field": "test_draft",
+                  "value": "gpt-6.1-sol"
+                },
+                {
+                  "field": "development",
+                  "value": "gpt-6.1-sol"
+                },
+                {
+                  "field": "review",
+                  "value": "sonnet"
+                },
+                {
+                  "field": "adoption",
+                  "value": "未記錄模型"
+                }
+              ]
+            }
+          ],
+          "rankingClaim": null
+        },
+        {
+          "heading": "後台 worker",
+          "items": [
+            {
+              "sourceId": "xiangxiang_operations#delegation:7c03bb334accc4da",
+              "title": "已登記的後台 worker",
+              "facts": [
+                {
+                  "field": "codex-development-proposal（唯讀開發規劃）",
+                  "value": "gpt-6-astra"
+                },
+                {
+                  "field": "codex-code-diagnosis（唯讀程式診斷）",
+                  "value": "gpt-6.1-sol"
+                },
+                {
+                  "field": "codex-task-planner（唯讀任務規劃）",
+                  "value": "gpt-6.1-sol"
+                },
+                {
+                  "field": "claude-code（Software Engineer）",
+                  "value": "未記錄模型"
+                }
+              ]
+            }
+          ],
+          "rankingClaim": null
+        }
+      ],
+      "limitations": [
+        "所有 worker 都要每項工作另行批准；預算沒有評估，派工與權限也沒有驗證。daily_procurement 是固定的背景排程，不算 AI worker。"
+      ],
+      "followUp": null,
+      "unanswerable": false,
+      "citesEvidence": true,
+      "ownerInstructions": []
+    }
+  },
+  "items": [
+    {
+      "source": "xiangxiang_operations",
+      "sourceId": "configuration:2d24fff5b46fa9b5",
+      "title": "configuration",
+      "trust": "live",
+      "retrievedAt": "2026-11-14T12:24:03.156Z",
+      "fields": {
+        "section": "configuration",
+        "state": "partial",
+        "evidenceState": "confirmed",
+        "records": [
+          {
+            "role": "central_brain_default",
+            "model": "claude-opus-5-5",
+            "effort": "medium",
+            "revision": 1,
+            "bootCommit": "7fd21d710c0f7374918323dccf9aec339682136e",
+            "bootedAt": "2026-11-14T12:08:32.822Z",
+            "flags": {
+              "CHAT_BACKEND": "codex-subscription",
+              "XIANGXIANG_WORKER_FLOW": "on",
+              "WORKER_INVOCATION": null,
+              "DEVELOP_DISPATCH": null,
+              "AGENT_BRIDGE": "off",
+              "COMPUTER_OPERATOR": null,
+              "READONLY_ENQUIRY": "on",
+              "GOAL_DECOMPOSER": "on",
+              "XIANGXIANG_MEMORY": "on"
+            }
+          },
+          {
+            "sourceId": "bridge:chat_completion",
+            "role": "chat_completion",
+            "at": "2026-11-14T12:24:03.288Z",
+            "model": null,
+            "effort": null,
+            "configuredModel": null,
+            "configuredEffort": null,
+            "provider": null,
+            "enabled": true,
+            "currentRunningState": "idle",
+            "startedAt": null,
+            "evidenceBasis": "live_process_snapshot",
+            "modelBasis": "bridge_route_configuration"
+          },
+          {
+            "sourceId": "bridge:memory_completion",
+            "role": "memory_completion",
+            "at": "2026-11-14T12:24:03.288Z",
+            "model": "claude-sonnet",
+            "effort": "low",
+            "configuredModel": "claude-sonnet",
+            "configuredEffort": "low",
+            "provider": "claude",
+            "enabled": true,
+            "currentRunningState": "idle",
+            "startedAt": null,
+            "evidenceBasis": "live_process_snapshot",
+            "modelBasis": "bridge_route_configuration"
+          }
+        ],
+        "runtimeCoverage": {
+          "bridge": "partial",
+          "backend": "unconnected"
+        },
+        "note": "Central default is configuration, not a per-job model. Background rows are instantaneous registered-process observations; their configured bridge route is not proof of completed inference or charges. Nominal Hindsight GPT API labels are not the routed provider. External jobs and provider billing are not connected.",
+        "readDurationMs": 1950,
+        "sha256": "2d24fff5b46fa9b5a67b6dbd1721360d2734e872bb730c9141a0efc93efc9200"
+      }
+    },
+    {
+      "source": "xiangxiang_operations",
+      "sourceId": "work:4905f9c3dafade7e",
+      "title": "work",
+      "trust": "live",
+      "retrievedAt": "2026-11-14T12:24:03.156Z",
+      "fields": {
+        "section": "work",
+        "selection": "latest_failure_explicit_links_and_recent_work",
+        "omitted": 3,
+        "latestFailureId": null,
+        "state": "partial",
+        "coverage": [
+          {
+            "kind": "worker/project-tasks",
+            "state": "ok",
+            "scanned": 5,
+            "failed": 0,
+            "omitted": 0
+          },
+          {
+            "kind": "worker/project-runs",
+            "state": "ok",
+            "scanned": 3,
+            "failed": 0,
+            "omitted": 0
+          },
+          {
+            "kind": "worker/adoptions",
+            "state": "missing",
+            "scanned": 0,
+            "failed": null,
+            "omitted": null
+          },
+          {
+            "kind": "worker/runs",
+            "state": "ok",
+            "scanned": 0,
+            "failed": 0,
+            "omitted": 0
+          }
+        ],
+        "scanned": 8,
+        "workflows": [
+          {
+            "role": "test_draft",
+            "state": "idle",
+            "model": "gpt-6.1-sol",
+            "effort": "medium",
+            "modelBasis": "host_workflow_default_not_per_job_selection",
+            "at": "2026-11-14T12:24:01.720Z"
+          },
+          {
+            "role": "development",
+            "state": "idle",
+            "model": "gpt-6.1-sol",
+            "effort": null,
+            "modelBasis": "host_workflow_default_not_per_job_selection",
+            "at": "2026-11-14T12:24:01.720Z"
+          },
+          {
+            "role": "review",
+            "state": "idle",
+            "model": "sonnet",
+            "effort": null,
+            "modelBasis": "host_workflow_default_not_per_job_selection",
+            "at": "2026-11-14T12:24:01.720Z"
+          },
+          {
+            "role": "adoption",
+            "state": "idle",
+            "model": null,
+            "effort": null,
+            "modelBasis": "host_workflow_default_not_per_job_selection",
+            "at": "2026-11-14T12:24:01.720Z"
+          },
+          {
+            "role": "daily_procurement",
+            "state": "idle"
+          }
+        ],
+        "retrievedAt": "2026-11-14T12:24:01.720Z",
+        "provesCharge": false,
+        "scope": "fixed_owner_worker_records",
+        "note": "Host-projected work metadata and live bridge workflow occupancy only. Occupied may include waiting for a restart; it is not a named scheduler execution witness. Model defaults do not establish per-job selection. Candidate tests and source comparisons do not establish the same failure fixed.",
+        "evidenceState": "confirmed",
+        "readDurationMs": 409,
+        "sha256": "4905f9c3dafade7e129aead212696ecef94cacbef5aaeb0469a702baa05798eb",
+        "promptProjection": {
+          "kind": "configuration_capability",
+          "historicalRecords": "omitted; retained in full host evidence, not used to establish dispatch readiness"
+        }
+      }
+    },
+    {
+      "source": "xiangxiang_operations",
+      "sourceId": "delegation:7c03bb334accc4da",
+      "title": "delegation",
+      "trust": "live",
+      "retrievedAt": "2026-11-14T12:24:03.156Z",
+      "fields": {
+        "section": "delegation",
+        "kind": "delegation_evidence_v1",
+        "state": "ok",
+        "scope": "registered_in_process_channels",
+        "scopeComplete": true,
+        "observedAt": "2026-11-14T12:24:03.156Z",
+        "bootCommit": "7fd21d710c0f7374918323dccf9aec339682136e",
+        "coverage": {
+          "backend": "read",
+          "bridge": "read"
+        },
+        "records": [
+          {
+            "channelId": "backend:claude-code",
+            "workerId": "claude-code",
+            "role": "Software Engineer",
+            "provides": [
+              {
+                "capability": "Develop",
+                "version": 1
+              },
+              {
+                "capability": "Apply",
+                "version": 1
+              }
+            ],
+            "model": null,
+            "effort": null,
+            "selection": "none",
+            "permissions": "manifest_declaration_only",
+            "scope": null,
+            "files": null,
+            "enabled": null,
+            "authorization": "required_per_job",
+            "budget": "not_evaluated",
+            "canAccept": null,
+            "resolvedModel": null,
+            "subscription": "unknown",
+            "connection": "bridge_metadata_observed"
+          },
+          {
+            "channelId": "backend:codex-development-proposal",
+            "workerId": "codex-development-proposal",
+            "role": "Read-only development planner",
+            "provides": [
+              {
+                "capability": "DevelopmentProposal",
+                "version": 1
+              }
+            ],
+            "model": "gpt-6-astra",
+            "effort": "medium",
+            "selection": "fixed",
+            "permissions": "supplied_public_context_only",
+            "scope": "configured_public_github, local_deployed_and_boot_revisions",
+            "files": null,
+            "enabled": true,
+            "authorization": "required_per_job",
+            "budget": "not_evaluated",
+            "canAccept": null,
+            "resolvedModel": null,
+            "subscription": "catalogue_available",
+            "connection": "bridge_metadata_observed"
+          },
+          {
+            "channelId": "backend:codex-code-diagnosis",
+            "workerId": "codex-code-diagnosis",
+            "role": "Read-only code diagnosis",
+            "provides": [
+              {
+                "capability": "CodeDiagnosis",
+                "version": 1
+              }
+            ],
+            "model": "gpt-6.1-sol",
+            "effort": "high",
+            "selection": "fixed",
+            "permissions": "supplied_committed_code_only",
+            "scope": "dispatch-v1",
+            "files": 8,
+            "enabled": true,
+            "authorization": "required_per_job",
+            "budget": "not_evaluated",
+            "canAccept": null,
+            "resolvedModel": null,
+            "subscription": "catalogue_available",
+            "connection": "bridge_metadata_observed"
+          },
+          {
+            "channelId": "backend:codex-task-planner",
+            "workerId": "codex-task-planner",
+            "role": "Read-only task planner",
+            "provides": [
+              {
+                "capability": "TaskPlanning",
+                "version": 2
+              }
+            ],
+            "model": "gpt-6.1-sol",
+            "effort": "medium",
+            "selection": "per_request",
+            "permissions": "read_only_committed_profile",
+            "scope": "seven_shifts, context, interface, chat",
+            "files": null,
+            "enabled": true,
+            "authorization": "required_per_job",
+            "budget": "not_evaluated",
+            "canAccept": null,
+            "resolvedModel": null,
+            "subscription": "catalogue_available",
+            "connection": "bridge_metadata_observed"
+          },
+          {
+            "channelId": "bridge:test_draft",
+            "workerId": "test_draft",
+            "role": "Test drafting",
+            "provides": [],
+            "model": "gpt-6.1-sol",
+            "effort": "medium",
+            "selection": "workflow_default",
+            "permissions": "protected_test_draft_only",
+            "scope": null,
+            "files": null,
+            "enabled": true,
+            "authorization": "required_per_job",
+            "budget": "not_evaluated",
+            "canAccept": null,
+            "resolvedModel": null,
+            "subscription": "catalogue_available",
+            "connection": "bridge_metadata_observed"
+          },
+          {
+            "channelId": "bridge:development",
+            "workerId": "development",
+            "role": "Isolated development",
+            "provides": [],
+            "model": "gpt-6.1-sol",
+            "effort": "per_work_order",
+            "selection": "workflow_default",
+            "permissions": "approved_registered_files_only",
+            "scope": null,
+            "files": null,
+            "enabled": true,
+            "authorization": "required_per_job",
+            "budget": "not_evaluated",
+            "canAccept": null,
+            "resolvedModel": null,
+            "subscription": "catalogue_available",
+            "connection": "bridge_metadata_observed"
+          },
+          {
+            "channelId": "bridge:review",
+            "workerId": "review",
+            "role": "Result review",
+            "provides": [],
+            "model": "sonnet",
+            "effort": null,
+            "selection": "workflow_default",
+            "permissions": "supplied_packet_only",
+            "scope": null,
+            "files": null,
+            "enabled": true,
+            "authorization": "required_per_job",
+            "budget": "not_evaluated",
+            "canAccept": null,
+            "resolvedModel": "claude-sonnet-5-5",
+            "subscription": "catalogue_available",
+            "connection": "bridge_metadata_observed"
+          }
+        ],
+        "legacyRoles": [
+          {
+            "id": "architect",
+            "role": "Architect / Designer",
+            "provider": "Claude",
+            "connectedDeclared": true,
+            "basis": "legacy_org_chart_declaration_only"
+          },
+          {
+            "id": "engineer",
+            "role": "Software Engineer",
+            "provider": "Claude Code",
+            "connectedDeclared": false,
+            "basis": "legacy_org_chart_declaration_only"
+          },
+          {
+            "id": "advisor",
+            "role": "Technical Advisor / Strategy",
+            "provider": "GPT",
+            "connectedDeclared": false,
+            "basis": "legacy_org_chart_declaration_only"
+          },
+          {
+            "id": "qa",
+            "role": "Engineering QA",
+            "provider": "Codex",
+            "connectedDeclared": false,
+            "basis": "legacy_org_chart_declaration_only"
+          },
+          {
+            "id": "automation",
+            "role": "Automation Specialist",
+            "provider": "Manus",
+            "connectedDeclared": false,
+            "basis": "legacy_org_chart_declaration_only"
+          },
+          {
+            "id": "operator",
+            "role": "Computer Operator",
+            "provider": "Windows Agent",
+            "connectedDeclared": false,
+            "basis": "legacy_org_chart_declaration_only"
+          },
+          {
+            "id": "openclaw",
+            "role": "Controlled Research / Verification Executor",
+            "provider": "OpenClaw",
+            "connectedDeclared": false,
+            "basis": "legacy_org_chart_declaration_only"
+          }
+        ],
+        "recipes": [
+          {
+            "recipe": "context-fields-snapshot-v1",
+            "scope": "current_committed_backend_source_offline_nodejs",
+            "files": 1
+          },
+          {
+            "recipe": "context-provenance-snapshot-v2",
+            "scope": "current_committed_backend_source_offline_nodejs",
+            "files": 2
+          },
+          {
+            "recipe": "context-coverage-snapshot-v3",
+            "scope": "current_committed_backend_source_offline_nodejs",
+            "files": 2
+          },
+          {
+            "recipe": "context-unavailable-snapshot-v4",
+            "scope": "current_committed_backend_source_offline_nodejs",
+            "files": 1
+          },
+          {
+            "recipe": "registered-task-19738991-455b-4ca7-a72c-72310c6b0c04",
+            "scope": "current_committed_backend_source_offline_nodejs",
+            "files": 1
+          },
+          {
+            "recipe": "registered-task-bce88bcd-5660-43b5-b418-02c13e40e62e",
+            "scope": "current_committed_backend_source_offline_nodejs",
+            "files": 1
+          },
+          {
+            "recipe": "registered-task-ffff22af-a65e-403d-840d-ba4993a929e7",
+            "scope": "current_committed_backend_source_offline_nodejs",
+            "files": 1
+          }
+        ],
+        "providerStates": {
+          "claude": {
+            "state": "catalogue_available",
+            "reason": null
+          },
+          "openai": {
+            "state": "catalogue_available",
+            "reason": null
+          }
+        },
+        "modelChoices": [
+          {
+            "model": "claude-opus-5-5",
+            "resolvedModel": "claude-opus-5-5",
+            "available": true
+          },
+          {
+            "model": "claude-fable-5-2",
+            "resolvedModel": "claude-fable-5-2",
+            "available": true
+          },
+          {
+            "model": "claude-sonnet",
+            "resolvedModel": "claude-sonnet-5-5",
+            "available": true
+          },
+          {
+            "model": "claude-haiku-5-5",
+            "resolvedModel": "claude-haiku-5-5",
+            "available": true
+          },
+          {
+            "model": "claude-fable-5-1",
+            "resolvedModel": "claude-fable-5-1",
+            "available": true
+          },
+          {
+            "model": "claude-haiku-4-5-20251001",
+            "resolvedModel": "claude-haiku-4-5-20251001",
+            "available": true
+          },
+          {
+            "model": "claude-sonnet-5",
+            "resolvedModel": "claude-sonnet-5",
+            "available": true
+          },
+          {
+            "model": "claude-opus-5",
+            "resolvedModel": "claude-opus-5",
+            "available": true
+          },
+          {
+            "model": "claude-fable-5",
+            "resolvedModel": "claude-fable-5",
+            "available": true
+          },
+          {
+            "model": "claude-opus-4-8",
+            "resolvedModel": "claude-opus-4-8",
+            "available": true
+          },
+          {
+            "model": "claude-opus-4-7",
+            "resolvedModel": "claude-opus-4-7",
+            "available": true
+          },
+          {
+            "model": "claude-opus-4-6",
+            "resolvedModel": "claude-opus-4-6",
+            "available": true
+          },
+          {
+            "model": "claude-sonnet-4-6",
+            "resolvedModel": "claude-sonnet-4-6",
+            "available": true
+          },
+          {
+            "model": "gpt-6.1-sol",
+            "resolvedModel": null,
+            "available": true
+          },
+          {
+            "model": "gpt-6-astra",
+            "resolvedModel": null,
+            "available": true
+          },
+          {
+            "model": "gpt-6-luna",
+            "resolvedModel": null,
+            "available": true
+          },
+          {
+            "model": "gpt-6-sol",
+            "resolvedModel": null,
+            "available": true
+          }
+        ],
+        "catalogueCount": 17,
+        "dispatchVerified": false,
+        "permissionsVerified": false,
+        "readDurationMs": 1817,
+        "sha256": "7c03bb334accc4da42f27e986ed2b19db6d26d7c49dcfe80c0f6ea16cdc693c7"
+      }
+    }
+  ],
+  "expectedReply": "目前已登記通道使用的 AI／模型：\n\n- gpt-6-astra — Read-only development planner (訂閱目錄可讀)\n- gpt-6.1-sol — Read-only code diagnosis / Read-only task planner / Test drafting / Isolated development (訂閱目錄可讀)\n- claude-sonnet-5-5 — Result review (訂閱目錄可讀)\n\n以上分工受各通道範圍限制；規劃模型可按工作選擇。模型目錄、舊組織角色和背景排程不等於已授權 Worker。每項工作的批准與用量須另行核對，本次沒有測試接單。",
+  "semanticRaw": "{\"intent\":\"NONE\",\"confidence\":\"HIGH\"}"
+}

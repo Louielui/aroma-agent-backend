@@ -6,7 +6,10 @@ const { renderInvocationSummary } = require('./invocationBrief')
 // Only a fresh, operations-only Owner enquiry whose final words are entirely
 // rendered from source-bound receipts can omit the otherwise discarded answer
 // model call. A missing or ambiguous plan falls back to the normal pipeline.
-function sourceBoundDirectAnswer ({ message, plan, report, operationsLive, ownerInvestigation, subscriptionMode, interactionMode, previousInvestigation, onDecision }) {
+function sourceBoundDirectAnswer (input) {
+  const { message, plan, report, operationsLive, ownerInvestigation, subscriptionMode, interactionMode, previousInvestigation, onDecision } = input
+  const delegation = sourceBoundDelegationAnswer(input)
+  if (delegation) return delegation
   const refused = reason => { onDecision?.(reason); return null }
   // The production continuity lookup returns {state:'absent'} for a new
   // conversation. It is a sentinel, not a prior investigation.
@@ -54,4 +57,35 @@ function sourceBoundDirectAnswer ({ message, plan, report, operationsLive, owner
   return { reply: findings.text, presentation }
 }
 
-module.exports = { sourceBoundDirectAnswer }
+// Reuse the exact source projection that already replaces the discarded draft
+// after generation. The judged goal and authorised read must have completed;
+// this predicate grants no source access and never classifies message keywords.
+function sourceBoundDelegationAnswer ({ message, plan, report, operationsLive, ownerInvestigation, subscriptionMode, interactionMode, previousInvestigation, capabilityReadSettled, truncated, ownerGoalReporting, authorisedSources, itemsBySource, perSource }) {
+  if (!ownerInvestigation || !subscriptionMode || interactionMode !== 'chat' || !operationsLive ||
+    !capabilityReadSettled || truncated || ownerGoalReporting || report ||
+    previousInvestigation && previousInvestigation.state !== 'absent') return null
+  const sections = require('./generalRouter').capabilityReadSections(plan, authorisedSources)
+  if (!sections?.includes('delegation') || !Array.isArray(plan.investigationEvidence) || !plan.investigationEvidence.length || !Array.isArray(plan.facts) ||
+    plan.investigationEvidence.some(n => !['delegation', 'configuration'].includes(n)) ||
+    plan.facts.some(f => f.operation !== 'xiangxiang_operations') ||
+    require('./generalRouter').capabilityReadGaps(plan).length ||
+    plan.executiveFrame.answerPosture !== 'evidence_first') return null
+  if (!Array.isArray(itemsBySource) || itemsBySource.length !== 1 ||
+    itemsBySource[0]?.source !== 'xiangxiang_operations' ||
+    !Array.isArray(perSource) || perSource.length !== 1 || perSource[0]?.source !== 'xiangxiang_operations' || perSource[0].trust !== 'live') return null
+  const rows = itemsBySource[0].items || []
+  if (!Array.isArray(rows) || rows.length !== 3 || sections.some(s => rows.filter(r => r?.fields?.section === s).length !== 1) ||
+    rows.some(r => !r || r.source !== 'xiangxiang_operations' || r.trust !== 'live' ||
+      !r.sourceId || !['ok', 'partial'].includes(r.fields?.state))) return null
+  const roster = rows.find(r => r.fields.section === 'delegation').fields
+  if (!roster.scopeComplete || roster.coverage?.backend !== 'read' || roster.coverage?.bridge !== 'read') return null
+  const direct = require('./delegationEvidenceView').renderDelegation({
+    message, answerKind: plan.answerKind, capabilityReadSettled, itemsBySource, ownerGoalReporting
+  })
+  if (!direct) return null
+  return {reply: direct.reply, presentation: {kind: 'validated_capability_explanation',
+    validation: direct.validation, modelProseUsed: false, dispatchVerified: false,
+    answerCallSkipped: true, skipReason: 'settled_source_bound_delegation'}}
+}
+
+module.exports = { sourceBoundDirectAnswer, sourceBoundDelegationAnswer }
