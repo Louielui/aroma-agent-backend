@@ -42,7 +42,7 @@ async function loadOperations(){
    const r=await fetch('/api/local/status',{cache:'no-store'});if(!r.ok)throw Error();const d=await r.json()
    area.append(node('p',L.localEngine+' · '+(d.model||L.unavailable)),node('p',L.localQueue+' · '+(d.background?.capture?.pending??'—')))
    if(d.background?.engine?.busy||d.background?.capture?.active)area.append(node('p',L.localBusy))
-   if(d.background?.engine?.lastFailure)area.append(node('p',L.error+' · '+d.background.engine.lastFailure.code))
+   if(d.background?.engine?.lastFailure)area.append(node('p',L.error+' · '+d.background.engine.lastFailure))
    return
   }
   const r=await fetch('/api/v1/memory/operations',{cache:'no-store'});if(!r.ok)throw Error();const d=await r.json()

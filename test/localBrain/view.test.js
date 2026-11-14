@@ -46,5 +46,7 @@ test('local catalogue status uses the isolated endpoint and leaves missing count
  assert.deepEqual(paths,['/api/local/status']);assert.ok(children.some(x=>x.text.includes('qwen3.5:9b')));assert.ok(children.some(x=>x.text.endsWith(' · 2')))
  context.fetch=async()=>({ok:true,json:async()=>({model:'qwen3.5:9b'})})
  await vm.runInContext('loadOperations()',context);assert.ok(children.some(x=>x.text.endsWith(' · —')))
+ context.fetch=async()=>({ok:true,json:async()=>({model:'qwen3.5:9b',background:{engine:{lastFailure:'memory_invalid_result'}}})})
+ await vm.runInContext('loadOperations()',context);assert.ok(children.some(x=>x.text.includes('memory_invalid_result')))
  assert.ok(children.every(x=>!/Hindsight|PostgreSQL|GPT|訂閱/.test(x.text)))
 })
