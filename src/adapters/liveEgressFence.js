@@ -149,7 +149,17 @@ function fencedAxiosPost (provider) {
 /** The DEFAULT global-fetch transport, fenced. Same contract, same rule. */
 function fencedFetch (provider) {
   return (url, init) => {
-    assertLiveEgressAllowed(provider, url)
+    // Canonical storage is an authenticated local RPC, not model inference.
+    // Do not exempt a provider label alone or normalize caller-controlled URLs:
+    // only the exact existing structuredStore request shape is eligible. Test
+    // processes retain their original default-deny boundary. The process-local
+    // production fence and storage Gateway still enforce destinations/authority.
+    const canonicalStorage = process.env.LOCAL_BRAIN_ONLY === '1' && !isTestProcess() &&
+      provider === 'memory_gateway' && url === 'http://127.0.0.1:8091/memory-store' &&
+      init?.method === 'POST' && init.redirect === 'error' &&
+      /^Bearer [a-f0-9]{64}$/.test(init.headers?.authorization || '') &&
+      Object.keys(init).every(key => ['method','redirect','signal','headers','body'].includes(key))
+    if (!canonicalStorage) assertLiveEgressAllowed(provider, url)
     if(['openai','anthropic','openai_web_search'].includes(provider))require('../actions/usageBudget').blockAPI()
     return fetch(url, init)
   }
