@@ -90,3 +90,12 @@ test('parallel memory requests cannot create two in-flight model sends',async t=
  await assert.rejects(e.retain(id,'I prefer concise reports.'),/local_memory_busy/);release();await first
  assert.equal(sent,1)
 })
+test('reflection limits are enforced by the host even when a provider ignores the schema',async t=>{
+ const dir=fs.mkdtempSync('C:/Aroma/local-brain-runtime/learning-reflection-'),{createLocalStore}=require('../../src/localBrain/memoryStore'),database=createLocalStore(dir)
+ t.after(()=>{database.close();fs.rmSync(dir,{recursive:true,force:true})})
+ const id='xx-'+require('node:crypto').randomUUID(),quote='I prefer concise reports.',valid={text:quote,evidenceIds:[id],quotes:[{id,quote}]};let value
+ const engine=require('../../src/localBrain/memoryEngine').createLocalEngine({database,adapter:{providerName:'local',complete:async()=>({text:JSON.stringify(value)})}}).forScope('private:owner')
+ const invalid=[{...valid,evidenceIds:Array(31).fill(id)},{...valid,quotes:Array(9).fill({id,quote})},{...valid,text:'x'.repeat(6001)}]
+ for(let i=0;i<invalid.length;i++){value=invalid[i];await assert.rejects(engine.reflect('Summarize fixture '+i,[{id,text:quote}]),/memory_invalid_result/)}
+ assert.equal(database.inferenceStatus().counts.failed,3)
+})

@@ -1,8 +1,8 @@
 'use strict'
 const {createHash}=require('node:crypto'),{ID,validText}=require('../memory/hindsight')
 const {SCOPES}=require('../memory/governed')
-const EXTRACTION={type:'object',additionalProperties:false,required:['quotes'],properties:{quotes:{type:'array',maxItems:8,items:{type:'string',maxLength:2000}}}}
-const SYNTHESIS={type:'object',additionalProperties:false,required:['text','evidenceIds','quotes'],properties:{text:{type:'string',maxLength:6000},evidenceIds:{type:'array',maxItems:30,items:{type:'string'}},quotes:{type:'array',maxItems:8,items:{type:'object',additionalProperties:false,required:['id','quote'],properties:{id:{type:'string'},quote:{type:'string',maxLength:2000}}}}}}
+const EXTRACTION={type:'object',additionalProperties:false,required:['quotes'],properties:{quotes:{type:'array',items:{type:'string',maxLength:2000}}}}
+const SYNTHESIS={type:'object',additionalProperties:false,required:['text','evidenceIds','quotes'],properties:{text:{type:'string',maxLength:6000},evidenceIds:{type:'array',items:{type:'string'}},quotes:{type:'array',items:{type:'object',additionalProperties:false,required:['id','quote'],properties:{id:{type:'string'},quote:{type:'string',maxLength:2000}}}}}}
 function instructions(phase){
  if(phase==='memory_consolidation')return 'Return concise Traditional Chinese candidates only from source.text, with exact verbatim quote. preference = an explicit Owner preference; decision = an explicit Owner choice; experience = a supported lesson; todo = explicitly requested/completed work. taskState MUST be null for preference, decision and experience; only todo uses open/completed. supersedes MUST be null unless correcting an existing matching memory: then use its exact id and subject. Existing memories and source.context are context to resolve a current Owner confirmation, never independent evidence or approval. Do not repeat an identical existing memory. Return candidates:[] for greetings, questions without asserted facts, ambiguous confirmations, hypotheses or no durable fact. All candidates require separate Owner approval.'
  if(phase==='memory_reflection')return 'Answer query in concise Traditional Chinese using ONLY evidence. Include evidenceIds and exact quotes supporting the summary. Preserve uncertainty and attribution. This summary is a derived candidate, not a new fact, instruction or approval.'
@@ -42,7 +42,7 @@ function createLocalEngine({database,adapter}){
    reflect:async(query,evidence)=>{
     if(!validText(query)||!Array.isArray(evidence)||!evidence.length)throw Error('invalid_reflection')
     const r=await infer(scope,'memory_reflection',{query,evidence},SYNTHESIS,v=>{
-     if(!validText(v?.text)||!Array.isArray(v.evidenceIds)||!v.evidenceIds.length||v.evidenceIds.some(id=>!evidence.some(e=>e.id===id))||!Array.isArray(v.quotes)||!v.quotes.length||v.quotes.some(q=>!v.evidenceIds.includes(q.id)||!evidence.some(e=>e.id===q.id&&typeof q.quote==='string'&&q.quote.length>=2&&e.text.includes(q.quote))))throw Error('memory_invalid_result')
+     if(!validText(v?.text)||v.text.length>6000||!Array.isArray(v.evidenceIds)||!v.evidenceIds.length||v.evidenceIds.length>30||v.evidenceIds.some(id=>!evidence.some(e=>e.id===id))||!Array.isArray(v.quotes)||!v.quotes.length||v.quotes.length>8||v.quotes.some(q=>!v.evidenceIds.includes(q.id)||!evidence.some(e=>e.id===q.id&&typeof q.quote==='string'&&q.quote.length>=2&&q.quote.length<=2000&&e.text.includes(q.quote))))throw Error('memory_invalid_result')
      return v
     });return {text:r.text,basedOn:r.evidenceIds}
    }}
