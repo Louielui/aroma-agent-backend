@@ -15,6 +15,7 @@ const { MockAdapter } = require('./MockAdapter')
  * @type {Record<string, () => import('./LLMAdapter').LLMAdapter>}
  */
 const REGISTRY = {
+  local: () => new (require('./LocalAdapter').LocalAdapter)(),
   claude: () => new ClaudeAdapter(),
   mock: () => new MockAdapter(),
   // Future providers — uncomment and implement:
@@ -30,6 +31,7 @@ const REGISTRY = {
  * @returns {import('./LLMAdapter').LLMAdapter}
  */
 function getAdapter () {
+  if (process.env.LOCAL_BRAIN_ONLY === '1') return REGISTRY.local()
   const provider = (process.env.LLM_PROVIDER || 'claude').toLowerCase()
   const factory = REGISTRY[provider]
   if (!factory) {
@@ -76,6 +78,7 @@ const CHAT_MODEL_ENV = 'CLAUDE_CHAT_MODEL'
  * @returns {import('./LLMAdapter').LLMAdapter}
  */
 function getAdapterForLane (lane) {
+  if (process.env.LOCAL_BRAIN_ONLY === '1') return REGISTRY.local()
   if (lane !== CHAT_LANE) return getAdapter()
   const provider = (process.env.LLM_PROVIDER || 'claude').toLowerCase()
   if (provider !== 'claude') return getAdapter()

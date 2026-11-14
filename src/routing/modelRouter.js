@@ -59,6 +59,8 @@ function normalizeProviderHint (hint) {
  * @returns {'claude'|'openai'}
  */
 function selectPrimaryProvider (env = process.env, opts = {}) {
+  // Local-only is host-owned. Browser hints cannot restore a cloud route.
+  if (env.LOCAL_BRAIN_ONLY === '1') return OPENAI
   const isChat = !!(opts && opts.interactionMode === 'chat')
   if (isChat && env.CHAT_BACKEND === 'codex-subscription') return OPENAI
   // The hint applies to the chat lane and nowhere else.

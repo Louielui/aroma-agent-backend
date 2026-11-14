@@ -519,9 +519,10 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
 
 
   // Check subscription availability before auxiliary model calls or source reads.
-  const subscriptionMode = subscriptionChatEnabled(process.env, opts && opts.interactionMode)
+  const localMode = process.env.LOCAL_BRAIN_ONLY === '1'
+  const subscriptionMode = !localMode && subscriptionChatEnabled(process.env, opts && opts.interactionMode)
   const chatProfile = profileFor(opts && opts.chatLevel)
-  const subscriptionAdapter = subscriptionMode ? ((opts && opts.openaiAdapter) || new CodexSubscriptionAdapter({ effort: chatProfile.effort, model: opts && opts.chatModel })) : null
+  const subscriptionAdapter = localMode ? adapter : subscriptionMode ? ((opts && opts.openaiAdapter) || new CodexSubscriptionAdapter({ effort: chatProfile.effort, model: opts && opts.chatModel })) : null
   if (subscriptionAdapter) await subscriptionAdapter.preflight()
 
   let websiteBusinessOpinion
@@ -571,8 +572,8 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
     ? null
     : routeTurn(message, { previousLane: (opts && opts.previousLane) || null })
   const routeGoverns = routerMode === 'on' && routeDecision !== null
-  const socialFastPath = subscriptionMode && routeGoverns && canUseSocialFastPath(message, routeDecision, history, opts)
-  const simpleFastPath = socialFastPath || (subscriptionMode && routeGoverns && canUseGeneralFastPath(message,routeDecision,history,opts))
+  const socialFastPath = (subscriptionMode || localMode) && routeGoverns && canUseSocialFastPath(message, routeDecision, history, opts)
+  const simpleFastPath = socialFastPath || ((subscriptionMode || localMode) && routeGoverns && canUseGeneralFastPath(message,routeDecision,history,opts))
 
   /**
    * ── O1: THE ONE LIVE SEMANTIC CALL SITE ─────────────────────────────────────
@@ -617,7 +618,7 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
    * An injected callModel (tests) bypasses nothing: it never reaches a vendor in the first
    * place, so it is allowed through.
    */
-  const semanticEgressOk = (opts && typeof opts.semanticCallModel === 'function') || liveEgressAllowed()
+  const semanticEgressOk = localMode || (opts && typeof opts.semanticCallModel === 'function') || liveEgressAllowed()
   // Routing consumes only the current message. Planning consumes the ordered
   // context but does not read business sources. They can run independently;
   // every source selection and answer must join the routing promise first.
@@ -1940,7 +1941,8 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
     // withReadChoices() makes nextRead null-only rather than emitting an empty enum.
     // Reuses openChoices from above rather than recomputing, so the two schemas can never
     // disagree about what is still readable this turn.
-    const shaped = withJudgment(withReadChoices(withReadArgs(withRowRefs(withChatKnowledgeModes(DISTILL_WITH_PLAN_SCHEMA, a4ChatModes), refs), a4On), openChoices, choiceGloss), goalUnderstandingObserved)
+    let shaped = withJudgment(withReadChoices(withReadArgs(withRowRefs(withChatKnowledgeModes(DISTILL_WITH_PLAN_SCHEMA, a4ChatModes), refs), a4On), openChoices, choiceGloss), goalUnderstandingObserved)
+    if (process.env.LOCAL_BRAIN_ONLY === '1') shaped = require('../localBrain/evidenceSchema').withEvidenceFields(shaped, Array.from(turnItems.values()), Array.from(turnEvidence.values()))
     const costBound = usesSourceBoundCostAnswer()
     return { type: 'json_schema', name: costBound ? 'distill_with_cost_investigation' : 'distill_with_answer_plan',
       schema: semanticInvestigationSchema(costBound ? require('../investigation/promptPack').withoutAnswerPlan(shaped) : shaped) }
@@ -1950,6 +1952,11 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
     const findings=require('../investigation/sourceBoundFindings').renderSourceBoundFindings(operationalInvestigation,{message})
     if(findings&&findings.kind!=='background'&&!operationalInvestigation.crossSourceReads?.length)return schema
     return require('../investigation/semanticAnswer').constrainSemanticSources(require('../investigation/semanticAnswer').withSemanticAnswer(schema), operationalInvestigation)
+  }
+  const localAnswerFormat = format => {
+    if (!localMode || !hindsightCache?.sources?.length) return format
+    const base = format || { type:'json_schema', name:'local_memory_answer', schema:withReadChoices(DISTILL_WITH_READ_DECISION_SCHEMA, [], 'No tool operations are available in this turn.') }
+    return { ...base, schema:require('../localBrain/evidenceSchema').withMemoryReferences(base.schema, hindsightCache.sources) }
   }
   let llmResult = null
   // ⛔ THE PROVIDER THAT PRODUCED THE ACCEPTED ENVELOPE. Set at the orchestration branch
@@ -2048,7 +2055,7 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
   async function recordProviderUsage (result) {
     if (!result || !result.usage || recordedResults.has(result)) return
     // Subscription usage is not an API billing event. Provider telemetry still records tokens.
-    if (result.billing === 'chatgpt-subscription' || result.billing === 'claude-subscription') return
+    if (result.billing === 'local' || result.billing === 'chatgpt-subscription' || result.billing === 'claude-subscription') return
     recordedResults.add(result)
     try {
       logLLMCall({ model: result.model, latencyMs: result.latencyMs, inputTokens: result.usage.inputTokens, outputTokens: result.usage.outputTokens, totalTokens: result.usage.totalTokens, endpoint, blocked: false })
@@ -2095,14 +2102,15 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
         // read is what decides whether a plan is wanted.
         const gptPrompt = await buildPromptFor(OPENAI)
         if (!useSourceBoundDirectAnswer(gpt.providerName === 'claude' ? CLAUDE : OPENAI, gpt)) {
-          const gptFormat = answerPlanFormat()
+          const gptFormat = localAnswerFormat(answerPlanFormat())
           gptResult = await timePhase(
-            { requestId, phase: PHASE.MODEL_CALL, role: ROLE.MAIN, provider: gpt.providerName === 'claude' ? CLAUDE : OPENAI, attempt: 1 },
+            { requestId, phase: PHASE.MODEL_CALL, role: ROLE.MAIN, provider: gpt.providerName === 'local' ? 'local' : gpt.providerName === 'claude' ? CLAUDE : OPENAI, attempt: 1 },
             () => gpt.complete(gptPrompt, { invocationPhase:'answer', system: effSystem, maxTokens, temperature: 0.3, ...(gptFormat ? { responseFormat: gptFormat } : {}) }),
             { clock: latencyClock, sink: latencySink })
         }
       } catch (err) {
         // Content-free, but no longer blind: the adapter's allowlisted diagnostics
+        if (localMode) throw err
         if (subscriptionMode) throw (err instanceof SubscriptionError ? err : new SubscriptionError())
         // (HTTP status + provider error type/code/param) are appended so a failure is
         // explainable from the log. Never the body, prompt, output or any credential.
@@ -2120,9 +2128,10 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
           if (simpleFastPath && (distilled.mode !== 'chat' || distilled.nextRead || distilled.answerPlan ||
             (Array.isArray(distilled.tasks) && distilled.tasks.length))) throw new SubscriptionError('subscription_invalid_output')
           llmResult = gptResult
-          activeProvider = gpt.providerName === 'claude' ? CLAUDE : OPENAI // its envelope PARSED — this is the accepted provider
+          activeProvider = localMode ? 'local' : (gpt.providerName === 'claude' ? CLAUDE : OPENAI) // preserve legacy adapter attribution
           activeAdapter = gpt
         } catch (err) {
+          if (localMode) throw new (require('../adapters/LocalAdapter').LocalModelError)('local_invalid_output')
           if (subscriptionMode) throw new SubscriptionError('subscription_invalid_output')
           routerFallbackReason = `openai_parse_${(err && err.reason) || 'error'}`
         }
@@ -3376,7 +3385,7 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
         //    extend the turn」 — was never expressed to the model in prompt or schema.
         const finalCall = composeOnly === true
         const prompt = await buildPromptFor(activeProvider, finalCall)
-        const fmt = answerPlanFormat(finalCall)
+        const fmt = localAnswerFormat(answerPlanFormat(finalCall))
         const next = await timePhase(
           { requestId, phase: PHASE.MODEL_CALL, role: ROLE.REASONING_STEP, provider: activeProvider || null },
           () => activeAdapter.complete(prompt, { invocationPhase:'answer', system: effSystem, maxTokens, ...(fmt ? { responseFormat: fmt } : {}) }),

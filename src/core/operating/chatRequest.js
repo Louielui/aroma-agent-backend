@@ -9,6 +9,10 @@ function isBriefingRequest (message) {
 }
 function sameOrigin (req) {
   const host = req.get('host')
+  if (process.env.LOCAL_BRAIN_ONLY === '1') {
+    const port = Number(process.env.LOCAL_APP_PORT)
+    return Number.isInteger(port) && port >= 1024 && port <= 65535 && host === '127.0.0.1:' + port && req.get('origin') === 'http://' + host && req.get('sec-fetch-site') !== 'cross-site'
+  }
   return ['127.0.0.1:8090', 'localhost:8090'].includes(host) && req.get('origin') === 'http://' + host && req.get('sec-fetch-site') !== 'cross-site'
 }
 module.exports = { isBriefingRequest, sameOrigin }

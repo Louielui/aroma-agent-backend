@@ -127,6 +127,9 @@ function defaultSink (entry) {
  * @returns {{ status: number, body: object }}
  */
 function handleIntakeError (err, ctx = {}, deps = {}) {
+  if (err?.localModelFailure && /^local_[a-z0-9_]+$/.test(err.code)) {
+    return { status:503, body:{error:{code:err.code,message:'本機模型未能完成：' + err.code + '。沒有轉用雲端模型。',retryable:false,correlationId:ctx.correlationId || null}} }
+  }
   const sink = deps.sink || defaultSink
   const correlationId = (err && err.correlationId) || ctx.correlationId || null
   const c = classify(err)
