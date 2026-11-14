@@ -99,3 +99,16 @@ test('reflection limits are enforced by the host even when a provider ignores th
  for(let i=0;i<invalid.length;i++){value=invalid[i];await assert.rejects(engine.reflect('Summarize fixture '+i,[{id,text:quote}]),/memory_invalid_result/)}
  assert.equal(database.inferenceStatus().counts.failed,3)
 })
+test('consolidation accepts the existing engine wire projection for a same-kind correction',async t=>{
+ const dir=fs.mkdtempSync('C:/Aroma/local-brain-runtime/learning-wire-'),database=require('../../src/localBrain/memoryStore').createLocalStore(dir)
+ t.after(()=>{database.close();fs.rmSync(dir,{recursive:true,force:true})})
+ const old='xx-'+require('node:crypto').randomUUID(),text='The fixture project now selects plan B instead of plan A.'
+ const value={candidates:[{kind:'decision',subject:'Fixture project choice',text,reason:'Explicit correction',quote:text,supersedes:old,taskState:null}]}
+ const engine=require('../../src/localBrain/memoryEngine').createLocalEngine({database,adapter:{providerName:'local',complete:async()=>({text:JSON.stringify(value)})}}).forScope('private:owner')
+ const wire=[{id:old,kind:'decision',subject:'Fixture project choice',text:'The fixture project selected plan A.'}]
+ const source={id:'xx-'+require('node:crypto').randomUUID(),text,source:{attribution:'owner_statement'}}
+ const result=await engine.consolidate(source,wire)
+ assert.equal(result.candidates[0].supersedes,old)
+ value.candidates[0].supersedes='xx-'+require('node:crypto').randomUUID()
+ await assert.rejects(engine.consolidate({...source,text:text+' Not a different grant.'},wire),/invalid_consolidation/)
+})

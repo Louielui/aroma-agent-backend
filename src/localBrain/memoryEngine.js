@@ -38,7 +38,14 @@ function createLocalEngine({database,adapter}){
   return {get,retain,retainAutomatic:retain,forget:async id=>database.forget(scope,id),
    // Explicit lexical quote index; no embedding/reranking or hidden LLM retrieval.
    recall:async query=>{if(!validText(query))throw Error('memory_invalid_text');const terms=query.toLowerCase().match(/[a-z0-9]{2,}|[\u3400-\u9fff]{1,2}/g)||[];return database.documents(scope).map(d=>({d,score:terms.filter(t=>d.quotes.some(q=>q.toLowerCase().includes(t))).length})).filter(x=>x.score>0).sort((a,b)=>b.score-a.score).slice(0,5).map(({d})=>({id:d.id,documentId:d.id,text:d.quotes.join('\n').slice(0,600),date:d.date,source:'local_quote_index'}))},
-   consolidate:async(source,existing)=>infer(scope,'memory_consolidation',{source,existing},require('../memory/consolidationPolicy').schema,v=>{require('../memory/consolidationPolicy').validate(v,source,existing);return v}),
+   consolidate:async(source,existing)=>{
+    if(!ID.test(source?.id)||!validText(source.text)||source.text.length>12000||!Array.isArray(existing)||existing.length>40)throw Error('invalid_consolidation')
+    // The engine contract projects canonical type/category into kind. Restore
+    // only that shape for this preliminary check; Gateway rechecks real records,
+    // revisions, source hashes and scope before committing any candidate.
+    const canonicalShape=existing.map(r=>({...r,type:['experience','todo'].includes(r.kind)?'semantic':r.kind,details:['experience','todo'].includes(r.kind)?{category:r.kind}:{}}))
+    return infer(scope,'memory_consolidation',{source,existing},require('../memory/consolidationPolicy').schema,v=>{require('../memory/consolidationPolicy').validate(v,source,canonicalShape);return v})
+   },
    reflect:async(query,evidence)=>{
     if(!validText(query)||!Array.isArray(evidence)||!evidence.length)throw Error('invalid_reflection')
     const r=await infer(scope,'memory_reflection',{query,evidence},SYNTHESIS,v=>{
