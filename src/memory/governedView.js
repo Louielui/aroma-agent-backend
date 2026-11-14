@@ -2,7 +2,7 @@
 const fs = require('node:fs')
 const path = require('node:path')
 const { t } = require('../i18n/t')
-function buildHtml({ localOnly = false } = {}) {
+function buildHtml({ localOnly = false,productionLocal=false } = {}) {
   const labels = {
     localOnly:localOnly===true,storageLabel:'PostgreSQL',retrievalLabel:'pgvector',
     backupStatus:t('memoryOps.backupStatus'),backupVerified:t('memoryOps.backupVerified'),backupRunning:t('memoryOps.backupRunning'),backupFailed:t('memoryOps.backupFailed'),backupHelp:t('memoryOps.backupHelp'),backupAttempt:t('memoryOps.backupAttempt'),backupProof:t('memoryOps.backupProof'),backupScheduled:t('memoryOps.backupScheduled'),backupManual:t('memoryOps.backupManual'),backupSucceededAt:t('memoryOps.backupSucceededAt'),backupNextAt:t('memoryOps.backupNextAt'),retainedOriginals:t('memoryOps.retainedOriginals'),rebuild:t('memoryOps.rebuild'),rebuildHelp:t('memoryOps.rebuildHelp'),
@@ -42,6 +42,7 @@ function buildHtml({ localOnly = false } = {}) {
     indexes:'字詞來源索引',index:'建立／重試字詞來源索引',saved:'已建立來源索引',
     localEngine:'本機抽取與整理模型',localQueue:'待處理保存佇列',localBusy:'本機記憶處理中'
   })
+  if(productionLocal)Object.assign(labels,{productionLocal:true,storageLabel:'PostgreSQL',indexes:'來源索引回執（既有引擎與本機）',saved:'已保存索引回執',consolidationHelp:'本機模型透過既有 Memory Gateway 整理有來源的記憶；偏好及決定候選須另行批准。',operationsHelp:'正式主資料保留在 PostgreSQL；本機字詞索引與推理登記另行持久保存。不使用雲端推理；既有索引回執不代表已由本機重新處理。'})
   return fs.readFileSync(path.join(__dirname, 'governedView.html'), 'utf8').replace('/*LABELS*/', JSON.stringify(labels).replace(/</g, '\\u003c'))
 }
 module.exports = { buildHtml }

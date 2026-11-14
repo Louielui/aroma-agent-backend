@@ -8,9 +8,10 @@ import os
 import pathlib
 import re
 import subprocess
+import sqlite3
 
-DIRECTORIES = ("memory-outbox", "memory-capture", "memory-consolidation", "conversations")
-FILES = ("company-access.json",)
+DIRECTORIES = ("memory-outbox", "memory-capture", "memory-consolidation", "conversations", "local-brain")
+FILES = ("company-access.json", "model-center-local.json", "memory-local-index/memory.sqlite")
 MAX_BYTES = 512 * 1024 * 1024
 
 
@@ -20,6 +21,21 @@ def encode(value):
 
 def at():
     return datetime.datetime.now(datetime.timezone.utc).isoformat()
+
+
+def local_index_snapshot(source):
+    # SQLite backup includes committed WAL frames in one consistent snapshot.
+    # Never copy a live main file and its WAL at separate instants.
+    p = pathlib.Path(source).resolve()
+    with sqlite3.connect(p.as_uri() + "?mode=ro", uri=True, timeout=5) as original:
+        with sqlite3.connect(":memory:") as snapshot:
+            original.backup(snapshot)
+            if snapshot.execute("PRAGMA integrity_check").fetchone()[0] != "ok":
+                raise ValueError("local_index_backup_invalid")
+            content = snapshot.serialize()
+            if len(content) > MAX_BYTES:
+                raise ValueError("recovery_size_limit")
+            return content
 
 
 def private_directory(target):
@@ -82,11 +98,13 @@ def stage_recovery(destination, data_root):
             if file.is_symlink() or file.resolve() != data.joinpath(*pathlib.PurePosixPath(relative).parts):
                 raise ValueError("recovery_source_outside_scope")
             before = file.stat()
-            content = file.read_bytes()
+            sqlite_asset = relative == "memory-local-index/memory.sqlite"
+            content = local_index_snapshot(file) if sqlite_asset else file.read_bytes()
             after = file.stat()
-            if (before.st_size, before.st_mtime_ns) != (after.st_size, after.st_mtime_ns):
+            if not sqlite_asset and (before.st_size, before.st_mtime_ns) != (after.st_size, after.st_mtime_ns):
                 raise ValueError("recovery_source_changed_retry")
-            json.loads(content.decode("utf-8"))
+            if not sqlite_asset:
+                json.loads(content.decode("utf-8"))
             total += len(content)
             if total > MAX_BYTES:
                 raise ValueError("recovery_size_limit")

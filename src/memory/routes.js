@@ -2,7 +2,7 @@
 const express = require('express')
 const crypto = require('node:crypto')
 const { createHindsight, ID, validText } = require('./hindsight')
-function createMemoryRouter ({ client = createHindsight(), capture = null, governed = false } = {}) {
+function createMemoryRouter ({ client = createHindsight(), capture = null, governed = false,productionLocal=false } = {}) {
   const router = express.Router(); let busy = false
   const sameOrigin = require('../core/operating/chatRequest').sameOrigin
   router.get('/api/v1/memory/capture', (req, res) => {
@@ -20,7 +20,7 @@ function createMemoryRouter ({ client = createHindsight(), capture = null, gover
     try { res.json(b.op === 'enabled' ? capture.setEnabled(b.value) : capture.retry(b.id)) }
     catch (_) { res.status(409).json({ error: 'capture_unconfirmed' }) }
   })
-  router.get('/memory', (req, res) => res.set('Cache-Control', 'no-store').type('html').send(governed ? require('./governedView').buildHtml() : require('./view').buildMemoryHtml()))
+  router.get('/memory', (req, res) => res.set('Cache-Control', 'no-store').type('html').send(governed ? require('./governedView').buildHtml({localOnly:productionLocal,productionLocal}) : require('./view').buildMemoryHtml()))
   router.get('/memory/legacy', (req, res) => res.set('Cache-Control', 'no-store').type('html').send(require('./view').buildMemoryHtml({ governed })))
   router.get('/api/v1/memory', async (req, res) => {
     try { res.set('Cache-Control', 'no-store').json({ state: 'connected', ...await client.list() }) }

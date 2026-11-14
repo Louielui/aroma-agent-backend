@@ -11,6 +11,7 @@ function assemblePage (p) {
     '/*BUILD_STAMP*/': p.buildStamp,
     '/*SUBSCRIPTION_CHAT*/': JSON.stringify(p.subscription),
     '/*MODEL_CENTER*/': JSON.stringify(p.modelCenter === true)
+    ,'/*LOCAL_BRAIN*/': JSON.stringify(p.localBrain === true)
   }
   let html = p.template
   for (const [key, value] of Object.entries(parts)) {

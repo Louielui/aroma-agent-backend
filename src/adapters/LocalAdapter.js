@@ -29,6 +29,8 @@ class LocalAdapter extends LLMAdapter {
     super()
     this.url = endpoint(env.LOCAL_MODEL_URL || 'http://127.0.0.1:11435')
     this.model = env.LOCAL_MODEL || 'qwen3:8b'
+    this.expectedDigest=env.LOCAL_MODEL_DIGEST||null
+    if(this.expectedDigest&&!/^[a-f0-9]{64}$/.test(this.expectedDigest))throw new LocalModelError('local_model_digest_invalid')
     if (!/^[a-z0-9][a-z0-9_.:/-]{0,120}$/i.test(this.model) || /cloud/i.test(this.model)) throw new LocalModelError('local_model_invalid')
     this.context = Number(env.LOCAL_MODEL_CONTEXT || 16384)
     this.tokenizer = env.LOCAL_TOKENIZER_URL ? endpoint(env.LOCAL_TOKENIZER_URL) : null
@@ -44,6 +46,7 @@ class LocalAdapter extends LLMAdapter {
       if (!r.ok) throw Error()
       const data = await r.json()
       if (!data.models?.some(m => m.name === this.model)) throw new LocalModelError('local_model_not_installed')
+      if(this.expectedDigest&&!data.models.some(m=>m.name===this.model&&m.digest===this.expectedDigest))throw new LocalModelError('local_model_digest_mismatch')
       return { available:true, provider:'local', model:this.model }
     } catch(e) { if (e.localModelFailure) throw e; throw new LocalModelError('local_service_unavailable') }
   }
@@ -51,6 +54,7 @@ class LocalAdapter extends LLMAdapter {
     const start = performance.now(), callId = require('node:crypto').randomUUID()
     let sent = false
     try {
+    if(this.expectedDigest)await this.preflight()
     // Conservative UTF-8 bound: never silently let Ollama truncate the input.
     if (opts.maxTokens !== undefined && (!Number.isSafeInteger(opts.maxTokens) || opts.maxTokens <= 0)) throw new LocalModelError('local_output_budget_invalid')
     const maxTokens = Math.min(opts.maxTokens || 2048, 4096)

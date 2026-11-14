@@ -1,7 +1,7 @@
 'use strict'
 const path=require('node:path'),fs=require('node:fs')
-function createLearning({dir,adapter,sourceRows=[],readConversation}){
- const database=require('./memoryStore').createLocalStore(dir)
+function createLearning({dir,adapter,sourceRows=[],readConversation,canonicalStore=null,productionDataDir=null,outboxDir}){
+ const database=require('./memoryStore').createLocalStore(dir,{canonicalStore,productionDataDir})
  const lock=path.join(dir,'learning-owner.lock');let lockFd,engine,runtime
  try{
   // Serialize ownership recovery too: a second starter cannot remove a freshly
@@ -18,14 +18,14 @@ function createLearning({dir,adapter,sourceRows=[],readConversation}){
    lockFd=fs.openSync(lock,'wx',0o600)
    fs.writeFileSync(lockFd,JSON.stringify({pid:process.pid,at:new Date().toISOString()}));fs.fsyncSync(lockFd)
   }finally{if(guardFd!==undefined){fs.closeSync(guardFd);fs.unlinkSync(guard)}}
-  database.seed(sourceRows.map(original=>{
+  if(!canonicalStore)database.seed(sourceRows.map(original=>{
    const row=structuredClone(original)
    // A source engine's index receipt is historical evidence, not a local index.
    return {...row,details:{...row.details,localImport:{originalVersion:row.version,originalIndex:row.index}},
     index:{state:'pending',facts:null,attempts:0,reason:null,checkedAt:null,nextRetryAt:null}}
   }))
   engine=require('./memoryEngine').createLocalEngine({database,adapter})
-  runtime=require('../memory/runtime').createRuntime({store:database.store,engine,dir:path.join(dir,'memory-outbox'),readConversation,isEngineReady:()=>!engine.status().busy,sequentialBackground:true})
+  runtime=require('../memory/runtime').createRuntime({store:database.store,engine,dir:outboxDir||path.join(dir,'memory-outbox'),readConversation,isEngineReady:()=>!engine.status().busy,sequentialBackground:true})
  }catch(e){database.close();if(lockFd!==undefined){fs.closeSync(lockFd);fs.unlinkSync(lock)}throw e}
  let closed=false
  return {runtime,gateway:runtime.gateway,engine,database,

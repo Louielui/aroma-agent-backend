@@ -684,6 +684,7 @@ function createDemoRouter ({ getAdapterFn = getAdapterForLane, processIntakeFn =
       }
       const workRoute = !contextCard && !req.body.attachSection && (!req.body.interactionMode || req.body.interactionMode === 'chat') ? require('../capability/requestRouter').routeWorkRequest(message) : null
       const workService = workRoute?.service === 'developmentPlan' ? developmentPlan : workRoute?.service === 'codeDiagnosis' ? codeDiagnosis : workRoute?.service === 'codeRepair' ? codeRepair : null
+      if(workRoute&&process.env.LOCAL_BRAIN_ONLY==='1')return res.status(503).json({error:{code:'local_capability_unavailable',message:t('localBrain.workerUnavailable'),retryable:false}})
       if (workRoute && workService) {
         if (['codeDiagnosis','codeRepair'].includes(workRoute.service) && Object.keys(req.body).some(key => !['message', 'conversationId', 'workflowRequestId', 'websiteRequestId', 'history', 'providerHint', 'previousLane', 'chatLevel', 'chatModel', 'interactionMode'].includes(key))) return res.status(400).json({ error: 'invalid_request' })
         if (!require('../core/operating/chatRequest').sameOrigin(req)) return res.status(403).json({ error: 'same_origin_required' })

@@ -2,6 +2,7 @@
 // A live authenticated read only. Never use a cached ready file as bridge liveness.
 async function readHealth({request=(...args)=>require('../adapters/CodexSubscriptionAdapter').localRequest(...args),env=process.env,now=Date.now}={}){
  const checkedAt=new Date(now()).toISOString()
+ if(env.LOCAL_BRAIN_ONLY==='1')return {state:'unavailable',reason:'local_worker_not_connected',checkedAt}
  if(!/^[a-f0-9]{64}$/.test(env.CODEX_CHAT_BRIDGE_TOKEN||''))return {state:'unavailable',reason:'not_configured',checkedAt}
  try{
   const value=await request('/execution-health',{},env,AbortSignal.timeout(5000))

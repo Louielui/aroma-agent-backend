@@ -7,7 +7,8 @@
  * Separated from app.js so tests can import app without binding a port.
  */
 
-const app = require('./app')
+require('dotenv').config()
+let app
 const { sweepAgedSandboxes } = require('./workers/workspace/tmpdirSandbox')
 const { readExpectedToken } = require('./governance/auth')
 const { evaluateStartupConfig } = require('./persona/processRole') // R4a — memory-free startup guard
@@ -130,18 +131,22 @@ function startupSandboxSweep () {
 assertProcessRoleConfigured() // R4a — fail-closed on invalid role/source BEFORE the port
 assertPrimaryPersonaReady() // Runtime Guard — hybrid primary needs a READY composer; legacy stays memory-free
 assertServiceTokenConfigured() // B2-15 — fail-fast BEFORE binding the port
+const BIND_HOST = resolveValidatedBindHost()
+// This exact release selects local inference through its reviewed deployment
+// profile. The existing launcher overlay and Owner credentials are retained.
+require('./localBrain/production').activate()
+app = require('./app')
 startupReconcile()
 
 // B2-2 — INFORMATIONAL ONLY (never blocks startup, never changes runtime): the
 // Conversation Demo is on but not on the real reasoning provider, so replies come
 // from a stub, not the live Xiang Xiang. Activation tests intentionally run on the
 // mock provider, so this stays a warning.
-if (process.env.CONVERSATION_DEMO === 'on' && (process.env.LLM_PROVIDER || 'claude') !== 'claude') {
+if (process.env.CONVERSATION_DEMO === 'on' && !['claude','local'].includes(process.env.LLM_PROVIDER || 'claude')) {
   console.warn('[AROMA-HUB] CONVERSATION_DEMO=on but LLM_PROVIDER=' +
     `${process.env.LLM_PROVIDER} — demo replies come from a non-real provider, not the live Xiang Xiang.`)
 }
 
-const BIND_HOST = resolveValidatedBindHost() // loopback-only; FATAL + exit if invalid — never binds a non-loopback interface
 const server = app.listen(PORT, BIND_HOST, () => {
   console.log(`[AROMA-HUB] Listening on ${BIND_HOST}:${PORT}`)
   console.log(`[AROMA-HUB] LLM provider: ${process.env.LLM_PROVIDER || 'claude'}`)

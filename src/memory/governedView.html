@@ -21,7 +21,7 @@
 'use strict';const L=/*LABELS*/;const el=id=>document.getElementById(id);document.title=L.title
 for(const n of document.querySelectorAll('[data-l]'))n.textContent=L[n.dataset.l]
 if(L.localOnly){
- const nav=document.querySelector('nav'),back=document.createElement('a');back.href='/local';back.textContent=L.back;nav.replaceChildren(back)
+ const nav=document.querySelector('nav'),back=document.createElement('a');back.href=L.productionLocal?'/demo':'/local';back.textContent=L.back;nav.replaceChildren(back)
  for(const id of ['backup','grant-form','work-form'])el(id).closest('details').hidden=true
  el('operations-refresh').nextElementSibling.hidden=true
 }

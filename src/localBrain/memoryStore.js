@@ -4,9 +4,9 @@
 const fs=require('node:fs'),path=require('node:path'),{createHash}=require('node:crypto')
 const ordered=v=>Array.isArray(v)?v.map(ordered):v&&typeof v==='object'?Object.fromEntries(Object.keys(v).sort().map(k=>[k,ordered(v[k])])):v
 const encode=v=>JSON.stringify(ordered(v)),hash=v=>createHash('sha256').update(v).digest('hex')
-function createLocalStore(dir){
- const root=path.resolve('C:/Aroma/local-brain-runtime'),target=path.resolve(dir)
- if(!path.isAbsolute(dir)||!target.startsWith(root+path.sep))throw Error('local_memory_path_refused')
+function createLocalStore(dir,{canonicalStore=null,productionDataDir=null}={}){
+ const root=path.resolve(productionDataDir||'C:/Aroma/local-brain-runtime'),target=path.resolve(dir)
+ if(!path.isAbsolute(dir)||(productionDataDir?target!==path.join(root,'memory-local-index'):!target.startsWith(root+path.sep)))throw Error('local_memory_path_refused')
  fs.mkdirSync(target,{recursive:true})
  if(fs.realpathSync(target)!==target||fs.realpathSync(root)!==root)throw Error('local_memory_path_refused')
  const file=path.join(target,'memory.sqlite')
@@ -49,8 +49,8 @@ function createLocalStore(dir){
   if(r.op==='audit')return db.prepare('SELECT body,previousHash,hash FROM audit WHERE id=? ORDER BY seq').all(r.id).map(x=>({...JSON.parse(x.body),previousHash:x.previousHash,hash:x.hash}))
   throw Error('local_memory_operation_not_authorized')
  }
- const store=require('../memory/structuredStore').createStructuredStore({invoke})
- return {store,close:()=>db.close(),seed(rows){if(all().length)return;commit(rows.map(row=>({expected:0,row})),{op:'isolated_snapshot_import',actor:'owner',at:new Date().toISOString()})},
+ const store=canonicalStore||require('../memory/structuredStore').createStructuredStore({invoke})
+ return {store,close:()=>db.close(),seed(rows){if(canonicalStore)throw Error('production_snapshot_import_refused');if(all().length)return;commit(rows.map(row=>({expected:0,row})),{op:'isolated_snapshot_import',actor:'owner',at:new Date().toISOString()})},
   document(scope,id){const r=db.prepare('SELECT body FROM documents WHERE scope=? AND id=?').get(scope,id);return r?JSON.parse(r.body):null},
   documents(scope){return db.prepare('SELECT body FROM documents WHERE scope=?').all(scope).map(r=>JSON.parse(r.body))},
   saveDocument(scope,id,body){db.prepare('INSERT INTO documents(scope,id,body) VALUES(?,?,?) ON CONFLICT(scope,id) DO UPDATE SET body=excluded.body').run(scope,id,encode(body))},
