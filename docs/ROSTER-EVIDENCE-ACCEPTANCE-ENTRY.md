@@ -72,3 +72,14 @@ First substantive/unknown failure, login/source/scope drift, ambiguous accountin
 or cap stops acceptance. Preserve failures, pause the new root when safe and
 restore automatic memory. Unknown/in-flight attempts are not refunded. No
 resend, replacement root, extra turn or renewed authority is implicit.
+
+## Test orchestration limits
+
+The two real-host contention fixtures use a bounded 30-second test orchestration
+ceiling for repeated checks across nine durable ledgers. The deliberate >150-busy
+probe has a separate bounded IPC barrier; after release reservations use the
+unchanged production lock wait. This fixture ceiling is not a production lock
+wait, a provider deadline, extra capacity or a latency SLA. Actual counters and
+pre-send refusal assertions remain mandatory. Full-suite failures, metadata-only
+login refusals and standalone rechecks stay separate evidence; none is silently
+relabelled or combined into a fabricated complete-suite or review PASS.
