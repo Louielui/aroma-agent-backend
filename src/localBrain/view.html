@@ -1,10 +1,10 @@
 <!doctype html><html lang="zh-Hant"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>香香 · 本機測試話題</title>
 <style>body{font:18px/1.65 system-ui;max-width:820px;margin:40px auto;padding:20px;background:#faf9f6;color:#222}textarea{width:100%;min-height:90px;font:inherit}button,select{font:inherit;padding:10px}article{white-space:pre-wrap;padding:20px;background:white;border-radius:12px;margin:20px 0}small{color:#555}pre{white-space:pre-wrap;overflow-wrap:anywhere}.sources{font-size:14px;overflow-wrap:anywhere;border-top:1px solid #ddd;margin-top:16px;padding-top:12px}</style>
-<h1>香香 · 本機測試話題</h1><p><a href="/model-center">本機模型設定</a> <small>隔離環境 · 不自動轉用雲端</small></p>
+<h1>香香 · 本機測試話題</h1><p><a href="/model-center">本機模型設定</a> <a id="memory" href="/local/memory" hidden>隔離記憶與待審候選</a> <small>隔離環境 · 不自動轉用雲端</small></p>
 <p id="state">正在核對本機服務</p><div id="chat"></div><article id="draft" hidden aria-live="polite"></article><form><textarea required maxlength="2000" placeholder="與本機香香對話"></textarea><button>送出</button></form><details><summary>生成進度與診斷（未驗證內容）</summary><pre id="progress"></pre></details>
 <script>
 const id=crypto.randomUUID(),history=[],state=document.querySelector('#state'),chat=document.querySelector('#chat'),progress=document.querySelector('#progress'),draft=document.querySelector('#draft');
-fetch('/api/local/status').then(r=>{if(!r.ok)throw Error('HTTP '+r.status);return r.json()}).then(s=>{state.textContent=s.model+' · 記憶採唯讀來源快照；庫存為測試資料；背景工作及真實派工未啟動。'}).catch(e=>{state.textContent='服務核對失敗：'+e.message});
+fetch('/api/local/status').then(r=>{if(!r.ok)throw Error('HTTP '+r.status);return r.json()}).then(s=>{const learning=s.memory==='isolated_local_learning';document.querySelector('#memory').hidden=!learning;state.textContent=s.model+' · '+(learning?'隔離記憶學習已啟用，偏好候選待批准；僅字詞檢索。':'記憶採唯讀來源快照。')+' 庫存為測試資料；業務排程與真實派工未啟動。'}).catch(e=>{state.textContent='服務核對失敗：'+e.message});
 function renderFinal(v,message){
   draft.hidden=true;
   const body=v.body,failed=!!body.error,answer=body.reply||body.error?.message||body.error?.code||String(body.error||'沒有可顯示的答案');

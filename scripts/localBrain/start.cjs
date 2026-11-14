@@ -12,11 +12,17 @@ const audit=e=>fs.appendFileSync(path.join(dataDir,'egress.jsonl'),JSON.stringif
 require('../../src/localBrain/isolation').install({audit,tokenizerPort:Number(new URL(process.env.LOCAL_TOKENIZER_URL||'http://127.0.0.1:11436').port)})
 const passwordFile=process.env.LOCAL_PASSWORD_FILE
 if(!passwordFile||!fs.existsSync(passwordFile))throw Error('isolated_owner_password_file_required')
-const {app}=require('../../src/localBrain/server').createLocalApp({dataDir,sourceRows:JSON.parse(fs.readFileSync(source,'utf8')),ownerPassword:fs.readFileSync(passwordFile,'utf8').trim()})
+const host=require('../../src/localBrain/server').createLocalApp({dataDir,sourceRows:JSON.parse(fs.readFileSync(source,'utf8')),ownerPassword:fs.readFileSync(passwordFile,'utf8').trim(),onEvent:e=>fs.appendFileSync(path.join(dataDir,'learning-events.jsonl'),JSON.stringify({...e,at:new Date().toISOString()})+'\n')})
+const {app}=host
 if(process.env.LOCAL_TEST_FIXTURES==='1') {
   process.env.CONTEXT_AROMA_SYSTEM='on'
   const {events}=require('../../src/adapters/LocalAdapter')
   app.locals.a4ReadDepsOverride={connector:require('../../src/localBrain/fixtures').createFixtureConnector({context:()=>events.getStore()})}
 }
 const port=Number(process.env.LOCAL_APP_PORT)
-app.listen(port,'127.0.0.1',()=>console.log(JSON.stringify({state:'listening',address:'127.0.0.1',port,provider:'local',model:process.env.LOCAL_MODEL||'qwen3:8b',cloudFallback:false})))
+const server=app.listen(port,'127.0.0.1',()=>console.log(JSON.stringify({state:'listening',address:'127.0.0.1',port,provider:'local',model:process.env.LOCAL_MODEL||'qwen3:8b',learning:!!host.learning,cloudFallback:false})))
+let stopping=false
+function stop(){if(stopping)return;stopping=true;server.close();host.learning?.runtime.stop();const timer=setInterval(()=>{try{host.close();clearInterval(timer);process.stdin.destroy()}catch(e){if(e.message!=='local_memory_busy'){clearInterval(timer);process.exitCode=1}}},100)}
+// A closed parent pipe can only request graceful shutdown, never execute code.
+process.stdin.setEncoding('utf8');process.stdin.on('data',s=>{if(s.trim()==='stop')stop()});process.stdin.on('end',stop)
+process.on('SIGINT',stop);process.on('SIGTERM',stop)

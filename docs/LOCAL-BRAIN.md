@@ -53,17 +53,18 @@ answer-plan derivation engine computes PAR shortages from numeric source fields.
 | Component | Isolated candidate | Production dependency left unchanged |
 | --- | --- | --- |
 | Chat, intent, planning, read selection, answer verification | Local adapter / Qwen | Existing subscribed providers |
-| Canonical preferences and recall | Existing Memory Gateway over a read-only, sourced snapshot | Existing canonical store |
+| Canonical preferences and recall | Read-only snapshot by default; explicit `--learning` uses an isolated durable copy through the same Gateway | Existing canonical store |
 | Semantic memory search | Not connected in this candidate | Hindsight local embedding and reranker |
-| Memory extraction and reflection | Not started; no new memories are retained | Hindsight LLM points to the subscription Bridge with GPT-6 Astra |
+| Memory extraction and reflection | In `--learning`, Qwen extracts exact quotes and proposes reviewable summaries; no Hindsight/Bridge request | Hindsight LLM points to the subscription Bridge with GPT-6 Astra |
 | Embedding | No model needed for snapshot lexical recall | `paraphrase-multilingual-MiniLM-L12-v2`, local |
 | Reranking | Not used by snapshot recall | `mmarco-mMiniLMv2-L12-H384-v1`, local |
-| Background summaries, indexing and consolidation | Not started | Existing background providers; not migrated |
+| Background indexing and consolidation | In `--learning`, existing capture outbox and consolidation worker run against the isolated copy and local adapter | Existing production workers unchanged |
+| Summaries / reflection | Explicit Owner request, local synthesis, derived candidate with source-version checks | Existing Hindsight reflection unchanged |
 | Delegated workers | Not enabled | Existing controlled dispatch and provider routes |
 
-This candidate therefore does **not** establish full memory learning or worker
-independence. It establishes an isolated local inference path whose remaining
-dependencies are explicit. External Gmail, Drive and restaurant reads are also
+This candidate does **not** establish production or general worker independence.
+Local learning is explicitly opt-in; see `LOCAL-MEMORY-LEARNING.md` for persistence,
+approval and recovery boundaries. External Gmail, Drive and restaurant reads are also
 not connected here. A future authorized connector may need internet without
 using cloud AI; these are distinct properties.
 

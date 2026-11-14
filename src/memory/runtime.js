@@ -25,7 +25,7 @@ function confirmedCapture(row) {
   return captureOriginal(row) && Number.isInteger(row.index?.facts) && typeof row.index.checkedAt === 'string' && Number.isFinite(Date.parse(row.index.checkedAt)) &&
     ((row.index.state === 'saved' && row.index.facts > 0) || (row.index.state === 'raw_only' && row.index.facts === 0))
 }
-function createRuntime({ store = createStructuredStore(), engine = createHindsight(), dir = path.join(resolveDataDir(), 'memory-outbox'),
+function createRuntime({ store = createStructuredStore(), engine = createHindsight(), dir = path.join(resolveDataDir(), 'memory-outbox'), isEngineReady = () => true, sequentialBackground = false,
   readConversation = id => require('../store/conversationStore').conversationStore.get(id) } = {}) {
   const gateway = createGateway({ store, engine, readConversation })
   let timer; let active = false; let indexActive = false; let lastError = null; let nextIndexAt = 0
@@ -34,7 +34,7 @@ function createRuntime({ store = createStructuredStore(), engine = createHindsig
     catch (e) { if (e.code === 'ENOENT') return true; throw Error('memory_setting_unavailable') }
   }
   const consolidation = require('./consolidationWorker').createWorker({ gateway, dir: path.join(dir, '../memory-consolidation'), allowed: enabled,
-    ready: () => !active && captureQueueCount() === 0 })
+    ready: () => !active && isEngineReady() && captureQueueCount() === 0 })
   function enqueue(input) {
     if (!enabled()) return { state: 'paused' }
     const excluded = exclusionReason(input.text) || exclusionReason(JSON.stringify(input.source), false)
@@ -87,7 +87,7 @@ function createRuntime({ store = createStructuredStore(), engine = createHindsig
         eligible.find(r => r.index.state === 'unconfirmed' && r.index.attempts < 3 &&
         (!r.index.checkedAt || (r.index.nextRetryAt && r.index.nextRetryAt <= new Date().toISOString()))) ||
         eligible.find(r => r.index.state === 'pending')
-      if (pending && !indexActive && Date.now() >= nextIndexAt) {
+      if (pending && !indexActive && isEngineReady() && Date.now() >= nextIndexAt) {
         indexActive = true
         indexJob = gateway.index(OWNER, pending.id).then(result => {
           nextIndexAt = Date.now() + (result.index.state === 'unconfirmed' ? 30000 : 10000)
@@ -177,7 +177,10 @@ function createRuntime({ store = createStructuredStore(), engine = createHindsig
     backup,
     progressStatus,
     status: () => ({ active: active || indexActive, indexing: indexActive, enabled: enabled(), error: lastError, nextIndexAt: nextIndexAt ? new Date(nextIndexAt).toISOString() : null, pending: fs.existsSync(dir) ? fs.readdirSync(dir).filter(n => n.endsWith('.json')).length : 0 }),
-    start() { if (!timer) { timer = setInterval(() => { void drain(); void consolidation.tick() }, 5000); timer.unref() } },
+    start() { if (!timer) { timer = setInterval(() => {
+      if(sequentialBackground)void drain().then(()=>consolidation.tick()).catch(()=>{lastError='memory_background_unavailable'})
+      else { void drain(); void consolidation.tick() }
+    }, 5000); timer.unref() } },
     stop() { clearInterval(timer); timer = null }
   }
 }

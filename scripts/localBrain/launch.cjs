@@ -9,6 +9,8 @@ const free=port=>new Promise((resolve,reject)=>{const s=net.createServer();s.onc
 const wait=ms=>new Promise(r=>setTimeout(r,ms))
 async function ready(url,{fetchFn=fetch,waitFn=wait,attempts=60}={}){for(let i=0;i<attempts;i++){try{const r=await fetchFn(url,{signal:AbortSignal.timeout(1000),redirect:'error'});if(r.status===200)return}catch{}await waitFn(500)}throw Error('isolated_service_not_ready')}
 async function main(){
+  if(process.argv.slice(2).some(arg=>arg!=='--learning'))throw Error('invalid_local_launch_argument')
+  const learning=process.argv.includes('--learning')
   if(process.platform!=='win32')throw Error('native_windows_required')
   const tags=await(await fetch('http://127.0.0.1:11435/api/tags',{signal:AbortSignal.timeout(5000),redirect:'error'})).json()
   if(!tags.models?.some(m=>m.name==='qwen3.5:9b'&&m.digest==='56671c2ab9385f9cfcb404638e32cd62d88e3501d44822208363c010179a3c90'))throw Error('reviewed_local_model_missing')
@@ -19,15 +21,15 @@ async function main(){
   const baseEnv={...process.env,NODE_PATH:'C:\\Aroma\\aroma-agent-backend\\node_modules',LOCAL_BUILD_SHA256:sourceHash}
   for(const key of Object.keys(baseEnv))if(/API_KEY|TOKEN|PASSWORD|DATABASE_URL|PGPASSWORD/.test(key))delete baseEnv[key]
   delete baseEnv.LOCAL_TOKENIZER_URL
-  const node=spawn(process.execPath,[path.join(__dirname,'start.cjs')],{cwd:root,windowsHide:true,stdio:['ignore','inherit','inherit'],env:{...baseEnv,LOCAL_MODEL:'qwen3.5:9b',LOCAL_MODEL_CONTEXT:'65536',LOCAL_DATA_DIR:dataDir,LOCAL_MEMORY_SNAPSHOT:path.join(evidence,'memory-source-snapshot.json'),LOCAL_PASSWORD_FILE:path.join(runtime,'owner-password.txt'),LOCAL_APP_PORT:'18092',LOCAL_TEST_FIXTURES:'1'}})
+  const node=spawn(process.execPath,[path.join(__dirname,'start.cjs')],{cwd:root,windowsHide:true,stdio:['pipe','inherit','inherit'],env:{...baseEnv,LOCAL_MODEL:'qwen3.5:9b',LOCAL_MODEL_CONTEXT:'65536',LOCAL_DATA_DIR:dataDir,LOCAL_MEMORY_SNAPSHOT:path.join(evidence,'memory-source-snapshot.json'),LOCAL_PASSWORD_FILE:path.join(runtime,'owner-password.txt'),LOCAL_APP_PORT:'18092',LOCAL_TEST_FIXTURES:'1',LOCAL_MEMORY_LEARNING:learning?'1':'0',LOCAL_LEARNING_DIR:path.join(runtime,'learning-v1')}})
   children.push(node);node.on('error',()=>{console.error('local_app_start_failed');shutdown()})
   await ready('http://127.0.0.1:18092/owner/login')
-  const receipt={at:new Date().toISOString(),launcherPid:process.pid,appPid:node.pid,dataDir,url:'http://127.0.0.1:18092/local',productionChanged:false,sourceHash,model:'qwen3.5:9b',context:65536}
+  const receipt={at:new Date().toISOString(),launcherPid:process.pid,appPid:node.pid,dataDir,url:'http://127.0.0.1:18092/local',productionChanged:false,sourceHash,model:'qwen3.5:9b',context:65536,learning}
   fs.writeFileSync(path.join(evidence,'isolated-launch.json'),JSON.stringify(receipt,null,2))
   fs.appendFileSync(path.join(evidence,'isolated-launch-history.jsonl'),JSON.stringify(receipt)+'\n')
   console.log('LOCAL CANDIDATE READY: http://127.0.0.1:18092/local\nKeep this terminal open. Ctrl+C stops ONLY the child launched here. No model acceptance has run yet.')
 }
-function shutdown(){for(const child of children)if(!child.killed)child.kill();process.exitCode=1}
+function shutdown(){for(const child of children)if(child.exitCode===null){child.stdin?.end('stop\n');const timer=setTimeout(()=>child.kill(),30000);timer.unref();child.once('exit',()=>clearTimeout(timer))}process.exitCode=1}
 if(require.main===module){
   process.on('SIGINT',shutdown);process.on('SIGTERM',shutdown)
   main().catch(e=>{console.error(/^[a-z_0-9]+$/.test(e.message)?e.message:'isolated_start_failed');shutdown()})
