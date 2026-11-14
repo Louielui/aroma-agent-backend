@@ -20,6 +20,11 @@
 <script>
 'use strict';const L=/*LABELS*/;const el=id=>document.getElementById(id);document.title=L.title
 for(const n of document.querySelectorAll('[data-l]'))n.textContent=L[n.dataset.l]
+if(L.localOnly){
+ const nav=document.querySelector('nav'),back=document.createElement('a');back.href='/local';back.textContent=L.back;nav.replaceChildren(back)
+ for(const id of ['backup','grant-form','work-form'])el(id).closest('details').hidden=true
+ el('operations-refresh').nextElementSibling.hidden=true
+}
 const types=['working','episodic','semantic','decision','procedural','preference'];const states=['temporary','candidate','active','superseded','archived','rejected','ignored']
 let rows=[],supersedes=null,pending=false,total=0,consolidationEnabled=false,reviewOnly=false;const selected=new Set()
 function option(node,value,label){const o=document.createElement('option');o.value=value;o.textContent=label;node.append(o)}
@@ -33,6 +38,13 @@ function button(label,action){const b=node('button',label);b.type='button';b.onc
 async function loadOperations(){
  const area=el('operations-status');area.replaceChildren()
  try{
+  if(L.localOnly){
+   const r=await fetch('/api/local/status',{cache:'no-store'});if(!r.ok)throw Error();const d=await r.json()
+   area.append(node('p',L.localEngine+' · '+(d.model||L.unavailable)),node('p',L.localQueue+' · '+(d.background?.capture?.pending??'—')))
+   if(d.background?.engine?.busy||d.background?.capture?.active)area.append(node('p',L.localBusy))
+   if(d.background?.engine?.lastFailure)area.append(node('p',L.error+' · '+d.background.engine.lastFailure.code))
+   return
+  }
   const r=await fetch('/api/v1/memory/operations',{cache:'no-store'});if(!r.ok)throw Error();const d=await r.json()
   const labels={bridge:L.bridge,database:L.database,hindsight:L.hindsight}
   const state={ready:L.connected,unavailable:L.unavailable,degraded:L.degraded,foreign:L.foreign,disabled:L.paused,not_connected:L.unavailable,not_measured:L.notMeasured}
@@ -83,7 +95,7 @@ async function load(){await loadOperations();const res=await fetch('/api/v1/memo
 consolidationEnabled=d.consolidation?.enabled===true;el('consolidation-toggle').textContent=consolidationEnabled?L.pause:L.resume;el('consolidation-status').textContent=(consolidationEnabled&&d.consolidation?.captureEnabled&&d.status.consolidation.review<20?L.automatic:L.paused)+' · '+L.queued+' '+d.status.consolidation.pending+' · '+L.processed+' '+d.status.consolidation.done+' · '+L.empty+' '+d.status.consolidation.empty+' · '+L.failed+' '+d.status.consolidation.failed+' · '+L.candidate+' '+d.status.consolidation.review+(d.consolidation?.busy?' · '+L.loading:'')+(d.consolidation?.error?' · '+d.consolidation.error:'')
 if(d.status.consolidation.review>=20)el('consolidation-status').append(node('p',L.reviewBlocked));else if(d.consolidation?.blocked==='capture_pending')el('consolidation-status').append(node('p',L.capturePending))
 const profile=el('preference-profile');profile.replaceChildren();if(!d.preferences||d.preferences.state==='unavailable')profile.textContent=L.unavailable;else{profile.append(node('p',L.loaded+' '+d.preferences.items.length+' / '+d.preferences.total+(d.preferences.state==='partial'?' · '+L.unconfirmed:'')));for(const pref of d.preferences.items){const link=node('a',pref.subject+' · '+L.version+' '+pref.version);link.href='/memory?record='+encodeURIComponent(pref.id);profile.append(link,node('p',pref.text))}}
-el('health').textContent='PostgreSQL · '+(d.status.database.state==='connected'?L.connected:L.unavailable)+' | pgvector · '+(d.status.database.vector?L.connected:L.unavailable)+' | '+['pending','unconfirmed','saved','raw_only','source_only','retrying'].map(k=>L[k]+' '+d.status.index[k]).join(' · ')+(d.runtime?.error?' | '+d.runtime.error:'')
+el('health').textContent=L.storageLabel+' · '+(d.status.database.state==='connected'?L.connected:L.unavailable)+' | '+L.retrievalLabel+(L.localOnly?'':' · '+(d.status.database.vector?L.connected:L.unavailable))+' | '+['pending','unconfirmed','saved','raw_only','source_only','retrying'].map(k=>L[k]+' '+d.status.index[k]).join(' · ')+(d.runtime?.error?' | '+d.runtime.error:'')
 el('total').textContent=L.totals+' '+d.total+' · '+L.loaded+' '+rows.length;if(!el('scope').options.length)for(const s of d.status.scopes){option(el('scope'),s,s);option(el('filter-scope'),s,s);if(s!=='private:owner')option(el('grant-scopes'),s,s)}if(!supersedes)el('scope').value='private:owner'
 el('agents').replaceChildren();for(const a of d.status.agents){const line=node('p',a.id+' · '+(a.revoked?L.rejected:a.scopes.join(', ')));if(!a.revoked)line.append(button(L.revoke,()=>act({op:'grant',request:{id:a.id,scopes:[],writeScopes:[],revoked:true}})));el('agents').append(line)}for(const id of d.status.staleModels||[]){const r=rows.find(r=>r.id===id);if(r)r.details.stale=L.stale}filter()}
 el('proposal').onsubmit=async e=>{e.preventDefault();const source={kind:'owner',id:'owner-ui-'+crypto.randomUUID(),at:new Date().toISOString(),attribution:'owner_statement'};if(el('source-link').value)source.url=el('source-link').value;if(el('source-version').value)source.version=el('source-version').value

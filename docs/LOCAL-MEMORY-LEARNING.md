@@ -59,6 +59,11 @@ Reflection/summary is an explicit Owner operation over specified active evidence
 it produces a derived candidate, not a verified fact or autonomous authority.
 
 The isolated page links to the existing memory catalogue at `/local/memory`.
+Its explicit local presentation identifies SQLite, lexical source indexing and
+the actual local model. Production labels keep their existing defaults. Unsupported
+maintenance/grant/work forms are hidden as well as refused by the server; local
+service status uses the existing isolated status endpoint. A queued receipt is
+shown separately from the guarded reply and never means a preference was approved.
 The SSE transport records receipt time immediately but defers wire headers until
 intake has attached its memory receipt. Late capture states travel in the final
 envelope rather than attempting to rewrite committed HTTP headers. A missing or

@@ -9,7 +9,7 @@ function renderFinal(v,message){
   draft.hidden=true;
   const body=v.body,failed=!!body.error,answer=body.reply||body.error?.message||body.error?.code||String(body.error||'沒有可顯示的答案');
   const a=document.createElement('article');a.textContent=answer;
-  const receiptNotes={unavailable:'本輪記憶保存未確認。',partial:'本輪記憶回執部分未確認。',excluded:'本輪內容未納入長期記憶。',paused:'自動記憶目前暫停。'};
+  const receiptNotes={queued:'本輪內容已入列；偏好與決定須另行批准才會成為有效記憶。',unavailable:'本輪記憶保存未確認。',partial:'本輪記憶回執部分未確認。',excluded:'本輪內容未納入長期記憶。',paused:'自動記憶目前暫停。'};
   if(receiptNotes[v.memoryReceipt]){const note=document.createElement('div');note.className='sources';note.textContent=receiptNotes[v.memoryReceipt];a.append(note);}
   if(body.memorySources?.kind==='memory_references_v1'&&body.memorySources.claimsVerified===false){
     const sources=document.createElement('div');sources.className='sources';

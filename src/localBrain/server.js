@@ -50,7 +50,7 @@ function createLocalApp({dataDir, sourceRows = [], ownerPassword, onEvent = () =
   app.get('/local',(req,res)=>res.type('html').send(fs.readFileSync(path.join(__dirname,'view.html'),'utf8')))
   app.get('/api/local/status',(req,res)=>res.set('Cache-Control','no-store').json({sourceHash,provider:'local',model:process.env.LOCAL_MODEL||'qwen3:8b',scope:'isolated',memory:learning?'isolated_local_learning':'source_snapshot_read_only',semanticMemory:'lexical_only',background:learning?{capture:learning.runtime.status(),consolidation:learning.runtime.consolidation.status(),engine:learning.engine.status()}:'not_started',cloudFallback:false,dispatch:'not_enabled'}))
   if(learning){
-    app.get('/local/memory',(req,res)=>res.type('html').send(require('../memory/governedView').buildHtml().replace('<main>','<main><p>隔離記憶副本 · 本機抽取與整理 · 字詞檢索 · 候選須批准。正式資料、Agent 授權、備份及業務工作不在此頁操作範圍。</p>')))
+    app.get('/local/memory',(req,res)=>res.type('html').send(require('../memory/governedView').buildHtml({localOnly:true}).replace('<main>','<main><p>隔離記憶副本 · 本機抽取與整理 · 字詞檢索 · 候選須批准。正式資料、Agent 授權、備份及業務工作不在此頁操作範圍。</p>')))
     app.use(require('../memory/governedRoutes').createGovernedRouter({gateway,runtime:learning.runtime}))
   }
   app.use(require('../modelCenter/routes').createModelCenterRouter({center,catalogue,roles:()=>[{role:'對話、理解、規劃、驗證',selection:selected,status:'本機候選，待行為驗收'},{role:'記憶檢索',selection:learning?'既有 Memory Gateway＋本機持久索引':'既有 Memory Gateway 唯讀來源快照',status:'無雲端推理；字詞檢索，無向量索引'},{role:'背景學習',selection:learning?selected:'未啟動',status:learning?'僅隔離記憶抽取、整理；候選須批准':'沒有執行權限'},{role:'業務排程與派工',selection:'未啟動',status:'沒有執行權限'}]}))
