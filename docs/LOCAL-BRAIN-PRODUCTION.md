@@ -12,6 +12,9 @@ The committed deployment profile selects Qwen3.5 9B, the recorded digest, contex
 65,536 and the existing loopback Ollama endpoint. It does not install or download
 Ollama, create a new Windows service, change the private launcher overlay, rewrite
 the old cloud settings, issue credentials or silently fall back to another model.
+The existing XIANGXIANG_MEMORY switch still governs memory initialization. With
+memory disabled, startup and health remain write-free; activation does not turn
+that switch on or open an index database merely to report service health.
 Every inference verifies installed alias/digest metadata before sending its chat
 request. Ollama remains resident through the existing adapter's keep_alive=-1.
 
