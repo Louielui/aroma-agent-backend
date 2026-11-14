@@ -89,6 +89,14 @@ No network configuration, Windows ACL, service account, API allowance or P02-C
 policy is changed. External data reads still require network access; local AI
 inference does not mean the complete assistant is offline.
 
+Promotion keeps the protected-source exception and full executable review. Four
+initial local-only transport additions are identified by their complete Git blob
+contents so their loopback chat/tokenizer POST is not called a business write.
+Modified content, another path or a non-initial addition loses this classification;
+the raw POST code remains in the review packet. Recovery readiness also verifies
+the exact derived SQLite/settings assets and UUID-named timing receipts, without
+admitting other index files, credentials or paths outside the existing backup.
+
 ## Verification and recovery
 
 Integration fixtures must exercise the actual formal app/session/Model Center/SSE

@@ -14,4 +14,18 @@ function fixture(t){
  return{root,directory,bundle,restore,request,record,options:{artifacts:root,readinessId:id,commit:request.commit,tree:request.tree},deps:{backupRoot:path.join(root,'backups'),readRecord:async()=>record,readIndex:async()=>({id:record.id,text:record.text,facts:1})}}
 }
 test('readiness verifies backup and restored bytes independently and binds existing canonical memory revision',async t=>{const f=fixture(t),value=await validateReadiness(f.options,f.deps);assert.equal(value.files,1);assert.equal(value.baselineHashes[0].version,4)})
+test('local index recovery verifies every restored and archived byte without accepting arbitrary paths',async t=>{
+ const f=fixture(t),workerFile=path.join(f.directory,'backup-worker.json'),worker=JSON.parse(fs.readFileSync(workerFile)),sealed=JSON.parse(fs.readFileSync(path.join(f.bundle,'manifest.json')))
+ for(const file of ['model-center-local.json','memory-local-index/memory.sqlite','local-brain/'+crypto.randomUUID()+'.json']){const bytes=Buffer.from(file.endsWith('sqlite')?'isolated sqlite byte fixture':'{}');fs.mkdirSync(path.dirname(path.join(f.restore,'data',file)),{recursive:true});fs.writeFileSync(path.join(f.restore,'data',file),bytes);fs.writeFileSync(path.join(f.bundle,'objects',hash(bytes)),bytes);sealed.manifest.files.push({path:file,bytes:bytes.length,sha256:hash(bytes)})}
+ sealed.sha256=hash(canonical(sealed.manifest));worker.recovery.manifestHash=sealed.sha256;worker.filesRestored.files=4;fs.writeFileSync(path.join(f.bundle,'manifest.json'),JSON.stringify(sealed));const bytes=JSON.stringify(worker);fs.writeFileSync(workerFile,bytes);f.request.backupReceiptHash=hash(bytes);fs.writeFileSync(path.join(f.directory,'request.json'),JSON.stringify(f.request))
+ assert.equal((await validateReadiness(f.options,f.deps)).files,4)
+ fs.writeFileSync(path.join(f.restore,'data','memory-local-index','memory.sqlite'),'damaged');await assert.rejects(validateReadiness(f.options,f.deps),/backup_restore_proof_unconfirmed/)
+})
 test('changed candidate, altered backup objects, damaged restored files or stale memory fail before authority',async t=>{for(const kind of ['sha','object','restore','memory']){const f=fixture(t);if(kind==='sha')f.options.commit='c'.repeat(40);if(kind==='object')fs.writeFileSync(path.join(f.bundle,'objects',hash('{"fixture":true}')),'broken');if(kind==='restore')fs.writeFileSync(path.join(f.restore,'data','conversations','example.json'),'broken');if(kind==='memory')f.record.version++;await assert.rejects(validateReadiness(f.options,f.deps),/readiness_evidence_stale|backup_restore_proof_unconfirmed|memory_baseline_changed/)}})
+test('local recovery additions cannot admit credentials, arbitrary index files or path traversal',async t=>{
+ for(const name of ['.env','memory-local-index/private.json','local-brain/password.json','local-brain/../secret.json','model-center-local.json/secret','local-brain/'+crypto.randomUUID()+'.json:ads']){
+  const f=fixture(t),manifestFile=path.join(f.bundle,'manifest.json'),workerFile=path.join(f.directory,'backup-worker.json'),sealed=JSON.parse(fs.readFileSync(manifestFile)),worker=JSON.parse(fs.readFileSync(workerFile))
+  sealed.manifest.files.push({path:name,bytes:2,sha256:hash('{}')});sealed.sha256=hash(canonical(sealed.manifest));worker.recovery.manifestHash=sealed.sha256;worker.filesRestored.files=2;fs.writeFileSync(manifestFile,JSON.stringify(sealed));const bytes=JSON.stringify(worker);fs.writeFileSync(workerFile,bytes);f.request.backupReceiptHash=hash(bytes);fs.writeFileSync(path.join(f.directory,'request.json'),JSON.stringify(f.request))
+  await assert.rejects(validateReadiness(f.options,f.deps),/readiness_path_unconfirmed/)
+ }
+})
