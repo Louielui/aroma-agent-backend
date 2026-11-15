@@ -52,7 +52,7 @@ class LocalAdapter extends LLMAdapter {
   }
   async complete(prompt, opts = {}) {
     const start = performance.now(), callId = require('node:crypto').randomUUID()
-    let sent = false
+    let sent = false, permit = null, owned = false
     try {
     if(this.expectedDigest)await this.preflight()
     // Conservative UTF-8 bound: never silently let Ollama truncate the input.
@@ -80,11 +80,16 @@ class LocalAdapter extends LLMAdapter {
       if (context.budget.sent >= context.budget.limit) throw new LocalModelError('local_turn_call_limit')
       context.budget.sent++
     }
+    const budget=require('../actions/usageBudget')
+    ;({permit,owned}=budget.nativePermit('helper',{model:this.model,effort:'auto',digest:this.expectedDigest,phase:opts.invocationPhase||'helper'}))
+    if(owned)permit.capture('local_model_input',{callId,model:this.model,digest:this.expectedDigest,phase:opts.invocationPhase||'helper',messages})
     const preparationMs = performance.now()-start
     this.emit({type:'model_start',callId,model:this.model,phase:opts.invocationPhase || 'helper',preparationMs,inputBound})
     let text = '', pending = '', firstTokenMs = null, final = null, response
-      const deadline = AbortSignal.timeout(180000)
+      const deadline = AbortSignal.timeout(Math.max(1,Math.min(180000,permit?.remainingMs?.()??180000)))
       const signal = AbortSignal.any([deadline,opts.signal,context?.signal].filter(Boolean))
+      if(signal.aborted)throw new LocalModelError('local_cancelled')
+      permit?.dispatched('local_http_send')
       sent = true
       response = await this.fetch(this.url + '/api/chat', { method:'POST', redirect:'error', signal, headers:{'Content-Type':'application/json'}, body:JSON.stringify({model:this.model,messages,stream:true,think:false,keep_alive:-1,format:opts.responseFormat?.schema || 'json',options:{num_ctx:this.context,num_predict:maxTokens,temperature:opts.temperature ?? 0.2}}) })
       if (!response.ok) throw new LocalModelError('local_http_' + response.status)
@@ -119,10 +124,12 @@ class LocalAdapter extends LLMAdapter {
         try{text=require('../localBrain/evidenceSchema').projectMemoryReferences(text,opts.responseFormat.schema)}catch{throw new LocalModelError('local_invalid_memory_references')}
       }
       const timing = {preparationMs,firstTokenMs,totalMs:performance.now()-start,loadMs:(final.load_duration||0)/1e6,promptMs:(final.prompt_eval_duration||0)/1e6,generationMs:(final.eval_duration||0)/1e6,inputTokens:final.prompt_eval_count||0,outputTokens:final.eval_count||0}
+      if(owned){permit.capture('local_model_output',{callId,text,timing});permit.finish(null,{timing})}
       this.emit({type:'model_complete',callId,model:this.model,timing})
       return {text,model:'local:' + this.model,billing:'local',usage:{inputTokens:timing.inputTokens,outputTokens:timing.outputTokens,totalTokens:timing.inputTokens+timing.outputTokens},latencyMs:timing.totalMs,timing}
     } catch(e) {
-      const safe = e.localModelFailure ? e : new LocalModelError(e.name === 'TimeoutError' || e.name === 'AbortError' ? 'local_timeout_or_cancelled' : 'local_transport_or_protocol_error')
+      const safe = e.localModelFailure||require('../actions/usageBudget').ERRORS.has(e.code) ? e : new LocalModelError(e.name === 'TimeoutError' || e.name === 'AbortError' ? 'local_timeout_or_cancelled' : 'local_transport_or_protocol_error')
+      if(owned)try{permit.finish(safe)}catch(audit){throw audit}
       this.emit({type:'model_failed',callId,code:safe.code,sent,elapsedMs:performance.now()-start}); throw safe
     }
   }

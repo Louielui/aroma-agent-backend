@@ -23,7 +23,9 @@ async function runTests ({root,dependencies,directory,files=null,tree=null,commi
   const data=fs.mkdtempSync(path.join(directory,'data-')),artifacts=fs.mkdtempSync(path.join(directory,'artifacts-')),logPath=path.join(directory,'tests.tap')
   // Keep every test and its existing deadline; bound competing file workers so
   // Windows/Git fixtures are not starved by the host's large logical CPU count.
-  const fileConcurrency=Math.min(8,Math.max(1,(os.availableParallelism?.()||os.cpus().length)-1))
+  // Bound unrelated fixture competition for WSL/GitHub. Purposeful parallel
+  // reservation tests still launch their own concurrent requests/processes.
+  const fileConcurrency=Math.min(4,Math.max(1,(os.availableParallelism?.()||os.cpus().length)-1))
   const fd=fs.openSync(logPath,'w'),args=['--test','--test-concurrency='+fileConcurrency,'--test-reporter=tap',...(files || [])]
   const result=await new Promise(resolve=>{
     const child=cp.spawn(process.execPath,args,{cwd:root,env:cleanTestEnv(dependencies,data,artifacts),windowsHide:true,shell:false,stdio:['ignore',fd,fd]})
