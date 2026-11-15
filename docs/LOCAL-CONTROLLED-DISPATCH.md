@@ -48,7 +48,11 @@ website operations and `/complete` are not exposed by this connector.
 Before inference authorization, automatic memory must already be paused and idle;
 unknown state or another active workflow refuses execution. This connector never
 changes that setting. Subscription login, available model and quota are checked by
-the existing native client. API keys and purchased-credit fallback remain refused.
+the existing native client. API keys and unapproved purchased-credit fallback
+remain refused. The existing host credit opt-in is not changed by installation;
+future work approval must disclose it. Test drafting forces no credits, while
+the pre-existing coding provider retains its configured host policy. This
+zero-model deployment package authorizes no credit consumption.
 No recovery allowance is issued here; same-ID recovery retains existing approval,
 source, budget, restart and replay protections. No automatic restart resumption.
 

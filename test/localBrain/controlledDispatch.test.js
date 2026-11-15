@@ -38,3 +38,15 @@ test('authenticated bridge control path reuses existing repository services; no 
  const r=await send({target:'task',input:{op:'request',requestId:randomUUID(),bootCommit:HEAD,goal:'Only selected sources'}});assert.equal(r.status,200);assert.equal((await r.json()).run.state,'awaiting_scope');assert.equal(seen.length,1);assert.equal(calls,0)
  assert.equal((await send({op:'status'})).status,200);assert.equal(calls,0)
 })
+
+test('control mutations share the Bridge single-flight lane, including code repair, while status stays metadata-only',async t=>{
+ const {createBridge}=require('../../src/subscription/bridge'),token='d'.repeat(64);let releaseModel,releaseControl,handled=0,repair=false,holdControl=false
+ const server=createBridge({token,completeFn:async()=>new Promise(r=>{releaseModel=r}),codeRepair:{isActive:()=>repair},controlledDispatch:{handle:async(a,b)=>{handled++;return holdControl&&b.op!=='status'?new Promise(r=>{releaseControl=r}):{state:'observed'}}}})
+ await new Promise(r=>server.listen(0,'127.0.0.1',r));t.after(()=>new Promise(r=>{server.closeAllConnections();server.close(r)}))
+ const send=(route,b)=>fetch('http://127.0.0.1:'+server.address().port+route,{method:'POST',headers:{authorization:'Bearer '+token,'content-type':'application/json'},body:JSON.stringify(b)}),command={target:'task',input:{op:'request',requestId:randomUUID(),bootCommit:'a'.repeat(40),goal:'Inert request'}}
+ const first=send('/complete',{prompt:'fixture'});while(!releaseModel)await new Promise(r=>setImmediate(r))
+ try{assert.equal((await send('/controlled-dispatch',{op:'status'})).status,200);assert.deepEqual(await (await send('/controlled-dispatch',command)).json(),{error:'worker_busy'});assert.equal(handled,1)}finally{releaseModel({output:'fixture'});await first}
+ repair=true;assert.deepEqual(await (await send('/controlled-dispatch',command)).json(),{error:'worker_busy'});assert.equal(handled,1);repair=false
+ holdControl=true;const pending=send('/controlled-dispatch',command);while(!releaseControl)await new Promise(r=>setImmediate(r))
+ try{assert.equal((await send('/complete',{prompt:'duplicate'})).status,503);assert.deepEqual(await (await send('/controlled-dispatch',command)).json(),{error:'worker_busy'});assert.equal((await send('/controlled-dispatch',{op:'status'})).status,200)}finally{releaseControl({state:'saved'});await pending}
+})
