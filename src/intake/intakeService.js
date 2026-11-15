@@ -783,7 +783,7 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
   // ── STEP 2: LLM DISTILLATION ──────────────────────────────────────────────
   // ⛔ A4-1 is CHAT-ONLY: the lane is passed explicitly so the proposal and email_draft
   // system strings can never pick up read guidance for a lane that cannot read.
-  const { system, prompt } = buildDistillPrompt(message, history, { chatLane: (opts && opts.interactionMode === 'chat') === true, conversationEvidence:opts&&opts.conversationEvidence })
+  const { system, prompt } = buildDistillPrompt(message, history, { chatLane: (opts && opts.interactionMode === 'chat') === true, localOnly:localMode, conversationEvidence:opts&&opts.conversationEvidence })
   // DEMO (flag ON): trusted persona identity via `system`; untrusted project
   // context via a sanitized prompt data block. Both cross the SAME LLMAdapter
   // boundary as plain strings — no provider SDK here. Context Card sanitization
@@ -837,7 +837,10 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
    * does: it is background the turn is read against, not the turn.
    */
   const sectionPre = (demo && typeof opts?.sectionPreamble === 'string') ? opts.sectionPreamble : ''
-  const baseEffPrompt = demo ? (sectionPre + ctx.preamble + prompt) : prompt
+  // Local runtime restrictions also travel when the optional planner is off.
+  // Product implementation flags cannot make disabled subscription workers live.
+  const localCapabilityContext=localMode&&opts.interactionMode==='chat'?capabilityBlock({localOnly:true})+'\n\n':''
+  const baseEffPrompt = localCapabilityContext + (demo ? (sectionPre + ctx.preamble + prompt) : prompt)
 
   // ── CONTEXT SHARING (v1 — supersedes the v0 boundary) ──────────────────────
   // In v0 the GPT path was denied the Read Context and Decision Recall blocks by
@@ -1724,7 +1727,7 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
         const capabilityShape = isCapabilityOnlyQuestion(message)
           ? CAPABILITY_ANSWER_SHAPE + String.fromCharCode(10, 10)
           : ''
-        effPrompt = capabilityBlock() + String.fromCharCode(10, 10) + capabilityShape + effPrompt
+        effPrompt = (localMode?'':capabilityBlock()+String.fromCharCode(10,10)) + capabilityShape + effPrompt
         const frameBlock = executiveFrameBlock(goalUnderstandingObserved)
         if (frameBlock) effPrompt = frameBlock + String.fromCharCode(10, 10) + effPrompt
         /**
@@ -1954,9 +1957,13 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
     return require('../investigation/semanticAnswer').constrainSemanticSources(require('../investigation/semanticAnswer').withSemanticAnswer(schema), operationalInvestigation)
   }
   const localAnswerFormat = format => {
-    if (!localMode || !hindsightCache?.sources?.length) return format
-    const base = format || { type:'json_schema', name:'local_memory_answer', schema:withReadChoices(DISTILL_WITH_READ_DECISION_SCHEMA, [], 'No tool operations are available in this turn.') }
-    return { ...base, schema:require('../localBrain/evidenceSchema').withMemoryReferences(base.schema, hindsightCache.sources) }
+    if (!localMode) return format
+    let selected=format
+    if(hindsightCache?.sources?.length){
+      const base = format || { type:'json_schema', name:'local_memory_answer', schema:withReadChoices(DISTILL_WITH_READ_DECISION_SCHEMA, [], 'No tool operations are available in this turn.') }
+      selected={ ...base, schema:require('../localBrain/evidenceSchema').withMemoryReferences(base.schema, hindsightCache.sources) }
+    }
+    return require('./suppliedCalculation').withFormat(selected,opts.conversationEvidence)
   }
   let llmResult = null
   // ⛔ THE PROVIDER THAT PRODUCED THE ACCEPTED ENVELOPE. Set at the orchestration branch
@@ -2152,7 +2159,7 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
       // that question before this line is what made the whole layer unreachable.
       const claudePrompt = await buildPromptFor(CLAUDE)
       if (!useSourceBoundDirectAnswer(CLAUDE, adapter)) {
-        const claudeFormat = answerPlanFormat()
+        const claudeFormat = localAnswerFormat(answerPlanFormat())
         // L1: role-tagged so MODEL_CALL_COUNT is countable from telemetry, not inferred.
         llmResult = await timePhase(
           { requestId, phase: PHASE.MODEL_CALL, role: ROLE.MAIN, provider: CLAUDE, attempt: 1 },
@@ -2255,6 +2262,16 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
       }
     }
     throw err
+  }
+
+  // Like the existing UTILITY response: only a host-verified interpretation can
+  // produce program-authored arithmetic. No model prose, source read, task or
+  // execution grant is carried into this result; ordinary guards stay unchanged.
+  const suppliedCalculation=localMode&&opts.interactionMode==='chat'&&distilled.mode!=='commit'&&!distilled.nextRead&&turnEvidence.size===0
+    ?require('./suppliedCalculation').calculate(distilled.suppliedCalculation,opts.conversationEvidence):null
+  if(suppliedCalculation){
+    await recordProviderUsage(llmResult)
+    return{blocked:false,mode:'chat',intent:'question',talkOnly:true,interactionMode:'chat',reply:suppliedCalculation.reply,replyForArchive:suppliedCalculation.reply,utility:'supplied_calculation',readClaimCorrected:false,decision:null,tasks:[],risks:[],next_step:'',requestId}
   }
 
   // ── B2 DETERMINISTIC INTERACTION-MODE GATE (opt-in). When opts.interactionMode is

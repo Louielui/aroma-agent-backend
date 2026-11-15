@@ -75,6 +75,8 @@ const CLASS = Object.freeze({
  * the test checks COVERAGE (is every such file listed), never the number.
  */
 const FILE_CLASS = Object.freeze({
+  'intake/suppliedCalculation.js': CLASS.MATCHING, // Owner quotation/constraint grammar; never translated.
+  'intake/suppliedCalculationReply.js': CLASS.MODEL, // Canned conversational replies, not interface labels.
   'localBrain/fixtures.js': CLASS.MODEL, // Synthetic source evidence and adversarial acceptance text, never translated.
   'localBrain/server.js': CLASS.INTERFACE, // Isolated host status and model catalogue labels.
   'localBrain/view.html': CLASS.INTERFACE, // Local acceptance interface, no prompt or permission text parsing.

@@ -595,7 +595,7 @@ function createDemoRouter ({ getAdapterFn = getAdapterForLane, processIntakeFn =
       // Browser history can still contain the immediately displayed mail answer.
       // Replace it before ordinary intake; the source-bound lane rechecks access.
       let contextHistory = req.body.history
-      let conversationEvidence = null
+      let conversationEvidence = require('../intake/conversationEvidence').fromSavedConversation({messages:[]}, message)
       let memoryReferenceIds = []
       if (isValidConversationId(req.body.conversationId) && typeof conversationStore.get === 'function') {
         try {
@@ -667,7 +667,7 @@ function createDemoRouter ({ getAdapterFn = getAdapterForLane, processIntakeFn =
         if (!isValidConversationId(req.body.conversationId)) return res.status(400).json({error:'invalid_request_id'})
         let reply, run = null
         if (dispatchKind === 'health') reply = dispatchView.healthReply(await require('../core/codeDiagnosis/status').readDispatchStatus({diagnosis:codeDiagnosis}))
-        else if (dispatchKind === 'unsupported') reply = t('dispatchChat.unsupported')
+        else if (dispatchKind === 'unsupported') reply = process.env.LOCAL_BRAIN_ONLY==='1' ? t('localBrain.workerUnavailable') : t('dispatchChat.unsupported')
         else {
           try {
             const prior = conversationStore.get?.(req.body.conversationId)?.messages?.filter(m => m.role === 'assistant' && m.codeDiagnosisRunId).at(-1)

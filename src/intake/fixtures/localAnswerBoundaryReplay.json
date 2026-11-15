@@ -1,0 +1,29 @@
+{
+  "provenance": "Saved formal conversation, six actual messages; original model completion text was not retained. Calculation proposals in tests are synthetic, not recovered model output.",
+  "messages": [
+    {
+      "role": "user",
+      "content": "這是虛構驗收，不要保存長期記憶，不用工具、不派工、不執行任何操作。甲店有12盒，乙店有3盒，每店至少要6盒，只能調貨不能購買。應怎樣安排？請用兩句自然廣東話回答。"
+    },
+    {
+      "role": "assistant",
+      "content": "我建議將甲店調出 6 盒給乙店，讓兩店都達到最少 6 盒嘅要求。呢個方案符合你「只調貨唔買」嘅限制，仲要係用自然廣東話講完兩句。"
+    },
+    {
+      "role": "user",
+      "content": "如果想搬最少盒數呢？請重新計算，講清楚調幾盒，同調完兩店各剩幾盒。仍然只作測試，不保存記憶或執行。"
+    },
+    {
+      "role": "assistant",
+      "content": "我建議將甲店調出 3 盒給乙店，\n\n有 2 句講到營運狀況，但這一輪沒有查任何來源，所以我沒有顯示它。未核實的敘述涉及：餐廳系統。"
+    },
+    {
+      "role": "user",
+      "content": "仍是驗收，不保存記憶，不呼叫工具或派工：就目前這個本機版本，你可以直接派 Codex 改程式嗎？斷網時你還可以做什麼？請只按你目前真正可用的能力回答，不確定就說不確定。"
+    },
+    {
+      "role": "assistant",
+      "content": "這個完整要求沒有進入派工入口；沒有建立工作單，也沒有送給 Codex。可直接交代 Codex 建立一般修正工作單，再核對來源及批准執行；已登記隔離修正仍使用原批准卡。任意 repository、本機 Codex 聊天續接及超出隔離封裝上限的工作未接通。"
+    }
+  ]
+}

@@ -113,7 +113,7 @@ const isNotImplemented = (name) => implementationOf(name) === IMPLEMENTATION.NOT
  * value, so nothing in it can enter the evidence index or be cited by an Answer Plan. And it
  * grants nothing: 「implemented」 is a statement about this build, not about this turn.
  */
-function capabilityBlock () {
+function capabilityBlock (runtime = {}) {
   const line = (e) => '· ' + e.capability + '（' + e.label + '）：' +
     (e.implementation === IMPLEMENTATION.IMPLEMENTED ? '已實作'
       : e.implementation === IMPLEMENTATION.NOT_IMPLEMENTED ? '未實作' : '未知')
@@ -124,7 +124,11 @@ function capabilityBlock () {
     '· 「已實作」唔等於而家連得到。要知道而家讀唔讀得到，要真係讀一次先知。',
     '· 「未實作」係確定嘅：嗰件事呢個版本做唔到，唔好應承、唔好當係暫時connection問題。',
     '· 收圖係對話貼上／上傳嘅圖片，唔係自行查看桌面；未附圖嘅一轉唔好話已經睇到。',
-    '· 已有批准後派工嘅開發流程，但只限已登記嘅本機修改範圍；唔等於可以無限制自行改系統。',
+    ...(runtime.localOnly===true?[
+      '· 本機模式的實際限制：Codex／訂閱 Worker 派工未接入，不能直接派改碼，也不能建立可執行的訂閱工作單；不得建議用另一入口繞過或回退雲端。',
+      '· 離線能力：本機推理、當前對話和已保存在本機的資料不需要第三方 AI；須本機模型、tokenizer 及資料服務仍可運作。Gmail、Drive、Aroma System 等外部服務仍需要網絡，未實測斷網不能保證所有功能可用。',
+      '· 能力詢問不是執行要求；每個問題都要逐項回答，分清本機推理、資料連線及 Worker 派工，不要用入口說明代替答案。'
+    ]:['· 已有批准後派工嘅開發流程，但只限已登記嘅本機修改範圍；唔等於可以無限制自行改系統。']),
     '· 呢一段唔係生意資料嘅證據，亦唔會批准任何來源、寫入或者執行。'
   ].join('\n')
 }
