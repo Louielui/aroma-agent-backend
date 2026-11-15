@@ -3,7 +3,7 @@ const test=require('node:test'),assert=require('node:assert/strict'),fs=require(
 const cid='00000000-0000-4000-8000-000000000007';
 function html(version,locale='zh'){
  const read=name=>fs.readFileSync(path.join(__dirname,'assets',name),'utf8');
- return require('./pageTemplate').assemblePage({template:read('index.html').replace('<h1 id="conv-title">','<span id="served-fixture">'+version+'</span><h1 id="conv-title">'),css:read('app.css'),sidebarCss:read('sidebar.css'),app:read('app.js'),sidebar:read('sidebar.js'),topics:'',i18n:require('../i18n/browserResolver').browserI18nSource().replace(/var INITIAL_LOCALE = "(?:zh|en)";/,'var INITIAL_LOCALE = "'+locale+'";'),dot:read('dot.svg'),favicon:'',sourceLabels:[],subscription:true,modelCenter:false,buildStamp:version==='old'?'a'.repeat(12):'b'.repeat(12)});
+ return require('./pageTemplate').assemblePage({template:read('index.html').replace('<h1 id="conv-title">','<span id="served-fixture">'+version+'</span><h1 id="conv-title">'),css:read('app.css'),sidebarCss:read('sidebar.css'),app:read('app.js'),sidebar:read('sidebar.js'),topics:read('topics.js'),i18n:require('../i18n/browserResolver').browserI18nSource().replace(/var INITIAL_LOCALE = "(?:zh|en)";/,'var INITIAL_LOCALE = "'+locale+'";'),dot:read('dot.svg'),favicon:'',sourceLabels:[],subscription:true,modelCenter:false,buildStamp:version==='old'?'a'.repeat(12):'b'.repeat(12)});
 }
 async function fixture(t){
  const browser=await require('playwright-core').chromium.launch({channel:'msedge',headless:true});t.after(()=>browser.close());const context=await browser.newContext(),page=await context.newPage(),calls=[],errors=[];let version='old',versionFails=false,historyMissing=false,holdVersion=null,chatReply=null,chatFail=null;

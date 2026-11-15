@@ -305,7 +305,7 @@ test('an empty conversation is not also listed in the sidebar', () => {
 test('the picker offers exactly the two providers the server allows', () => {
   assert.ok(DEMO_HTML.includes("id: 'claude'") && DEMO_HTML.includes("id: 'openai'"), 'both options')
   const declaration = DEMO_HTML.match(/var PROVIDERS = [\s\S]*?\n  var provider =/)[0].replace(/\n  var provider =$/, '')
-  const sandbox = { SUBSCRIPTION_CHAT: false, SOURCE_TEXT: '', t: () => '' }
+  const sandbox = { SUBSCRIPTION_CHAT: false, LOCAL_BRAIN: false, SOURCE_TEXT: '', t: () => '' }
   require('node:vm').runInNewContext(declaration + '; result = PROVIDERS.map(p => p.id).sort()', sandbox)
   const ids = Array.from(sandbox.result)
   assert.deepEqual(ids, ['claude', 'openai'], 'and no third option the server would reject')

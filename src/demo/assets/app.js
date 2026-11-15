@@ -149,20 +149,21 @@
   var brainMode = document.getElementById('brain-mode'), brainStatus = document.getElementById('brain-status')
   var chatLevel = document.getElementById('chat-level')
   if (chatLevel && SUBSCRIPTION_CHAT) chatLevel.classList.remove('hidden')
-  var PROVIDERS = SUBSCRIPTION_CHAT ? [
+  var PROVIDERS = LOCAL_BRAIN ? XiangxiangTopics.localProviders(t) : SUBSCRIPTION_CHAT ? [
     { id: 'claude', model: 'claude-sonnet', modelName: 'Claude Sonnet', name: t('provider.subscriptionModel', { model: 'Claude Sonnet' }), note: t('provider.claudeSubscriptionNote'), warn: false }
   ] : [
     { id: 'claude', name: t('provider.claude'), note: t('provider.canSee', { sources: SOURCE_TEXT }), warn: false },
     { id: 'openai', name: t('provider.gpt'), note: t('provider.canSeeButSends', { sources: SOURCE_TEXT }), warn: true }
   ]
-  var provider = 'claude'
+  var provider = LOCAL_BRAIN ? 'local' : 'claude'
   var chatModel = 'claude-sonnet'
-  try { var savedBrain = localStorage.getItem('xiangxiang-brain-v1'); if (['claude-sonnet', 'gpt-6.1-sol', 'gpt-6-astra', 'gpt-6-luna', 'gpt-6-sol'].indexOf(savedBrain) >= 0 || /^claude-(?:sonnet|opus|haiku|fable)-\d+(?:-\d+){0,3}(?:\[1m\])?$/.test(savedBrain || '')) chatModel = savedBrain } catch (_) {}
+  if (LOCAL_BRAIN) chatModel = ''
+  if (!LOCAL_BRAIN) try { var savedBrain = localStorage.getItem('xiangxiang-brain-v1'); if (['claude-sonnet', 'gpt-6.1-sol', 'gpt-6-astra', 'gpt-6-luna', 'gpt-6-sol'].indexOf(savedBrain) >= 0 || /^claude-(?:sonnet|opus|haiku|fable)-\d+(?:-\d+){0,3}(?:\[1m\])?$/.test(savedBrain || '')) chatModel = savedBrain } catch (_) {}
   var modelsLoading = false
   var companyPicker = document.getElementById('brain-company')
   var lastCompanyModel = { claude: 'claude-sonnet', openai: 'gpt-6.1-sol' }
   var modelEfforts = {}
-  function brainCompany (model) { return /^local:/.test(model) ? 'local' : /^claude-/.test(model) ? 'claude' : 'openai' }
+  function brainCompany (model) { return LOCAL_BRAIN || /^local:/.test(model) ? 'local' : /^claude-/.test(model) ? 'claude' : 'openai' }
   if(LOCAL_BRAIN&&companyPicker)XiangxiangTopics.localCompany(companyPicker,t)
   // The lane of the turn just rendered. Sent back so a short reply like 「1」 continues
   // what was happening instead of arriving as a fresh, contentless input. It is a lane
@@ -3225,9 +3226,10 @@
 
   /* ── provider picker ──────────────────────────────────────────────────── */
   function currentProvider () {
+    if (LOCAL_BRAIN && !chatModel) return PROVIDERS[0]
     if (SUBSCRIPTION_CHAT) {
       for (var j = 0; j < PROVIDERS.length; j++) if (PROVIDERS[j].model === chatModel) return PROVIDERS[j]
-      return { id: brainCompany(chatModel), name: t('provider.subscriptionModel', { model: chatModel }), modelName: chatModel }
+      return { id: brainCompany(chatModel), name: LOCAL_BRAIN ? chatModel : t('provider.subscriptionModel', { model: chatModel }), modelName: chatModel }
     }
     for (var i = 0; i < PROVIDERS.length; i++) if (PROVIDERS[i].id === provider) return PROVIDERS[i]
     return PROVIDERS[0]
@@ -3286,6 +3288,7 @@
     if (SUBSCRIPTION_CHAT) pickerMenu.appendChild(el('div', 'opt-note subscription-note', brainCompany(chatModel) === 'claude' ? t('provider.claudeSubscriptionNote') : t('provider.subscriptionNote')))
   }
   function brainAvailabilityMessage (selected) {
+    if (LOCAL_BRAIN) return t('localBrain.unavailable')
     if (brainCompany(chatModel) === 'claude') {
       var state = modelProviderStates.claude
       if (state && state.code === 'subscription_login_required') return t('brain.claudeLoginRequired')
@@ -3312,7 +3315,7 @@
           'gpt-6-luna': t('provider.lunaNote'), 'gpt-6-sol': t('provider.solPreviousNote') }
         PROVIDERS = catalog.models.map(function (row) {
           return { id: brainCompany(row.model), efforts: row.efforts || [], supportsEffort: row.supportsEffort, defaultEffort: row.defaultEffort, model: row.model, modelName: row.name, available: row.available === true, warn: false,
-            name: t('provider.subscriptionModel', { model: row.name }),
+            name: LOCAL_BRAIN ? row.name : t('provider.subscriptionModel', { model: row.name }),
             note: LOCAL_BRAIN ? (row.available?t('localBrain.limits'):t('localBrain.unavailable')) : row.available ? (notes[row.model] || (brainCompany(row.model) === 'claude' ? t('provider.claudeSubscriptionNote') : t('provider.subscriptionNote'))) : t('provider.modelUnavailable') }
         })
         if (CENTRAL_MODELS && catalog.selection) {
@@ -3323,9 +3326,9 @@
         }
         renderPicker()
       }).catch(function () {
-        if (CENTRAL_MODELS) { brainReady = false; if (brainStatus) brainStatus.textContent = t('brain.failed') }
+        if (CENTRAL_MODELS) { brainReady = false; if (brainStatus) brainStatus.textContent = LOCAL_BRAIN ? t('localBrain.unavailable') : t('brain.failed') }
         renderPicker()
-        pickerMenu.appendChild(el('div', 'opt-note', t('provider.modelsUnavailable')))
+        pickerMenu.appendChild(el('div', 'opt-note', LOCAL_BRAIN ? t('localBrain.unavailable') : t('provider.modelsUnavailable')))
       }).then(function () { modelsLoading = false; refreshImages(); if (CENTRAL_MODELS && loadingConversation !== (active && active.cid)) return loadChatModels() })
     return modelsPromise
   }
@@ -3840,7 +3843,7 @@
   function checkExecutionBridge(){
     if(!executionStatus||executionChecking||document.hidden)return
     executionChecking=true
-    fetch('/api/v1/execution-health',{credentials:'same-origin',cache:'no-store',signal:AbortSignal.timeout(7000)}).then(function(r){if(!r.ok)throw Error('unavailable');return r.json()}).then(function(h){executionStatus.textContent=h.state==='ready'?(h.supervisor&&h.supervisor.state==='starting'?t('actions.bridgeRecovering'):t('actions.bridgeReady')):t('actions.bridgeOffline')}).catch(function(){executionStatus.textContent=t('actions.bridgeOffline')}).finally(function(){executionChecking=false})
+    XiangxiangTopics.readExecutionLabel(LOCAL_BRAIN,t).then(function(label){executionStatus.textContent=label}).finally(function(){executionChecking=false})
   }
   if(executionStatus){executionStatus.textContent=t('actions.bridgeChecking');checkExecutionBridge();setInterval(checkExecutionBridge,10000);document.addEventListener('visibilitychange',checkExecutionBridge)}
 

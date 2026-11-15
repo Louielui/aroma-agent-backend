@@ -31,6 +31,12 @@ function createComposition({dataDir,store,adapter,readConversation,memoryEnabled
 }
 function runtime(){if(!active)return null;return composition||(composition=createComposition({memoryEnabled:process.env.XIANGXIANG_MEMORY==='on',readConversation:id=>require('../store/conversationStore').conversationStore.get(id)}))}
 function unavailable(){throw Error('local_capability_unavailable')}
+async function executionStatus(composition,dispatch){
+ let ready=false
+ try{const result=await composition.provider.preflight();ready=result.available===true&&result.provider==='local'&&result.model===profile.model}catch{}
+ // A native metadata probe says nothing about subscription/worker readiness.
+ return {...dispatch,inference:{provider:'local',model:profile.model,state:ready?'ready':'unavailable',cloudFallback:false}}
+}
 function routeBoundary(req,res,next){
  // Keep existing authentication ahead of this boundary. Read-only stored results
  // remain accessible; no new work or cloud maintenance can be started here.
@@ -38,4 +44,4 @@ function routeBoundary(req,res,next){
  if(/^\/(?:api\/v1\/)?(?:worker-flow|project-work|project-tasks|project-adoption|development-plan|code-diagnosis|task-plan|scheduler-actions|scheduler-chat|procurement|capability-gaps|browser-operator|browser-read)(?:\/|$)/.test(req.path))return res.status(503).json({error:{code:'local_capability_unavailable',retryable:false}})
  next()
 }
-module.exports={profile,validateEnvironment,activate,createComposition,runtime,routeBoundary,unavailable,isActive:()=>active}
+module.exports={profile,validateEnvironment,activate,createComposition,runtime,routeBoundary,unavailable,executionStatus,isActive:()=>active}

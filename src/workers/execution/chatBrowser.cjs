@@ -7,7 +7,7 @@ function page (locale) {
   const before = process.env.XIANGXIANG_LOCALE; process.env.XIANGXIANG_LOCALE = locale
   try {
     const read = n => fs.readFileSync(path.join(__dirname, '../../demo/assets', n), 'utf8'), dot = read('dot.svg').replace(/ xmlns="[^"]*"/g, '').trim()
-    return assemblePage({ template: read('index.html'), css: read('app.css'), sidebarCss: read('sidebar.css'), app: read('app.js'), sidebar: read('sidebar.js'),
+    return assemblePage({ template: read('index.html'), css: read('app.css'), sidebarCss: read('sidebar.css'), app: read('app.js'), sidebar: read('sidebar.js'), topics: read('topics.js'),
       i18n: require('../../i18n/browserResolver').browserI18nSource(), dot, favicon: 'data:image/svg+xml,' + encodeURIComponent(read('dot.svg')),
       sourceLabels: ['Drive', 'Gmail', 'Calendar', 'GitHub'], subscription: true, buildStamp: 'offline-browser-fixture' })
   } finally { if (before === undefined) delete process.env.XIANGXIANG_LOCALE; else process.env.XIANGXIANG_LOCALE = before }
