@@ -90,6 +90,7 @@ function distroAvailable () {
 
 const AVAILABLE = distroAvailable()
 const opts = AVAILABLE ? {} : { skip: 'OpenClawGateway distro not available on this machine' }
+if(AVAILABLE)require('./wslLiveResource.fixture.cjs').acquire()
 
 /** device:inode, measured inside the distro — the same question the provider asks. */
 const objectId = (target) => sh(`stat -c %d:%i -- ${target} 2>/dev/null || echo none`).stdout.trim()

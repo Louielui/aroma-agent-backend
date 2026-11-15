@@ -91,7 +91,7 @@ const error=code=>Object.assign(Error(code),{code})
 const scopeKeys='childId,conversationId,requestId,rootId,turnId'
 function validScope(s){return !!s&&Object.keys(s).sort().join(',')===scopeKeys&&[s.rootId,s.turnId,s.conversationId,s.requestId].every(v=>ID.test(v||''))&&(s.childId===null||ID.test(s.childId||''))}
 function developmentProfile(id){if(!ID.test(id||'')||isAcceptanceRoot(id))throw error('usage_profile_not_allowed');return{id,identity:'owner-repository-repair:'+id,turns:1,helper:8,website:0,models:[{model:'gpt-6.1-sol',effort:'high'},{model:'claude-sonnet-5-5',effort:'medium'}]}}
-function createUsageBudget({store,evidenceDir,now=Date.now,runtimeCommit=()=>require('../governance/bootCommit').BOOT_COMMIT,activationReady=null,profile=PROFILE,extensionWitness=null,lockWaitMs=250,approvals=require('../agent/ownerApprovalStore').createOwnerApprovalStore({now}),processAlive=pid=>{try{process.kill(pid,0);return true}catch(e){return e.code!=='ESRCH'}}}={}){
+function createUsageBudget({store,evidenceDir,now=Date.now,runtimeCommit=()=>require('../governance/bootCommit').BOOT_COMMIT,activationReady=null,profile=PROFILE,extensionWitness=null,lockWaitMs=1000,approvals=require('../agent/ownerApprovalStore').createOwnerApprovalStore({now}),processAlive=pid=>{try{process.kill(pid,0);return true}catch(e){return e.code!=='ESRCH'}}}={}){
  if(!store?.lockRun)throw error('usage_store_required')
  if(!Number.isInteger(lockWaitMs)||lockWaitMs<0||lockWaitMs>1000)throw error('invalid_request')
  profile=structuredClone(profile)

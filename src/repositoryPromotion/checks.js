@@ -62,6 +62,9 @@ function deadlineLine(line){
 // diff-supplied index header. Any content/path change restores the write gate.
 // Full executable diffs still go to review and protected-path scope still applies.
 const LOCAL_TRANSPORT_BLOBS=Object.freeze({
+ // Exact initial authenticated closed loopback control protocol. It grants no
+ // business operation, inference allowance or deployment; source stays protected.
+ 'src/adapters/ControlledDispatchAdapter.js':'ef2e10bd0f48c3e2d4e025d3b4cd7ebdc43f3046',
  'scripts/localBrain/accept.cjs':'d37c28dce41fc55065d3806187ff6d90e441b96c',
  'scripts/localBrain/probe.cjs':'aa37f02ecad684177a6b8e07fce448b312d3f4a9',
  'src/adapters/LocalAdapter.js':'d7d840cee7352dded95fafb1d37245a4486e2a3b',

@@ -53,6 +53,7 @@ function distroAvailable () {
 
 const AVAILABLE = distroAvailable()
 const opts = AVAILABLE ? {} : { skip: 'OpenClawGateway distro not available on this machine' }
+if(AVAILABLE)require('./wslLiveResource.fixture.cjs').acquire()
 
 /** The exact artefact set measured during the C2-B2-A probe. */
 const BOOTSTRAP_FILES = [

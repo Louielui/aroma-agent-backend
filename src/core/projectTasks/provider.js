@@ -7,7 +7,7 @@ function createDraftProvider ({ client = require('../../subscription/codexClient
   const model = MODEL
   return {
     async preflight ({ signal } = {}) { return { ...await client.checkSubscription({ ...options, signal, model, effort }), effort } },
-    complete (prompt, { system, schema, signal }) { return client.complete({ ...options, signal, timeoutMs: 240000 }, { prompt, system, schema, model, effort }) }
+    complete (prompt, { system, schema, signal, visibleWork }) { return client.complete({ ...options, signal, timeoutMs: 240000, ...(visibleWork?{visibleWork}:{}) }, { prompt, system, schema, model, effort }) }
   }
 }
 module.exports = { createDraftProvider, MODEL, EFFORT }

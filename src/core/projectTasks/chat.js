@@ -10,7 +10,7 @@ function classify(message){
  if(/^(?:請)?(?:直接)?(?:派工給|派|交給)\s*Codex(?:[，,：:\s]|$)/iu.test(s)||/^ask Codex to /i.test(s))return{op:'request',goal:s}
  return null
 }
-function createChatTasks({bootCommit,env=process.env,request=input=>require('../../adapters/CodexSubscriptionAdapter').localRequest('/project-tasks',input,env)}){
+function createChatTasks({bootCommit,env=process.env,request=input=>require('../../adapters/ControlledDispatchAdapter').projectRequest('task',input,env)}){
  return{async prepare(actor,input){
   if(actor?.id!=='owner'||actor.role!=='owner')throw Error('permission_denied')
   if(env.READ_ACCESS!=='on')throw Error('not_enabled')

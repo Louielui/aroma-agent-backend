@@ -11,14 +11,15 @@ const owner = actor => { if (actor?.id !== 'owner' || actor.role !== 'owner') th
 ERRORS.add('review_scope_too_large')
 ERRORS.add('subscription_invalid_output')
 ERRORS.add('recovery_background_not_idle')
-function createProjectWork ({ source, providers, store, enabled, invocationLedger, repositoryBudget = null, recoveryReady = () => false, observeLive = null, onEvent = () => {}, onProgress = () => {}, visibleCodexWork=false, repositoryPreflight = null, onAccepted = null, approvals = createOwnerApprovalStore(), resolveRecipe = recipe, catalogueRecipes = () => Object.values(RECIPES) }) {
+ERRORS.add('worker_evidence_unavailable')
+function createProjectWork ({ source, providers, store, enabled, invocationLedger, repositoryBudget = null, recoveryReady = () => false, observeLive = null, onEvent = () => {}, onProgress = () => {}, visibleCodexWork=false, appProjectRoot=null, resolveCodexThread=()=>null, repositoryPreflight = null, onAccepted = null, approvals = createOwnerApprovalStore(), resolveRecipe = recipe, catalogueRecipes = () => Object.values(RECIPES) }) {
   const sessions = new Map(), controllers = new Map(), recoveryTickets = new Map()
   let busy = false, pending = Promise.resolve()
   const all = () => store.all()
   const list = actor => { owner(actor); return all().sort((a, b) => b.startedAt.localeCompare(a.startedAt)).slice(0, 25) }
   const record = (r, stage, facts = {}) => {
     const at = new Date().toISOString(); r.steps.push({ sequence: r.steps.length + 1, stage, at, facts }); store.save(r)
-    if(r.codexThread)try{onProgress({id:r.id,state:r.state,phase:stage,at,threadId:r.codexThread.id,goal:r.workOrder.title||r.workOrder.goal,appliedToLive:r.appliedToLive})}catch{/* A missing title receipt is not a model or task success. */}
+    if(r.codexThread)try{onProgress({id:r.workOrder.usageRoot||r.id,state:r.state,phase:stage,at,threadId:r.codexThread.id,goal:r.workOrder.title||r.workOrder.goal,appliedToLive:r.appliedToLive})}catch{/* A missing title receipt is not a model or task success. */}
     // Recovery audit stays in this canonical store. Sending it to automatic
     // memory would enqueue unmetered indexing, including on a refused approval.
     if(r.recoveries?.length)return
@@ -53,7 +54,9 @@ function createProjectWork ({ source, providers, store, enabled, invocationLedge
       const snapshot = await source.read(input.bootCommit, undefined, input.recipe)
       const id = randomUUID(), session = approvals.createSession()
       const observation = observeLive && !WORK_ORDER.usageRoot ? {liveBaseline:await observeLive({recipe:input.recipe,bootCommit:input.bootCommit,sourceHash:snapshot.evidence.sourceFiles?.find(f=>f.path===require('./contract').FILE)?.sha256,workRunId:id})} : {}
-      const binding = {...lineage,...observation}
+      const inherited=WORK_ORDER.usageRoot?resolveCodexThread(WORK_ORDER.usageRoot):null
+      if(inherited&&(!ID.test(inherited.id||'')||inherited.workId!==WORK_ORDER.usageRoot||inherited.source!=='actual_test_draft_provider_thread'))throw Error('worker_evidence_unavailable')
+      const binding = {...lineage,...observation,...(inherited?{codexThread:structuredClone(inherited)}:{})}
       const hash = digest(JSON.stringify({ workOrder: WORK_ORDER, snapshot, ...binding }))
       const sealed = approvals.seal({ workOrder: { approvalId: id, workOrderHash: hash, snapshot, definition: WORK_ORDER, ...binding }, proposalId: id })
       if (!sealed.ok) throw Error('approval_unavailable')
@@ -103,7 +106,7 @@ function createProjectWork ({ source, providers, store, enabled, invocationLedge
         if (signal.aborted) throw Error('worker_cancelled')
         if (attempt > 1) { r.state = 'coding'; record(r, 'repairing_visual', { attempt, previousPatchHash: reviewRepair.patchHash }) }
         const allocate=(purpose,fn)=>WORK_ORDER.usageRoot?repositoryBudget.phase(WORK_ORDER.usageRoot,r.id,purpose,fn):fn()
-        const visible=visibleCodexWork&&WORK_ORDER.usageRoot&&WORK_ORDER.delivery==='owner_deployment_package_required'?{visibleWork:{id:r.id,...(r.codexThread?.id?{resumeThreadId:r.codexThread.id}:{}),created:async value=>{if(value.workId!==r.id||typeof value.id!=='string'||!/^[a-f0-9-]{36}$/.test(value.id)||r.codexThread&&r.codexThread.id!==value.id)throw Error('worker_evidence_unavailable');r.codexThread={...value,createdAt:r.codexThread?.createdAt||new Date().toISOString(),appVisibility:'not_verified'};record(r,'codex_thread_created',{threadId:value.id,model:value.model,effort:value.effort,modelDispatched:false})}}}:{}
+        const visible=visibleCodexWork&&WORK_ORDER.usageRoot&&WORK_ORDER.delivery==='owner_deployment_package_required'?{visibleWork:{id:r.id,...(appProjectRoot?{cwd:appProjectRoot}:{}),...(r.codexThread?.id?{resumeThreadId:r.codexThread.id}:{}),created:async value=>{if(value.workId!==r.id||typeof value.id!=='string'||!/^[a-f0-9-]{36}$/.test(value.id)||r.codexThread&&r.codexThread.id!==value.id)throw Error('worker_evidence_unavailable');r.codexThread={...value,createdAt:r.codexThread?.createdAt||new Date().toISOString(),appVisibility:'not_verified'};record(r,'codex_thread_created',{threadId:value.id,model:value.model,effort:value.effort,modelDispatched:false})}}}:{}
         const coding = await allocate('coding',()=>require('../../investigation/workerInvocation').withWorkerPhase('development', attempt, () => providers.codeOrder({ order: snapshot.order, signal, verify, ...visible, emit: (stage, facts) => record(r, stage, facts), ...(reviewRepair ? { reviewRepair } : {}) })))
         await verify()
         if (WORK_ORDER.effort && (!Array.isArray(coding?.changes) || JSON.stringify(coding.changes.map(c => c.file).sort()) !== JSON.stringify(WORK_ORDER.allowedFiles.slice().sort()) ||
@@ -147,7 +150,7 @@ function createProjectWork ({ source, providers, store, enabled, invocationLedge
     const r = store.get(input.id), sealed = approvals.loadSealed(r?.approvalTokenId||input.id), sessionId = sessions.get(input.id)
     if (!r || r.state !== 'awaiting_approval' || !sealed.ok || !approvals.validSession(sessionId) || !approvals.consumeNonce({ nonce: input.nonce, approvalId: r.approvalTokenId||input.id, displayedHash: input.hash, sessionId }).ok) throw Error('approval_unavailable')
     const w = sealed.record.workOrder
-    const binding = {...(w.repairOf ? {repairOf:r.repairOf} : {}),...(Object.hasOwn(w,'liveBaseline') ? {liveBaseline:r.liveBaseline} : {})}
+    const binding = {...(w.repairOf ? {repairOf:r.repairOf} : {}),...(Object.hasOwn(w,'liveBaseline') ? {liveBaseline:r.liveBaseline} : {}),...(Object.hasOwn(w,'codexThread')?{codexThread:r.codexThread}:{})}
     if (r.repairOf !== w.repairOf || JSON.stringify(r.liveBaseline) !== JSON.stringify(w.liveBaseline) || r.approvalHash !== input.hash || digest(JSON.stringify({ workOrder: r.workOrder, snapshot: w.snapshot, ...binding })) !== input.hash || JSON.stringify(r.source) !== JSON.stringify({ evidence: w.snapshot.evidence, hash: w.snapshot.hash })) throw Error('approval_unavailable')
     r.workOrder = structuredClone(w.definition)
     r.state = 'queued'; record(r, 'approved', { actor: 'owner', hash: input.hash })
@@ -161,8 +164,8 @@ function createProjectWork ({ source, providers, store, enabled, invocationLedge
     if(!r||!['awaiting_approval','interrupted'].includes(r.state)||r.steps.some(s=>s.stage==='approved')||!r.workOrder.usageRoot)throw Error('approval_unavailable')
     busy=true
     try{const definition=resolveRecipe(r.workOrder.recipe).workOrder;if(JSON.stringify(definition)!==JSON.stringify(r.workOrder))throw Error('source_changed');const snapshot=await source.read(r.source.evidence.bootCommit,undefined,r.workOrder.recipe);if(JSON.stringify(r.source)!==JSON.stringify({evidence:snapshot.evidence,hash:snapshot.hash}))throw Error('source_changed')
-      const hash=digest(JSON.stringify({workOrder:r.workOrder,snapshot}));if(hash!==r.approvalHash)throw Error('source_changed')
-      const approvalId=randomUUID(),session=approvals.createSession(),sealed=approvals.seal({workOrder:{approvalId,workOrderHash:hash,snapshot,definition},proposalId:r.id});if(!sealed.ok)throw Error('approval_unavailable')
+      const threadBinding=r.codexThread?{codexThread:r.codexThread}:{};const hash=digest(JSON.stringify({workOrder:r.workOrder,snapshot,...threadBinding}));if(hash!==r.approvalHash)throw Error('source_changed')
+      const approvalId=randomUUID(),session=approvals.createSession(),sealed=approvals.seal({workOrder:{approvalId,workOrderHash:hash,snapshot,definition,...threadBinding},proposalId:r.id});if(!sealed.ok)throw Error('approval_unavailable')
       r.approvalTokenId=approvalId;r.expiresAt=sealed.record.expiresAt;r.state='awaiting_approval';r.reason=null;sessions.set(r.id,session);record(r,'coding_approval_renewed',{modelsSent:0,usageRoot:r.workOrder.usageRoot});return{run:r,approval:{id:r.id,hash,nonce:approvals.issueNonce({approvalId,workOrderHash:hash,sessionId:session}),expiresAt:r.expiresAt}}
     }finally{busy=false}
   }

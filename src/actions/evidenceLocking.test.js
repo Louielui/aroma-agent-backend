@@ -2,7 +2,7 @@
 const test=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path'),os=require('node:os'),cp=require('node:child_process'),{randomUUID}=require('node:crypto')
 const usage=require('./usageBudget'),{hash}=require('./contract'),OWNER={id:'owner',role:'owner'},MODEL={model:'claude-opus-5-5',effort:'medium'}
 const REPLY='已核對的流程預設模型：\n- 開發流程: gpt-6.1-sol\n- 審閱流程: sonnet\n這些是流程預設，並非已測試接單的回執。'
-function fixture(t,lockWaitMs=250){
+function fixture(t,lockWaitMs){
  const dir=fs.mkdtempSync(path.join(os.tmpdir(),'usage-evidence-lock-'));t.after(()=>fs.rmSync(dir,{recursive:true,force:true}))
  const store=require('./store').createStore({dir}),evidenceDir=path.join(dir,'evidence'),budget=usage.createUsageBudget({store,evidenceDir,profile:usage.GOAL_PROFILE,activationReady:()=>true,lockWaitMs})
  budget.handle(OWNER,{op:'usage_activate'});const turnId=randomUUID(),conversationId=randomUUID();budget.handle(OWNER,{op:'usage_bind_turn',turnId,conversationId})
@@ -23,6 +23,12 @@ test('transient real-host contention registers exactly one evidence file and has
   assert.equal(hash(JSON.parse(fs.readFileSync(path.join(f.evidenceDir,ref.id+'.json')))),hash({reply:REPLY}))
   assert.equal(ref.sha256,require('node:crypto').createHash('sha256').update(fs.readFileSync(path.join(f.evidenceDir,ref.id+'.json'))).digest('hex'))
  });const refs=f.budget.readStatus().timeline.filter(x=>x.event==='evidence');assert.equal(refs.length,1);assert.equal(f.files().length,1)
+})
+
+test('default acquisition window survives a 400ms real holder without replaying a mutation or changing the budget cap',async t=>{
+ const f=fixture(t),s=f.scope();await f.budget.withScope(s,async()=>{
+  const {done}=await holder(f,400);try{f.budget.capture('route_guard',{reply:REPLY})}finally{await done}
+ });assert.equal(f.budget.readStatus().timeline.filter(x=>x.event==='evidence').length,1);assert.equal(f.files().length,1)
 })
 test('permanent contention stops within a bound and records a diagnostic without an unbound success file',t=>{
  const f=fixture(t,20),s=f.scope();f.budget.withScope(s,()=>{const unlock=f.store.lockRun(usage.GOAL_PROFILE.id);try{assert.throws(()=>f.budget.capture('route_guard',{reply:REPLY}),/usage_busy/)}finally{unlock()}})

@@ -621,7 +621,8 @@ function createDemoRouter ({ getAdapterFn = getAdapterForLane, processIntakeFn =
       const planningLane = !generalRequest && !contextCard && !req.body.attachSection && (!req.body.interactionMode || req.body.interactionMode === 'chat')
       // A complete registered repair owns this turn before generic dispatch refusal
       // or prior-topic planning. Preparation still requires its original approval.
-      const chatTask = !contextCard && !req.body.attachSection && (!req.body.interactionMode || req.body.interactionMode === 'chat') ? require('../core/projectWork/chat').classify(message) : null
+      const controlledDispatch=require('../adapters/ControlledDispatchAdapter').enabled(process.env)
+      const chatTask = !controlledDispatch && !contextCard && !req.body.attachSection && (!req.body.interactionMode || req.body.interactionMode === 'chat') ? require('../core/projectWork/chat').classify(message) : null
       if (chatTask) {
         if (!require('../core/operating/chatRequest').sameOrigin(req)) return res.status(403).json({ error: 'same_origin_required' })
         const allowed = ['message', 'conversationId', 'workflowRequestId', 'websiteRequestId', 'history', 'providerHint', 'previousLane', 'chatLevel', 'chatModel', 'interactionMode']
