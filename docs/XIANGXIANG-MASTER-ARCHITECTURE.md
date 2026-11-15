@@ -1,5 +1,13 @@
 # Xiangxiang operating layer
 
+Candidate note, 2026-11-15: the local answer-boundary retest has an inert,
+separate six-dialogue/36-local-attempt profile in the existing UsageBudget.
+It excludes background learning and preserves nine paused historical ledgers.
+Formal-client measurement separates guarded-answer DOM/paint opportunity from
+internal model first-token timing. This is candidate/offline coverage, not an
+activation, deployment or measured production latency claim. See
+`LOCAL-BOUNDARY-ACCEPTANCE.md` and the exact-commit external review receipts.
+
 Owner direction adopted on 2026-09-29. First acceptance workflow: operations
 briefing from existing read-only data and work queues.
 
