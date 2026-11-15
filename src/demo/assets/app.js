@@ -2260,10 +2260,11 @@
         websiteRequestId ? { websiteRequestId: websiteRequestId, workflowRequestId: websiteRequestId } : {},
         SUBSCRIPTION_CHAT && chatLevel ? { chatLevel: chatLevel.value, chatModel: chatModel } : {}))
     }
+    var localMeasurement = LOCAL_BRAIN && !pictures.length ? XiangxiangTopics.startTiming() : null
     var response = pictures.length ? fetch('/api/v1/demo/image-intake', requestOptions) : fetch('/api/v1/demo/intake', requestOptions)
     if (topicController) topicController.submitted()
     response.then(async function (r) {
-      if((r.headers.get('content-type')||'').includes('text/event-stream'))return XiangxiangTopics.readStream(r,typing.root,t)
+      if((r.headers.get('content-type')||'').includes('text/event-stream'))return XiangxiangTopics.readStream(r,typing.root,t,localMeasurement)
       return r.json().catch(function () { return {} }).then(function (j) { return { status: r.status, body: j } })
     }).then(function (o) {
       stopWebsitePoll()
@@ -2277,16 +2278,13 @@
           : (o.body && (o.body.demoOutcome === 'execution_proposal' || o.body.demoOutcome === 'clarification')) ? 'proposal'
             : previousLane
       if (pictures.length && o.status !== 200) conv.pendingImages = pictures
-      labelServedBy(render(o.status, o.body, conv), o.body)
+      var renderedTurn = render(o.status, o.body, conv)
+      labelServedBy(renderedTurn, o.body)
+      if (localMeasurement && o.status === 200) XiangxiangTopics.markRendered(renderedTurn, o.body, localMeasurement)
       // Mail stays in the displayed answer. Model history receives a neutral
       // receipt even if an earlier source question falls out of its context.
       if (o.body && o.body.reply) conv.history.push(assistantHistory(o.body))
-      // The server has just written this turn, so the conversation is now history: it
-      // survives a refresh and it can be deleted. `loaded` is set with it — the thread on
-      // screen IS the transcript, so re-selecting this conversation must not re-fetch and
-      // repaint what the Owner is already looking at.
-      // updatedAt is set here too, so a live conversation sorts and groups beside the
-      // stored ones instead of falling into 更早 with no time at all.
+      // Stored-turn lifecycle is documented beside local timing in topics.js.
       if (o.status === 200 && o.body.historySaved === true) conv.unsaved = unsavedBefore
       if (o.status === 200 && o.body.historySaved !== false) { conv.stored = true; conv.loaded = true; conv.updatedAt = new Date().toISOString() }
       renderConvList() // the conversation has content now, so it enters the list

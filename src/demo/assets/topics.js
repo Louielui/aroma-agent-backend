@@ -277,14 +277,38 @@
       submitted: function () { if (hrTools) { hrTools.open = false; tracking.open = false } }
     }
   }
-  async function readStream(response,container,t){
+  // The completed turn is saved by the server before the client marks it stored.
+  // loaded means reselecting the conversation does not refetch/repaint it; updatedAt
+  // puts live conversation history into the current sidebar group. Timing does not
+  // alter any of these lifecycle flags or retry an intake.
+  // Monotonic client timings are separate from model timing and phase labels.
+  function startTiming(){
+    try{if(!root.performance||typeof root.performance.now!=='function')return null
+    var started=root.performance.now();if(!Number.isFinite(started))return null
+    return{started:started,firstGuardedResponseMs:null,streamCompleteMs:null,answerDomMs:null,answerPaintOpportunityMs:null}}catch(_){return null}
+  }
+  function elapsed(timing){try{var value=timing&&root.performance?root.performance.now()-timing.started:null;return typeof value==='number'&&Number.isFinite(value)&&value>=0?value:null}catch(_){return null}}
+  function markRendered(turn,body,timing){
+    try{
+    if(!timing||!turn||!turn.root||typeof body.reply!=='string'||!body.reply.trim()||turn.source!==body.reply)return
+    var node=turn.root;timing.answerDomMs=elapsed(timing)
+    function receipt(){try{node.setAttribute('data-local-answer-timing',JSON.stringify({firstGuardedResponseMs:timing.firstGuardedResponseMs,streamCompleteMs:timing.streamCompleteMs,answerDomMs:timing.answerDomMs,answerPaintOpportunityMs:timing.answerPaintOpportunityMs,meaning:'visible DOM after two animation frames; not an optical paint measurement'}))}catch(_){}}
+    receipt()
+    // Never call a background tab, disconnected turn or phase label an answer.
+    if(typeof root.requestAnimationFrame==='function')root.requestAnimationFrame(function(){try{root.requestAnimationFrame(function(){try{
+      var rect=node.getBoundingClientRect(),style=root.getComputedStyle(node)
+      if(document.visibilityState==='visible'&&node.isConnected&&node.getClientRects().length&&node.textContent.trim()&&rect.bottom>0&&rect.right>0&&rect.top<root.innerHeight&&rect.left<root.innerWidth&&style.visibility==='visible'&&style.display!=='none'){timing.answerPaintOpportunityMs=elapsed(timing);receipt()}
+    }catch(_){}})}catch(_){}})
+    }catch(_){}
+  }
+  async function readStream(response,container,t,timing){
     var phase=document.createElement('div');phase.className='meta';phase.textContent=t('localBrain.processing');container.appendChild(phase)
     var reader=response.body.getReader(),decoder=new TextDecoder(),buffer='',received=0,final=null
     try{for(;;){var chunk=await reader.read();if(chunk.done)break;received+=chunk.value.byteLength;if(received>2000000)throw Error('local_stream_limit')
       buffer+=decoder.decode(chunk.value,{stream:true});var lines=buffer.split('\n');buffer=lines.pop()
-      lines.forEach(function(line){if(!line.startsWith('data: '))return;var event=JSON.parse(line.slice(6));if(event.type==='memory_complete')phase.textContent=t('localBrain.memoryRead');if(event.type==='model_start')phase.textContent=t('localBrain.processing');if(event.type==='final')final=event.body})
+      lines.forEach(function(line){if(!line.startsWith('data: '))return;var event=JSON.parse(line.slice(6));if(event.type==='memory_complete')phase.textContent=t('localBrain.memoryRead');if(event.type==='model_start')phase.textContent=t('localBrain.processing');if(event.type==='final'){final=event.body;if(timing&&typeof final.reply==='string'&&final.reply.trim()&&timing.firstGuardedResponseMs===null)timing.firstGuardedResponseMs=elapsed(timing)}})
     }
-    if(!final)throw Error('local_stream_incomplete');return{status:response.status,body:final}
+    if(!final)throw Error('local_stream_incomplete');if(timing)timing.streamCompleteMs=elapsed(timing);return{status:response.status,body:final}
     }finally{await reader.cancel().catch(function(){});reader.releaseLock()}
   }
   function localCompany(select,t){var option=document.createElement('option');option.textContent=t('localBrain.title');option.value='local';select.replaceChildren(option)}
@@ -299,5 +323,5 @@
       .then(function(h){return executionLabel(h,local,t)})
       .catch(function(){return local?t('localBrain.unavailable'):t('actions.bridgeOffline')})
   }
-  root.XiangxiangTopics = { mount: mount,readStream:readStream,localCompany:localCompany,localProviders:localProviders,executionLabel:executionLabel,readExecutionLabel:readExecutionLabel }
+  root.XiangxiangTopics = { mount: mount,readStream:readStream,startTiming:startTiming,markRendered:markRendered,localCompany:localCompany,localProviders:localProviders,executionLabel:executionLabel,readExecutionLabel:readExecutionLabel }
 })(typeof window === 'object' ? window : this)
