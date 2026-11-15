@@ -1279,7 +1279,10 @@ function createApp (options = {}) {
   app.use('/action-center', requireOwner)
   app.use('/api/v1/scheduler-actions', requireOwner)
   app.use('/api/v1/execution-health', requireOwner)
-  app.use(require('./actions/routes').createRouter({health:()=>require('./core/codeDiagnosis/status').readDispatchStatus({diagnosis:codeDiagnosis})}))
+  app.use(require('./actions/routes').createRouter({health:async()=>{
+    const dispatch=await require('./core/codeDiagnosis/status').readDispatchStatus({diagnosis:codeDiagnosis})
+    return localBrain?require('./localBrain/production').executionStatus(localBrain,dispatch):dispatch
+  }}))
   const schedulerChat = require('./actions/chat').createChatGateway({
     request: b => require('./adapters/CodexSubscriptionAdapter').localRequest('/scheduler-action', b, process.env, AbortSignal.timeout(60000)),
     ...(process.env.CHAT_BACKEND === 'codex-subscription' ? { providerFor: settings => new (require('./adapters/CodexSubscriptionAdapter').CodexSubscriptionAdapter)(settings) } : {}),

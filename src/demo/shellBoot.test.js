@@ -3,10 +3,10 @@ const test = require('node:test'), assert = require('node:assert/strict'), fs = 
 const { CATALOGUE } = require('../i18n/catalogue')
 // Execute the complete assembled page, including script boundaries. This is a DOM
 // behaviour fixture, not browser layout evidence; no network or model call is made.
-function page () {
+function page (local = false) {
   if (process.env.XIANGXIANG_BOOT_TEST_HTML) return fs.readFileSync(process.env.XIANGXIANG_BOOT_TEST_HTML, 'utf8')
   const before = process.env.CHAT_BACKEND
-  try { process.env.CHAT_BACKEND = 'codex-subscription'; return require('./demoHtml').buildDemoHtml() }
+  try { process.env.CHAT_BACKEND = local ? 'local' : 'codex-subscription'; return require('./demoHtml').buildDemoHtml() }
   finally { if (before === undefined) delete process.env.CHAT_BACKEND; else process.env.CHAT_BACKEND = before }
 }
 function dom (html) {
@@ -17,6 +17,7 @@ function dom (html) {
       appendChild (c) { if (c.parentNode) c.parentNode.removeChild(c); this.children.push(c); c.parentNode = this; return c },
       insertBefore (c, before) { if (!before) return this.appendChild(c); if (c.parentNode) c.parentNode.removeChild(c); const index = this.children.indexOf(before); assert.ok(index >= 0); this.children.splice(index, 0, c); c.parentNode = this; return c },
       removeChild (c) { const index = this.children.indexOf(c); assert.ok(index >= 0); this.children.splice(index, 1); c.parentNode = null; return c },
+      replaceChildren (...nodes) { for(const c of this.children.slice())this.removeChild(c);for(const c of nodes)this.appendChild(c) },
       setAttribute (k, v) { this.attrs[k] = String(v) }, getAttribute (k) { return this.attrs[k] ?? null },
       addEventListener (k, f) { this.events[k] = f }, focus () {},
       querySelector (selector) { return this.children.find(c => selector[0] === '.' && c.className.split(/\s+/).includes(selector.slice(1))) || null },
@@ -37,25 +38,27 @@ function dom (html) {
   ids.get('sidebar').appendChild(ids.get('workspace-nav'))
   return { ids, document: { title: '', body, getElementById: id => ids.get(id) || null, createElement: make, createTextNode: text => Object.assign(make('#text'), { textContent: text }), addEventListener () {} } }
 }
-async function boot (locale, unavailable = false, savedModel = null) {
-  const html = page(), f = dom(html), requests = [], errors = []
-  const models = [{ model: 'claude-sonnet', name: 'Claude Sonnet', available: true, efforts: ['low','medium','high','xhigh','max'], supportsEffort: true }, { model: 'gpt-6.1-sol', name: 'GPT-6.1 Sol', available: true, efforts: ['low','medium','high','xhigh','max'], supportsEffort: true }]
+async function boot (locale, unavailable = false, savedModel = null, local = false) {
+  const html = page(local), f = dom(html), requests = [], errors = []
+  const models = local ? [{model:'local:qwen3.5:9b',name:'Local Qwen3.5 9B',available:true,efforts:['auto'],supportsEffort:false}] : [{ model: 'claude-sonnet', name: 'Claude Sonnet', available: true, efforts: ['low','medium','high','xhigh','max'], supportsEffort: true }, { model: 'gpt-6.1-sol', name: 'GPT-6.1 Sol', available: true, efforts: ['low','medium','high','xhigh','max'], supportsEffort: true }]
   const selections = new Map()
   const fetch = async (url, options) => {
     requests.push({ url, options })
     const cid = options?.headers?.['X-Xiangxiang-Conversation']
-    const selection = id => selections.get(id) || { scope: { kind: 'conversation', id }, mode: 'central', revision: 0, effective: { model: 'claude-sonnet', effort: 'medium' } }
+    const selection = id => selections.get(id) || { scope: { kind: 'conversation', id }, mode: 'central', revision: 0, effective: { model: local?'local:qwen3.5:9b':'claude-sonnet', effort: local?'auto':'medium' } }
     if (options?.method === 'PUT' && url.startsWith('/api/v1/model-center/selection/conversation/')) {
       const id = url.split('/').at(-1), input = JSON.parse(options.body), value = { ...input, scope: { kind: 'conversation', id }, revision: input.revision + 1, effective: { model: input.model, effort: input.effort } }
       selections.set(id, value); return { ok: true, json: async () => ({ selection: value }) }
     }
     assert.ok(!options?.method || options.method === 'GET', 'boot must never write')
     if (unavailable) throw Error('fixture unavailable')
-    const body = url === '/api/v1/demo/models' ? { billing: 'chatgpt-subscription', models, selection: cid ? selection(cid) : null } : url === '/api/v1/demo/greeting' ? { line: 'Fixture greeting' } : url === '/api/v1/home/settings' ? { entries: [] } : url === '/api/v1/conversations' ? { ok: true, conversations: [] } : {}
+    const body = url === '/api/v1/demo/models' ? { billing: local?'local':'chatgpt-subscription', models, selection: cid ? selection(cid) : null } : url === '/api/v1/execution-health' ? {state:local?'unavailable':'ready',inference:local?{provider:'local',state:'ready',cloudFallback:false}:undefined} : url === '/api/v1/demo/greeting' ? { line: 'Fixture greeting' } : url === '/api/v1/home/settings' ? { entries: [] } : url === '/api/v1/conversations' ? { ok: true, conversations: [] } : {}
     return { ok: true, status: 200, json: async () => body }
   }
   const saved = new Map(savedModel ? [['xiangxiang-brain-v1', savedModel]] : [])
   const ctx = vm.createContext({ localStorage: { getItem: key => saved.get(key), setItem: (key, value) => saved.set(key, value) }, document: f.document, window: { crypto: { randomUUID }, location: { href: '', search: '' } }, fetch, console: { log () {}, error: error => errors.push(error) }, URL, URLSearchParams, AbortController, AbortSignal, setTimeout: () => 0, clearTimeout () {}, setInterval: () => 0, clearInterval () {} })
+  // Browser window properties are also global bindings (including Topics).
+  Object.assign(ctx,ctx.window);ctx.window=ctx
   const scripts = [...html.matchAll(/<script(?:\s[^>]*)?>([\s\S]*?)<\/script>/g)]
   assert.equal(scripts.length, 1)
   vm.runInContext(scripts[0][1].replace(/var INITIAL_LOCALE = "(?:zh|en)";/, 'var INITIAL_LOCALE = ' + JSON.stringify(locale) + ';'), ctx, { timeout: 2000, filename: 'served-demo.js' })
@@ -74,6 +77,18 @@ for (const locale of ['zh', 'en']) for (const unavailable of [false, true]) test
   assert.equal(ids.get('topbar').contains(ids.get('workspace-nav')), true)
   ids.get('msg').value = 'Fixture text'; ids.get('msg').events.input(); assert.equal(ids.get('send').disabled, unavailable)
   assert.ok(f.requests.some(r => r.url === '/api/v1/conversations')); assert.ok(f.requests.some(r => r.url === '/api/v1/demo/models'))
+})
+
+for(const locale of ['zh','en'])for(const unavailable of [false,true])test('complete local page ignores stale cloud selection and gates Send in '+locale+(unavailable?' when catalogue fails':''),async()=>{
+ const f=await boot(locale,unavailable,'claude-opus-5-5',true),ids=f.ids
+ assert.equal(ids.get('brain-company').children.length,1);assert.equal(ids.get('brain-company').children[0].value,'local')
+ assert.equal(ids.get('brain-company').value,'local')
+ assert.doesNotMatch(ids.get('picker-label').textContent,/Claude|GPT|claude|gpt/)
+ assert.equal(ids.get('chat-level').value,'auto');assert.equal(ids.get('chat-level').disabled,true)
+ ids.get('msg').value='Local fixture text';ids.get('msg').events.input();assert.equal(ids.get('send').disabled,unavailable)
+ if(!unavailable){assert.match(ids.get('picker-label').textContent,/Qwen3\.5 9B/);assert.doesNotMatch(ids.get('picker').attrs['aria-label'],/訂閱|subscription/i);assert.equal(ids.get('execution-status').textContent,CATALOGUE['localBrain.chatReadyWorkerUnavailable'][locale])}
+ else assert.equal(ids.get('brain-status').textContent,CATALOGUE['localBrain.unavailable'][locale])
+ assert.equal(f.saved.get('xiangxiang-brain-v1'),'claude-opus-5-5');assert.equal(f.selections.size,0);assert.equal(f.requests.some(r=>r.options?.method&&r.options.method!=='GET'),false)
 })
 
  test('model picker saves the active conversation selection without changing legacy shared defaults', async () => {

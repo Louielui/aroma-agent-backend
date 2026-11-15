@@ -501,7 +501,7 @@ function createDemoRouter ({ getAdapterFn = getAdapterForLane, processIntakeFn =
 
   router.get('/api/v1/demo/models', demoGuard, async (req, res) => {
     res.setHeader('Cache-Control', 'no-store')
-    if (process.env.CHAT_BACKEND !== 'codex-subscription') return res.status(503).json({ code: 'subscription_unavailable' })
+    if (process.env.CHAT_BACKEND !== 'codex-subscription' && !(process.env.CHAT_BACKEND === 'local' && process.env.LOCAL_BRAIN_ONLY === '1')) return res.status(503).json({ code: 'subscription_unavailable' })
     try {
       const catalog = await modelsFn()
       if (!modelCenter) return res.json(catalog)
@@ -583,7 +583,7 @@ function createDemoRouter ({ getAdapterFn = getAdapterForLane, processIntakeFn =
 
       // Resolve once before any asynchronous routing/model work. The immutable
       // selection belongs to this accepted request, not to a later settings edit.
-      if (modelCenter && process.env.CHAT_BACKEND === 'codex-subscription') {
+      if (modelCenter && (process.env.CHAT_BACKEND === 'codex-subscription' || process.env.CHAT_BACKEND === 'local' && process.env.LOCAL_BRAIN_ONLY === '1')) {
         try {
           if (!isValidConversationId(req.body.conversationId)) throw Error('invalid_request')
           const chosen = modelCenter.resolveConversation(req.body.conversationId)

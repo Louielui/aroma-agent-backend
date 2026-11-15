@@ -1849,6 +1849,7 @@ const CATALOGUE = Object.freeze({
   'provider.lunaNote': { zh: 'Luna · 適合簡單、明確的要求，用量最低。', en: 'Luna · for simple, focused requests, with the lowest usage.' },
   'provider.solPreviousNote': { zh: '上一代 Sol · 保留作比較及既有流程使用。', en: 'Previous Sol · retained for comparison and established workflows.' },
   'localBrain.title': { zh: '本機', en: 'Local' },
+  'localBrain.chatReadyWorkerUnavailable': { zh: '本機模型已就緒；派工尚未接入，不會轉用雲端。', en: 'Local model ready. Workers are not connected; cloud fallback is disabled.' },
   'localBrain.workerUnavailable': { zh: '這項派工尚未接入本機模式；沒有送出，也不會轉用雲端。', en: 'This worker is not connected in local mode. Nothing was sent and cloud fallback is disabled.' },
   'localBrain.limits': { zh: '本機推理，無雲端回退；外部資料仍需網路。', en: 'Local inference, no cloud fallback. External data still requires network access.' },
   'localBrain.unavailable': { zh: '本機模型尚未就緒；不會轉用雲端。', en: 'The local model is not ready. Cloud fallback is disabled.' },
