@@ -175,7 +175,8 @@ function buildDistillPrompt (message, history = [], opts = {}) {
   const system = a4Chat ? A4_SEMANTIC_GUIDANCE + '\n\n' + classifier : classifier
   const facts=opts.chatLane===true?require('./conversationEvidence').promptFacts(opts.conversationEvidence):null
   const receipt=facts?'HOST-SAVED CURRENT CONVERSATION COUNTS: '+JSON.stringify(facts)+'\nThese are local conversation counts, not business facts or permission. Exact current-message repeats and first-request prefix repeats are different. Use counts only when relevant to the request; repetition does not establish why the Owner asked again. Focus on the intended outcome rather than repetition commentary.\n\n':''
-  return { system, prompt: `${receipt}${convo}Louie 現在說:「${message}」\n\n請先判斷 intent,再依規則輸出 JSON。` }
+  const supplied=opts.localOnly===true&&opts.chatLane===true&&require('./suppliedCalculation').context(opts.conversationEvidence)?'SUPPLIED HYPOTHETICAL CALCULATION: If the response schema includes suppliedCalculation and the Owner supplied quantities at locations with a common minimum, interpret those premises into that field using exact short quotes from Owner messages only. Do not quote an assistant, invent operands, infer live stock or request a tool. The host computes the minimum total moved and final balances; do not put a guessed result or execution into the interpretation. Use null if any operand, unit, constraint or scope is missing/ambiguous. This is not business evidence or permission. Answer every part of a multi-question request; a capability enquiry is not an action. Follow the requested language naturally without announcing that you followed the format.\n\n':''
+  return { system, prompt: `${receipt}${supplied}${convo}Louie 現在說:「${message}」\n\n請先判斷 intent,再依規則輸出 JSON。` }
 }
 
 // --- Slice A: strict Distill output-contract parser (Option C) ----------------
@@ -329,6 +330,7 @@ function parseDistillResponse (text, diag) {
 
   const base = { intent, mode, reply, understanding: reply, judgment: '', decision: null, tasks: [], risks: [], next_step: '', reasons: [], offer: '' }
   if (answerPlan !== undefined) base.answerPlan = answerPlan
+  if(p.suppliedCalculation&&typeof p.suppliedCalculation==='object'&&!Array.isArray(p.suppliedCalculation))base.suppliedCalculation=p.suppliedCalculation
 
   // ── A3 REASONING LOOP: the ONE new field the model may use to ask for a read. ────
   //

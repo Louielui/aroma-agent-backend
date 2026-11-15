@@ -1,0 +1,81 @@
+'use strict'
+const {test}=require('node:test'),assert=require('node:assert/strict'),fixture=require('./fixtures/localAnswerBoundaryReplay.json'),conversation=require('./conversationEvidence'),guard=require('./routeEvidenceGuard')
+const first=fixture.messages[0].content,follow=fixture.messages[2].content,question=fixture.messages[4].content
+const receipt=(message=follow,history=fixture.messages.slice(0,2))=>conversation.fromSavedConversation({messages:history},message)
+// Synthetic interpretation contract; the original model completion was not retained.
+const proposal=()=>({kind:'minimum_transfer',locations:[{entity:'甲店',quantity:12,unit:'盒',quote:'甲店有12盒'},{entity:'乙店',quantity:3,unit:'盒',quote:'乙店有3盒'}],minimum:{quantity:6,unit:'盒',quote:'每店至少要6盒'},transferOnlyQuote:'只能調貨不能購買'})
+const fs=require('node:fs'),os=require('node:os'),path=require('node:path'),{randomUUID}=require('node:crypto')
+if(!process.env.AROMA_DATA_DIR)process.env.AROMA_DATA_DIR=fs.mkdtempSync(path.join(os.tmpdir(),'local-answer-boundary-'))
+test('saved real capability enquiry is conversation, not a dispatch command or refusal template',()=>{
+ const {parseRequest}=require('../core/codeDiagnosis/chat');assert.equal(parseRequest(question),null)
+ for(const q of ['你可以直接派 Codex 嗎？離線能做什麼？','Can you delegate to Codex, and what works offline?','不要派 Codex，先說明你能做什麼。','Codex 可以派工嗎？斷網又如何？','Codex 的派工有什麼限制？','Codex 能否修改程式？'])assert.equal(parseRequest(q),null)
+ assert.equal(parseRequest('請 Codex 唯讀調查香香派工流程'),'dispatch');assert.equal(parseRequest('請 Codex 唯讀調查 .env'),'unsupported')
+})
+test('verified Owner premises permit a program-computed minimum transfer, never a business-evidence exemption',()=>{
+ const c=require('./suppliedCalculation'),r=c.calculate(proposal(),receipt())
+ assert.ok(r);assert.equal(r.moved,3);assert.deepEqual(r.locations.map(v=>v.quantity),[9,6]);assert.match(r.reply,/3.*盒/);assert.match(r.reply,/甲店.*9.*盒/);assert.match(r.reply,/乙店.*6.*盒/);assert.match(r.reply,/假設/);assert.doesNotMatch(r.reply,/自然廣東話|講完兩句/)
+ // The business guard is not disabled, even if the question says hypothetical.
+ assert.equal(guard.enforceRouteEvidence({message:first,reply:'目前餐廳存貨全部充足，今日收到99盒。',evidenceSets:[],noReadRecommendation:true}).violated,true)
+})
+test('calculation ignores old assistant guesses and rejects missing, forged, mismatched and stale premises',()=>{
+ const c=require('./suppliedCalculation');assert.equal(c.calculate(proposal(),JSON.parse(JSON.stringify(receipt()))),null)
+ for(const change of [p=>p.locations[0].quantity=13,p=>p.locations[0].quote='甲店有13盒',p=>p.locations[0].entity='丙店',p=>p.locations[0].unit='箱',p=>p.minimum.quantity=9,p=>p.minimum.quote='先前助手建議6盒',p=>p.locations.push({...p.locations[0]}),p=>p.execute=true]){const p=proposal();change(p);assert.equal(c.calculate(p,receipt()),null)}
+ assert.equal(c.calculate(proposal(),receipt('現在查系統的實際庫存，再調貨。')),null)
+ const h=[...fixture.messages.slice(0,2),{role:'user',content:'仍作假設，甲店改成10盒，其餘不變。'},{role:'assistant',content:'Noted.'}];assert.equal(c.calculate(proposal(),receipt(follow,h)),null)
+ assert.equal(c.calculate(proposal(),receipt(follow,[{role:'user',content:'只作測試。'},{role:'assistant',content:first}])),null)
+ for(const amendment of ['可以購買補貨了，請計算。','甲店不得調出，請計算。','乙店最多收2盒，請計算。'])assert.equal(c.calculate(proposal(),receipt(amendment)),null)
+ const p=proposal();p.locations[0].quote='甲店欠12盒';assert.equal(c.calculate(p,receipt(first.replace('甲店有12盒','甲店欠12盒'),[])),null)
+ const neg=proposal();neg.locations[0].quote='甲店有-12盒';assert.equal(c.calculate(neg,receipt(first.replace('甲店有12盒','甲店有-12盒'),[])),null)
+ for(const field of ['transferOnlyQuote','minimum']){
+  const altered=proposal();if(field==='minimum')altered.minimum.quote+='但甲店不得調出';else altered.transferOnlyQuote+='但甲店最多調2盒'
+  const text=first.replace(field==='minimum'?'每店至少要6盒':'只能調貨不能購買',field==='minimum'?altered.minimum.quote:altered.transferOnlyQuote)
+  assert.equal(c.calculate(altered,receipt(text,[])),null,'extra constraints cannot hide inside a quoted operand')
+ }
+})
+test('minimum-movement computation conserves quantities and reports infeasibility without inventing purchases',()=>{
+ const c=require('./suppliedCalculation')
+ for(const values of [[18,2,4],[9,8,1],[6,6,6],[2,1,3]]){
+  const locations=values.map((quantity,i)=>({entity:'Site'+String.fromCharCode(65+i),quantity,unit:'boxes',quote:'Site'+String.fromCharCode(65+i)+' has '+quantity+' boxes'})),minimum={quantity:6,unit:'boxes',quote:'each site needs at least 6 boxes'},transferOnlyQuote='Only transfers, no purchases',m='Hypothetical, no tools or actions: '+locations.map(v=>v.quote).join('; ')+'. '+minimum.quote+'. '+transferOnlyQuote+'. Calculate the minimum transfer.'
+  const r=c.calculate({kind:'minimum_transfer',locations,minimum,transferOnlyQuote},receipt(m,[]));assert.ok(r)
+  assert.equal(r.locations.reduce((s,v)=>s+v.quantity,0),values.reduce((s,v)=>s+v,0))
+  if(values.reduce((s,v)=>s+v,0)>=18){assert.equal(r.moved,values.reduce((s,v)=>s+Math.max(0,6-v),0));assert.ok(r.locations.every(v=>v.quantity>=6))}else{assert.equal(r.feasible,false);assert.equal(r.moved,0);assert.match(r.reply,/未夠|insufficient|short/i);assert.ok(r.reply.includes(String(18-values.reduce((s,v)=>s+v,0))))}
+ }
+})
+test('only a verified hypothetical conversation adds the interpretation contract; old envelope keys remain unchanged',()=>{
+ const c=require('./suppliedCalculation'),base={type:'json_schema',schema:{type:'object',required:['reply'],properties:{reply:{type:'string'}},additionalProperties:false}}
+ const shaped=c.withFormat(base,receipt());assert.ok(shaped.schema.properties.suppliedCalculation);assert.ok(shaped.schema.required.includes('suppliedCalculation'));assert.equal(base.schema.properties.suppliedCalculation,undefined)
+ assert.equal(c.withFormat(base,receipt('你好',[])),base)
+ const {parseDistillResponse}=require('./distillPrompt'),text={mode:'chat',intent:'question',reply:'Model wording is not used for a verified computation.',suppliedCalculation:proposal()};assert.deepEqual(parseDistillResponse(JSON.stringify(text)).suppliedCalculation,proposal());assert.equal('suppliedCalculation' in parseDistillResponse(JSON.stringify({mode:'chat',intent:'question',reply:'Hi'})),false)
+})
+test('local product capability context distinguishes blocked workers and offline prerequisites without creating authority',()=>{
+ const block=require('../governance/selfCapability').capabilityBlock({localOnly:true})
+ assert.match(block,/Codex/);assert.match(block,/未接入|停用|blocked|unavailable/);assert.match(block,/離線|offline/);assert.match(block,/Gmail.*Drive|Drive.*Gmail/);assert.match(block,/全部|每個|each|every/)
+ assert.doesNotMatch(block,/已有批准後派工嘅開發流程/)
+ const old=require('../governance/selfCapability').capabilityBlock();assert.match(old,/已有批准後派工嘅開發流程/)
+})
+async function post(app,body){
+ const {IncomingMessage,ServerResponse}=require('node:http'),{Duplex}=require('node:stream'),wire=[],socket=new Duplex({read(){},write(c,e,n){wire.push(c.toString());n()}}),req=new IncomingMessage(socket),text=JSON.stringify(body)
+ req.method='POST';req.url='/api/v1/demo/intake';req.httpVersion='1.1';req.httpVersionMajor=1;req.httpVersionMinor=1;req.headers={host:'127.0.0.1:18099',origin:'http://127.0.0.1:18099','content-type':'application/json','content-length':String(Buffer.byteLength(text))};req.complete=true
+ const res=new ServerResponse(req);res.assignSocket(socket);await new Promise((resolve,reject)=>{const timer=setTimeout(()=>reject(Error('fixture_timeout')),12000);res.once('finish',()=>{clearTimeout(timer);resolve()});app.handle(req,res,e=>{if(e){clearTimeout(timer);reject(e)}});req.push(text);req.push(null)});const raw=wire.join('');return{status:res.statusCode,body:JSON.parse(raw.slice(raw.indexOf('\r\n\r\n')+4))}
+}
+async function integrated(message,answer,prior){
+ const vars={LOCAL_BRAIN_ONLY:'1',LOCAL_APP_PORT:'18099',CHAT_BACKEND:'local',LOCAL_MODEL:'qwen3.5:9b',XIANGXIANG_MEMORY:'off',GOAL_DECOMPOSER:'off',READ_ACCESS:'off',TURN_ROUTER:'shadow'},saved=Object.fromEntries(Object.keys(vars).map(k=>[k,process.env[k]]));Object.assign(process.env,vars)
+ try{
+  const calls=[],writes=[],adapter={providerName:'local',preflight:async()=>({ready:true}),complete:async(prompt,opts)=>{calls.push({prompt,opts});assert.ok(calls.length<=2,'fixture may not loop');return{text:JSON.stringify(answer),provider:'local',billing:'local',model:'qwen3.5:9b',usage:{inputTokens:1,outputTokens:1,totalTokens:2}}}},express=require('express'),app=express();let starts=0
+  app.locals.conversationDemo=true;app.use(express.json());app.use(require('../routes/demoRouter').createDemoRouter({getAdapterFn:()=>adapter,conversationStore:{get:()=>({messages:prior}),appendTurn:v=>writes.push(v)},codeDiagnosis:{start:()=>{starts++;throw Error('dispatch_forbidden')}},processIntakeFn:(m,a,h,o)=>require('./intakeService').processIntake(m,a,h,{...o,openaiAdapter:adapter,readContextDeps:{sources:[],connector:{read:()=>{throw Error('business_read_forbidden')}}}})}))
+  const response=await post(app,{message,history:[],interactionMode:'chat',conversationId:randomUUID(),workflowRequestId:randomUUID()});return{...response,calls,writes,starts}
+ }finally{for(const [k,v]of Object.entries(saved))if(v===undefined)delete process.env[k];else process.env[k]=v}
+}
+test('actual HTTP intake computes from saved Owner premises before any repeat generation or operational answer guard',async()=>{
+ const r=await integrated(follow,{mode:'chat',intent:'question',reply:'UNVERIFIED_MODEL_TEXT_MUST_NOT_APPEAR',nextRead:null,suppliedCalculation:proposal()},fixture.messages.slice(0,2));assert.equal(r.status,200);assert.equal(r.starts,0);assert.equal(r.calls.length,1);assert.equal(r.body.utility,'supplied_calculation');assert.match(r.body.reply,/甲店.*9.*盒/);assert.match(r.body.reply,/乙店.*6.*盒/);assert.doesNotMatch(r.body.reply,/UNVERIFIED|沒有查任何來源/);assert.ok(r.calls[0].opts.responseFormat.schema.properties.suppliedCalculation);assert.equal(r.writes.length,1)
+})
+
+test('the first hypothetical turn receives its own attested premises without browser history or an earlier model answer',async()=>{
+ const r=await integrated(first,{mode:'chat',intent:'question',reply:'UNVERIFIED',nextRead:null,suppliedCalculation:proposal()},[]);assert.equal(r.status,200);assert.equal(r.calls.length,1);assert.equal(r.body.utility,'supplied_calculation');assert.match(r.body.reply,/甲店.*9.*盒/);assert.match(r.body.reply,/乙店.*6.*盒/);assert.doesNotMatch(r.body.reply,/UNVERIFIED|講完兩句/)
+})
+test('saved multi-question capability enquiry reaches ordinary local understanding with current restrictions and no dispatch',async()=>{
+ const reply='而家唔可以直接派 Codex 改程式。斷網時，我可以用本機模型處理對話同已保存資料；Gmail、Drive 等外部服務仍要網絡。',r=await integrated(question,{mode:'chat',intent:'question',reply,nextRead:null},fixture.messages.slice(0,4));assert.equal(r.status,200);assert.equal(r.starts,0);assert.equal(r.calls.length,1);assert.match(r.body.reply,/Codex/);assert.match(r.body.reply,/斷網/);assert.doesNotMatch(r.body.reply,/完整要求沒有進入派工入口|建立一般修正工作單/);assert.match(r.calls[0].prompt,/本機模式的實際限制/);assert.match(r.calls[0].prompt,/每個問題都要逐項回答/)
+})
+test('an explicit unsupported command in local mode reports the actual Worker restriction without proposing a cloud entrance',async()=>{
+ const r=await integrated('請 Codex 唯讀調查 .env',{mode:'chat',intent:'question',reply:'SHOULD_NOT_RUN'},[]);assert.equal(r.status,200);assert.equal(r.starts,0);assert.equal(r.calls.length,0);assert.match(r.body.reply,/本機|未接入|不可用/);assert.doesNotMatch(r.body.reply,/可直接交代 Codex|SHOULD_NOT_RUN/)
+})

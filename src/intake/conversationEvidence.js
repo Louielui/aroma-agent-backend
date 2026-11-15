@@ -5,6 +5,7 @@
 // transcript, before any prompt truncation. Browser history/model JSON cannot
 // serialize an attestation. No transcript text is exposed in the issued token.
 const issued = new WeakMap()
+const ownerTranscripts = new WeakMap()
 const {cjkToNumber} = require('./answerPlan')
 
 function fromSavedConversation(saved, message) {
@@ -27,6 +28,7 @@ function fromSavedConversation(saved, message) {
   issued.set(token, Object.freeze({ownerMessages:owners.length,
     currentMessageOccurrences:owners.filter(text=>text===message.trim()).length,
     firstRequestPrefixOccurrences:repeated?owners.length:null}))
+  ownerTranscripts.set(token, Object.freeze(owners.slice()))
   return token
 }
 
@@ -48,4 +50,5 @@ function checkConversationClaim(clause, token) {
 // The same immutable receipt informs generation and review. A serialized token
 // cannot introduce counts into a prompt or attest business records.
 function promptFacts(token){return token&&typeof token==='object'?issued.get(token)||null:null}
-module.exports = {fromSavedConversation, checkConversationClaim, promptFacts}
+function ownerSources(token){return token&&typeof token==='object'?ownerTranscripts.get(token)||null:null}
+module.exports = {fromSavedConversation, checkConversationClaim, promptFacts, ownerSources}

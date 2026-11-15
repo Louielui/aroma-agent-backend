@@ -67,9 +67,12 @@ function parseRequest(message){
  if(healthRequest(value))return 'health'
  if(/^(?:請)?\s*Codex\s*(?:工作單|任務)(?:狀態|進度|結果)$/iu.test(value))return 'status'
  if(commandEnvelope(value))return 'dispatch'
- // Explicit unsupported Codex enquiries get a concrete limit, not an unrelated
+ // Explicit unsupported Codex commands get a concrete limit, not an unrelated
  // schedule/cost investigation. Negated and quoted examples remain conversation.
- if(/(?:Codex|GPT-6)/iu.test(value)&&/(?:派|指揮|唯讀調查)/u.test(value))return 'unsupported'
+ const header=actorHeader(value)
+ const imperative=/^(?:現在|接下來)?(?:請|幫我|麻煩)?\s*(?:直接)?(?:派工給|交給|派)\s*Codex\b/iu.test(value)||
+   header&&/^(?:使用|指定|模型[：:]|(?:做|進行)?唯讀(?:調查|檢查|分析)|修改|修正|實作|編輯|調查|檢查|分析|幫我)/u.test(header[1])
+ if((imperative||/^ask Codex to /iu.test(value)||/^(?:請|幫我|麻煩)?\s*(?:派|指揮)\s*GPT-6/iu.test(value))&&/(?:派|指揮|唯讀調查|修改|修正)/u.test(value))return 'unsupported'
  return null
 }
 module.exports={parseRequest,isReadonlyRequest}
