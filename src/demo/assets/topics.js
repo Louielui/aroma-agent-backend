@@ -314,7 +314,7 @@
   function localCompany(select,t){var option=document.createElement('option');option.textContent=t('localBrain.title');option.value='local';select.replaceChildren(option)}
   function localProviders(t){return[{id:'local',modelName:t('localBrain.title'),name:t('localBrain.title'),available:false,supportsEffort:false,efforts:['auto']}]}
   function executionLabel(health,local,t){
-    if(local)return health&&health.inference&&health.inference.provider==='local'&&health.inference.state==='ready'&&health.inference.cloudFallback===false?t('localBrain.chatReadyWorkerUnavailable'):t('localBrain.unavailable')
+    if(local)return health&&health.inference&&health.inference.provider==='local'&&health.inference.state==='ready'&&health.inference.cloudFallback===false?(health.controlledDispatch&&health.controlledDispatch.state==='connected'?t('localBrain.controlledDispatchReady'):t('localBrain.chatReadyWorkerUnavailable')):t('localBrain.unavailable')
     return health&&health.state==='ready'?(health.supervisor&&health.supervisor.state==='starting'?t('actions.bridgeRecovering'):t('actions.bridgeReady')):t('actions.bridgeOffline')
   }
   function readExecutionLabel(local,t){

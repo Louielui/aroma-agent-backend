@@ -13,6 +13,7 @@ function validateEnvironment(env){
 function activate(){
  if(active)return
  validateEnvironment(process.env)
+ require('./dispatchProfile').apply(process.env,profile)
  Object.assign(process.env,{LOCAL_BRAIN_ONLY:'1',LOCAL_APP_PORT:String(Number(process.env.PORT||8081)),LLM_PROVIDER:'local',CHAT_BACKEND:'local',LOCAL_MODEL:profile.model,LOCAL_MODEL_DIGEST:profile.digest,LOCAL_MODEL_URL:profile.endpoint,LOCAL_MODEL_CONTEXT:String(profile.context),WORKER_INVOCATION:'off',DEVELOP_DISPATCH:'off',AGENT_BRIDGE:'off'})
  const dir=path.join(require('../store/dataDir').resolveDataDir(),'local-brain')
  const audit=event=>{fs.mkdirSync(dir,{recursive:true});fs.writeFileSync(path.join(dir,require('node:crypto').randomUUID()+'.json'),JSON.stringify({...event,at:new Date().toISOString()}),{flag:'wx',mode:0o600})}
@@ -26,7 +27,7 @@ function createComposition({dataDir,store,adapter,readConversation,memoryEnabled
  const model='local:'+profile.model
  return {memory,provider,profile,selectionPolicy:{initialBrain:{model,effort:'auto'},validChoice:v=>v?.model===model&&v?.effort==='auto'},
   catalogue:async()=>{let available=false;try{await provider.preflight();available=true}catch{}return{billing:'local',models:[{model,name:'Local Qwen3.5 9B',provider:'local',available,efforts:['auto'],supportsEffort:false}]}},
-  roles:()=>[{role:'Chat, planning and verification',selection:model,status:'Local inference; evidence guards retained'},{role:'Memory capture and consolidation',selection:model,status:'Canonical PostgreSQL; local derived quote index; candidates require Owner approval'},{role:'Subscribed workers and email analysis',selection:'Unavailable in local mode',status:'Not sent; no cloud fallback'}],
+  roles:()=>[{role:'Chat, planning and verification',selection:model,status:'Local inference; evidence guards retained'},{role:'Memory capture and consolidation',selection:model,status:'Canonical PostgreSQL; local derived quote index; candidates require Owner approval'},{role:'Explicit Codex repository work',selection:'Separate subscription authorization required',status:'Closed control connection; per-work scope, usage and coding approval; App visibility requires live verification'},{role:'Email analysis and automatic cloud fallback',selection:'Unavailable in local mode',status:'Not sent; no cloud fallback'}],
   close:()=>memory?.close()}
 }
 function runtime(){if(!active)return null;return composition||(composition=createComposition({memoryEnabled:process.env.XIANGXIANG_MEMORY==='on',readConversation:id=>require('../store/conversationStore').conversationStore.get(id)}))}
@@ -35,12 +36,14 @@ async function executionStatus(composition,dispatch){
  let ready=false
  try{const result=await composition.provider.preflight();ready=result.available===true&&result.provider==='local'&&result.model===profile.model}catch{}
  // A native metadata probe says nothing about subscription/worker readiness.
- return {...dispatch,inference:{provider:'local',model:profile.model,state:ready?'ready':'unavailable',cloudFallback:false}}
+ const controlledDispatch=await require('../adapters/ControlledDispatchAdapter').readStatus({bootCommit:dispatch.backend?.bootCommit})
+ return {...dispatch,controlledDispatch,inference:{provider:'local',model:profile.model,state:ready?'ready':'unavailable',cloudFallback:false}}
 }
 function routeBoundary(req,res,next){
  // Keep existing authentication ahead of this boundary. Read-only stored results
  // remain accessible; no new work or cloud maintenance can be started here.
  if(req.method==='GET'||req.method==='HEAD')return next()
+ if(require('../adapters/ControlledDispatchAdapter').enabled(process.env)&&/^\/api\/v1\/project-(?:tasks|work)$/.test(req.path))return next()
  if(/^\/(?:api\/v1\/)?(?:worker-flow|project-work|project-tasks|project-adoption|development-plan|code-diagnosis|task-plan|scheduler-actions|scheduler-chat|procurement|capability-gaps|browser-operator|browser-read)(?:\/|$)/.test(req.path))return res.status(503).json({error:{code:'local_capability_unavailable',retryable:false}})
  next()
 }

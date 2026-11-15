@@ -4,18 +4,20 @@ const {createTasks}=require('./service'),{createRegistry}=require('./contract'),
 const OWNER={id:'owner',role:'owner'}
 const generated={testCode:"const test=require('node:test'),assert=require('node:assert/strict');for(const value of [1,2,3])test('returns increment '+value,()=>assert.equal(require('../src/logic.js')(value),value+1));",expectedTests:3}
 async function native(model,effort,value){return usage.withRPCBudget({request:async()=>value},rpc=>rpc.request('turn/start',{model,effort}))}
-function fixture(t){
+function fixture(t,{visible=false}={}){
+ const thread=randomUUID(),appProjectRoot='C:/isolated-app-project'
  const dir=fs.mkdtempSync(path.join(os.tmpdir(),'repository-flow-'));t.after(()=>fs.rmSync(dir,{recursive:true,force:true}));const root=path.join(dir,'repo');fs.mkdirSync(path.join(root,'src'),{recursive:true});fs.writeFileSync(path.join(root,'src/logic.js'),'module.exports=value=>value;\n');fs.writeFileSync(path.join(root,'src/readonly.js'),'module.exports=true;\n')
  const git=(...args)=>execFileSync('git',args,{cwd:root,windowsHide:true,encoding:'utf8',stdio:['ignore','pipe','pipe']}).trim();git('init');git('add','src');git('-c','user.name=Offline Test','-c','user.email=offline@example.invalid','-c','core.hooksPath=','commit','-m','offline fixture');const head=git('rev-parse','HEAD')
  const inventory=createInventory({root,health:async()=>({status:'ok',bootCommit:head})}),store=createRunStore({dir:path.join(dir,'tasks'),workflow:'project_task'}),workStore=createRunStore({dir:path.join(dir,'work'),workflow:'project_work'}),budget=createRepositoryBudget({dir:path.join(dir,'usage')}),locks=createStore({dir:path.join(dir,'locks')});let promotion=0,work
- const providers={isolation:async()=>({ready:true}),status:async()=>({codex:{ready:true},claude:{ready:true}}),codeOrder:async({order})=>{
+ const providers={isolation:async()=>({ready:true}),status:async()=>({codex:{ready:true},claude:{ready:true}}),codeOrder:async({order,visibleWork})=>{
+  if(visible){assert.equal(visibleWork.resumeThreadId,thread);assert.equal(visibleWork.cwd,appProjectRoot);await visibleWork.created({id:thread,workId:visibleWork.id,model:'gpt-6.1-sol',effort:'high',source:'actual_coding_provider_thread',modelDispatched:false})}
   const changes=order.editable.map(file=>({file,before:order.files[file],after:'module.exports=value=>value+1;\n',beforeHash:digest(order.files[file]),afterHash:digest('module.exports=value=>value+1;\n')}))
   return native('gpt-6.1-sol','high',{model:'gpt-6.1-sol',effort:'high',billing:'chatgpt-subscription',execution:'windows_sandbox_offline',appliedToLive:false,changedFiles:order.editable,changes,patchHash:digest(JSON.stringify(changes)),baseline:{failed:3,total:3},tests:{total:3,passed:3,failed:0,skipped:0,cancelled:0,exitCode:0}})
  },reviewOrder:async()=>native('claude-sonnet-5-5','medium',{verdict:'pass',billing:'claude-subscription'})}
  const registry=createRegistry(store),source=require('../projectWork/source').createSource({root,resolveRecipe:registry.resolve,health:async()=>({status:'ok',bootCommit:head})})
- const makeWork=()=>work=createProjectWork({source,providers,store:workStore,enabled:()=>true,resolveRecipe:registry.resolve,repositoryBudget:budget,onAccepted:()=>{promotion++}});makeWork()
- const provider={preflight:async()=>({model:'gpt-6.1-sol',effort:'high',billing:'chatgpt-subscription'}),complete:async()=>native('gpt-6.1-sol','high',{model:'gpt-6.1-sol',billing:'chatgpt-subscription',text:JSON.stringify(generated)})}
- const options={store,enabled:()=>true,sourceFor:inventory.sourceFor,provider,review:async packet=>{const args=require('../workerFlow/providers').acceptanceReviewArgs(packet);assert.equal(args[args.indexOf('--model')+1],'claude-sonnet-5-5');assert.equal(args[args.indexOf('--effort')+1],'medium');return native('claude-sonnet-5-5','medium',{verdict:'pass',billing:'claude-subscription'})},prepareWork:input=>work.prepare(OWNER,input),repository:{inventory,budget,lock:()=>locks.lockRun('d970a642-61b1-47a1-8baf-6b33e910ac05'),provider}}
+ const makeWork=()=>work=createProjectWork({source,providers,store:workStore,visibleCodexWork:visible,appProjectRoot,resolveCodexThread:id=>store.get(id)?.codexThread||null,enabled:()=>true,resolveRecipe:registry.resolve,repositoryBudget:budget,onAccepted:()=>{promotion++}});makeWork()
+ const provider={preflight:async()=>({model:'gpt-6.1-sol',effort:'high',billing:'chatgpt-subscription'}),complete:async(p,o)=>{if(visible)await o.visibleWork.created({id:thread,workId:o.visibleWork.id,model:'gpt-6.1-sol',effort:'high',source:'actual_test_draft_provider_thread',modelDispatched:false});return native('gpt-6.1-sol','high',{model:'gpt-6.1-sol',billing:'chatgpt-subscription',text:JSON.stringify(generated)})}}
+ const options={store,visibleCodexWork:visible,appProjectRoot,enabled:()=>true,sourceFor:inventory.sourceFor,provider,review:async packet=>{const args=require('../workerFlow/providers').acceptanceReviewArgs(packet);assert.equal(args[args.indexOf('--model')+1],'claude-sonnet-5-5');assert.equal(args[args.indexOf('--effort')+1],'medium');return native('claude-sonnet-5-5','medium',{verdict:'pass',billing:'claude-subscription'})},prepareWork:input=>work.prepare(OWNER,input),repository:{inventory,budget,lock:()=>locks.lockRun('d970a642-61b1-47a1-8baf-6b33e910ac05'),provider}}
  return{dir,root,head,store,workStore,budget,inventory,sourceFor:inventory.sourceFor,make:(extra={})=>createTasks({...options,...extra,repository:{...options.repository,...extra.repository}}),makeWork,get work(){return work},get promotion(){return promotion}}
 }
 test('offline integration: intake, exact source approval, restart continuation, coding and review use one persistent budget; deployment stays held',async t=>{
@@ -50,4 +52,26 @@ test('source drift, oversized packages and extra scope authority stop before any
  const selected=await s.scope(OWNER,{id,bootCommit:f.head,criteria:['Fix'],editable:['src/logic.js'],readonly:[]});fs.appendFileSync(path.join(f.root,'src/logic.js'),'// drift\n')
  await assert.rejects(s.authorize(OWNER,{id,hash:selected.approval.hash,nonce:selected.approval.nonce}),/source_dirty/);assert.equal(f.budget.status(id).state,'not_activated');assert.equal(f.workStore.all().length,0)
  assert.throws(()=>require('./repositoryScope').validateSnapshot({order:{files:{'src/huge.js':'x'.repeat(100001),'acceptance/registered-task.test.cjs':'x'}}}),/repository_package_limit/)
+})
+
+
+test('closed connector offline integration: same provider thread, source-bound coding approval, canonical result and durable shared hard cap',async t=>{
+ const f=fixture(t,{visible:true}),tasks=f.make(),{createControlledDispatch}=require('../../subscription/controlledDispatch')
+ const c=createControlledDispatch({projectTasks:tasks,projectWork:f.work,bootCommit:f.head,enabled:()=>true,executionReady:()=>true})
+ const call=(target,input)=>c.handle(OWNER,{target,input}),req={op:'request',bootCommit:f.head,requestId:randomUUID(),goal:'Fix increment. Keep dependency read-only; isolated candidate only.'}
+ const r=await call('task',req),id=r.run.id;assert.equal((await call('task',{...req,requestId:randomUUID()})).run.id,id);assert.equal(f.budget.status(id).state,'not_activated')
+ const s=await call('task',{op:'scope',id,bootCommit:f.head,criteria:['Increment by one'],editable:['src/logic.js'],readonly:['src/readonly.js']})
+ await call('task',{op:'authorize',id,hash:s.approval.hash,nonce:s.approval.nonce});await tasks.settled();const a=await call('task',{op:'get',id}),thread=a.run.codexThread.id
+ assert.equal(f.budget.status(id).helper.dispatched,2);await call('task',{op:'approve',id,hash:a.approval.hash,nonce:a.approval.nonce})
+ const p=await call('task',{op:'prepare',id,requestId:randomUUID()}),wid=p.work.run.id;assert.equal(p.work.run.codexThread.id,thread)
+ const tampered=f.workStore.get(wid);tampered.codexThread.id=randomUUID();f.workStore.save(tampered)
+ await assert.rejects(call('work',{op:'approve',id:wid,hash:p.work.approval.hash,nonce:p.work.approval.nonce}),/approval_unavailable/);assert.equal(f.budget.status(id).helper.dispatched,2)
+ tampered.codexThread.id=thread;f.workStore.save(tampered);const fresh=await call('work',{op:'renew',id:wid})
+ await call('work',{op:'approve',id:wid,hash:fresh.approval.hash,nonce:fresh.approval.nonce});await f.work.settled()
+ const result=await call('work',{op:'get',id:wid});assert.equal(result.run.state,'completed');assert.equal(result.run.codexThread.id,thread);assert.equal(result.run.appliedToLive,false);assert.equal(f.work.get(OWNER,wid).repositoryPromotion.state,'held');assert.equal(f.promotion,0)
+ const status=f.budget.status(id);assert.equal(status.helper.dispatched,4);assert.equal(status.helper.limit,8)
+ const reload=createRepositoryBudget({dir:path.join(f.dir,'usage')});assert.equal(reload.status(id).helper.dispatched,4)
+ await f.budget.run(id,async()=>{for(let i=0;i<4;i++)await native('gpt-6.1-sol','high',{})})
+ await assert.rejects(f.budget.run(id,()=>native('gpt-6.1-sol','high',{})),/usage_limit_reached/)
+ assert.equal(reload.status(id).helper.reserved,8);assert.equal(fs.readFileSync(path.join(f.root,'src/logic.js'),'utf8'),'module.exports=value=>value;\n')
 })

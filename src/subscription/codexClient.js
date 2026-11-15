@@ -299,7 +299,9 @@ async function completeUnobserved (options, input) {
   if (!REASONING_EFFORTS.includes(effort)) throw new SubscriptionError('subscription_invalid_output')
   return withClient(options, async rpc => {
     const allowance = await preflight(rpc, { ...options, model, effort })
-    const params = threadParams(options.cwd, input.system, model)
+    const visible=options.visibleWork
+    if(visible&&(visible.purpose!==undefined&&!['coding','test_draft'].includes(visible.purpose)||visible.cwd!==undefined&&(!require('node:path').isAbsolute(visible.cwd)||visible.cwd.includes('\0'))))throw new SubscriptionError('subscription_invalid_output')
+    const params = threadParams(visible?.cwd||options.cwd, input.system, model)
     if(options.visibleWork){
       if(!require('../actions/contract').ID.test(options.visibleWork.id||'')||typeof options.visibleWork.created!=='function')throw new SubscriptionError('subscription_invalid_output')
       params.ephemeral=false;params.serviceName='xiangxiang-registered-work'
@@ -314,7 +316,7 @@ async function completeUnobserved (options, input) {
     if(options.visibleWork){
       if(resumeId&&thread.thread.id!==resumeId)throw new SubscriptionError('subscription_invalid_output')
       await rpc.request('thread/name/set',{threadId:thread.thread.id,name:'Xiangxiang work '+options.visibleWork.id})
-      await options.visibleWork.created({id:thread.thread.id,workId:options.visibleWork.id,model,effort,source:'actual_coding_provider_thread',modelDispatched:false})
+      await options.visibleWork.created({id:thread.thread.id,workId:options.visibleWork.id,model,effort,source:visible.purpose==='test_draft'?'actual_test_draft_provider_thread':'actual_coding_provider_thread',modelDispatched:false})
     }
     const mcp = await rpc.request('mcpServerStatus/list', { threadId: thread.thread.id, limit: 100 })
     if (!mcp || !Array.isArray(mcp.data) || mcp.nextCursor || mcp.data.some(s => Object.keys(s.tools || {}).length > 0)) throw new SubscriptionError()

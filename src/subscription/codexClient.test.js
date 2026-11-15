@@ -149,6 +149,16 @@ test('an advertised execution tool prevents any model turn', async () => {
   assert.equal(closed, true)
 })
 
+test('visible test draft and coding resume the same persistent provider thread in the fixed App project', async()=>{
+ const {randomUUID}=require('node:crypto'),id=randomUUID(),threadId=randomUUID(),events=new EventEmitter(),calls=[],created=[],base=rpc({'model/list':{data:[{model:'gpt-6.1-sol'}],nextCursor:null}})
+ const client={events,notify(){},close(){},async request(method,params){calls.push({method,params});if(method==='config/read')return{config:{}};if(['thread/start','thread/resume'].includes(method))return{model:'gpt-6.1-sol',modelProvider:'openai',thread:{id:threadId}};if(method==='mcpServerStatus/list')return{data:[]};if(method==='turn/start'){queueMicrotask(()=>{events.emit('notification',{method:'item/completed',params:{threadId,item:{type:'agentMessage',phase:'final_answer',text:'{"changes":[]}'}}});events.emit('notification',{method:'turn/completed',params:{threadId,turn:{status:'completed'}}})});return{}}return base.request(method)}}
+ const visibleWork={id,purpose:'test_draft',cwd:'C:/isolated-app-project',created:async v=>created.push(v)},options={cwd:'empty',connect:()=>client,visibleWork},input={prompt:'Approved scope only',model:'gpt-6.1-sol',effort:'high'}
+ await complete(options,input);assert.equal(calls.find(c=>c.method==='thread/start').params.ephemeral,false);assert.equal(calls.find(c=>c.method==='thread/start').params.cwd,visibleWork.cwd);assert.equal(created[0].source,'actual_test_draft_provider_thread');assert.equal(created[0].modelDispatched,false)
+ await complete({...options,visibleWork:{...visibleWork,purpose:'coding',resumeThreadId:threadId}},input)
+ assert.equal(calls.filter(c=>c.method==='thread/start').length,1);assert.equal(calls.filter(c=>c.method==='thread/resume').length,1);assert.equal(calls.filter(c=>c.method==='turn/start').length,2);assert.equal(created[1].id,threadId);assert.equal(created[1].source,'actual_coding_provider_thread')
+ for(const c of calls.filter(c=>['thread/start','thread/resume'].includes(c.method))){assert.equal(c.params.sandbox,'read-only');assert.equal(c.params.allowProviderModelFallback,false);assert.deepEqual(c.params.dynamicTools,[])}
+})
+
 test('status and completion use the host credit policy, and recheck depleted credits before any turn', async () => {
   let hasCredits = true; let turns = 0
   const options = { cwd: 'empty', allowCredits: true, connect: () => {

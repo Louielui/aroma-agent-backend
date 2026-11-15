@@ -16,6 +16,7 @@ function createOwnerCodeSource (repo, bootCommit) {
 function main () {
   const repo = path.resolve(__dirname, '../..')
   const env = require('dotenv').parse(fs.readFileSync(path.join(repo, '.env')))
+  require('../../src/localBrain/dispatchProfile').apply(env,require('../../src/localBrain/deploymentProfile.json'))
   const executable = env.CODEX_CHAT_EXECUTABLE
   if (!executable || !path.isAbsolute(executable) || !fs.existsSync(executable)) throw new Error('Configure an absolute CODEX_CHAT_EXECUTABLE path')
   const chatExecutable = env.CODEX_CHAT_MODEL_EXECUTABLE || executable
@@ -56,10 +57,12 @@ function main () {
     privateRefs: ['refs/heads/backup/imagine-20261012-dirty-checkpoint'], resolveRecipe, isolated: isolatedReceipt, invocationLedger })
   const observeLive = require('../../src/core/projectWork/liveVerification').createClient({token:env.HUB_TOKEN || process.env.HUB_TOKEN})
   const threadTitles=require('../../src/subscription/workThreadTitles')
+  const appProjectRoot=path.join(require('node:os').homedir(),'Documents','ChatGPT','香香派工')
+  const appProjectReady=()=>{try{return fs.statSync(appProjectRoot).isDirectory()}catch{return false}}
   const workTitles=threadTitles.createPublisher({client:threadTitles.createClient({executable:chatExecutable,cwd}),store:require('../../src/actions/store').createStore({dir:path.join(workerRoot,'project-thread-progress')})})
   const projectWork = require('../../src/core/projectWork/service').createProjectWork({
     source: projectSource, providers: workerProviders, enabled, invocationLedger, repositoryBudget, observeLive, resolveRecipe, catalogueRecipes: taskRegistry.catalogue,
-    visibleCodexWork:true,onProgress:value=>{workTitles.update(value).catch(()=>{/* The persisted title receipt remains unavailable. */})},
+    visibleCodexWork:true,appProjectRoot,resolveCodexThread:id=>taskStore.get(id)?.codexThread||null,onProgress:value=>{workTitles.update(value).catch(()=>{/* The persisted title receipt remains unavailable. */})},
     // Recovery cannot enqueue extra indexing calls outside its original budget.
     // The existing Owner setting must already be paused; this never changes it.
     recoveryReady: () => {if(!memoryRuntime)return true;const capture=memoryRuntime.status(),consolidation=memoryRuntime.consolidation.status();return capture.enabled===false && capture.active===false && consolidation.busy===false},
@@ -74,7 +77,7 @@ function main () {
     loader: require('../../src/core/projectWork/adoptionLoader').createLoader({ root: repo, resolveRecipe }),
     onEvent: value => memoryRuntime && memoryRuntime.event('worker', 'project-adoption:' + value.id + ':' + value.stage + ':' + value.at, JSON.stringify(value), 'measured_result', value.at) })
   const codexClient = require('../../src/subscription/codexClient')
-  const projectTasks = require('../../src/core/projectTasks/service').createTasks({ store: taskStore, enabled, invocationLedger,
+  const projectTasks = require('../../src/core/projectTasks/service').createTasks({ store: taskStore, enabled, invocationLedger, visibleCodexWork:true,appProjectRoot,onProgress:value=>{workTitles.update(value).catch(()=>{})},
     repository:{inventory:repositoryInventory,budget:repositoryBudget,otherActive:()=>projectWork.isActive()||projectAdoption.isActive()||workerFlow.isActive(),lock:()=>repositoryLocks.lockRun('d970a642-61b1-47a1-8baf-6b33e910ac05'),provider:require('../../src/core/projectTasks/provider').createDraftProvider({client:codexClient,options:{...repairClient,allowCredits:false},effort:'high'})},
     sourceFor: definition => require('../../src/core/projectWork/source').createSource({ root: repo, resolveRecipe: id => { if (id !== definition.workOrder.recipe) throw Error('invalid_request'); return definition } }),
     provider: require('../../src/core/projectTasks/provider').createDraftProvider({ client: codexClient, options: repairClient }),
@@ -88,7 +91,8 @@ function main () {
   const procurementGateway=require('../../src/context/procurementContext').createRuntime({env:procurementEnv,store:schedulerActionStore,controller:()=>procurement})
   procurement=require('../../src/actions/procurement').createProcurement({store:schedulerActionStore,scheduler:require('../../src/actions/procurementWindows').createScheduler(),gateway:procurementGateway,enabled:()=>procurementEnv.XIANGXIANG_PROCUREMENT_SCHEDULER==='on'})
   const schedulerActions = require('../../src/actions/service').createGateway({store:schedulerActionStore,procurement,usageBudget:require('../../src/actions/usageBudget').owner()})
-  const server = createBridge({ schedulerActions, backgroundModel: require('../../src/subscription/chatModels').DEFAULT_BRAIN_MODEL, token: env.CODEX_CHAT_BRIDGE_TOKEN, clientOptions: { executable: chatExecutable, cwd, allowCredits: env.CODEX_CHAT_ALLOW_CREDITS === 'true' }, memoryClientOptions: { executable, cwd, allowCredits: env.CODEX_CHAT_ALLOW_CREDITS === 'true' }, workerFlow, workerProviders, websiteEnabled: env.XIANGXIANG_WEBSITE_FLOW === 'on', memoryEnabled: env.XIANGXIANG_MEMORY === 'on',
+  const controlledDispatch=require('../../src/subscription/controlledDispatch').createControlledDispatch({projectTasks,projectWork,enabled:()=>env.XIANGXIANG_CONTROLLED_DISPATCH==='on'&&enabled()&&appProjectReady(),otherActive:target=>target==='task'?projectWork.isActive()||projectAdoption.isActive()||workerFlow.isActive():projectTasks.isActive()||projectAdoption.isActive()||workerFlow.isActive(),executionReady:()=>{if(!memoryRuntime)return true;const s=memoryRuntime.status(),c=memoryRuntime.consolidation.status();return s.enabled===false&&s.active===false&&c.busy===false},bootCommit:require('../../src/governance/bootCommit').BOOT_COMMIT})
+  const server = createBridge({ controlledDispatch, schedulerActions, backgroundModel: require('../../src/subscription/chatModels').DEFAULT_BRAIN_MODEL, token: env.CODEX_CHAT_BRIDGE_TOKEN, clientOptions: { executable: chatExecutable, cwd, allowCredits: env.CODEX_CHAT_ALLOW_CREDITS === 'true' }, memoryClientOptions: { executable, cwd, allowCredits: env.CODEX_CHAT_ALLOW_CREDITS === 'true' }, workerFlow, workerProviders, websiteEnabled: env.XIANGXIANG_WEBSITE_FLOW === 'on', memoryEnabled: env.XIANGXIANG_MEMORY === 'on',
     publicSearchEnabled: env.PUBLIC_SEARCH_PROVIDER === 'claude-subscription',
     memoryStore: require('../../src/memory/structuredStore').createStructuredStore({ local: true }),
     schedulerReader: require('../../src/home/schedulerWitness').readWindowsSchedulerWitness,

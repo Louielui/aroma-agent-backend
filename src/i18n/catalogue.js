@@ -967,6 +967,8 @@ const CATALOGUE = Object.freeze({
   'projectTask.state.awaitingScope': {"zh":"待選取來源及驗收條件；尚未送模型","en":"Select sources and acceptance criteria; no model sent"},
   'projectTask.state.awaitingScopeApproval': {"zh":"待批准來源及用量；尚未送模型","en":"Awaiting source and usage approval; no model sent"},
   'projectTask.chatPrepared': {"zh":"已建立或接續工作單 {id}。已保存完整要求；本次沒有送出模型或執行修正。請在原工作單核對狀態與下一步，避免重複派工。","en":"Created or continued work order {id}. The complete request is retained; this intake sent no model call or code repair. Review status and next action on the same work order."},
+  'projectTask.codexThread': {zh:'Codex 工作與接入證據',en:'Codex thread and connection evidence'},
+  'localBrain.controlledDispatchReady': {zh:'本機模型已就緒；受控 Codex 接頭已連線，執行仍須範圍與用量批准。',en:'Local model ready. Controlled Codex connection available; execution requires scope and usage approval.'},
   'projectTask.chatLink': {"zh":"開啟工作單","en":"Open work order"},
   'projectTask.chatError': {"zh":"工作單未確認接收：{reason}。沒有自動重試或改派其他任務。","en":"Work order receipt is unconfirmed: {reason}. No automatic retry or substitute task."},
   'projectTask.renew': {zh:'重新核對並開啟批准卡（不重跑模型）',en:'Recheck and open approval (no model replay)'},

@@ -3,6 +3,8 @@ const fs = require('node:fs'), path = require('node:path'), { t, currentLocale }
 function buildHtml () {
   const labels = {
     renew:t('projectTask.renew'),
+    controlled:require('../../adapters/ControlledDispatchAdapter').enabled(process.env),
+    codexThread:t('projectTask.codexThread'),
     title: t('projectTask.title'),
     repositoryProfile:t('projectTask.repositoryProfile'),
     repositoryLimits:t('projectTask.repositoryLimits'),

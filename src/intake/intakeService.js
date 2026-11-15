@@ -839,7 +839,7 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
   const sectionPre = (demo && typeof opts?.sectionPreamble === 'string') ? opts.sectionPreamble : ''
   // Local runtime restrictions also travel when the optional planner is off.
   // Product implementation flags cannot make disabled subscription workers live.
-  const localCapabilityContext=localMode&&opts.interactionMode==='chat'?capabilityBlock({localOnly:true})+'\n\n':''
+  const localCapabilityContext=localMode&&opts.interactionMode==='chat'?capabilityBlock({localOnly:true,controlledDispatchConfigured:require('../adapters/ControlledDispatchAdapter').enabled(process.env)})+'\n\n':''
   const baseEffPrompt = localCapabilityContext + (demo ? (sectionPre + ctx.preamble + prompt) : prompt)
 
   // ── CONTEXT SHARING (v1 — supersedes the v0 boundary) ──────────────────────

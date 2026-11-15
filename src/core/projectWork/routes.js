@@ -1,7 +1,7 @@
 'use strict'
-const express = require('express'), { localRequest } = require('../../adapters/CodexSubscriptionAdapter')
+const express = require('express')
 const { sameOrigin } = require('../operating/chatRequest'), { ID } = require('../operating/runStore'), { buildHtml } = require('./view')
-function createProjectRouter ({ bootCommit, env = process.env, request = input => localRequest('/project-work', input, env) } = {}) {
+function createProjectRouter ({ bootCommit, env = process.env, request = input => require('../../adapters/ControlledDispatchAdapter').projectRequest('work', input, env) } = {}) {
   const router = express.Router()
   router.use(['/project-work', '/api/v1/project-work'], (req, res, next) => { if (env.READ_ACCESS !== 'on') return res.status(503).json({ error: 'read_access_disabled' }); next() })
   router.get('/project-work', (req, res) => res.set('Cache-Control', 'no-store').type('html').send(buildHtml()))
