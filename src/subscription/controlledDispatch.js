@@ -19,9 +19,12 @@ function createControlledDispatch({projectTasks,projectWork,enabled=()=>false,ex
  const owner=a=>{if(a?.id!=='owner'||a.role!=='owner')throw Error('permission_denied')}
  const task=r=>{if(!r||r.kind!=='repository_repair'||r.workflow!=='project_task')throw Error('controlled_scope_required');return r}
  const work=r=>{if(!r?.workOrder||!ID.test(r.workOrder.usageRoot||'')||r.workOrder.delivery!=='owner_deployment_package_required')throw Error('controlled_scope_required');return r}
+ const ready=fn=>{try{return fn()===true}catch{return false}}
+ const readOnly=new Set(['list','get','find','evidence','inventory','cancel'])
+ const requireLane=local=>{if(!ready(local?localEnabled:subscriptionReady))throw Error(local?'local_coding_disabled':'controlled_dispatch_unavailable')}
  async function handle(actor,b){
   owner(actor);if(!validInput(b))throw Error('invalid_request')
-  if(b.op==='status')return{component:'controlled-dispatch',protocol:'controlled-repository-dispatch-v1',state:enabled()?'connected':'disabled',checkedAt:new Date().toISOString(),bootCommit,inferenceStarted:false,requiresScopeApproval:true,requiresUsageApproval:true,requiresCodingApproval:true,automaticDeployment:false,cloudFallback:false,workerInference:'explicit_subscription_work_only',localCoding:{enabled:localEnabled(),selection:require('../workers/execution/localCodingProvider').SELECTION,requiresSeparateApproval:true,automaticFallback:false}}
+  if(b.op==='status')return{component:'controlled-dispatch',protocol:'controlled-repository-dispatch-v1',state:enabled()&&ready(subscriptionReady)?'connected':'disabled',subscriptionReady:ready(subscriptionReady),checkedAt:new Date().toISOString(),bootCommit,inferenceStarted:false,requiresScopeApproval:true,requiresUsageApproval:true,requiresCodingApproval:true,automaticDeployment:false,cloudFallback:false,workerInference:'explicit_subscription_work_only',localCoding:{enabled:ready(localEnabled),state:enabled()&&ready(localEnabled)?'connected':'disabled',selection:require('../workers/execution/localCodingProvider').SELECTION,requiresSeparateApproval:true,automaticFallback:false}}
   if(!enabled())throw Error('controlled_dispatch_disabled')
   const v=b.input,{op,...body}=v;if(v.bootCommit&&v.bootCommit!==bootCommit)throw Error('source_changed')
   if(!['list','get','find','evidence','cancel','request','continue','inventory'].includes(op)&&otherActive(b.target))throw Error('worker_busy')
@@ -30,14 +33,15 @@ function createControlledDispatch({projectTasks,projectWork,enabled=()=>false,ex
    if(!idle)throw Error('controlled_background_not_idle')
   }
   if(b.target==='task'){
-   if(v.op==='request'&&(v.execution==='local'?!localEnabled():!subscriptionReady()))throw Error(v.execution==='local'?'local_coding_disabled':'controlled_dispatch_unavailable')
+   if(v.op==='request')requireLane(v.execution==='local')
    if(v.op==='list'){const r=projectTasks.list(actor);return{...r,runs:r.runs.filter(x=>{const value=projectTasks.get(actor,x.id).run;if(!value)throw Error('controlled_dispatch_unavailable');return value.kind==='repository_repair'&&value.workflow==='project_task'})}}
    if(v.op==='find'){const r=projectTasks.find(actor,body);if(r.run)task(r.run);return r}
-   if(v.op!=='request')task(projectTasks.get(actor,v.id).run)
+   if(v.op!=='request'){const r=task(projectTasks.get(actor,v.id).run);if(!readOnly.has(v.op))requireLane(r.input?.execution==='local')}
    const result=await projectTasks[op](actor,['get','cancel'].includes(op)?body.id:body);if(result.run)task(result.run);return result
   }
   if(v.op==='list')return presentation.list(projectWork.list(actor).filter(r=>ID.test(r?.workOrder?.usageRoot||'')&&r.workOrder.delivery==='owner_deployment_package_required'))
   const r=work(projectWork.get(actor,v.id))
+  if(!readOnly.has(v.op))requireLane(r.workOrder.execution==='local')
   if(v.op==='get')return{run:presentation.present(r)}
   if(v.op==='evidence')return{evidence:presentation.evidence(r,v)}
   const result=await projectWork[op](actor,op==='cancel'?body.id:body)

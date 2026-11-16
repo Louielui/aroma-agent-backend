@@ -6,12 +6,19 @@ const usage=require('../../src/actions/usageBudget'),profile=usage.LOCAL_CODING_
 const selection=require('../../src/workers/execution/localCodingProvider').SELECTION
 const sha=x=>crypto.createHash('sha256').update(x).digest('hex')
 function git(args){return cp.execFileSync('git',args,{cwd:root,encoding:'utf8',windowsHide:true,timeout:15000,stdio:['ignore','pipe','pipe']}).trim()}
+// Both case/separator spelling and directory junctions must resolve to the same
+// protected formal checkout. Missing identity fails closed before Owner input.
+function isFormalRoot(candidate){
+ const formal='C:/Aroma/aroma-agent-backend',normal=p=>path.win32.normalize(p).toLowerCase()
+ if(normal(candidate)===normal(formal))return true
+ try{return normal(fs.realpathSync.native(candidate))===normal(fs.realpathSync.native(formal))}catch{throw Error('clean_isolated_candidate_required')}
+}
 function material(){const files=['src/actions/usageBudget.js','src/actions/localAcceptancePolicy.js','src/adapters/LocalAdapter.js','src/workers/execution/isolatedCoding.js','src/workers/execution/localCodingProvider.js','src/workers/execution/windowsSandbox.js','src/workers/execution/sandboxGuest.cjs','src/workers/execution/packageLimits.js','src/localBrain/codingFixtures.js','src/localBrain/codingGit.js','src/localBrain/deploymentProfile.json','scripts/localBrain/code.cjs'];const value={version:1,sourceCommit:git(['rev-parse','HEAD']),selection,profile,orders:fixtures,sourceHashes:Object.fromEntries(files.map(p=>[p,sha(fs.readFileSync(path.join(root,p)))])),scope:'synthetic projects only; candidate only; no deployment, cloud, websites, background or formal-data access'};return{value,hash:sha(JSON.stringify(value))}}
 async function main(argv=process.argv.slice(2)){
   if(argv.length!==1||!['inspect','run'].includes(argv[0]))throw Error('use_inspect_or_run')
   const plan=material();console.log(JSON.stringify({state:'PREPARED_NOT_ACTIVATED',hash:plan.hash,sourceCommit:plan.value.sourceCommit,selection,rootId:profile.id,tasks:2,helperCap:4,cloud:0,website:0,orders:Object.keys(fixtures)}))
   if(argv[0]==='inspect')return
-  if(root.toLowerCase()==='c:\\aroma\\aroma-agent-backend'||!git(['branch','--show-current']).startsWith('codex/')||git(['status','--porcelain']))throw Error('clean_isolated_candidate_required')
+  if(isFormalRoot(root)||!git(['branch','--show-current']).startsWith('codex/')||git(['status','--porcelain']))throw Error('clean_isolated_candidate_required')
   if(!process.stdin.isTTY||!process.stdout.isTTY)throw Error('interactive_owner_required')
   const readline=require('node:readline/promises'),rl=readline.createInterface({input:process.stdin,output:process.stdout})
   let answer;try{answer=await rl.question('Two synthetic tasks, at most four Qwen3.5 9B calls shared across both tasks and repairs; no cloud, deployment or old ledger use. Type LOCAL-CODE '+plan.hash+' to authorize this exact material: ')}finally{rl.close()}
@@ -41,4 +48,4 @@ async function main(argv=process.argv.slice(2)){
   console.log(JSON.stringify({state:'TESTED_LOCAL_CANDIDATES_REVIEW_REQUIRED',runDir,tasks:results.length,helper:budget.status().helper,cloudRequests:0,independentReview:'not_performed',appliedToLive:false}))
 }
 if(require.main===module)main().catch(e=>{console.error(/^[a-z_]+$/.test(e.code||e.message)?e.code||e.message:'local_coding_failed');process.exitCode=1})
-module.exports={main,material}
+module.exports={main,material,isFormalRoot}
