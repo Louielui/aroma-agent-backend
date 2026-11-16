@@ -59,4 +59,34 @@ function parse(text,input){
  const review=contract.parse(JSON.stringify({verdict:r.verdict,summary:r.summary,findings:findings.map(({file,line,message})=>({file,line,message}))}),input.workOrder.allowedFiles)
  return{...review,reviewBasis:{stage:r.stage,evidenceProtocol:'host_anchor_v1',coverage,baseline,findingEvidence:findings,rawResponseSha256:sha(text)}}
 }
-module.exports={prepare,parse}
+// Short wire references are meaningful only with the full version-bound packet
+// hash. Expand them back into the original evidence contract before validation.
+function prepareCompact(input){
+ const full=prepare(input),packet=structuredClone(full.packet),binding=sha(JSON.stringify(full.packet)),anchors=[]
+ for(const f of packet.target.files)for(const line of f.lines){anchors.push(line.anchorId);line.anchorId=anchors.length}
+ packet.evidenceProtocol='host_anchor_compact_v2';packet.binding=binding
+ const item=properties=>({type:'object',additionalProperties:false,required:Object.keys(properties),properties})
+ const anchor={type:'integer',minimum:1,maximum:anchors.length},status={type:'string',enum:['covered','missing','uncertain']},reason={type:'string',minLength:1,maxLength:320}
+ const schema=item({binding:{type:'string',const:binding},verdict:{type:'string',enum:['pass','changes_requested']},summary:{type:'string',minLength:1,maxLength:500},findings:{type:'array',maxItems:50,items:item({anchor,message:reason})},coverage:{type:'array',minItems:packet.criteria.length,maxItems:packet.criteria.length,items:item({criterion:{type:'integer',minimum:1,maximum:packet.criteria.length},status,checks:{type:'array',minItems:1,maxItems:100,items:item({id:{type:'integer',minimum:1},status,anchors:{type:'array',maxItems:50,items:anchor},reason})}})},baseline:item({anchor,expectation:{type:'string',enum:['expected_failure','not_established']},reason})})
+ return{packet,schema,system:SYSTEM+' Compact wire protocol: copy binding exactly. anchorId values are packet-local integers, not line numbers. Return each criterion and every listed check exactly once. Criterion status must agree with its checks; cite minimal sufficient assertion IDs on EACH check, not a repeated full list. The host unions those check references for criterion subject validation. Give a brief specific reason per check (at most 320 characters), one short summary and no duplicated criterion-level anchors or prose. Negative or uncertain assessments must remain negative or uncertain.',anchors}
+}
+function parseCompact(text,input){
+ const p=prepareCompact(input);let r
+ if(typeof text!=='string'||text.length>50000)invalid('envelope',text)
+ try{r=JSON.parse(text)}catch{invalid('json',text)}
+ if(!exact(r,['binding','verdict','summary','findings','coverage','baseline'])||r.binding!==p.packet.binding||!Array.isArray(r.coverage)||!Array.isArray(r.findings)||typeof r.summary!=='string'||r.summary.length>500)invalid('schema',text)
+ const anchor=id=>{if(!Number.isInteger(id)||id<1||id>p.anchors.length)invalid('finding',text);return p.anchors[id-1]}
+ const reason=v=>{if(typeof v!=='string'||!v.trim()||v.length>320)invalid('finding',text);return v}
+ const coverage=r.coverage.map(c=>{
+  if(!exact(c,['criterion','status','checks'])||!Array.isArray(c.checks))invalid('finding',text)
+  const checks=c.checks.map(k=>{if(!exact(k,['id','status','anchors','reason'])||!Array.isArray(k.anchors))invalid('finding',text);return{...k,anchors:k.anchors.map(anchor),reason:reason(k.reason)}})
+  return{criterion:c.criterion,status:c.status,anchors:c.status==='covered'?[...new Set(checks.flatMap(k=>k.anchors))]:[],reason:'Criterion assessment is supported by the individually retained check assessments.',checks}
+ })
+ const findings=r.findings.map(f=>{if(!exact(f,['anchor','message']))invalid('finding',text);return{anchor:anchor(f.anchor),message:reason(f.message)}})
+ if(!exact(r.baseline,['anchor','expectation','reason']))invalid('finding',text)
+ const expanded={stage:'test_draft',verdict:r.verdict,summary:r.summary,findings,coverage,baseline:{...r.baseline,anchor:anchor(r.baseline.anchor),reason:reason(r.baseline.reason)}}
+ const out=parse(JSON.stringify(expanded),input)
+ out.reviewBasis.wireProtocol='host_anchor_compact_v2';out.reviewBasis.binding=p.packet.binding;out.reviewBasis.rawResponseSha256=sha(text)
+ return out
+}
+module.exports={prepare,parse,prepareCompact,parseCompact}

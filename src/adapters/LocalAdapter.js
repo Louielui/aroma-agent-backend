@@ -53,11 +53,12 @@ class LocalAdapter extends LLMAdapter {
   async complete(prompt, opts = {}) {
     const start = performance.now(), callId = require('node:crypto').randomUUID()
     let sent = false, permit = null, owned = false
+    let text = '', firstTokenMs = null, final = null, maxTokens = null, preparationMs = null, limitKind = null
     try {
     if(this.expectedDigest)await this.preflight()
     // Conservative UTF-8 bound: never silently let Ollama truncate the input.
     if (opts.maxTokens !== undefined && (!Number.isSafeInteger(opts.maxTokens) || opts.maxTokens <= 0)) throw new LocalModelError('local_output_budget_invalid')
-    const maxTokens = Math.min(opts.maxTokens || 2048, 4096)
+    maxTokens = Math.min(opts.maxTokens || 2048, 4096)
     if (opts.responseFormat && (opts.responseFormat.type !== 'json_schema' || !opts.responseFormat.schema)) throw new LocalModelError('local_schema_unsupported')
     // Ollama's format constrains decoding, but does not teach the field meanings.
     // Include the host schema in the actual model input as well as the grammar.
@@ -83,9 +84,9 @@ class LocalAdapter extends LLMAdapter {
     const budget=require('../actions/usageBudget')
     ;({permit,owned}=budget.nativePermit('helper',{model:this.model,effort:'auto',digest:this.expectedDigest,phase:opts.invocationPhase||'helper'}))
     if(owned)permit.capture('local_model_input',{callId,model:this.model,digest:this.expectedDigest,phase:opts.invocationPhase||'helper',messages})
-    const preparationMs = performance.now()-start
+    preparationMs = performance.now()-start
     this.emit({type:'model_start',callId,model:this.model,phase:opts.invocationPhase || 'helper',preparationMs,inputBound})
-    let text = '', pending = '', firstTokenMs = null, final = null, response
+    let pending = '', response
       const deadline = AbortSignal.timeout(Math.max(1,Math.min(180000,permit?.remainingMs?.()??180000)))
       const signal = AbortSignal.any([deadline,opts.signal,context?.signal].filter(Boolean))
       if(signal.aborted)throw new LocalModelError('local_cancelled')
@@ -101,7 +102,7 @@ class LocalAdapter extends LLMAdapter {
         if (row.message?.content) {
           if (firstTokenMs === null) firstTokenMs = performance.now() - start
           text += row.message.content
-          if (Buffer.byteLength(text, 'utf8') > 262144) throw new LocalModelError('local_output_limit')
+          if (Buffer.byteLength(text, 'utf8') > 262144) { limitKind = 'bytes'; throw new LocalModelError('local_output_limit') }
           // Raw deltas are provisional; only the existing guards can publish a final answer.
           this.emit({type:'model_delta',callId,phase:opts.invocationPhase || 'helper',text:row.message.content,provisional:true})
           if(opts.responseFormat?.schema?.properties?.nextRead&&opts.responseFormat.schema.properties.reply){
@@ -119,7 +120,7 @@ class LocalAdapter extends LLMAdapter {
       }
       pending += decoder.decode(); consume(pending)
       if (!final || !text.trim()) throw new LocalModelError('local_incomplete_response')
-      if (final.done_reason === 'length') throw new LocalModelError('local_output_limit')
+      if (final.done_reason === 'length') { limitKind = 'tokens'; throw new LocalModelError('local_output_limit') }
       if(opts.responseFormat?.schema?.properties?.memoryReferences){
         try{text=require('../localBrain/evidenceSchema').projectMemoryReferences(text,opts.responseFormat.schema)}catch{throw new LocalModelError('local_invalid_memory_references')}
       }
@@ -129,7 +130,15 @@ class LocalAdapter extends LLMAdapter {
       return {text,model:'local:' + this.model,billing:'local',usage:{inputTokens:timing.inputTokens,outputTokens:timing.outputTokens,totalTokens:timing.inputTokens+timing.outputTokens},latencyMs:timing.totalMs,timing}
     } catch(e) {
       const safe = e.localModelFailure||require('../actions/usageBudget').ERRORS.has(e.code) ? e : new LocalModelError(e.name === 'TimeoutError' || e.name === 'AbortError' ? 'local_timeout_or_cancelled' : 'local_transport_or_protocol_error')
-      if(owned)try{permit.finish(safe)}catch(audit){throw audit}
+      // Failure text and arbitrary server errors may contain credentials. Keep
+      // only bounded numeric/enum metadata and a hash of the observed text.
+      if(sent){
+        const nonnegative=v=>typeof v==='number'&&Number.isFinite(v)&&v>=0?v:null
+        const diagnostic={kind:'local_failure_diagnostic',callId,code:safe.code,limitKind,maxOutputTokens:maxTokens,outputBytes:Buffer.byteLength(text),outputSha256:require('node:crypto').createHash('sha256').update(text).digest('hex'),firstTokenMs,preparationMs,totalMs:performance.now()-start,done:final?.done===true,doneReason:['length','stop'].includes(final?.done_reason)?final.done_reason:null,inputTokens:Number.isSafeInteger(final?.prompt_eval_count)?nonnegative(final.prompt_eval_count):null,outputTokens:Number.isSafeInteger(final?.eval_count)?nonnegative(final.eval_count):null,loadMs:nonnegative(final?.load_duration)===null?null:final.load_duration/1e6,promptMs:nonnegative(final?.prompt_eval_duration)===null?null:final.prompt_eval_duration/1e6,generationMs:nonnegative(final?.eval_duration)===null?null:final.eval_duration/1e6}
+        safe.localDiagnostic=diagnostic
+        if(owned){let auditError;try{permit.capture('local_model_failure',diagnostic)}catch(e){auditError=e}try{permit.finish(auditError||safe)}catch(e){throw e}if(auditError)throw auditError}
+        this.emit({type:'model_failure_diagnostic',...diagnostic})
+      }else if(owned)try{permit.finish(safe)}catch(audit){throw audit}
       this.emit({type:'model_failed',callId,code:safe.code,sent,elapsedMs:performance.now()-start}); throw safe
     }
   }

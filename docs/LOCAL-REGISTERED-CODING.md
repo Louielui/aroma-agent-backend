@@ -45,6 +45,21 @@ decisions. No existing acceptance ledger is resumed, reset, extended or migrated
   supplied incorrect expected values; its review had wrong whitespace/line anchors
   and title-only coverage. That failure and its two-call paused ledger remain
   immutable. Offline fixture replays validate the new contract, not model learning.
+  The PR175 native acceptance generated three tests, then stopped during review
+  with `local_output_limit` after two local sends. Its paused root and unused six
+  calls are retained. No review verdict, coding candidate or Sandbox result was
+  obtained. The failed final model metadata was not recorded, so the historical
+  exact limit branch cannot be inferred from the shared error code.
+- Draft review now uses `host_anchor_compact_v2` on the wire: short packet-local
+  integers plus a required full SHA256 of the complete canonical review packet.
+  Full source/test lines, criterion text, every sub-check and explicit criterion
+  statuses remain. The model assesses each sub-check once; the host unions its
+  references for criterion subject validation and restores the original immutable
+  anchor, exact quote and line before applying the existing validator. Missing,
+  duplicate, forged, unrelated and stale evidence still fails closed. Compact
+  negative/uncertain judgments cannot become approval. The canonical receipt
+  retains both wire protocol and version binding. This is an offline format repair,
+  not a new native-model judgment or a semantic completeness guarantee.
 - Only `.js`, `.cjs` and `.json` under the existing backend source inventory are
   eligible, excluding browser/design assets. Existing three-editable-file limit
   remains. Local packages have at most ten source files and 24 KB including tests.
@@ -68,6 +83,13 @@ unknown phases, wrong digest and cloud models are refused before inference. Ther
 is no local extension or recovery quota path. Restart, concurrent requests and
 child work share the same persisted count; unresolved sends block continuation.
 Terminal work pauses the root and retains failures and unused capacity.
+Failed local sends now retain a bounded diagnostic through the same allowance
+evidence store: token-versus-byte limit branch, observed output bytes/hash, safe
+final token counts and timings when available. Failure text, HTTP bodies and
+arbitrary provider errors are not copied into that diagnostic. Missing terminal
+metadata stays null. The 4,096-token and 262,144-byte output limits remain; a
+diagnostic persistence failure settles the attempt as failed and blocks success.
+Neither output truncation nor a diagnostic error starts another model call.
 
 Only the shared Windows Sandbox executor runs generated tests/code. Baseline must
 fail genuinely, accepted tests must pass without skips and the existing source,
