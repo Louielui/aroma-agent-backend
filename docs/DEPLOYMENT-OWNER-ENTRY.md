@@ -60,6 +60,19 @@ Prepared readiness evidence is valid for at most 24 hours; source revision/hash
 changes invalidate it immediately. Scope/base/SHA/material changes and expired or
 replayed nonce/claim fail closed. No failed run is used as execution authority.
 
+Recovery manifests have a separate bounded JSON envelope: at most 8 MiB and
+32,768 asset entries. This supports the observed 15,452-file, 2,354,423-byte
+scheduled manifest without raising the 2,000,000-byte limit on requests, worker
+receipts or memory baselines. Reads allocate at most the declared limit plus one
+byte and reject file identity/size changes. Oversized manifests report
+`readiness_manifest_limit`; nothing is truncated or sampled. Each asset must have
+a SHA-256 digest and a nonnegative safe-integer length; aggregate asset bytes may
+not exceed the backup writer's existing 512 MiB ceiling. Canonical snapshots are
+separate streamed hash inputs and keep their existing checks. Path, duplicate,
+link, archived object, restored file, table, expiry and memory revision checks all
+remain mandatory. This is a capacity repair, not deployment authority or a new
+backup/restore operation. Larger evidence fails closed and needs a reviewed change.
+
 ## Delivery sequence
 
 The control/backup repair is a descendant of the accepted context candidate. Its

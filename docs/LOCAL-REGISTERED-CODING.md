@@ -21,12 +21,30 @@ decisions. No existing acceptance ledger is resumed, reset, extended or migrated
   independently trained model or a guarantee that all defects will be found.
 - Test-draft review is a separate stage from final code review. The proposed
   protected tests are line-numbered targets; unchanged source is explicitly
-  baseline reference expected to fail new behavior. Each criterion needs a
-  coverage assessment, and findings must quote an exact protected-test line.
+  baseline reference expected to fail new behavior. Local drafting now receives
+  a criterion checklist and fixed declared test count, keeps baseline regressions
+  distinct, and copies Owner literal examples rather than inventing conversions.
+  Each criterion and its semicolon/newline sub-checks need a coverage assessment.
+  The host supplies immutable anchor IDs bound to work order, goal, source,
+  criteria and complete test bytes. Models select IDs, not retyped quotes or
+  guessed line numbers; receipts resolve exact original lines without fuzzy repair.
+  Covered criteria must cite executable assert.method lines with selected source
+  subjects, including explicitly named CommonJS exports. Titles, comments,
+  imports and unrelated source calls cannot satisfy that binding.
   Host validation rejects missing, duplicate or fabricated anchors and incomplete
   pass receipts. It never changes a negative verdict into approval. A grounded
   but semantically mistaken review can still fail; actual model improvement
   requires a separately authorized live acceptance, not offline response doubles.
+- This lexical index is deliberately bounded to direct `assert` calls and
+  selected relative CommonJS imports. It is not an AST, an evaluator, proof that
+  a branch runs, or a semantic oracle for every expected value. Ambiguous slash
+  tails and template tails are not indexed. Unsupported indirect/helper styles
+  can fail visibly rather than being guessed. A schema-valid coverage reason can
+  still be wrong; actual protected assertions and Sandbox results must be reviewed.
+  The saved PR173 acceptance generated five mixed tests, omitted stock checks and
+  supplied incorrect expected values; its review had wrong whitespace/line anchors
+  and title-only coverage. That failure and its two-call paused ledger remain
+  immutable. Offline fixture replays validate the new contract, not model learning.
 - Only `.js`, `.cjs` and `.json` under the existing backend source inventory are
   eligible, excluding browser/design assets. Existing three-editable-file limit
   remains. Local packages have at most ten source files and 24 KB including tests.

@@ -1,7 +1,7 @@
 'use strict'
 const test=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),os=require('node:os'),path=require('node:path'),{randomUUID}=require('node:crypto')
 const usage=require('../../actions/usageBudget'),{hash}=require('../../actions/contract'),{createStore}=require('../../actions/store')
-const fixtures=[1,2].map(v=>require('../../../test/localBrain/fixtures/test-draft-review-v'+v+'.json'))
+const fixtures=[1,2,3].map(v=>require('../../../test/localBrain/fixtures/test-draft-review-v'+v+'.json'))
 // Saved native responses enter the real adapter/parser; only the network and
 // temporary ledger are doubled. No model, Sandbox or production state is used.
 for(const f of fixtures)test('real failed review '+f.provenance.inputSha256+' is rejected before it can become an acceptance receipt',async t=>{

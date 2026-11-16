@@ -29,3 +29,47 @@ test('local recovery additions cannot admit credentials, arbitrary index files o
   await assert.rejects(validateReadiness(f.options,f.deps),/readiness_path_unconfirmed/)
  }
 })
+
+function reseal(f,change){
+ const manifestFile=path.join(f.bundle,'manifest.json'),workerFile=path.join(f.directory,'backup-worker.json'),sealed=JSON.parse(fs.readFileSync(manifestFile)),worker=JSON.parse(fs.readFileSync(workerFile))
+ change(sealed.manifest,worker);sealed.sha256=hash(canonical(sealed.manifest));worker.recovery.manifestHash=sealed.sha256
+ fs.writeFileSync(manifestFile,JSON.stringify(sealed));const bytes=JSON.stringify(worker);fs.writeFileSync(workerFile,bytes);f.request.backupReceiptHash=hash(bytes);fs.writeFileSync(path.join(f.directory,'request.json'),JSON.stringify(f.request))
+}
+
+test('a scheduled-size manifest above two MB verifies all 15452 assets including the last restored byte',async t=>{
+ const f=fixture(t),bytes=Buffer.from('{}'),digest=hash(bytes),count=15452;fs.writeFileSync(path.join(f.bundle,'objects',digest),bytes)
+ let last
+ reseal(f,(manifest,worker)=>{
+  for(let i=1;i<count;i++){last='conversations/'+String(i).padStart(16,'0')+'-00000000-0000-4000-8000-000000000001.json';fs.writeFileSync(path.join(f.restore,'data',last),bytes);manifest.files.push({path:last,sha256:digest,bytes:bytes.length})}
+  worker.filesRestored.files=count
+ })
+ assert.ok(fs.statSync(path.join(f.bundle,'manifest.json')).size>2000000)
+ assert.equal((await validateReadiness(f.options,f.deps)).files,count)
+ fs.writeFileSync(path.join(f.restore,'data',last),'!');await assert.rejects(validateReadiness(f.options,f.deps),/backup_restore_proof_unconfirmed/)
+})
+
+test('manifest byte and entry ceilings fail closed while other evidence keeps its two MB ceiling',async t=>{
+ for(const kind of ['manifest','entries','request','worker','baselines']){
+  const f=fixture(t)
+  if(kind==='manifest')fs.writeFileSync(path.join(f.bundle,'manifest.json'),' '.repeat(8*1024*1024+1))
+  if(kind==='entries')reseal(f,(m,w)=>{m.files=Array.from({length:32769},()=>m.files[0]);w.filesRestored.files=m.files.length})
+  if(kind==='request')fs.writeFileSync(path.join(f.directory,'request.json'),' '.repeat(2000001))
+  if(kind==='worker'||kind==='baselines'){
+   const name=kind==='worker'?'backup-worker.json':'memory-baselines.json',bytes=' '.repeat(2000001);fs.writeFileSync(path.join(f.directory,name),bytes)
+   f.request[kind==='worker'?'backupReceiptHash':'baselineFileHash']=hash(bytes);fs.writeFileSync(path.join(f.directory,'request.json'),JSON.stringify(f.request))
+  }
+  await assert.rejects(validateReadiness(f.options,f.deps),kind==='manifest'||kind==='entries'?/readiness_manifest_limit/:/readiness_evidence_unavailable/)
+ }
+})
+
+test('sealed manifests cannot conceal malformed asset sizes, digests or aggregate size',async t=>{
+ for(const kind of ['negative','fraction','unsafe','over_asset','aggregate','digest']){
+  const f=fixture(t)
+  reseal(f,(m,w)=>{
+   if(kind==='digest')m.files[0].sha256='../canonical.json'
+   else if(kind==='aggregate'){m.files=[{...m.files[0],bytes:512*1024*1024},{...m.files[0],path:'conversations/other.json',bytes:1}];w.filesRestored.files=2}
+   else m.files[0].bytes={negative:-1,fraction:1.5,unsafe:Number.MAX_SAFE_INTEGER+1,over_asset:512*1024*1024+1}[kind]
+  })
+  await assert.rejects(validateReadiness(f.options,f.deps),/backup_restore_proof_unconfirmed/)
+ }
+})
