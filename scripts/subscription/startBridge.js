@@ -30,7 +30,7 @@ function main () {
   const configuredRoot = env.XIANGXIANG_WORKER_WORKSPACE_ROOT
   const workspaceRoot = configuredRoot && path.isAbsolute(configuredRoot) ? configuredRoot : path.join(require('node:os').homedir(), 'Documents', 'AromaXiangXiang', 'worker-workspaces')
   const invocationLedger = require('../../src/investigation/invocations').createOwnerInvocationLedger()
-  const workerProviders = createProviders({ executable: chatExecutable, root: workspaceRoot, allowCredits: env.CODEX_CHAT_ALLOW_CREDITS === 'true' })
+  const workerProviders = createProviders({ localCodingEnabled:env.XIANGXIANG_LOCAL_CODING==='on', executable: chatExecutable, root: workspaceRoot, allowCredits: env.CODEX_CHAT_ALLOW_CREDITS === 'true' })
   // The new switch enables only this fixed recipe within the existing sandbox
   // worker lane. Other execution lanes still conflict through the shared matrix.
   const enabled = () => env.XIANGXIANG_WORKER_FLOW === 'on' && authorizeExecution({ worker: 'on',
@@ -40,9 +40,10 @@ function main () {
   const workerFlow = createWorkflow({ dir: path.join(workerRoot, 'runs'), providers: workerProviders, enabled, invocationLedger,
     onEvent: value => memoryRuntime && memoryRuntime.event('worker', value.id + ':' + value.stage + ':' + value.at, JSON.stringify(value), 'measured_result', value.at) })
   const taskStore = require('../../src/core/operating/runStore').createRunStore({ dir: path.join(workerRoot, 'project-tasks'), workflow: 'project_task' })
+  const localProviders=env.XIANGXIANG_LOCAL_CODING==='on'?workerProviders.local():null
   const taskRegistry = require('../../src/core/projectTasks/contract').createRegistry(taskStore)
   const resolveRecipe = taskRegistry.resolve
-  const repositoryBudget=require('../../src/core/projectTasks/repositoryBudget').createRepositoryBudget({dir:path.join(workerRoot,'project-task-usage'),root:repo})
+  const repositoryBudget=require('../../src/core/projectTasks/repositoryBudget').createRepositoryBudget({modeFor:id=>taskStore.get(id)?.input.execution,dir:path.join(workerRoot,'project-task-usage'),root:repo})
   const repositoryLocks=require('../../src/actions/store').createStore({dir:path.join(workerRoot,'project-task-locks')})
   const repositoryInventory=require('../../src/core/projectTasks/repositoryScope').createInventory({root:repo})
   const projectSource = require('../../src/core/projectWork/source').createSource({ root: repo, resolveRecipe })
@@ -61,7 +62,7 @@ function main () {
   const appProjectReady=()=>{try{return fs.statSync(appProjectRoot).isDirectory()}catch{return false}}
   const workTitles=threadTitles.createPublisher({client:threadTitles.createClient({executable:chatExecutable,cwd}),store:require('../../src/actions/store').createStore({dir:path.join(workerRoot,'project-thread-progress')})})
   const projectWork = require('../../src/core/projectWork/service').createProjectWork({
-    source: projectSource, providers: workerProviders, enabled, invocationLedger, repositoryBudget, observeLive, resolveRecipe, catalogueRecipes: taskRegistry.catalogue,
+    source: projectSource, providers: workerProviders, localProviders, enabled, invocationLedger, repositoryBudget, observeLive, resolveRecipe, catalogueRecipes: taskRegistry.catalogue,
     visibleCodexWork:true,appProjectRoot,resolveCodexThread:id=>taskStore.get(id)?.codexThread||null,onProgress:value=>{workTitles.update(value).catch(()=>{/* The persisted title receipt remains unavailable. */})},
     // Recovery cannot enqueue extra indexing calls outside its original budget.
     // The existing Owner setting must already be paused; this never changes it.
@@ -77,7 +78,7 @@ function main () {
     loader: require('../../src/core/projectWork/adoptionLoader').createLoader({ root: repo, resolveRecipe }),
     onEvent: value => memoryRuntime && memoryRuntime.event('worker', 'project-adoption:' + value.id + ':' + value.stage + ':' + value.at, JSON.stringify(value), 'measured_result', value.at) })
   const codexClient = require('../../src/subscription/codexClient')
-  const projectTasks = require('../../src/core/projectTasks/service').createTasks({ store: taskStore, enabled, invocationLedger, visibleCodexWork:true,appProjectRoot,onProgress:value=>{workTitles.update(value).catch(()=>{})},
+  const projectTasks = require('../../src/core/projectTasks/service').createTasks({ store: taskStore, localProviders, enabled, invocationLedger, visibleCodexWork:true,appProjectRoot,onProgress:value=>{workTitles.update(value).catch(()=>{})},
     repository:{inventory:repositoryInventory,budget:repositoryBudget,otherActive:()=>projectWork.isActive()||projectAdoption.isActive()||workerFlow.isActive(),lock:()=>repositoryLocks.lockRun('d970a642-61b1-47a1-8baf-6b33e910ac05'),provider:require('../../src/core/projectTasks/provider').createDraftProvider({client:codexClient,options:{...repairClient,allowCredits:false},effort:'high'})},
     sourceFor: definition => require('../../src/core/projectWork/source').createSource({ root: repo, resolveRecipe: id => { if (id !== definition.workOrder.recipe) throw Error('invalid_request'); return definition } }),
     provider: require('../../src/core/projectTasks/provider').createDraftProvider({ client: codexClient, options: repairClient }),
@@ -91,7 +92,7 @@ function main () {
   const procurementGateway=require('../../src/context/procurementContext').createRuntime({env:procurementEnv,store:schedulerActionStore,controller:()=>procurement})
   procurement=require('../../src/actions/procurement').createProcurement({store:schedulerActionStore,scheduler:require('../../src/actions/procurementWindows').createScheduler(),gateway:procurementGateway,enabled:()=>procurementEnv.XIANGXIANG_PROCUREMENT_SCHEDULER==='on'})
   const schedulerActions = require('../../src/actions/service').createGateway({store:schedulerActionStore,procurement,usageBudget:require('../../src/actions/usageBudget').owner()})
-  const controlledDispatch=require('../../src/subscription/controlledDispatch').createControlledDispatch({projectTasks,projectWork,enabled:()=>env.XIANGXIANG_CONTROLLED_DISPATCH==='on'&&enabled()&&appProjectReady(),otherActive:target=>target==='task'?projectWork.isActive()||projectAdoption.isActive()||workerFlow.isActive():projectTasks.isActive()||projectAdoption.isActive()||workerFlow.isActive(),executionReady:()=>{if(!memoryRuntime)return true;const s=memoryRuntime.status(),c=memoryRuntime.consolidation.status();return s.enabled===false&&s.active===false&&c.busy===false},bootCommit:require('../../src/governance/bootCommit').BOOT_COMMIT})
+  const controlledDispatch=require('../../src/subscription/controlledDispatch').createControlledDispatch({projectTasks,projectWork,enabled:()=>env.XIANGXIANG_CONTROLLED_DISPATCH==='on'&&enabled(),localEnabled:()=>!!localProviders,subscriptionReady:appProjectReady,otherActive:target=>target==='task'?projectWork.isActive()||projectAdoption.isActive()||workerFlow.isActive():projectTasks.isActive()||projectAdoption.isActive()||workerFlow.isActive(),executionReady:()=>{if(!memoryRuntime)return true;const s=memoryRuntime.status(),c=memoryRuntime.consolidation.status();return s.enabled===false&&s.active===false&&c.busy===false},bootCommit:require('../../src/governance/bootCommit').BOOT_COMMIT})
   const server = createBridge({ controlledDispatch, schedulerActions, backgroundModel: require('../../src/subscription/chatModels').DEFAULT_BRAIN_MODEL, token: env.CODEX_CHAT_BRIDGE_TOKEN, clientOptions: { executable: chatExecutable, cwd, allowCredits: env.CODEX_CHAT_ALLOW_CREDITS === 'true' }, memoryClientOptions: { executable, cwd, allowCredits: env.CODEX_CHAT_ALLOW_CREDITS === 'true' }, workerFlow, workerProviders, websiteEnabled: env.XIANGXIANG_WEBSITE_FLOW === 'on', memoryEnabled: env.XIANGXIANG_MEMORY === 'on',
     publicSearchEnabled: env.PUBLIC_SEARCH_PROVIDER === 'claude-subscription',
     memoryStore: require('../../src/memory/structuredStore').createStructuredStore({ local: true }),

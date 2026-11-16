@@ -23,9 +23,10 @@ const filesFor = v => profileFor(v)==='repository'?v.scope.files:({ context: FIL
 const keys = (v, expected) => v && typeof v === 'object' && !Array.isArray(v) && Object.keys(v).sort().join(',') === expected.slice().sort().join(',')
 const text = (v, max) => typeof v === 'string' && !!v.trim() && v.length <= max && !v.includes('\0')
 function request (v) {
-  if (!keys(v, ['bootCommit', 'requestId', 'goal', 'criteria', 'editable',...(v?.scope?['scope']:[])]) || !/^[a-f0-9]{40}$/.test(v.bootCommit || '') || !ID.test(v.requestId || '') ||
+  if (!keys(v, ['bootCommit', 'requestId', 'goal', 'criteria', 'editable',...(v?.scope?['scope']:[]),...(Object.hasOwn(v||{},'execution')?['execution']:[])]) || !/^[a-f0-9]{40}$/.test(v.bootCommit || '') || !ID.test(v.requestId || '') ||
       !text(v.goal, v.scope?12000:3000) || !Array.isArray(v.criteria) || v.criteria.length < 1 || v.criteria.length > 12 || v.criteria.some(c => !text(c, 1000)) ||
       !Array.isArray(v.editable) || !v.editable.length || v.editable.length > 3 || new Set(v.editable).size !== v.editable.length) throw Error('invalid_request')
+  if(Object.hasOwn(v,'execution')&&(v.execution!=='local'||!v.scope))throw Error('invalid_request')
   profileFor(v)
   return structuredClone(v)
 }
@@ -48,7 +49,7 @@ function definition (id, input, generated, { legacyInterface = false, legacyBrow
   return { workOrder: { projectId: PROJECT, recipe: recipeId, version, registrationId: id, registeredRevision: input.bootCommit,
     title: input.goal.slice(0, 100), goal: input.goal + '\nOwner acceptance criteria:\n' + input.criteria.map((c, i) => (i + 1) + '. ' + c).join('\n') + '\nChange every selected editable file only. Protected acceptance tests and read-only dependencies cannot change. No installation, network, API fallback or production access.',
     acceptanceCriteria: input.criteria, allowedFiles: input.editable, readonlyFiles: sourceFiles.filter(n => !input.editable.includes(n)), protectedFiles: chat ? [TEST, BROWSER_TEST] : [TEST], expectedTests: generated.expectedTests + (chat ? 4 : 0),
-    effort: 'high', scope: 'current_committed_backend_source_offline_nodejs', appliedToLive: false, providers: ['codex', 'claude'], billing: 'subscriptions_no_api_fallback',
+    ...(input.execution==='local'?{execution:'local',localSelection:require('../../workers/execution/localCodingProvider').SELECTION,providers:['local'],billing:'local'}:{effort:'high',providers:['codex','claude'],billing:'subscriptions_no_api_fallback'}), scope: 'current_committed_backend_source_offline_nodejs', appliedToLive: false,
     ...(profile==='repository'?{usageRoot:input.scope.budgetRoot,delivery:'owner_deployment_package_required'}:{}),
     registrationHash: digest(JSON.stringify({ id, input, generated })) }, tests: { [TEST]: generated.testCode, ...(chat ? { [BROWSER_TEST]: browserTests } : {}) } }
 }
@@ -61,7 +62,7 @@ const systemFor = v => require('../../design/uiDesign').testDraftSystem(({ repos
 function createRegistry (store) {
   function approved (id) {
     const r = store.get(id)
-    if (!r || r.state !== 'registered' || !r.registration || r.acceptanceReview?.verdict !== 'pass' || r.acceptanceReview.billing !== 'claude-subscription') throw Error('invalid_request')
+    if (!r || r.state !== 'registered' || !r.registration || r.acceptanceReview?.verdict !== 'pass' || r.acceptanceReview.billing !== (r.input.execution==='local'?'local':'claude-subscription')) throw Error('invalid_request')
     if(r.input.scope&&(r.kind!=='repository_repair'||r.scopeGrant?.actor!=='owner'||r.scopeGrant.hash!==digest(JSON.stringify(r.scopeMaterial))||JSON.stringify(r.input)!==JSON.stringify(r.scopeMaterial.input)||!r.steps.some(s=>s.stage==='scope_authorized'&&s.facts?.hash===r.scopeGrant.hash)))throw Error('invalid_request')
     const profile = profileFor(r.input), version = r.registration.workOrder.version
     const d = definition(r.id, r.input, r.generated, { legacyInterface: profile === 'interface' && version === 1, legacyBrowser: (profile === 'interface' && version === 2) || (profile === 'chat' && version === 1) })

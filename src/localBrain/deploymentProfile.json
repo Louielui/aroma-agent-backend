@@ -1,1 +1,1 @@
-{"mode":"local","model":"qwen3.5:9b","digest":"56671c2ab9385f9cfcb404638e32cd62d88e3501d44822208363c010179a3c90","context":65536,"endpoint":"http://127.0.0.1:11435","cloudFallback":false,"controlledDispatch":"owner_scoped_subscription"}
+{"mode":"local","model":"qwen3.5:9b","digest":"56671c2ab9385f9cfcb404638e32cd62d88e3501d44822208363c010179a3c90","context":65536,"endpoint":"http://127.0.0.1:11435","cloudFallback":false,"controlledDispatch":"owner_scoped_subscription","localCoding":"registered_node_v1"}

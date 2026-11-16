@@ -4,13 +4,14 @@ const { sameOrigin } = require('../operating/chatRequest'), { ID } = require('..
 function createRouter ({ bootCommit, env = process.env, request = input => require('../../adapters/ControlledDispatchAdapter').projectRequest('task', input, env) } = {}) {
   const router = express.Router(), api = '/api/v1/project-tasks'
   router.use(['/project-tasks', api], (req, res, next) => { if (env.READ_ACCESS !== 'on') return res.status(503).json({ error: 'read_access_disabled' }); next() })
-  router.get('/project-tasks', (req, res) => res.set('Cache-Control', 'no-store').type('html').send(buildHtml()))
+  router.get('/project-tasks', (req, res) => res.set('Cache-Control', 'no-store').type('html').send(buildHtml({env})))
   async function call (res, b) { try { const v = await request(b); res.set('Cache-Control', 'no-store').status(v.error ? 409 : 200).json(v) } catch (_) { res.status(503).json({ error: 'registration_unavailable' }) } }
   router.get(api, (req, res) => call(res, { op: 'list' }))
   router.get(api + '/:id', (req, res) => { if (!ID.test(req.params.id)) return res.status(400).json({ error: 'invalid_request' }); call(res, { op: 'get', id: req.params.id }) })
   router.post(api, (req, res) => {
     if (!sameOrigin(req)) return res.status(403).json({ error: 'same_origin_required' })
     const b = req.body, shapes = { renew:['op','id'], request:['op','requestId','goal'], continue:['op','id','requestId'], inventory:['op','id'], scope:['op','id','criteria','editable','readonly'], authorize:['op','id','hash','nonce'], start: ['op', 'requestId', 'goal', 'criteria', 'editable'], approve: ['op', 'id', 'hash', 'nonce'], prepare: ['op', 'id', 'requestId'], cancel: ['op', 'id'] }
+    if(b?.op==='request'&&Object.hasOwn(b,'execution')){if(b.execution!=='local'||env.XIANGXIANG_LOCAL_CODING!=='on')return res.status(400).json({error:'invalid_request'});shapes.request.push('execution')}
     if (!req.is('application/json') || !b || Array.isArray(b) || !Object.hasOwn(shapes, b.op) || Object.keys(b).sort().join(',') !== shapes[b.op].sort().join(',') || !ID.test((['start','request'].includes(b.op) ? b.requestId : b.id) || '') || (['start','request','continue','prepare'].includes(b.op) && !ID.test(b.requestId || '')) || (['approve','authorize'].includes(b.op) && (!/^[a-f0-9]{64}$/.test(b.hash || '') || !/^[a-f0-9]{48}$/.test(b.nonce || '')))) return res.status(400).json({ error: 'invalid_request' })
     call(res, ['start','request','scope'].includes(b.op) ? { ...b, bootCommit } : b)
   })

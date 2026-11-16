@@ -4,7 +4,7 @@ const { sameOrigin } = require('../operating/chatRequest'), { ID } = require('..
 function createProjectRouter ({ bootCommit, env = process.env, request = input => require('../../adapters/ControlledDispatchAdapter').projectRequest('work', input, env) } = {}) {
   const router = express.Router()
   router.use(['/project-work', '/api/v1/project-work'], (req, res, next) => { if (env.READ_ACCESS !== 'on') return res.status(503).json({ error: 'read_access_disabled' }); next() })
-  router.get('/project-work', (req, res) => res.set('Cache-Control', 'no-store').type('html').send(buildHtml()))
+  router.get('/project-work', (req, res) => res.set('Cache-Control', 'no-store').type('html').send(buildHtml({env})))
   const call = async (res, input) => { try { const value = await request(input); res.set('Cache-Control', 'no-store').status(value.error ? 409 : 200).json(value) } catch (_) { res.status(503).json({ error: 'workflow_unavailable' }) } }
   router.get('/api/v1/project-work', (req, res) => call(res, { op: 'list' }))
   router.get('/api/v1/project-work/:id', (req, res) => { if (!ID.test(req.params.id || '')) return res.status(400).json({ error: 'invalid_request' }); call(res, { op: 'get', id: req.params.id }) })

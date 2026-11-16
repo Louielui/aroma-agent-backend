@@ -6,7 +6,7 @@ function run(id=ID){return {id,state:'completed',startedAt:'2026-10-05T22:41:52Z
 function fixture(search='?run='+ID, options={}){
  const calls=[], elements=new Map(), timers=[]
  const make=tag=>({tag,children:[],hidden:false,disabled:false,classList:{add(){}},append(...n){this.children.push(...n)},replaceChildren(...n){this.children=n},setAttribute(k,v){this[k]=v},scrollIntoView(){}})
- const html=buildHtml();for(const m of html.matchAll(/id="([^"]+)"/g))elements.set(m[1],make('div'))
+ const html=buildHtml({env:options.controlled?{LOCAL_BRAIN_ONLY:'1',XIANGXIANG_CONTROLLED_DISPATCH:'on'}:{}});for(const m of html.matchAll(/id="([^"]+)"/g))elements.set(m[1],make('div'))
  elements.get('recipe').options=[{},{},{}]
  const flat=n=>[n,...n.children.flatMap(flat)], all=()=>[...elements.values()].flatMap(flat)
  let failed=false, prepared=null
@@ -23,6 +23,14 @@ function fixture(search='?run='+ID, options={}){
  vm.runInContext(html.match(/<script>([\s\S]*?)<\/script>/)[1],ctx)
  return {calls,elements,all,tick:()=>timers[0](),fail:()=>{failed=true},flush:async()=>{for(let i=0;i<5;i++)await new Promise(r=>setImmediate(r))}}
 }
+
+test('local controlled results retain model evidence and never probe or offer subscription adoption',async()=>{
+ const r={...run(),workOrder:{...run().workOrder,title:'Registered Node repair',execution:'local',usageRoot:OTHER,delivery:'owner_deployment_package_required'},result:{...run().result,model:'local:qwen3.5:9b',effort:'auto',billing:'local',digest:'a'.repeat(64),changedFiles:[],tests:{passed:3,total:3},baseline:{failed:3,total:3}},steps:[]}
+ const f=fixture('?run='+ID,{controlled:true,projectedRun:r});await f.flush()
+ assert.ok(f.calls.some(c=>c.url==='/api/v1/project-work/'+ID));assert.ok(f.calls.every(c=>!c.url.includes('project-adoption')&&!c.body))
+ assert.ok(f.all().some(n=>typeof n.textContent==='string'&&n.textContent.includes('Qwen3.5 9B')))
+ assert.equal(f.all().some(n=>n.dataset?.action==='adopt'),false);assert.equal(f.elements.get('preparePanel').hidden,true)
+})
 test('chat result loads exact task, opens protected previews and never prepares or adopts on GET',async()=>{
  const f=fixture();await f.flush()
  assert.equal(f.calls[0].url,'/api/v1/project-work/'+ID)
