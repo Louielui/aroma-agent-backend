@@ -19,7 +19,7 @@ function createLocalProviders({root,executor,env={},fetchFn,onEvent}={}){
  }
  return{
   selection:SELECTION,
-  draft:{preflight:()=>drafting.preflight(options),complete:(prompt,o)=>drafting.complete(prompt,{...o,...options,responseFormat:{type:'json_schema',schema:o.schema}})},
+  draft:{preflight:()=>drafting.preflight(options),async complete(prompt,o){const contract=require('./localTestDraft'),prepared=contract.prepare(prompt),r=await drafting.complete(JSON.stringify(prepared.packet),{...o,...options,system:prepared.system,responseFormat:{type:'json_schema',schema:prepared.schema}});contract.parse(r.text,prepared);return r}},
   isolation:()=>executor.readiness(),
   // Model metadata only; no subscription auth checks and no generation.
   async status(){await coding.preflight(options);return{local:{ready:true,...SELECTION}}},
