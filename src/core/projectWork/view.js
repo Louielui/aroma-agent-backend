@@ -1,7 +1,8 @@
 'use strict'
 const fs = require('node:fs'), path = require('node:path'), { t, currentLocale } = require('../../i18n/t')
-function buildHtml () {
+function buildHtml ({env=process.env}={}) {
   const labels = {
+    controlled:require('../../adapters/ControlledDispatchAdapter').enabled(env),localWork:t('projectTask.localWork'),
     renew:t('projectTask.renew'),
     ...require('./resultLabels').resultLabels(),
     browser: t('projectTask.browserEvidence'),

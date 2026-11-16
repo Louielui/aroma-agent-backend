@@ -1,9 +1,11 @@
 'use strict'
 const fs = require('node:fs'), path = require('node:path'), { t, currentLocale } = require('../../i18n/t')
-function buildHtml () {
+function buildHtml ({env=process.env}={}) {
   const labels = {
+    localEnabled:env.XIANGXIANG_LOCAL_CODING==='on',
+    engine:t('projectTask.engine'),localEngine:t('projectTask.localEngine'),subscriptionEngine:t('projectTask.subscriptionEngine'),localLimits:t('projectTask.localLimits'),localAuthorize:t('projectTask.localAuthorize'),
     renew:t('projectTask.renew'),
-    controlled:require('../../adapters/ControlledDispatchAdapter').enabled(process.env),
+    controlled:require('../../adapters/ControlledDispatchAdapter').enabled(env),
     codexThread:t('projectTask.codexThread'),
     title: t('projectTask.title'),
     repositoryProfile:t('projectTask.repositoryProfile'),

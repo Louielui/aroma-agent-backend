@@ -17,14 +17,15 @@ function codingProvider (client, codexClient = require('../../subscription/codex
   }
 }
 
-async function code ({ root, executable, allowCredits = false, executor, provider, emit = () => {}, order, verify, signal, reviewRepair, visibleWork }) {
+async function code ({ root, executable, allowCredits = false, executor, provider, emit = () => {}, order, verify, signal, reviewRepair, visibleWork, local = false }) {
+  if(local&&(!provider||!order||visibleWork))throw Error('local_coding_disabled')
   const client = { executable, cwd: path.join(root, 'text-only-empty'), allowCredits:require('../../actions/usageBudget').currentScope()?false:allowCredits,...(visibleWork?{visibleWork}:{}) }
   fs.mkdirSync(client.cwd, { recursive: true })
   executor ||= require('../../workers/execution/windowsSandbox').createExecutor({ root: path.join(root, 'offline-execution') })
   provider ||= codingProvider(client)
   if (verify) { const original = provider; provider = { preflight: async options => { await verify(); return original.preflight(options) }, complete: async (...args) => { await verify(); return original.complete(...args) } } }
   const guardedExecutor = verify ? { readiness: () => executor.readiness(), isBusy: () => executor.isBusy(), run: async (...args) => { await verify(); const result = await executor.run(...args); await verify(); return result } } : executor
-  const worker = require('../../workers/execution/isolatedCoding').createIsolatedCoding({ root: path.join(root, 'isolated-coding-runs'), executor: guardedExecutor, provider })
+  const worker = require('../../workers/execution/isolatedCoding').createIsolatedCoding({ root: path.join(root, 'isolated-coding-runs'), executor: guardedExecutor, provider, local })
   // This host-registered work order is authorized by the existing Owner workflow.
   // Browser input never supplies paths, source, commands, a model or credentials.
   order ||= { goal: WORK_ORDER.goal, files: { 'duration.js': SOURCE, 'duration.test.js': TESTS }, editable: ['duration.js'], tests: ['duration.test.js'], expectedTests: 5, sourceRevision: 'registered-duration-v1' }
@@ -137,9 +138,7 @@ function textReviewArgs (files, purpose) {
 function readTextReview (envelope, files) {
   const invalid = stage => { const error = Error('invalid_worker_result'); error.reviewValidation = { stage, responseChars: typeof envelope?.result === 'string' ? envelope.result.length : null }; throw error }
   if (envelope?.type !== 'result' || envelope.subtype !== 'success' || envelope.is_error === true || typeof envelope.result !== 'string' || envelope.result.length > 50000) invalid('envelope')
-  let r; try { r = JSON.parse(envelope.result) } catch (_) { invalid('json') }
-  const exact = (value, keys) => value && typeof value === 'object' && !Array.isArray(value) && Object.keys(value).sort().join(',') === keys.slice().sort().join(',')
-  if (!exact(r, ['verdict', 'summary', 'findings']) || !Array.isArray(r.findings) || r.findings.some(f => !exact(f, ['file', 'line', 'message'])) || (r.verdict === 'pass' && r.findings.length)) invalid('schema')
+  const r = require('./reviewContract').parse(envelope.result, files)
   try { return readReview({ ...envelope, structured_output: r }, files) } catch (_) { invalid('finding') }
 }
 async function runTextReview (args, options, files, run = runClaude) {
@@ -187,7 +186,7 @@ function acceptanceReviewArgs (packet) {
   }
   return textReviewArgs(files, require('../../design/uiDesign').testDraftSystem('Review the protected acceptance TEST DRAFT against the supplied current source and Owner criteria. This is not an implementation review; tests are not yet executed. Verify every criterion through explicit tests or the host guards described below; every functional requirement must be asserted. Verify total test count is exact across protected tests, at least one test must genuinely fail on current behavior, and tests are deterministic. The host separately enforces the exact editable file allowlist and before/after hashes of all protected tests and read-only dependencies, rejects out-of-scope changes, and executes in an offline Windows Sandbox. Do not require generated tests to read or hash files outside their permitted imports to duplicate these host guards. These guards do not prove application behavior: still require assertions for new storage/network attempts, preserved handlers and requested UI changes. ' + limits[profile] + ' Reject forced failures, missing assertions, skipped tests, undeclared imports or dependencies, installation, process execution, network use or claims of execution. Reviewer tools remain disabled.', profile))
 }
-function createProviders ({ executable, root, allowCredits = false }) {
+function createProviders ({ executable, root, allowCredits = false, localCodingEnabled = false }) {
   fs.mkdirSync(root, { recursive: true })
   const executor = require('../../workers/execution/windowsSandbox').createExecutor({ root: path.join(root, 'offline-execution') })
   const visualReview = require('../../design/visualReview').createVisualReviewer({ options: { executable, cwd: root, allowCredits } })
@@ -198,9 +197,11 @@ function createProviders ({ executable, root, allowCredits = false }) {
     return executor.isBusy() ? { ...value, ready: false, reason: 'sandbox_recovery_or_work_pending' } : value
   }
   return {
+    local: options => require('./localProviders').createLocalProviders({...options,root,executor}),
     testOrder: pack => executor.run(pack),
     // Metadata from the same constants/CLI arguments used by actual execution.
     describe: () => [
+      ...(localCodingEnabled?[{id:'local_registered_coding',role:'Local registered Node repair',model:require('../../workers/execution/localCodingProvider').SELECTION.model,effort:'auto',selection:'per_work_owner_approval',permissions:'approved_registered_node_files_only'}]:[]),
       {id:'test_draft',role:'Test drafting',model:require('../projectTasks/provider').MODEL,effort:require('../projectTasks/provider').EFFORT,selection:'workflow_default',permissions:'protected_test_draft_only'},
       {id:'development',role:'Isolated development',model:require('../../workers/execution/isolatedCoding').MODEL,effort:'per_work_order',selection:'workflow_default',permissions:'approved_registered_files_only'},
       {id:'review',role:'Result review',model:claudeArgs()[claudeArgs().indexOf('--model')+1],effort:null,selection:'workflow_default',permissions:'supplied_packet_only'}

@@ -28,6 +28,12 @@ function reserve(row,scope,input,kind,now,commit){
 }
 return Object.freeze({validate,assertTime,reserve})
 }
-const original=policy(PROFILE),boundary=policy(BOUNDARY_PROFILE)
-function forProfile(id){return id===PROFILE.id?original:id===BOUNDARY_PROFILE.id?boundary:null}
-module.exports={PROFILE,BOUNDARY_PROFILE,forProfile,...original}
+// Isolated programming proposal only; no ledger or inference is created here.
+const CODING_PROFILE=Object.freeze({id:'cddc36a0-9781-4f2b-8630-e34a24c50814',identity:'owner-local-offline-coding-20261115',model:deployment.model,effort:'auto',turns:2,helper:4,website:0,digest:deployment.digest,windowMs:1800000,turnMs:360000,slots:Object.freeze(['29b22ba2-49d8-4ad5-b94d-cfc589124a01','29b22ba2-49d8-4ad5-b94d-cfc589124a02'].map(id=>Object.freeze({id,purpose:'coding',limit:2})))})
+const original=policy(PROFILE),boundary=policy(BOUNDARY_PROFILE),codingBase=policy(CODING_PROFILE)
+const coding=Object.freeze({...codingBase,reserve(row,scope,input,kind,now,commit){if(input.phase!=='local_coding')fail('usage_operation_not_allowed');return codingBase.reserve(row,scope,input,kind,now,commit)}})
+function forProfile(id){return id===PROFILE.id?original:id===BOUNDARY_PROFILE.id?boundary:id===CODING_PROFILE.id?coding:null}
+function registeredProfile(id){return{id,identity:'owner-local-repository-repair:'+id,model:deployment.model,effort:'auto',turns:1,helper:8,website:0,digest:deployment.digest,windowMs:1800000,turnMs:1800000,slots:[{id,purpose:'coding',limit:8}]}}
+const REGISTERED_PHASES=Object.freeze(['local_test_draft','local_test_review','local_coding','local_code_review'])
+function registeredPolicy(profile){const base=policy(profile);return Object.freeze({...base,validate(row){base.validate(row);if(row.attempts.some(a=>!REGISTERED_PHASES.includes(a.phase)))fail('usage_audit_unavailable')},reserve(row,scope,input,kind,now,commit){if(!REGISTERED_PHASES.includes(input.phase))fail('usage_operation_not_allowed');return base.reserve(row,scope,input,kind,now,commit)}})}
+module.exports={PROFILE,BOUNDARY_PROFILE,CODING_PROFILE,forProfile,registeredProfile,registeredPolicy,...original}
