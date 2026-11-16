@@ -19,6 +19,14 @@ decisions. No existing acceptance ledger is resumed, reset, extended or migrated
   and the exact coding version. Registration, status and continuation do not
   generate text. Review requests use fresh calls to the same local model, not an
   independently trained model or a guarantee that all defects will be found.
+- Test-draft review is a separate stage from final code review. The proposed
+  protected tests are line-numbered targets; unchanged source is explicitly
+  baseline reference expected to fail new behavior. Each criterion needs a
+  coverage assessment, and findings must quote an exact protected-test line.
+  Host validation rejects missing, duplicate or fabricated anchors and incomplete
+  pass receipts. It never changes a negative verdict into approval. A grounded
+  but semantically mistaken review can still fail; actual model improvement
+  requires a separately authorized live acceptance, not offline response doubles.
 - Only `.js`, `.cjs` and `.json` under the existing backend source inventory are
   eligible, excluding browser/design assets. Existing three-editable-file limit
   remains. Local packages have at most ten source files and 24 KB including tests.
