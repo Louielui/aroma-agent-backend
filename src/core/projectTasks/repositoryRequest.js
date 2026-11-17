@@ -14,7 +14,7 @@ function createRepositoryRequests({store,enabled,lock,record,inventory,sourceFor
  function view(r){
   const serverNow=now(),expiresAt=Number.isSafeInteger(r.scopeApproval?.expiresAt)?r.scopeApproval.expiresAt:null
   const state=expiresAt===null||!tickets.has(r.id)?'unavailable':serverNow>=expiresAt?'expired':r.scopeApprovalDiagnostic?.outcome==='rejected'?'rejected':'pending'
-  return{run:r,approval:tickets.get(r.id)||null,nextAction:nextAction(r),approvalTiming:{serverNow,expiresAt,remainingMs:expiresAt===null?null:Math.max(0,expiresAt-serverNow),state},...(r.input.scope&&budget?{usage:budget.status(r.id)}:{})}
+  return{run:r,approval:tickets.get(r.id)||null,nextAction:nextAction(r),approvalTiming:{serverNow,expiresAt,remainingMs:expiresAt===null?null:Math.max(0,expiresAt-serverNow),state,display:require('./approvalTime').approvalExpiryDisplay(expiresAt)},...(r.input.scope&&budget?{usage:budget.status(r.id)}:{})}
  }
  function request(actor,input){return guarded(actor,()=>{
   if(!keys(input,['bootCommit','requestId','goal',...(Object.hasOwn(input||{},'execution')?['execution']:[])])||!ID.test(input.requestId||'')||!/^[a-f0-9]{40}$/.test(input.bootCommit||'')||typeof input.goal!=='string'||!input.goal.trim()||input.goal.length>12000||input.goal.includes('\0'))throw Error('invalid_request')

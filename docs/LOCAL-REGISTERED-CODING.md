@@ -6,6 +6,20 @@ decisions. No existing acceptance ledger is resumed, reset, extended or migrated
 
 ## Entry and approvals
 
+Source-card displays carry the sealed epoch, complete UTC timestamp and a
+host-formatted numeric-offset America/Winnipeg label. Manitoba remains UTC-05
+after its 2026 change (official source: https://www.gov.mb.ca/timechange/;
+IANA release: https://www.iana.org/time-zones/releases/2026e). A narrow approval
+display compatibility rule avoids host tzdata older than 2026e and browser/host
+version differences; earlier timestamps keep their historical IANA offsets.
+The page does not format that deadline with its own timezone database. Missing
+or mismatched host display metadata disables approval rather than guessing.
+The original epoch, monotonic countdown, 10-minute seal/nonce TTL, server expiry
+check and durable usage cap are unchanged. This does not update the machine's
+Node/ICU installation or reimplement unrelated business-calendar conversions.
+The saved November discrepancy was stale host data: 06:40:03Z is 01:40:03 MBT,
+not 00:40:03; the original Chrome display and absolute expiry were correct.
+
 - `/project-tasks` offers local Qwen3.5 9B or the existing separately approved
   Codex/Claude subscription lane. The engine is part of the request dedup key,
   source material, registration hash and coding approval. An existing request
