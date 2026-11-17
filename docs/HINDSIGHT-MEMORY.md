@@ -70,3 +70,22 @@ recovery; do not remove the pg0 instance or runtime as part of a routine rollbac
 Official references: https://hindsight.vectorize.io/developer/installation
 https://hindsight.vectorize.io/developer/api/documents
 https://hindsight.vectorize.io/developer/api/recall
+# Bounded backup recovery I/O
+
+Backup maintenance keeps its existing 240-second worker deadline and 270-second
+authenticated storage transport deadline. Neither phase progress nor retries can
+renew that window. The complete file manifest, canonical audit validation,
+repeatable-read database snapshot and isolated restore comparison remain required.
+
+Recovery object writes, restored file writes and per-file hash checks use at most
+eight I/O threads with sixteen pending operations. Every write still uses exclusive
+creation and fsync. Identical source contents may share one content-addressed object;
+every manifest path still receives an independent restored file and hash check.
+The file capture completes before the database snapshot. A failed future propagates
+before a successful phase or receipt, rather than becoming partial coverage.
+
+The fixed worker emits only versioned phase names and started/succeeded/failed
+states. Authenticated failures may retain bounded phase/elapsed metadata, never raw
+stderr, paths, SQL, credentials or record values. This metadata is diagnostic, not
+backup or restore proof. A subsequent attempt clears the old diagnostic; historical
+failure evidence and successful-proof provenance are not rewritten as success.

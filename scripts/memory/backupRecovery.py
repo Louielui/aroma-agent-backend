@@ -9,10 +9,45 @@ import pathlib
 import re
 import subprocess
 import sqlite3
+from collections import deque
+from concurrent.futures import ThreadPoolExecutor
 
 DIRECTORIES = ("memory-outbox", "memory-capture", "memory-consolidation", "conversations", "local-brain")
 FILES = ("company-access.json", "model-center-local.json", "memory-local-index/memory.sqlite")
 MAX_BYTES = 512 * 1024 * 1024
+
+
+class RecoveryIO:
+    """Bound I/O concurrency; every file still completes its original checks."""
+    def __enter__(self):
+        self.pool = ThreadPoolExecutor(max_workers=8)
+        self.pending = deque()
+        return self
+
+    def submit(self, function, *args):
+        if len(self.pending) >= 16:
+            self.pending.popleft().result()
+        self.pending.append(self.pool.submit(function, *args))
+
+    def write(self, target, content):
+        self.submit(write_new, target, content)
+
+    def verify(self, target, digest, size=None, reason="recovery_hash_mismatch"):
+        self.submit(verify_file, target, digest, size, reason)
+
+    def __exit__(self, kind, value, trace):
+        try:
+            if kind is None:
+                while self.pending:
+                    self.pending.popleft().result()
+        finally:
+            self.pool.shutdown(wait=True, cancel_futures=True)
+
+
+def verify_file(target, digest, size, reason):
+    content = target.read_bytes()
+    if (size is not None and len(content) != size) or hashlib.sha256(content).hexdigest() != digest:
+        raise ValueError(reason)
 
 
 def encode(value):
@@ -85,34 +120,37 @@ def stage_recovery(destination, data_root):
                 "hindsight": "derived_index_rebuild_from_canonical_scoped_records",
                 "consistency": "file_assets_captured_before_repeatable_read_database_snapshot"}
     total = 0
-    for name in DIRECTORIES + FILES:
-        source = data / name
-        manifest["components"][name] = "captured" if source.exists() else "absent"
-        if not source.exists():
-            continue
-        paths = sorted(source.rglob("*.json")) if name in DIRECTORIES else [source]
-        for file in paths:
-            # Junctions and symlinks are not followed into other directories or credentials.
-            relative = file.relative_to(data).as_posix()
-            asset_path(relative)
-            if file.is_symlink() or file.resolve() != data.joinpath(*pathlib.PurePosixPath(relative).parts):
-                raise ValueError("recovery_source_outside_scope")
-            before = file.stat()
-            sqlite_asset = relative == "memory-local-index/memory.sqlite"
-            content = local_index_snapshot(file) if sqlite_asset else file.read_bytes()
-            after = file.stat()
-            if not sqlite_asset and (before.st_size, before.st_mtime_ns) != (after.st_size, after.st_mtime_ns):
-                raise ValueError("recovery_source_changed_retry")
-            if not sqlite_asset:
-                json.loads(content.decode("utf-8"))
-            total += len(content)
-            if total > MAX_BYTES:
-                raise ValueError("recovery_size_limit")
-            digest = hashlib.sha256(content).hexdigest()
-            object_file = objects / digest
-            if not object_file.exists():
-                write_new(object_file, content)
-            manifest["files"].append({"path": relative, "sha256": digest, "bytes": len(content)})
+    scheduled = set()
+    with RecoveryIO() as writes:
+        for name in DIRECTORIES + FILES:
+            source = data / name
+            manifest["components"][name] = "captured" if source.exists() else "absent"
+            if not source.exists():
+                continue
+            paths = sorted(source.rglob("*.json")) if name in DIRECTORIES else [source]
+            for file in paths:
+                # Junctions and symlinks are not followed into other directories or credentials.
+                relative = file.relative_to(data).as_posix()
+                asset_path(relative)
+                if file.is_symlink() or file.resolve() != data.joinpath(*pathlib.PurePosixPath(relative).parts):
+                    raise ValueError("recovery_source_outside_scope")
+                before = file.stat()
+                sqlite_asset = relative == "memory-local-index/memory.sqlite"
+                content = local_index_snapshot(file) if sqlite_asset else file.read_bytes()
+                after = file.stat()
+                if not sqlite_asset and (before.st_size, before.st_mtime_ns) != (after.st_size, after.st_mtime_ns):
+                    raise ValueError("recovery_source_changed_retry")
+                if not sqlite_asset:
+                    json.loads(content.decode("utf-8"))
+                total += len(content)
+                if total > MAX_BYTES:
+                    raise ValueError("recovery_size_limit")
+                digest = hashlib.sha256(content).hexdigest()
+                object_file = objects / digest
+                if digest not in scheduled:
+                    scheduled.add(digest)
+                    writes.write(object_file, content)
+                manifest["files"].append({"path": relative, "sha256": digest, "bytes": len(content)})
     return {"directory": str(target), "manifest": manifest}
 
 
@@ -147,14 +185,13 @@ def verify_recovery(source):
     if hashlib.sha256(canonical).hexdigest() != manifest["canonical"]["sha256"]:
         raise ValueError("recovery_hash_mismatch")
     seen = set()
-    for item in manifest["files"]:
-        asset_path(item["path"])
-        if item["path"] in seen or not re.fullmatch(r"[0-9a-f]{64}", item["sha256"]):
-            raise ValueError("invalid_recovery_path")
-        seen.add(item["path"])
-        content = (target / "objects" / item["sha256"]).read_bytes()
-        if len(content) != item["bytes"] or hashlib.sha256(content).hexdigest() != item["sha256"]:
-            raise ValueError("recovery_hash_mismatch")
+    with RecoveryIO() as checks:
+        for item in manifest["files"]:
+            asset_path(item["path"])
+            if item["path"] in seen or not re.fullmatch(r"[0-9a-f]{64}", item["sha256"]):
+                raise ValueError("invalid_recovery_path")
+            seen.add(item["path"])
+            checks.verify(target / "objects" / item["sha256"], item["sha256"], item["bytes"])
     return {"state": "verified", "files": len(manifest["files"]), "tables": manifest["canonical"]["tables"],
             "credentials": manifest["credentials"], "hindsight": manifest["hindsight"]}
 
@@ -165,15 +202,16 @@ def restore_files(source, destination):
     private_directory(target)
     bundle = pathlib.Path(source).resolve()
     manifest = json.loads((bundle / "manifest.json").read_text(encoding="utf-8"))["manifest"]
-    for item in manifest["files"]:
-        file = target / "data" / pathlib.Path(*asset_path(item["path"]).parts)
-        file.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
-        write_new(file, (bundle / "objects" / item["sha256"]).read_bytes())
+    with RecoveryIO() as writes:
+        for item in manifest["files"]:
+            file = target / "data" / pathlib.Path(*asset_path(item["path"]).parts)
+            file.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+            writes.write(file, (bundle / "objects" / item["sha256"]).read_bytes())
     write_new(target / "canonical.json", (bundle / "canonical.json").read_bytes())
-    for item in manifest["files"]:
-        file = target / "data" / pathlib.Path(*asset_path(item["path"]).parts)
-        if hashlib.sha256(file.read_bytes()).hexdigest() != item["sha256"]:
-            raise ValueError("recovery_restore_unconfirmed")
+    with RecoveryIO() as checks:
+        for item in manifest["files"]:
+            file = target / "data" / pathlib.Path(*asset_path(item["path"]).parts)
+            checks.verify(file, item["sha256"], reason="recovery_restore_unconfirmed")
     if hashlib.sha256((target / "canonical.json").read_bytes()).hexdigest() != manifest["canonical"]["sha256"]:
         raise ValueError("recovery_restore_unconfirmed")
     return {**proof, "state": "isolated_files_restored", "path": str(target)}

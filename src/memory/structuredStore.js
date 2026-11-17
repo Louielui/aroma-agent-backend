@@ -2,6 +2,7 @@
 const path = require('node:path')
 const { spawn } = require('node:child_process')
 const { isTestProcess } = require('../testProcess')
+const { createProgress, safeDiagnostic } = require('./backupDiagnostics')
 function readUtf8(stream, append) {
   // A multibyte character may cross child-process pipe chunks.
   stream.setEncoding('utf8'); stream.on('data', append)
@@ -15,18 +16,19 @@ function createStructuredStore({ invoke, local = false, env = process.env } = {}
       ? ['-B', '-X', 'utf8', path.join(__dirname, '../../scripts/memory/backupStructured.py'), 'backup-and-verify', path.join('C:/Aroma/hindsight-runtime/backups', 'memory-' + require('node:crypto').randomUUID() + '.json')]
       : ['-B', '-X', 'utf8', path.join(__dirname, '../../scripts/memory/structured.py')]
     const child = spawn('C:/Aroma/hindsight-runtime/Scripts/python.exe', args, { windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'] })
+    const progress=backup?createProgress():null
+    const failure=reason=>{const error=Error(reason);if(progress)error.backupDiagnostic=progress.snapshot();return error}
     let raw = ''; let failed = false
-    // Canonical backup validates/restores the complete audit and file snapshot.
-    // A measured ~1 GB snapshot takes longer than the old shared 60-second bound.
-    // This extends only backup maintenance, never indexing or model-call budgets.
-    const timeout = setTimeout(() => { failed = true; child.kill(); reject(Error(backup ? 'memory_backup_timeout' : 'memory_database_unavailable')) }, backup ? 240000 : slow ? 60000 : 15000)
+    // Keep the existing backup hard deadline. Phase diagnostics never reset it;
+    // complete audit/file verification is still required, not an early receipt.
+    const timeout = setTimeout(() => { failed = true; child.kill(); reject(failure(backup ? 'memory_backup_timeout' : 'memory_database_unavailable')) }, backup ? 240000 : slow ? 60000 : 15000)
     readUtf8(child.stdout, chunk => { raw += chunk; if (raw.length > 64000000) { failed = true; child.kill() } })
-    child.stderr.resume()
-    child.on('error', () => { clearTimeout(timeout); reject(Error('memory_database_unavailable')) })
+    if(progress)readUtf8(child.stderr,chunk=>progress.push(chunk));else child.stderr.resume()
+    child.on('error', () => { clearTimeout(timeout); reject(failure('memory_database_unavailable')) })
     child.on('close', code => {
       clearTimeout(timeout)
-      if (failed || code) return reject(Error('memory_database_unavailable'))
-      try { const value = JSON.parse(raw); if (value.error) reject(Error(value.error)); else resolve(Object.hasOwn(value, 'result') ? value.result : value) } catch (_) { reject(Error('memory_database_unavailable')) }
+      if (failed || code) return reject(failure('memory_database_unavailable'))
+      try { const value = JSON.parse(raw); if (value.error) reject(failure(value.error)); else resolve(Object.hasOwn(value, 'result') ? value.result : value) } catch (_) { reject(failure('memory_database_unavailable')) }
     })
     child.stdin.end(JSON.stringify(request))
   })
@@ -37,7 +39,7 @@ function createStructuredStore({ invoke, local = false, env = process.env } = {}
       headers: { authorization: 'Bearer ' + env.CODEX_CHAT_BRIDGE_TOKEN, 'content-type': 'application/json' }, body: JSON.stringify(request) })
     if (!res.ok) throw Error('memory_database_unavailable')
     const value = await res.json()
-    if (value.error) throw Error(['revision_conflict', 'decision_conflict', 'memory_backup_timeout'].includes(value.error) ? value.error : 'memory_database_unavailable')
+    if (value.error) {const error=Error(['revision_conflict', 'decision_conflict', 'memory_backup_timeout'].includes(value.error) ? value.error : 'memory_database_unavailable');if(request.op==='backup')error.backupDiagnostic=safeDiagnostic(value.backupDiagnostic);throw error}
     return value.result
   }
   const run = invoke || (local ? runLocal : remote)

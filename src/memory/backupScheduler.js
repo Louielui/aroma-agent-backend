@@ -2,6 +2,7 @@
 const fs = require('node:fs')
 const path = require('node:path')
 const { resolveDataDir } = require('../store/dataDir')
+const { safeDiagnostic } = require('./backupDiagnostics')
 function createBackupScheduler ({ backup, dir = path.join(resolveDataDir(), 'memory-capture'), clock = () => Date.now() }) {
   const file = path.join(dir, 'backup-state.json')
   let busy = false; let timer; let running = false
@@ -32,7 +33,7 @@ function createBackupScheduler ({ backup, dir = path.join(resolveDataDir(), 'mem
     busy = true
     try {
       save({ ...previous, state: 'running', trigger, lastSucceededTrigger: knownTrigger(previous.lastSucceededTrigger),
-        lastAttemptAt: new Date(clock()).toISOString(), reason: null })
+        lastAttemptAt: new Date(clock()).toISOString(), reason: null, diagnostic: null })
       const result = await backup()
       if (result?.restored?.state !== 'verified' || !/^[0-9a-f]{64}$/.test(result.restored.sha256 || '') ||
           typeof result.path !== 'string' || !path.isAbsolute(result.path) || result.recovery?.state !== 'verified' ||
@@ -41,10 +42,10 @@ function createBackupScheduler ({ backup, dir = path.join(resolveDataDir(), 'mem
       save({ state: 'verified', trigger, lastSucceededTrigger: trigger, lastSucceededAt: new Date(clock()).toISOString(),
         lastAttemptAt: new Date(clock()).toISOString(), nextAt: new Date(clock() + 86400000).toISOString(),
         path: result.path, sha256: result.restored.sha256, filesRestored: result.filesRestored.files,
-        reason: null })
+        reason: null, diagnostic: null })
     } catch (error) {
       try { save({ ...previous, state: 'failed', trigger, lastSucceededTrigger: knownTrigger(previous.lastSucceededTrigger), lastAttemptAt: new Date(clock()).toISOString(),
-        nextAt: new Date(clock() + 1800000).toISOString(), reason: error?.message === 'memory_backup_timeout' ? 'memory_backup_timeout' : 'backup_unavailable' }) } catch (_) {}
+        nextAt: new Date(clock() + 1800000).toISOString(), reason: error?.message === 'memory_backup_timeout' ? 'memory_backup_timeout' : 'backup_unavailable', diagnostic: safeDiagnostic(error?.backupDiagnostic) }) } catch (_) {}
     } finally { busy = false }
   }
   const tick = () => perform(false)

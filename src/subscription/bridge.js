@@ -234,7 +234,7 @@ function createBridge ({ token, clientOptions, memoryClientOptions = clientOptio
       } else if (isStore) {
         if (!memoryEnabled || !memoryStore) { reply(503, { error: 'memory_database_unavailable' }); return }
         try { reply(200, { result: await memoryStore.request(input) }) }
-        catch (e) { reply(200, { error: ['revision_conflict', 'decision_conflict', 'memory_backup_timeout'].includes(e.message) ? e.message : 'memory_database_unavailable' }) }
+        catch (e) { reply(200, { error: ['revision_conflict', 'decision_conflict', 'memory_backup_timeout'].includes(e.message) ? e.message : 'memory_database_unavailable', ...(input?.op==='backup'?{backupDiagnostic:require('../memory/backupDiagnostics').safeDiagnostic(e.backupDiagnostic)}:{}) }) }
       } else if (req.url === '/v1/chat/completions') {
         if (!memoryEnabled) { reply(503, { code: 'subscription_unavailable' }); return }
         reply(200, await require('./memoryCompletion').memoryCompletion(options, input, (opts,body) => {
