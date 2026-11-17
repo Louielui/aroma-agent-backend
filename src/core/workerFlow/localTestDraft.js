@@ -8,13 +8,25 @@ function prepare(prompt){
  return{packet:{...p,draftContract:{expectedTests,criteria:p.criteria.map((text,i)=>({id:i+1,text,requiredSubjects:required[i]})),baselineRole:'unchanged_reference_expected_to_fail',testsExecuted:false}},system:SYSTEM,schema:{...contract.SCHEMA,properties:{...contract.SCHEMA.properties,expectedTests:{type:'integer',const:expectedTests}}}}
 }
 function parse(text,prepared){
- let value;try{value=JSON.parse(text)}catch{throw Error('invalid_worker_result')}
- const generated=contract.draft(value),p=prepared.packet
- if(generated.expectedTests!==p.draftContract.expectedTests||[...codeMask(generated.testCode).matchAll(/\btest\s*\(/g)].length!==generated.expectedTests)throw Error('invalid_worker_result')
+ const p=prepared.packet,details={responseChars:typeof text==='string'?text.length:null,expectedTests:p.draftContract.expectedTests}
+ const invalid=reason=>{const error=Error('invalid_worker_result');error.localDraftValidation=diagnostic({localDraftValidation:{...details,reason}});throw error}
+ let value;try{value=JSON.parse(text)}catch{invalid('json')}
+ details.testCodeChars=typeof value?.testCode==='string'?value.testCode.length:null;details.declaredTests=value?.expectedTests
+ let generated;try{generated=contract.draft(value)}catch(e){invalid(['shape','syntax','contract'].includes(e.draftFailure)?e.draftFailure:'shape')}
+ details.observedTests=[...codeMask(generated.testCode).matchAll(/\btest\s*\(/g)].length
+ if(generated.expectedTests!==p.draftContract.expectedTests||details.observedTests!==generated.expectedTests)invalid('test_count')
  const evidence=catalogue({'acceptance/registered-task.test.cjs':generated.testCode},p.files,p.criteria)
  // Only explicit export names can be checked mechanically. Actual assertions,
  // expected values and full semantic coverage still require review and Sandbox.
- for(const required of evidence.required)for(const subject of required)if(!evidence.files.some(f=>f.lines.some(l=>l.kind==='assertion'&&l.subjects.some(s=>s.file===subject.file&&s.symbol===subject.symbol))))throw Error('invalid_worker_result')
+ details.missingSubjects=evidence.required.flat().filter(subject=>!evidence.files.some(f=>f.lines.some(l=>l.kind==='assertion'&&l.subjects.some(s=>s.file===subject.file&&s.symbol===subject.symbol)))).length
+ if(details.missingSubjects)invalid('required_subject')
  return generated
 }
-module.exports={prepare,parse,SYSTEM}
+// Only finite categories and bounded counts cross into the public task audit.
+// Rejected code, identifiers, source paths and exception messages stay in the
+// existing protected model evidence; never copy them from an error object.
+function diagnostic(error){
+ const v=error?.localDraftValidation||{},bound=(value,max)=>Number.isSafeInteger(value)&&value>=0&&value<=max?value:null
+ return{stage:'local_test_draft',reason:['json','shape','syntax','contract','test_count','required_subject'].includes(v.reason)?v.reason:'unknown',responseChars:bound(v.responseChars,262144),testCodeChars:bound(v.testCodeChars,262144),expectedTests:bound(v.expectedTests,30),declaredTests:bound(v.declaredTests,30),observedTests:bound(v.observedTests,30000),missingSubjects:bound(v.missingSubjects,30000)}
+}
+module.exports={prepare,parse,diagnostic,SYSTEM}
