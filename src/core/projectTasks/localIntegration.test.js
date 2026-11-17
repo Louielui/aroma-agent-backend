@@ -3,9 +3,9 @@ const test=require('node:test'),assert=require('node:assert/strict'),fs=require(
 const {createTasks}=require('./service'),{createRegistry}=require('./contract'),{createRunStore}=require('../operating/runStore'),{createStore}=require('../../actions/store'),{createRepositoryBudget}=require('./repositoryBudget'),{createInventory}=require('./repositoryScope'),usage=require('../../actions/usageBudget'),{digest}=require('../../workers/execution/windowsSandbox'),{createProjectWork}=require('../projectWork/service')
 const OWNER={id:'owner',role:'owner'}
 const generated={testCode:"const test=require('node:test'),assert=require('node:assert/strict');\n"+[1,2,3].map(value=>`test('returns increment ${value}',()=>assert.equal(require('../src/logic.js')(${value}),${value+1}));`).join('\n'),expectedTests:3}
-function fixture(t,{visible=false,failure=false,draftResult=null}={}){
+function fixture(t,{visible=false,failure=false,draftResult=null,sourceLogic='module.exports=value=>value;\n'}={}){
  const appProjectRoot='C:/isolated-app-project'
- const dir=fs.mkdtempSync(path.join(os.tmpdir(),'repository-flow-'));t.after(()=>fs.rmSync(dir,{recursive:true,force:true}));const root=path.join(dir,'repo');fs.mkdirSync(path.join(root,'src'),{recursive:true});fs.writeFileSync(path.join(root,'src/logic.js'),'module.exports=value=>value;\n');fs.writeFileSync(path.join(root,'src/readonly.js'),'module.exports=true;\n')
+ const dir=fs.mkdtempSync(path.join(os.tmpdir(),'repository-flow-'));t.after(()=>fs.rmSync(dir,{recursive:true,force:true}));const root=path.join(dir,'repo');fs.mkdirSync(path.join(root,'src'),{recursive:true});fs.writeFileSync(path.join(root,'src/logic.js'),sourceLogic);fs.writeFileSync(path.join(root,'src/readonly.js'),'module.exports=true;\n')
  const git=(...args)=>execFileSync('git',args,{cwd:root,windowsHide:true,encoding:'utf8',stdio:['ignore','pipe','pipe']}).trim();git('init');git('add','src');git('-c','user.name=Offline Test','-c','user.email=offline@example.invalid','-c','core.hooksPath=','commit','-m','offline fixture');const head=git('rev-parse','HEAD')
  const inventory=createInventory({root,health:async()=>({status:'ok',bootCommit:head})}),store=createRunStore({dir:path.join(dir,'tasks'),workflow:'project_task'}),workStore=createRunStore({dir:path.join(dir,'work'),workflow:'project_work'}),budget=createRepositoryBudget({dir:path.join(dir,'usage'),modeFor:id=>store.get(id)?.input.execution,runtimeCommit:()=>head}),locks=createStore({dir:path.join(dir,'locks')});let promotion=0,work
  let sends=0,cloud=0,sandboxRuns=0;const events=[],selection=require('../../workers/execution/localCodingProvider').SELECTION
@@ -61,4 +61,10 @@ test('local draft validation failure records a safe stage before review and paus
  assert.ok(r.steps.some(s=>s.stage==='draft_invalid'&&s.facts.reason==='test_count'));assert.ok(!r.steps.some(s=>s.stage==='reviewing'))
  assert.equal(JSON.stringify(r).includes('rejected-private-marker'),false);assert.equal(r.registration,null)
  assert.equal(f.sends,1);assert.equal(f.cloud,0);assert.equal(f.sandboxRuns,0);assert.equal(f.budget.status(id).state,'paused');assert.equal(f.budget.status(id).helper.dispatched,1)
+})
+test('missing direct named assertion form stops after one local draft send and preserves the shared root',async t=>{
+ const rejected={testCode:"const test=require('node:test'),assert=require('node:assert/strict');\nconst {increment}=require('../src/logic.js');\n"+[1,2,3].map(v=>`test('case ${v}',()=>assert.equal(increment(${v}),${v+1}));`).join('\n'),expectedTests:3}
+ const f=fixture(t,{sourceLogic:'module.exports={increment:value=>value};\n',draftResult:rejected}),tasks=f.make(),id=tasks.request(OWNER,{bootCommit:f.head,requestId:randomUUID(),goal:'Repair increment',execution:'local'}).run.id
+ const scoped=await tasks.scope(OWNER,{id,bootCommit:f.head,criteria:['Exercise increment'],editable:['src/logic.js'],readonly:[]});await tasks.authorize(OWNER,{id,hash:scoped.approval.hash,nonce:scoped.approval.nonce});await tasks.settled()
+ const r=tasks.get(OWNER,id).run;assert.equal(r.state,'failed');assert.equal(r.reason,'invalid_worker_result');assert.equal(r.draftValidation.reason,'assertion_form');assert.equal(r.draftValidation.missingForms,1);assert.equal(r.draftValidation.stage,'local_test_draft');assert.equal(r.registration,null);assert.ok(!r.steps.some(s=>s.stage==='reviewing'));assert.equal(f.sends,1);assert.equal(f.cloud,0);assert.equal(f.sandboxRuns,0);assert.equal(f.budget.status(id).state,'paused');assert.equal(f.budget.status(id).helper.dispatched,1)
 })

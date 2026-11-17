@@ -36,6 +36,7 @@ function imports(file,text,source){
 }
 const escape=value=>value.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')
 function catalogue(tests,source,criteria,binding=''){
+ const inlineAssertions=[]
  const files=Object.entries(tests).map(([file,text])=>{
   const mask=codeMask(text),bindings=imports(file,text,source);let offset=0
   const lines=text.split('\n').map((quote,i)=>{
@@ -46,6 +47,7 @@ function catalogue(tests,source,criteria,binding=''){
     if(b.kind==='module'){const re=new RegExp('\\b'+escape(b.local)+'(?:\\s*\\.\\s*([A-Za-z_$][\\w$]*))?\\s*\\(','g');return[...code.matchAll(re)].map(m=>({file:b.file,symbol:m[1]||'default'}))}
     return b.kind==='inline'&&b.offset>=start&&b.offset<offset?[{file:b.file,symbol:b.symbol}]:[]
    }):[]
+   if(assertion)for(const b of bindings)if(b.kind==='inline'&&b.symbol!=='default'&&b.offset>=start&&b.offset<offset)inlineAssertions.push({file:b.file,symbol:b.symbol,testFile:file,line:i+1})
    return{line:i+1,text:quote,anchorId:'a'+sha(JSON.stringify([binding,file,sha(text),i+1,quote])).slice(0,24),kind:assertion?'assertion':'reference',subjects}
   })
   return{file,sha256:sha(text),lines}
@@ -57,6 +59,6 @@ function catalogue(tests,source,criteria,binding=''){
  }
  for(const f of files)for(const b of imports(f.file,tests[f.file],source))if(b.kind==='named'||b.kind==='inline'&&b.symbol!=='default')symbols.push({file:b.file,symbol:b.symbol})
  const required=criteria.map(text=>[...new Map(symbols.filter(s=>new RegExp('(?:^|[^\\w$])'+escape(s.symbol)+'(?:$|[^\\w$])').test(text)).map(s=>[s.file+'#'+s.symbol,s])).values()])
- return{files,required}
+ return{files,required,inlineAssertions}
 }
 module.exports={catalogue,codeMask}

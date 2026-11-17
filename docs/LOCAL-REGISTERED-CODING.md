@@ -68,6 +68,28 @@ not 00:40:03; the original Chrome display and absolute expiry were correct.
   Its raw evidence and paused one-call ledger remain unchanged. Offline replay
   now accepts that import form; it does not establish semantic draft correctness,
   a fresh model review, successful coding or deployment.
+  Newly prepared drafts now carry the host versioned `selected_inline_assert_v1`
+  form: every mechanically known named criterion subject needs at least one
+  direct selected-relative invocation on an assertion line. The host supplies
+  canonical callees for existing exports; named new imports discovered against
+  explicit criteria are checked too. Other assertions may keep aliases. Old
+  immutable packets remain readable, but every new native draft prepares the
+  new contract. Missing form fails before another review call, with only a bounded
+  `assertion_form` / `missingForms` diagnostic. No rejected code is copied to audit.
+  This is a bounded lexical format check, not scope analysis or a guarantee that
+  a new export omitted entirely by a model has been semantically covered.
+  Compact review guidance now lists eligible assertion IDs and distinguishes
+  read-only regression coverage from later immutable-byte enforcement. Its JSON
+  schema requires nonempty assertion references for covered checks and an
+  executable assertion for expected_failure, while retaining empty references
+  for honest missing/uncertain checks and not_established baseline judgments.
+  All criterion/check IDs, canonical hashes, raw lines and the existing host
+  validator remain intact; no invalid PASS is repaired or converted by the host.
+  The PR179 native draft used only destructuring despite claiming an inline call
+  in a comment. Its review marked a covered check with no anchors and cited an
+  import as expected_failure; the host correctly refused. That two-call paused
+  root and its raw input/output remain unchanged. Offline replay of the new
+  contract/schema is not fresh native-model or Sandbox acceptance.
   Local draft refusals record only finite JSON/shape/syntax/contract/test-count/
   required-subject categories and bounded size/count metadata in the task audit.
   Rejected source, identifiers, paths and exception text stay out of those public

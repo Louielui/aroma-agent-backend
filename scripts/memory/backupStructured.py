@@ -5,6 +5,7 @@ import json
 import os
 import pathlib
 import sys
+import time
 import asyncpg
 from structured import connect, encode
 
@@ -126,14 +127,38 @@ async def backup_and_verify(destination):
     # Copy the durable queue first. Receipts drained before the database snapshot can
     # then be replayed idempotently; a post-snapshot queue copy could silently omit them.
     data_root = os.environ.get("AROMA_DATA_DIR") or pathlib.Path(__file__).resolve().parents[2] / "data"
-    staged = stage_recovery(str(pathlib.Path(destination).resolve()) + ".recovery", data_root)
-    snapshot_path = pathlib.Path(staged["directory"]) / "snapshot.json"
-    saved = await backup(snapshot_path)
-    proof = await verify_restore(snapshot_path)
-    recovery = finish_recovery(staged, snapshot_path)
-    files = restore_files(staged["directory"], str(pathlib.Path(staged["directory"])) + ".restore")
+    timings = {}
+    phase = None
+    def begin(name):
+        nonlocal phase
+        phase = name
+        print(encode({"event": "BACKUP_PHASE", "version": 1, "phase": phase, "state": "started"}), file=sys.stderr, flush=True)
+        return time.monotonic()
+    def complete(start):
+        timings[phase] = round((time.monotonic() - start) * 1000)
+        print(encode({"event": "BACKUP_PHASE", "version": 1, "phase": phase, "state": "succeeded"}), file=sys.stderr, flush=True)
+    try:
+        start = begin("stage_files")
+        staged = stage_recovery(str(pathlib.Path(destination).resolve()) + ".recovery", data_root)
+        complete(start)
+        snapshot_path = pathlib.Path(staged["directory"]) / "snapshot.json"
+        start = begin("snapshot_database")
+        saved = await backup(snapshot_path)
+        complete(start)
+        start = begin("verify_database")
+        proof = await verify_restore(snapshot_path)
+        complete(start)
+        start = begin("seal_bundle")
+        recovery = finish_recovery(staged, snapshot_path)
+        complete(start)
+        start = begin("restore_files")
+        files = restore_files(staged["directory"], str(pathlib.Path(staged["directory"])) + ".restore")
+        complete(start)
+    except BaseException:
+        print(encode({"event": "BACKUP_PHASE", "version": 1, "phase": phase, "state": "failed"}), file=sys.stderr, flush=True)
+        raise
     return {"saved": saved, "restored": proof, "path": str(pathlib.Path(staged["directory"]) / "canonical.json"),
-            "recovery": recovery, "filesRestored": files}
+            "recovery": recovery, "filesRestored": files, "timingMs": timings}
 
 
 if __name__ == "__main__":

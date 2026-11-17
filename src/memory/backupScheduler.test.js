@@ -12,6 +12,13 @@ test('backup deadline failures keep a safe reason without disclosing worker deta
   const result = await scheduler.run()
   assert.equal(result.state, 'failed'); assert.equal(result.reason, 'memory_backup_timeout'); assert.equal(result.lastSucceededAt, null)
 })
+test('a backup failure retains only bounded host phase diagnostics and clears stale phase state on the next attempt',async t=>{
+ const dir=fs.mkdtempSync(path.join(os.tmpdir(),'xx-backup-phase-'));t.after(()=>fs.rmSync(dir,{recursive:true,force:true}))
+ let second=false,release
+ const scheduler=createBackupScheduler({dir,backup:async()=>{if(second)await new Promise(resolve=>{release=resolve});const e=Error('memory_backup_timeout');e.backupDiagnostic={version:1,phase:'restore_files',lastCompletedPhase:'seal_bundle',elapsedMs:240000,phaseElapsedMs:25000,token:'secret-do-not-persist'};throw e}})
+ await scheduler.run();const state=scheduler.status();assert.deepEqual(state.diagnostic,{version:1,phase:'restore_files',lastCompletedPhase:'seal_bundle',elapsedMs:240000,phaseElapsedMs:25000});assert.doesNotMatch(fs.readFileSync(path.join(dir,'backup-state.json'),'utf8'),/secret-do-not-persist/)
+ second=true;const pending=scheduler.run();assert.equal(scheduler.status().diagnostic,null);release();await pending
+})
 function fixture (t) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'xx-backup-schedule-')); t.after(() => fs.rmSync(dir, { recursive: true, force: true }))
   let now = Date.parse('2026-10-01T12:00:00Z'); let runs = 0; let fail = false
