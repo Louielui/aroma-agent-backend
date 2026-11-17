@@ -2,8 +2,8 @@
 const test=require('node:test'),assert=require('node:assert/strict'),{randomUUID}=require('node:crypto')
 const {createRepositoryRequests}=require('./repositoryRequest'),{createMemoryRunStore}=require('../operating/runStore'),{createOwnerApprovalStore}=require('../../agent/ownerApprovalStore')
 const OWNER={id:'owner',role:'owner'},HEAD='a'.repeat(40)
-async function fixture({failDecision=false}={}){
- let now=1000000000000,activations=0,sends=0,verify=async()=>{}
+async function fixture({failDecision=false,nowAt=1000000000000}={}){
+ let now=nowAt,activations=0,sends=0,verify=async()=>{}
  const store=createMemoryRunStore(),approvals=createOwnerApprovalStore({now:()=>now}),api=createRepositoryRequests({store,approvals,now:()=>now,enabled:()=>true,lock:()=>()=>{},record:(r,stage,facts={})=>{if(failDecision&&stage==='scope_approval_accepted')throw Error('audit_write_failed');r.steps.push({stage,facts});store.save(r)},inventory:{list:async()=>[{path:'src/example.js',eligible:true}]},sourceFor:d=>({read:async()=>({hash:'b'.repeat(64),evidence:{bootCommit:HEAD},order:{files:{'src/example.js':'module.exports=1',...d.tests}}}),verify:()=>verify()}),budget:{profile:()=>({helper:8}),status:()=>({state:'not_activated',helper:{reserved:0,available:8}}),activate:()=>{activations++}},launch:()=>{sends++}})
  const r=api.request(OWNER,{bootCommit:HEAD,requestId:randomUUID(),goal:'Fix one isolated source'}),scope={id:r.run.id,bootCommit:HEAD,criteria:['Preserve behavior'],editable:['src/example.js'],readonly:[]},card=await api.scope(OWNER,scope)
  return{api,store,scope,card,setNow:n=>{now=n},getNow:()=>now,setVerify:fn=>{verify=fn},counts:()=>({activations,sends}),input:()=>({id:card.run.id,hash:card.approval.hash,nonce:card.approval.nonce})}
@@ -43,4 +43,13 @@ test('successful approval records a positive receipt only after all binding and 
 
 test('audit persistence failure cannot activate quota or dispatch, and the consumed nonce cannot be replayed',async()=>{
  const f=await fixture({failDecision:true});await assert.rejects(f.api.authorize(OWNER,f.input()),/audit_write_failed/);assert.deepEqual(f.counts(),{activations:0,sends:0});await assert.rejects(f.api.authorize(OWNER,f.input()),/approval_unavailable/);assert.deepEqual(f.counts(),{activations:0,sends:0});assert.equal(f.store.get(f.card.run.id).scopeApprovalDiagnostic.reason,'nonce_already_used')
+})
+
+test('saved November source-card epoch has a host-bound MBT and UTC display without shifting the expiry or issuing usage',async()=>{
+ const f=await fixture({nowAt:1794897003452}),v=f.api.view(f.store.get(f.card.run.id))
+ assert.equal(v.approvalTiming.expiresAt,1794897603452)
+ assert.deepEqual(v.approvalTiming.display,{epoch:1794897603452,utc:'2026-11-17T06:40:03.452Z',local:'2026-11-17 01:40:03.452 UTC-05:00',timeZone:'America/Winnipeg',rule:'manitoba-permanent-05-2026'})
+ assert.equal(v.approvalTiming.remainingMs,600000);assert.deepEqual(f.counts(),{activations:0,sends:0})
+ f.setNow(1794897603452);await assert.rejects(f.api.authorize(OWNER,f.input()),/approval_unavailable/)
+ assert.equal(f.store.get(f.card.run.id).scopeApprovalDiagnostic.reason,'approval_expired');assert.deepEqual(f.counts(),{activations:0,sends:0})
 })
