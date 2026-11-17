@@ -89,3 +89,8 @@ states. Authenticated failures may retain bounded phase/elapsed metadata, never 
 stderr, paths, SQL, credentials or record values. This metadata is diagnostic, not
 backup or restore proof. A subsequent attempt clears the old diagnostic; historical
 failure evidence and successful-proof provenance are not rewritten as success.
+
+The Owner-authorized readiness manifest capacity is 65,536 file entries. Its
+8 MiB JSON ceiling, 512 MiB recovery asset ceiling, other evidence byte limits,
+24-hour proof age and all path, digest, database and per-file restore checks remain
+unchanged. Capacity does not authorize truncation, deadline renewal or deployment.
