@@ -55,6 +55,24 @@ not 00:40:03; the original Chrome display and absolute expiry were correct.
   tails and template tails are not indexed. Unsupported indirect/helper styles
   can fail visibly rather than being guessed. A schema-valid coverage reason can
   still be wrong; actual protected assertions and Sandbox results must be reviewed.
+  Direct selected-relative `require('./module').namedExport(...)` invocations now
+  retain the named export in assertion anchors, including new exports named by
+  the criteria. Inline default calls, destructuring and module bindings retain
+  their existing support. Mere property references, computed/optional members,
+  longer chains, namespace `fake.require`, comments and strings do not establish
+  the named invocation. This remains a lexical index, not scope analysis or proof
+  that an assertion executes. The complete canonical test binding, every criterion
+  sub-check and independent review/Sandbox gates remain required.
+  The saved PR178 native attempt passed source approval, then stopped before
+  review after one draft call because inline `orderBoxes` was indexed as default.
+  Its raw evidence and paused one-call ledger remain unchanged. Offline replay
+  now accepts that import form; it does not establish semantic draft correctness,
+  a fresh model review, successful coding or deployment.
+  Local draft refusals record only finite JSON/shape/syntax/contract/test-count/
+  required-subject categories and bounded size/count metadata in the task audit.
+  Rejected source, identifiers, paths and exception text stay out of those public
+  diagnostics. A provider transport success may still be a failed draft-validation
+  outcome; the failure never grants a retry, changes a verdict or extends quota.
   The saved PR173 acceptance generated five mixed tests, omitted stock checks and
   supplied incorrect expected values; its review had wrong whitespace/line anchors
   and title-only coverage. That failure and its two-call paused ledger remain

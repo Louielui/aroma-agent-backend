@@ -3,7 +3,7 @@ const test=require('node:test'),assert=require('node:assert/strict'),fs=require(
 const {createTasks}=require('./service'),{createRegistry}=require('./contract'),{createRunStore}=require('../operating/runStore'),{createStore}=require('../../actions/store'),{createRepositoryBudget}=require('./repositoryBudget'),{createInventory}=require('./repositoryScope'),usage=require('../../actions/usageBudget'),{digest}=require('../../workers/execution/windowsSandbox'),{createProjectWork}=require('../projectWork/service')
 const OWNER={id:'owner',role:'owner'}
 const generated={testCode:"const test=require('node:test'),assert=require('node:assert/strict');\n"+[1,2,3].map(value=>`test('returns increment ${value}',()=>assert.equal(require('../src/logic.js')(${value}),${value+1}));`).join('\n'),expectedTests:3}
-function fixture(t,{visible=false,failure=false}={}){
+function fixture(t,{visible=false,failure=false,draftResult=null}={}){
  const appProjectRoot='C:/isolated-app-project'
  const dir=fs.mkdtempSync(path.join(os.tmpdir(),'repository-flow-'));t.after(()=>fs.rmSync(dir,{recursive:true,force:true}));const root=path.join(dir,'repo');fs.mkdirSync(path.join(root,'src'),{recursive:true});fs.writeFileSync(path.join(root,'src/logic.js'),'module.exports=value=>value;\n');fs.writeFileSync(path.join(root,'src/readonly.js'),'module.exports=true;\n')
  const git=(...args)=>execFileSync('git',args,{cwd:root,windowsHide:true,encoding:'utf8',stdio:['ignore','pipe','pipe']}).trim();git('init');git('add','src');git('-c','user.name=Offline Test','-c','user.email=offline@example.invalid','-c','core.hooksPath=','commit','-m','offline fixture');const head=git('rev-parse','HEAD')
@@ -12,7 +12,7 @@ function fixture(t,{visible=false,failure=false}={}){
  const local=require('../workerFlow/localProviders').createLocalProviders({root:path.join(dir,'local-work'),onEvent:e=>events.push(e),executor:{readiness:async()=>({ready:true}),isBusy:()=>false,run:async pack=>{sandboxRuns++;assert.deepEqual(pack.tests,['acceptance/registered-task.test.cjs']);assert.equal(pack.files[pack.tests[0]],generated.testCode);assert.equal(pack.files['src/readonly.js'],'module.exports=true;\n');return sandboxRuns===1?{exitCode:1,total:3,failed:3,passed:0,skipped:0,cancelled:0}:{exitCode:0,total:3,passed:3,failed:0,skipped:0,cancelled:0}}},fetchFn:async(url,o)=>{
   assert.ok(url.startsWith('http://127.0.0.1:11435/'));assert.equal(o.redirect,'error');if(url.endsWith('/api/tags'))return{ok:true,json:async()=>({models:[{name:'qwen3.5:9b',digest:selection.digest}]})}
   assert.ok(url.endsWith('/api/chat'));sends++;if(failure)throw Error('simulated transport failure');const body=JSON.parse(o.body);assert.equal(body.model,'qwen3.5:9b');assert.equal(body.think,false)
-  let reply=sends===1?generated:sends===3?{changes:[{file:'src/logic.js',content:'module.exports=value=>value+1;\n'}],summary:'Increment only'}:{verdict:'pass',summary:'Contract checked',findings:[]}
+  let reply=sends===1?(draftResult||generated):sends===3?{changes:[{file:'src/logic.js',content:'module.exports=value=>value+1;\n'}],summary:'Increment only'}:{verdict:'pass',summary:'Contract checked',findings:[]}
   if(sends===2){const packet=JSON.parse(body.messages.find(v=>v.role==='user').content),anchor=packet.target.files[0].lines.find(l=>l.kind==='assertion').anchorId;assert.equal(packet.stage,'test_draft');assert.equal(packet.target.files[0].lines[0].text,generated.testCode.split('\n')[0]);assert.equal(packet.baseline.role,'unchanged_reference_expected_to_fail');reply={...reply,binding:packet.binding,coverage:packet.criteria.map(v=>({criterion:v.id,status:'covered',checks:v.checks.map(check=>({id:check.id,status:'covered',anchors:[anchor],reason:'Offline increment check.'}))})),baseline:{expectation:'expected_failure',anchor,reason:'Unchanged identity function fails the increment assertion.'}}}
   return{ok:true,body:(async function*(){yield Buffer.from(JSON.stringify({message:{content:JSON.stringify(reply)},done:true,prompt_eval_count:20,eval_count:10})+'\n')})()}
  }})
@@ -47,4 +47,18 @@ test('local transport failure is preserved, counted once and pauses the same roo
  const f=fixture(t,{failure:true}),tasks=f.make(),id=tasks.request(OWNER,{bootCommit:f.head,requestId:randomUUID(),goal:'Repair increment',execution:'local'}).run.id
  const scoped=await tasks.scope(OWNER,{id,bootCommit:f.head,criteria:['Increment'],editable:['src/logic.js'],readonly:[]});await tasks.authorize(OWNER,{id,hash:scoped.approval.hash,nonce:scoped.approval.nonce});await tasks.settled()
  const r=tasks.get(OWNER,id).run;assert.equal(r.state,'failed');assert.equal(r.reason,'local_transport_or_protocol_error');assert.equal(f.budget.status(id).state,'paused');assert.equal(f.sends,1);assert.equal(f.cloud,0);assert.equal(f.budget.status(id).helper.dispatched,1)
+})
+
+test('local draft validation failure records a safe stage before review and pauses without another call',async t=>{
+ const rejected={...generated,expectedTests:4,testCode:generated.testCode+'\n// rejected-private-marker'}
+ const f=fixture(t,{draftResult:rejected}),tasks=f.make(),id=tasks.request(OWNER,{bootCommit:f.head,requestId:randomUUID(),goal:'Repair increment',execution:'local'}).run.id
+ const scoped=await tasks.scope(OWNER,{id,bootCommit:f.head,criteria:['Increment'],editable:['src/logic.js'],readonly:[]})
+ await tasks.authorize(OWNER,{id,hash:scoped.approval.hash,nonce:scoped.approval.nonce});await tasks.settled()
+ const r=tasks.get(OWNER,id).run
+ assert.equal(r.state,'failed');assert.equal(r.reason,'invalid_worker_result');assert.equal(r.draftValidation.reason,'test_count')
+ assert.equal(r.draftValidation.stage,'local_test_draft');assert.equal(r.draftValidation.attempt,1)
+ assert.equal(r.draftValidation.expectedTests,3);assert.equal(r.draftValidation.declaredTests,4);assert.equal(r.draftValidation.observedTests,3)
+ assert.ok(r.steps.some(s=>s.stage==='draft_invalid'&&s.facts.reason==='test_count'));assert.ok(!r.steps.some(s=>s.stage==='reviewing'))
+ assert.equal(JSON.stringify(r).includes('rejected-private-marker'),false);assert.equal(r.registration,null)
+ assert.equal(f.sends,1);assert.equal(f.cloud,0);assert.equal(f.sandboxRuns,0);assert.equal(f.budget.status(id).state,'paused');assert.equal(f.budget.status(id).helper.dispatched,1)
 })

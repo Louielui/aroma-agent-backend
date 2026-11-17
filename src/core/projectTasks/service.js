@@ -76,6 +76,7 @@ function createTasks ({ store, sourceFor, provider, review, enabled, invocationL
       record(r, 'draft_ready', { testsExecuted: false, filesChanged: false, model: selection.model, effort: r.draftEffort, billing: selection.billing })
       sessions.set(r.id, session); tickets.set(r.id, { id: r.id, hash, nonce: approvals.issueNonce({ approvalId: r.id, workOrderHash: hash, sessionId: session }), expiresAt: r.expiresAt })
     } catch (e) {
+      if(r.input.execution==='local'&&e.localDraftValidation){r.draftValidation={attempt:Math.min(2,(r.attempts?.length||0)+1),...require('../workerFlow/localTestDraft').diagnostic(e)};record(r,'draft_invalid',r.draftValidation)}
       if (e.reviewValidation) r.reviewValidation = { stage: ['envelope', 'json', 'schema', 'finding'].includes(e.reviewValidation.stage) ? e.reviewValidation.stage : 'unknown', responseChars: Number.isInteger(e.reviewValidation.responseChars) && e.reviewValidation.responseChars >= 0 && e.reviewValidation.responseChars <= 100000 ? e.reviewValidation.responseChars : null }
       if (e.safeDiagnostics) r.failureDiagnostic = { exitCode: Number.isInteger(e.safeDiagnostics.exitCode) ? e.safeDiagnostics.exitCode : null,
         parsedJson: e.safeDiagnostics.parsedJson === true, subtype: ['success', 'error_max_turns', 'error_during_execution', 'error_max_budget_usd', 'error_max_structured_output_retries'].includes(e.safeDiagnostics.subtype) ? e.safeDiagnostics.subtype : 'unknown',

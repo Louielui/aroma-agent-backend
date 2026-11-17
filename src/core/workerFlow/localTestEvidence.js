@@ -20,12 +20,17 @@ function imports(file,text,source){
  const mask=codeMask(text),out=[],resolve=value=>{if(!value.startsWith('.'))return null;const name=path.normalize(path.join(path.dirname(file),value));return[name,name+'.js',name+'.cjs',name+'/index.js'].find(n=>Object.hasOwn(source,n))||null}
  const re=/\brequire\s*\(\s*(['"])([^'"\r\n]+)\1\s*\)/g
  for(const m of text.matchAll(re)){
-  if(mask.slice(m.index,m.index+7)!=='require')continue
+  if(mask.slice(m.index,m.index+7)!=='require'||mask.slice(0,m.index).trimEnd().endsWith('.'))continue
   const name=resolve(m[2]);if(!name)continue
   const before=mask.slice(Math.max(0,m.index-500),m.index),destructured=/\{\s*([\w$\s,:]+)\s*\}\s*=\s*$/.exec(before),single=/\b([A-Za-z_$][\w$]*)\s*=\s*$/.exec(before)
   if(destructured){for(const item of destructured[1].split(',')){const v=item.trim().split(/\s*:\s*/);if(v.every(n=>/^[A-Za-z_$][\w$]*$/.test(n)))out.push({file:name,symbol:v[0],local:v[1]||v[0],kind:'named'})}}
   else if(single)out.push({file:name,symbol:'default',local:single[1],kind:'module'})
-  else out.push({file:name,symbol:'default',local:null,kind:'inline',offset:m.index})
+  else {
+   // Only a direct dot-member invocation has a named inline subject. A property
+   // reference, computed member or longer chain is not evidence of that call.
+   const tail=mask.slice(m.index+m[0].length),member=/^\s*\.\s*([A-Za-z_$][\w$]*)\s*\(/.exec(tail)
+   if(member||/^\s*\(/.test(tail))out.push({file:name,symbol:member?.[1]||'default',local:null,kind:'inline',offset:m.index})
+  }
  }
  return out
 }
@@ -39,7 +44,7 @@ function catalogue(tests,source,criteria,binding=''){
    const subjects=assertion?bindings.flatMap(b=>{
     if(b.kind==='named'&&new RegExp('\\b'+escape(b.local)+'\\s*\\(').test(code))return[{file:b.file,symbol:b.symbol}]
     if(b.kind==='module'){const re=new RegExp('\\b'+escape(b.local)+'(?:\\s*\\.\\s*([A-Za-z_$][\\w$]*))?\\s*\\(','g');return[...code.matchAll(re)].map(m=>({file:b.file,symbol:m[1]||'default'}))}
-    return b.kind==='inline'&&b.offset>=start&&b.offset<offset?[{file:b.file,symbol:'default'}]:[]
+    return b.kind==='inline'&&b.offset>=start&&b.offset<offset?[{file:b.file,symbol:b.symbol}]:[]
    }):[]
    return{line:i+1,text:quote,anchorId:'a'+sha(JSON.stringify([binding,file,sha(text),i+1,quote])).slice(0,24),kind:assertion?'assertion':'reference',subjects}
   })
@@ -50,7 +55,7 @@ function catalogue(tests,source,criteria,binding=''){
   const mask=codeMask(text),re=/\bmodule\s*\.\s*exports\s*=\s*\{([^}]+)\}/g
   for(const m of mask.matchAll(re))for(const part of m[1].split(',')){const symbol=part.trim().split(/\s*:/)[0];if(/^[A-Za-z_$][\w$]*$/.test(symbol))symbols.push({file,symbol})}
  }
- for(const f of files)for(const b of imports(f.file,tests[f.file],source))if(b.kind==='named')symbols.push({file:b.file,symbol:b.symbol})
+ for(const f of files)for(const b of imports(f.file,tests[f.file],source))if(b.kind==='named'||b.kind==='inline'&&b.symbol!=='default')symbols.push({file:b.file,symbol:b.symbol})
  const required=criteria.map(text=>[...new Map(symbols.filter(s=>new RegExp('(?:^|[^\\w$])'+escape(s.symbol)+'(?:$|[^\\w$])').test(text)).map(s=>[s.file+'#'+s.symbol,s])).values()])
  return{files,required}
 }
