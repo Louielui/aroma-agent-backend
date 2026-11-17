@@ -16,6 +16,8 @@ function buildHtml ({env=process.env}={}) {
     scopePrepare:t('projectTask.scopePrepare'),
     scopeAuthorize:t('projectTask.scopeAuthorize'),
     scopeConfirm:t('projectTask.scopeConfirm'),
+    scopeExpires:t('projectTask.scopeExpires'),scopeExpired:t('projectTask.scopeExpired'),scopeClockUnknown:t('projectTask.scopeClockUnknown'),scopeSeconds:t('projectTask.scopeSeconds'),scopeSending:t('projectTask.scopeSending'),scopeRejected:t('projectTask.scopeRejected'),scopeAccepted:t('projectTask.scopeAccepted'),
+    scopeReasons:{approval_expired:t('projectTask.scopeReasonExpired'),approval_missing:t('projectTask.scopeReasonMissing'),displayed_hash_mismatch:t('projectTask.scopeReasonHash'),material_changed:t('projectTask.scopeReasonMaterial'),scope_input_changed:t('projectTask.scopeReasonMaterial'),sealed_input_changed:t('projectTask.scopeReasonMaterial'),source_verification_failed:t('projectTask.scopeReasonSource'),worker_busy:t('projectTask.scopeReasonBusy'),state_unavailable:t('projectTask.scopeReasonState'),card_rejected:t('projectTask.scopeReasonRejected'),disabled:t('projectTask.scopeReasonDisabled'),nonce_missing:t('projectTask.scopeReasonNonce'),nonce_unknown:t('projectTask.scopeReasonNonce'),nonce_already_used:t('projectTask.scopeReasonReplay'),nonce_expired:t('projectTask.scopeReasonExpired'),nonce_approval_mismatch:t('projectTask.scopeReasonNonce'),nonce_hash_mismatch:t('projectTask.scopeReasonNonce'),nonce_session_mismatch:t('projectTask.scopeReasonNonce'),nonce_rejected:t('projectTask.scopeReasonNonce'),unknown:t('projectTask.scopeReasonUnknown')},
     awaiting_scope:t('projectTask.state.awaitingScope'),
     awaiting_scope_approval:t('projectTask.state.awaitingScopeApproval'),
     intro: t('projectTask.intro'),

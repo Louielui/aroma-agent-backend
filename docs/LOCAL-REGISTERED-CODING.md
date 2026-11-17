@@ -104,6 +104,21 @@ the existing work pages. No automatic adoption, PR merge or production apply.
 
 ## Evidence and limits
 
+Source approval now records finite rejection reasons and host-side handler receipt,
+evaluation and sealed expiry times in the existing task audit. This distinguishes
+arrival after expiry from expiry during source verification; it does not measure
+the Owner's click or requests rejected before the handler. Existing historical
+`approval_unavailable` failures without these receipts remain undiagnosed.
+The source card shows a host-bound Winnipeg deadline/countdown, disables expiry
+or unverifiable timing, preserves unchecked confirmation on reload, and reads the
+persisted decision after submission. Metadata polling cannot renew or authorize;
+an uncertain send is not automatically replayed. The UI disables a refused card;
+explicit fresh scope preparation preserves old audit steps. Existing server-side
+nonce consumption rules are unchanged: a wrong displayed hash does not consume
+the valid nonce. No quota or model dispatch starts from a refusal.
+Offline browser and regression tests cover these diagnostics. They do not prove
+that the former native approval failure has been reproduced or repaired live.
+
 The earlier two synthetic tasks used two real Qwen calls total and real offline
 OS Sandbox RED/GREEN runs. Additional boundary execution found four failures in
 the whole-box candidate: invalid pack types, decimal ceiling and unsafe counts.
