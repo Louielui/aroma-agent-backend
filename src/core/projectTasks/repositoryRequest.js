@@ -7,11 +7,15 @@ const {createOwnerApprovalStore}=require('../../agent/ownerApprovalStore')
 const owner=a=>{if(a?.id!=='owner'||a.role!=='owner')throw Error('permission_denied')}
 const goalKey=(goal,execution)=>digest((execution==='local'?'local\n':'')+goal.normalize('NFC').trim().replace(/\r\n/g,'\n'))
 const nextAction=r=>r.workRunId?'view_coding_result':({awaiting_scope:'select_scope',awaiting_scope_approval:'approve_scope_and_usage',awaiting_approval:'approve_tests',registered:'prepare_coding',interrupted:'inspect_interruption',failed:'inspect_failure',needs_attention:'inspect_findings'}[r.state]||'view_progress')
-function createRepositoryRequests({store,enabled,lock,record,inventory,sourceFor,launch,budget,busy=()=>false,localEnabled=()=>false,approvals=createOwnerApprovalStore()}){
+function createRepositoryRequests({store,enabled,lock,record,inventory,sourceFor,launch,budget,busy=()=>false,localEnabled=()=>false,approvals=createOwnerApprovalStore(),now=()=>Date.now()}){
  const tickets=new Map(),sessions=new Map()
  for(const r of store.all())if(r.state==='awaiting_scope_approval'){r.state='awaiting_scope';r.reason='approval_invalidated_on_restart';record(r,'scope_approval_interrupted')}
  function guarded(actor,fn){owner(actor);if(!enabled())throw Error('not_enabled');const release=lock();try{return fn()}finally{release()}}
- function view(r){return{run:r,approval:tickets.get(r.id)||null,nextAction:nextAction(r),...(r.input.scope&&budget?{usage:budget.status(r.id)}:{})}}
+ function view(r){
+  const serverNow=now(),expiresAt=Number.isSafeInteger(r.scopeApproval?.expiresAt)?r.scopeApproval.expiresAt:null
+  const state=expiresAt===null||!tickets.has(r.id)?'unavailable':serverNow>=expiresAt?'expired':r.scopeApprovalDiagnostic?.outcome==='rejected'?'rejected':'pending'
+  return{run:r,approval:tickets.get(r.id)||null,nextAction:nextAction(r),approvalTiming:{serverNow,expiresAt,remainingMs:expiresAt===null?null:Math.max(0,expiresAt-serverNow),state},...(r.input.scope&&budget?{usage:budget.status(r.id)}:{})}
+ }
  function request(actor,input){return guarded(actor,()=>{
   if(!keys(input,['bootCommit','requestId','goal',...(Object.hasOwn(input||{},'execution')?['execution']:[])])||!ID.test(input.requestId||'')||!/^[a-f0-9]{40}$/.test(input.bootCommit||'')||typeof input.goal!=='string'||!input.goal.trim()||input.goal.length>12000||input.goal.includes('\0'))throw Error('invalid_request')
   if(Object.hasOwn(input,'execution')&&(input.execution!=='local'||!localEnabled()))throw Error('local_coding_disabled')
@@ -34,18 +38,36 @@ function createRepositoryRequests({store,enabled,lock,record,inventory,sourceFor
    require('./repositoryScope').validateSnapshot(snapshot);if(selected.execution==='local')require('./localScope').validateSnapshot(snapshot)
    const material={input:selected,snapshot,usage:selected.execution==='local'?budget.profile(r.id):require('../../actions/usageBudget').developmentProfile(r.id),delivery:'owner_deployment_package_required'},hash=digest(JSON.stringify(material)),approvalId=randomUUID(),session=approvals.createSession()
    const sealed=approvals.seal({workOrder:{approvalId,workOrderHash:hash,...material},proposalId:r.id});if(!sealed.ok)throw Error('approval_unavailable')
-   r.input=selected;r.scopeMaterial=material;r.scopeApproval={id:approvalId,hash,expiresAt:sealed.record.expiresAt};r.state='awaiting_scope_approval';record(r,'scope_prepared',{hash,modelSent:false})
+   r.input=selected;r.scopeMaterial=material;r.scopeApproval={id:approvalId,hash,expiresAt:sealed.record.expiresAt};r.scopeApprovalDiagnostic=null;r.state='awaiting_scope_approval';record(r,'scope_prepared',{hash,modelSent:false})
    sessions.set(r.id,session);tickets.set(r.id,{id:r.id,hash,nonce:approvals.issueNonce({approvalId,workOrderHash:hash,sessionId:session}),expiresAt:sealed.record.expiresAt});return view(r)
   }finally{release()}
  }
  async function authorize(actor,input){owner(actor);if(!enabled())throw Error('not_enabled');if(!keys(input,['id','hash','nonce']))throw Error('invalid_request')
-  const release=lock();try{
-   const r=store.get(input.id);if(r?.state!=='awaiting_scope_approval'||busy())throw Error('approval_unavailable')
+  const received=now(),release=lock();try{
+   const r=store.get(input.id)
+   // Persist only host-controlled times and finite reason enums. Never copy the
+   // submitted nonce/hash, exception text, credentials or HTTP body into audit.
+   function decision(reason,outcome='rejected'){
+    if(!r)return
+    const expiresAt=Number.isSafeInteger(r.scopeApproval?.expiresAt)?r.scopeApproval.expiresAt:null
+    r.scopeApprovalDiagnostic={version:1,outcome,reason,receivedAt:new Date(received).toISOString(),evaluatedAt:new Date(now()).toISOString(),expiresAt,expiredAtReceipt:expiresAt===null?null:received>=expiresAt}
+    record(r,outcome==='accepted'?'scope_approval_accepted':'scope_approval_rejected',r.scopeApprovalDiagnostic)
+   }
+   function reject(reason){decision(reason);throw Error('approval_unavailable')}
+   if(r?.state!=='awaiting_scope_approval')reject('state_unavailable')
+   if(busy())reject('worker_busy')
    const a=r.scopeApproval,sealed=approvals.loadSealed(a.id)
-   if(!sealed.ok||a.hash!==input.hash||digest(JSON.stringify(r.scopeMaterial))!==input.hash||JSON.stringify(r.input)!==JSON.stringify(r.scopeMaterial.input)||JSON.stringify(sealed.record.workOrder.input)!==JSON.stringify(r.input))throw Error('approval_unavailable')
-   const d=definition(r.id,r.input,{testCode:"const test=require('node:test'),assert=require('node:assert/strict');",expectedTests:3});await sourceFor(d).verify(r.scopeMaterial.snapshot)
-   if(!enabled())throw Error('not_enabled');if(busy())throw Error('worker_busy')
-   if(!approvals.consumeNonce({nonce:input.nonce,approvalId:a.id,displayedHash:input.hash,sessionId:sessions.get(r.id)}).ok)throw Error('approval_unavailable')
+   if(!sealed.ok)reject(sealed.reason==='expired'?'approval_expired':'approval_missing')
+   if(a.hash!==input.hash)reject('displayed_hash_mismatch')
+   if(digest(JSON.stringify(r.scopeMaterial))!==input.hash)reject('material_changed')
+   if(JSON.stringify(r.input)!==JSON.stringify(r.scopeMaterial.input))reject('scope_input_changed')
+   if(JSON.stringify(sealed.record.workOrder.input)!==JSON.stringify(r.input))reject('sealed_input_changed')
+   const d=definition(r.id,r.input,{testCode:"const test=require('node:test'),assert=require('node:assert/strict');",expectedTests:3})
+   try{await sourceFor(d).verify(r.scopeMaterial.snapshot)}catch(e){decision('source_verification_failed');throw e}
+   if(!enabled()){decision('disabled');throw Error('not_enabled')}if(busy()){decision('worker_busy');throw Error('worker_busy')}
+   const consumed=approvals.consumeNonce({nonce:input.nonce,approvalId:a.id,displayedHash:input.hash,sessionId:sessions.get(r.id)})
+   if(!consumed.ok)reject(['nonce_missing','nonce_unknown','nonce_already_used','nonce_expired','nonce_approval_mismatch','nonce_hash_mismatch','nonce_session_mismatch'].includes(consumed.reason)?consumed.reason:'nonce_rejected')
+   decision('accepted','accepted')
    tickets.delete(r.id);r.scopeGrant={hash:input.hash,actor:'owner',at:new Date().toISOString()};r.state='queued';record(r,'scope_authorized',{hash:input.hash,helperLimit:8,websiteLimit:0})
    try{budget.activate(r.id,r.input.bootCommit);launch(r)}catch(e){r.state='interrupted';r.reason='scope_launch_uncertain';record(r,'scope_launch_interrupted');throw e}return view(store.get(r.id))
   }finally{release()}

@@ -28,6 +28,9 @@ function distroAvailable () {
 }
 const AVAILABLE = distroAvailable()
 const opts = AVAILABLE ? {} : { skip: 'OpenClawGateway distro not available on this machine' }
+// Readers enumerate the same envelopes that the other live files remove. Join
+// their existing fixture gate before any snapshot; keep every assertion intact.
+if(AVAILABLE)require('./wslLiveResource.fixture.cjs').acquire()
 
 /** The production adapters: nothing injected. */
 const ad = A.createOpenClawOsAdapters()
