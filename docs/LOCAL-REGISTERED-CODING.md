@@ -176,6 +176,45 @@ they do not demonstrate a new successful model draft or improved runtime speed.
 Fresh inference requires a separately approved new acceptance, never the unused
 capacity of a paused historical root. Prompt self-checks are not coverage proof.
 
+### Structured case drafting (isolated candidate, 2026-11-18 UTC)
+
+The next retained native attempt on `508e8aab` received that writing guide but
+again used three destructured aliases and omitted the new formatter's unsafe
+integer rejection. It stopped after one real local call, before review or coding.
+The raw evidence and all nineteen paused runtime roots remain unchanged.
+
+For three or more criteria, each naming exactly one selected relative named
+function call with unambiguous fixed arity, the candidate requests versioned
+`local_case_plan_v1` case DATA instead of free JavaScript. A host renderer fixes
+the selected callee and puts every assertion's direct call on one physical line.
+Only bounded literals, Number constants, BigInt conversion, arithmetic, arrays
+and plain objects are accepted; no variable lookup, imports, arbitrary calls,
+comments, templates, assignment or expression evaluation occurs on the host.
+Bounds are 600 characters/256 tokens/24 nesting levels per expression, 16 groups
+per criterion, 128 rows per group, 512 rows overall and 30,000 rendered characters.
+This adds no dependencies or runtime model allowance.
+
+Explicit supported `Reject ... with RangeError/TypeError/Error` lists become
+required case slots bound to the original criterion and subject. The model must
+supply the exact probe and error, including `Number.MAX_SAFE_INTEGER+1` when
+requested. Missing, disguised or wrong probes are refused before another review
+call. The host never fills missing cases, fixes a rejected historical output or
+converts its failure into a pass. Unsupported/ambiguous task shapes keep the
+existing legacy drafting path; an eligible malformed case response cannot fall
+back to free JavaScript. This narrow grammar does not prove all semantic cases
+or infer every possible prose requirement. Full criteria and original expected
+values still require independent local test review and real Sandbox execution.
+
+The native ledger retains the original model case response before projection.
+The task audit and exact-version review retain SHA-256 of raw output, case
+contract, renderer and rendered protected test. Review explicitly states this is
+HOST-RENDERED source, not model-authored JavaScript, and retains all criterion
+sub-checks, negative branches and exact assertion anchors. Source/usage, exact
+test version and coding approvals are unchanged. Rendering performs no test or
+source execution; Sandbox RED/GREEN remains separately required. Synthetic
+transport/approval tests prove composition only. Fresh Qwen adherence, successful
+registered repair and any runtime speed change are NOT RETESTED in this tranche.
+
 Source approval now records finite rejection reasons and host-side handler receipt,
 evaluation and sealed expiry times in the existing task audit. This distinguishes
 arrival after expiry from expiry during source verification; it does not measure
