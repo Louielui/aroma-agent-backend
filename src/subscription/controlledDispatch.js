@@ -15,7 +15,7 @@ function validInput(b){
  if(Object.hasOwn(v,'hash')&&(!/^[a-f0-9]{64}$/.test(v.hash||'')||!/^[a-f0-9]{48}$/.test(v.nonce||'')))return false
  return true
 }
-function createControlledDispatch({projectTasks,projectWork,enabled=()=>false,executionReady=()=>false,otherActive=()=>false,localEnabled=()=>false,subscriptionReady=()=>true,bootCommit}={}){
+function createControlledDispatch({projectTasks,projectWork,enabled=()=>false,executionReady=()=>false,otherActive=()=>false,localEnabled=()=>false,subscriptionReady=()=>true,isolationStatus=null,bootCommit}={}){
  const owner=a=>{if(a?.id!=='owner'||a.role!=='owner')throw Error('permission_denied')}
  const task=r=>{if(!r||r.kind!=='repository_repair'||r.workflow!=='project_task')throw Error('controlled_scope_required');return r}
  const work=r=>{if(!r?.workOrder||!ID.test(r.workOrder.usageRoot||'')||r.workOrder.delivery!=='owner_deployment_package_required')throw Error('controlled_scope_required');return r}
@@ -24,7 +24,11 @@ function createControlledDispatch({projectTasks,projectWork,enabled=()=>false,ex
  const requireLane=local=>{if(!ready(local?localEnabled:subscriptionReady))throw Error(local?'local_coding_disabled':'controlled_dispatch_unavailable')}
  async function handle(actor,b){
   owner(actor);if(!validInput(b))throw Error('invalid_request')
-  if(b.op==='status')return{component:'controlled-dispatch',protocol:'controlled-repository-dispatch-v1',state:enabled()&&ready(subscriptionReady)?'connected':'disabled',subscriptionReady:ready(subscriptionReady),checkedAt:new Date().toISOString(),bootCommit,inferenceStarted:false,requiresScopeApproval:true,requiresUsageApproval:true,requiresCodingApproval:true,automaticDeployment:false,cloudFallback:false,workerInference:'explicit_subscription_work_only',localCoding:{enabled:ready(localEnabled),state:enabled()&&ready(localEnabled)?'connected':'disabled',selection:require('../workers/execution/localCodingProvider').SELECTION,requiresSeparateApproval:true,automaticFallback:false}}
+  if(b.op==='status'){
+   const connected=ready(enabled),local=ready(localEnabled),subscription=ready(subscriptionReady);let isolation=null
+   if(connected&&local&&typeof isolationStatus==='function')try{isolation=require('../workers/execution/sandboxPrerequisites').parsePrerequisiteStatus(await isolationStatus(),bootCommit,Date.now())}catch{}
+   return{component:'controlled-dispatch',protocol:'controlled-repository-dispatch-v1',state:connected&&subscription?'connected':'disabled',subscriptionReady:subscription,checkedAt:new Date().toISOString(),bootCommit,inferenceStarted:false,requiresScopeApproval:true,requiresUsageApproval:true,requiresCodingApproval:true,automaticDeployment:false,cloudFallback:false,workerInference:'explicit_subscription_work_only',localCoding:{enabled:local,state:connected&&local?'connected':'disabled',selection:require('../workers/execution/localCodingProvider').SELECTION,requiresSeparateApproval:true,automaticFallback:false,isolation}}
+  }
   if(!enabled())throw Error('controlled_dispatch_disabled')
   const v=b.input,{op,...body}=v;if(v.bootCommit&&v.bootCommit!==bootCommit)throw Error('source_changed')
   if(!['list','get','find','evidence','cancel','request','continue','inventory'].includes(op)&&otherActive(b.target))throw Error('worker_busy')

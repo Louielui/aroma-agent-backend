@@ -186,10 +186,11 @@ function acceptanceReviewArgs (packet) {
   }
   return textReviewArgs(files, require('../../design/uiDesign').testDraftSystem('Review the protected acceptance TEST DRAFT against the supplied current source and Owner criteria. This is not an implementation review; tests are not yet executed. Verify every criterion through explicit tests or the host guards described below; every functional requirement must be asserted. Verify total test count is exact across protected tests, at least one test must genuinely fail on current behavior, and tests are deterministic. The host separately enforces the exact editable file allowlist and before/after hashes of all protected tests and read-only dependencies, rejects out-of-scope changes, and executes in an offline Windows Sandbox. Do not require generated tests to read or hash files outside their permitted imports to duplicate these host guards. These guards do not prove application behavior: still require assertions for new storage/network attempts, preserved handlers and requested UI changes. ' + limits[profile] + ' Reject forced failures, missing assertions, skipped tests, undeclared imports or dependencies, installation, process execution, network use or claims of execution. Reviewer tools remain disabled.', profile))
 }
-function createProviders ({ executable, root, allowCredits = false, localCodingEnabled = false }) {
+function createProviders ({ executable, root, allowCredits = false, localCodingEnabled = false, bootCommit = require('../../governance/bootCommit').BOOT_COMMIT }) {
   fs.mkdirSync(root, { recursive: true })
   const executor = require('../../workers/execution/windowsSandbox').createExecutor({ root: path.join(root, 'offline-execution') })
   const visualReview = require('../../design/visualReview').createVisualReviewer({ options: { executable, cwd: root, allowCredits } })
+  const isolationStatus=require('../../workers/execution/sandboxPrerequisites').createPrerequisiteStatus({probe:()=>executor.readiness(),isBusy:()=>executor.isBusy(),bootCommit})
   let isolationCache = null, isolationChecked = 0
   const isolation = async () => {
     if (!isolationCache || Date.now() - isolationChecked > 10000) { isolationChecked = Date.now(); isolationCache = executor.readiness() }
@@ -197,6 +198,7 @@ function createProviders ({ executable, root, allowCredits = false, localCodingE
     return executor.isBusy() ? { ...value, ready: false, reason: 'sandbox_recovery_or_work_pending' } : value
   }
   return {
+    isolationStatus,
     local: options => require('./localProviders').createLocalProviders({...options,root,executor}),
     testOrder: pack => executor.run(pack),
     // Metadata from the same constants/CLI arguments used by actual execution.

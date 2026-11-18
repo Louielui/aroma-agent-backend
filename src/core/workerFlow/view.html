@@ -24,7 +24,7 @@ function localView(v){
  $('localState').hidden=false;$('localState').textContent=v?.localCoding?.state==='connected'?L.localConnected:L.localUnknown;
  $('billing').textContent=L.localLimits;$('projectLink').href='/project-tasks';$('projectLink').textContent=L.localOpen;$('projectIntro').textContent=L.localIntro;
  $('check').textContent=L.localCheck;$('isolationNotice').textContent=L.localIsolationNotice;
- $('isolationState').textContent=v?.isolation?.ready===true?L.localPrerequisites:v?.isolation?.ready===false?L.localPrerequisitesFailed:L.localIsolationUnknown;
+ $('isolationState').textContent=v?.isolation?.state==='busy'?L.localBusy:v?.isolation?.ready===true?L.localPrerequisites:v?.isolation?.ready===false?L.localPrerequisitesFailed:L.localIsolationUnknown;
 }
 if(localMode)localView(null);
 $('approve').onchange=controls;
