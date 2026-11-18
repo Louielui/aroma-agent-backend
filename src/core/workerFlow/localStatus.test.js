@@ -1,23 +1,20 @@
 'use strict'
 const test=require('node:test'),assert=require('node:assert/strict')
 const boot='a'.repeat(40),profile=require('../../localBrain/deploymentProfile.json')
-function receipt(){return{component:'controlled-dispatch',protocol:'controlled-repository-dispatch-v1',bootCommit:boot,checkedAt:new Date().toISOString(),state:'connected',inferenceStarted:false,requiresScopeApproval:true,requiresUsageApproval:true,requiresCodingApproval:true,cloudFallback:false,automaticDeployment:false,workerInference:'explicit_subscription_work_only',localCoding:{enabled:true,state:'connected',requiresSeparateApproval:true,automaticFallback:false,selection:{model:'local:'+profile.model,digest:profile.digest}}}}
-test('local workbench reads metadata only and never equates prerequisites with guest isolation',async()=>{
+function receipt(){const at=new Date().toISOString();return{component:'controlled-dispatch',protocol:'controlled-repository-dispatch-v1',bootCommit:boot,checkedAt:at,state:'connected',inferenceStarted:false,requiresScopeApproval:true,requiresUsageApproval:true,requiresCodingApproval:true,cloudFallback:false,automaticDeployment:false,workerInference:'explicit_subscription_work_only',localCoding:{enabled:true,state:'connected',requiresSeparateApproval:true,automaticFallback:false,selection:{model:'local:'+profile.model,digest:profile.digest},isolation:{protocol:'sandbox-prerequisites-v1',source:'owner_bridge',bootCommit:boot,engine:'windows-sandbox-offline-v1',state:'ready',ready:true,reason:null,checkedAt:at,boundaryVerified:false,metadataOnly:true}}}}
+test('local workbench reads only Bridge metadata and never equates prerequisites with guest isolation',async()=>{
  const {readLocalStatus}=require('./localStatus');let calls=0
- const r=await readLocalStatus({bootCommit:boot,request:async b=>{assert.deepEqual(b,{op:'status'});calls++;return receipt()},check:async()=>({ready:true,boundaryVerified:true,cli:'private-path'})})
+ const r=await readLocalStatus({bootCommit:boot,request:async b=>{assert.deepEqual(b,{op:'status'});calls++;return receipt()},check:()=>assert.fail('backend OS probe forbidden')})
  assert.equal(calls,1);assert.equal(r.mode,'local');assert.equal(r.enabled,false);assert.equal(r.localCoding.state,'connected')
- assert.equal(r.isolation.ready,true);assert.equal(r.isolation.boundaryVerified,false)
+ assert.equal(r.isolation.ready,true);assert.equal(r.isolation.source,'owner_bridge');assert.equal(r.isolation.boundaryVerified,false)
  assert.equal(r.subscriptionVerified,false);assert.equal(r.executionAuthorized,false);assert.deepEqual(r.runs,[])
- assert.ok(!JSON.stringify(r).includes('private-path'))
 })
-test('source drift, missing local evidence, or stale metadata fail closed independently of Sandbox readiness',async()=>{
+test('source, model, freshness or control drift cannot admit executor evidence',async()=>{
  const {readLocalStatus}=require('./localStatus')
  for(const mutate of [v=>v.bootCommit='b'.repeat(40),v=>v.checkedAt='2020-01-01',v=>delete v.localCoding,v=>v.localCoding.selection.digest='0'.repeat(64),v=>v.cloudFallback=true]){
-  const v=receipt();mutate(v);const r=await readLocalStatus({bootCommit:boot,request:async()=>v,check:async()=>({ready:true})})
-  assert.equal(r.localCoding.state,'unavailable');assert.equal(r.isolation.ready,true);assert.equal(r.enabled,false)
+  const v=receipt();mutate(v);const r=await readLocalStatus({bootCommit:boot,request:async()=>v})
+  assert.equal(r.localCoding.state,'unavailable');assert.equal(r.isolation.ready,null);assert.equal(r.enabled,false)
  }
- const r=await readLocalStatus({bootCommit:boot,request:async()=>receipt(),check:async()=>{throw Error('private error')}})
- assert.equal(r.localCoding.state,'connected');assert.equal(r.isolation.ready,null);assert.equal(r.isolation.reason,'sandbox_status_unavailable')
 })
 test('local HTTP reads avoid the legacy provider and all legacy POST operations remain blocked',async t=>{
  const express=require('express'),{createWorkerRouter}=require('./routes');let legacy=0,status=0
@@ -41,5 +38,7 @@ test('rendered local workbench shows independent status, disables old actions an
  assert.equal(nodes.get('projectLink').href,'/project-tasks');assert.match(nodes.get('localState').textContent,/已連線/);assert.match(nodes.get('isolationState').textContent,/尚未/)
  receiptValue={mode:'local',localCoding:{state:'unavailable'},isolation:{ready:null}}
  await nodes.get('check').onclick();assert.match(nodes.get('isolationState').textContent,/未能核實/);assert.equal(nodes.get('run').disabled,true)
- assert.equal(requests.length,2);assert.ok(requests.every(r=>!r.options?.method&&!r.options?.body))
+ receiptValue={mode:'local',localCoding:{state:'connected'},isolation:{ready:false,state:'busy'}}
+ await nodes.get('check').onclick();assert.match(nodes.get('isolationState').textContent,/正在/);assert.equal(nodes.get('run').disabled,true)
+ assert.equal(requests.length,3);assert.ok(requests.every(r=>!r.options?.method&&!r.options?.body))
 })

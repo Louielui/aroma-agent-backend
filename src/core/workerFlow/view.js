@@ -4,7 +4,7 @@ const path = require('node:path')
 const { t, currentLocale } = require('../../i18n/t')
 function buildWorkerHtml ({localMode=process.env.LOCAL_BRAIN_ONLY==='1'}={}) {
   const labels = {
-    localTitle:t('workerFlow.localTitle'),localIntro:t('workerFlow.localIntro'),localConnected:t('workerFlow.localConnected'),localUnknown:t('workerFlow.localUnknown'),localLimits:t('workerFlow.localLimits'),localOpen:t('workerFlow.localOpen'),localCheck:t('workerFlow.localCheck'),localIsolationNotice:t('workerFlow.localIsolationNotice'),localPrerequisites:t('workerFlow.localPrerequisites'),localPrerequisitesFailed:t('workerFlow.localPrerequisitesFailed'),localIsolationUnknown:t('workerFlow.localIsolationUnknown'),
+    localBusy:t('workerFlow.localBusy'),localTitle:t('workerFlow.localTitle'),localIntro:t('workerFlow.localIntro'),localConnected:t('workerFlow.localConnected'),localUnknown:t('workerFlow.localUnknown'),localLimits:t('workerFlow.localLimits'),localOpen:t('workerFlow.localOpen'),localCheck:t('workerFlow.localCheck'),localIsolationNotice:t('workerFlow.localIsolationNotice'),localPrerequisites:t('workerFlow.localPrerequisites'),localPrerequisitesFailed:t('workerFlow.localPrerequisitesFailed'),localIsolationUnknown:t('workerFlow.localIsolationUnknown'),
     projectTitle: t('projectWork.title'), projectIntro: t('projectWork.intro'), projectLink: t('projectWork.open'),
     title: t('workerFlow.title'), intro: t('workerFlow.intro'), check: t('workerFlow.check'), run: t('workerFlow.run'), approval: t('workerFlow.approval'),
     scope: t('workerFlow.scope'), billing: t('workerFlow.billing'), workOrder: t('workerFlow.workOrder'), goal: t('workerFlow.goal'),
