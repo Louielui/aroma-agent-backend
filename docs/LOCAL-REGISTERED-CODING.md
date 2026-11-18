@@ -215,6 +215,39 @@ source execution; Sandbox RED/GREEN remains separately required. Synthetic
 transport/approval tests prove composition only. Fresh Qwen adherence, successful
 registered repair and any runtime speed change are NOT RETESTED in this tranche.
 
+### Case field guidance repair (isolated candidate, 2026-11-18 UTC)
+
+The retained registered attempt on formal source `f2a99ff9` used one local draft
+call and stopped with `case_plan_expression`. Its raw response put complete
+`require(...).subject(...)` calls into input slots, used punctuation as filler,
+left expected string values unquoted, and proposed an incorrect old-formatter
+large-number value. The original input/output envelopes remain immutable and
+still fail parsing. No review, protected-test approval or coding ran for that
+attempt. This observation does not establish that instructions were the sole
+cause or that a revised prompt will make Qwen comply.
+
+New case-schema descriptions identify zero-based input slots and the final
+expected-expression/error slot without changing their types, counts or limits.
+The system field guide separates the rendered direct-call requirement from row
+data, illustrates inner JavaScript string quotes inside JSON, and requires exact
+baseline table/loop expansion. Baseline BigInt arithmetic can remain an allowed
+expression with loop variables replaced by actual inputs; it must not be replaced
+by guessed mental arithmetic. Explicit Owner examples keep their original values
+and formatting. These are instructions, not host-inserted cases or corrections.
+
+Offline synthetic tests execute all three rendered fixture tests in temporary
+files, preserving all baseline examples and ten new-function examples plus
+fourteen required rejection probes. The correct old formatter expectation at
+MAX_SAFE_INTEGER is `150119987579016m 31s`; the new clock expectation remains
+`2501999792983:36:31`. A grammar-valid but incorrect literal `423666631m 59s`
+still renders and then fails the synthetic assertion. The expression validator
+does not prove expected-value semantics. Full local review and real Sandbox
+RED/GREEN remain mandatory. Host synthetic execution is not native Qwen adherence
+or proof of OS Sandbox isolation. No new runtime model calls, quota, cards or
+tasks are part of this offline repair; twenty ledgers and automatic memory stay
+paused. Grammar, required boundaries, thirteen review sub-checks, evidence hashes,
+three personal version approvals, shared call caps and cloud prohibition remain.
+
 Source approval now records finite rejection reasons and host-side handler receipt,
 evaluation and sealed expiry times in the existing task audit. This distinguishes
 arrival after expiry from expiry during source verification; it does not measure
