@@ -158,6 +158,24 @@ the existing work pages. No automatic adoption, PR merge or production apply.
 
 ## Evidence and limits
 
+The 2026-11-18 UTC registered draft attempt on source `69cff146` returned three
+tests through one successful Qwen3.5 9B call, but all three named subjects used
+destructured aliases. The host refused all three missing direct-call forms before
+review; no test approval, coding or Sandbox run followed. Its new-function input
+list also omitted the required unsafe-integer boundary, while the old formatter
+still tested it. The original input/output and stopped allowance remain retained.
+
+The isolated guidance revision gives a numbered writing sequence and clearly
+labelled syntax illustrations. It distinguishes preserving baseline values from
+copying alias syntax, directs selected exports to inline calls, and asks for each
+subject's complete criteria separately. The illustrative module and values are
+not selected source or authorized test cases. The prepared criteria/source/form
+packet, parser, evidence index, review, output limits and hard-cap flow are
+unchanged. Offline fixtures reproduce the refusal and verify contract preservation;
+they do not demonstrate a new successful model draft or improved runtime speed.
+Fresh inference requires a separately approved new acceptance, never the unused
+capacity of a paused historical root. Prompt self-checks are not coverage proof.
+
 Source approval now records finite rejection reasons and host-side handler receipt,
 evaluation and sealed expiry times in the existing task audit. This distinguishes
 arrival after expiry from expiry during source verification; it does not measure
