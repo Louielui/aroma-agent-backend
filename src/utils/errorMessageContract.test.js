@@ -155,3 +155,8 @@ test('*** THE FRONT END READS retryable AT ALL ***', () => {
   // ⛔ The original finding was literally zero occurrences of the word in app.js.
   assert.ok(/retryable/.test(APP_JS), '⛔ app.js still ignores the field the server sends')
 })
+test('safe usage refusal renders its code and correlation receipt without suggesting a retry',()=>{
+ const errorLine=liftFromApp('errorLine'),r=errorLine({error:{code:'usage_run_not_active',message:t('diag.usageInactive'),correlationId:'receipt-fixture',retryable:false}})
+ assert.ok(r.includes('usage_run_not_active'));assert.ok(r.includes('receipt-fixture'));assert.ok(r.includes(t('diag.usageInactive')))
+ assert.equal(errorLine({error:{code:'internal_error',message:t('diag.internal'),correlationId:'private-reference'}}),t('diag.internal'))
+})

@@ -87,7 +87,7 @@ const ERRORS=new Set(['usage_store_required','usage_not_enabled','usage_busy','u
 for(const code of ['usage_extension_unavailable','usage_extension_expired','usage_allocation_required','usage_allocation_exhausted'])ERRORS.add(code)
 for(const code of ['usage_profile_not_allowed','usage_expired','usage_stopped'])ERRORS.add(code)
 const validInput=b=>!!b&&!Array.isArray(b)&&Object.hasOwn(SHAPES,b.op)&&Object.keys(b).sort().join(',')===SHAPES[b.op].slice().sort().join(',')&&(b.op!=='usage_bind_turn'||ID.test(b.turnId||'')&&ID.test(b.conversationId||''))
-const error=code=>Object.assign(Error(code),{code})
+const error=code=>new (require('./usageError').UsageBudgetError)(code)
 const scopeKeys='childId,conversationId,requestId,rootId,turnId'
 function validScope(s){return !!s&&Object.keys(s).sort().join(',')===scopeKeys&&[s.rootId,s.turnId,s.conversationId,s.requestId].every(v=>ID.test(v||''))&&(s.childId===null||ID.test(s.childId||''))}
 function developmentProfile(id){if(!ID.test(id||'')||isAcceptanceRoot(id))throw error('usage_profile_not_allowed');return{id,identity:'owner-repository-repair:'+id,turns:1,helper:8,website:0,models:[{model:'gpt-6.1-sol',effort:'high'},{model:'claude-sonnet-5-5',effort:'medium'}]}}

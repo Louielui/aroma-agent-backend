@@ -2322,6 +2322,7 @@
   function errorLine (res) {
     var e = res && res.error
     var message = (e && e.message) ? e.message : t('err.serverBusy')
+    if (e && /^usage_[a-z_]+$/.test(e.code || '') && /^[a-zA-Z0-9-]{1,64}$/.test(e.correlationId || '')) message = t('err.diagnosticReceipt', { message: message, code: e.code, id: e.correlationId })
     return (e && e.retryable === true) ? t('err.retrySuffix', { message: message }) : message
   }
 

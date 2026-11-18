@@ -21,6 +21,23 @@ const { SubscriptionError } = require('../subscription/codexClient')
 const { t } = require('../i18n/t')
 const { DistillParseError } = require('../intake/distillPrompt')   // owner module (Slice A) — import, NOT re-export
 const { IntakeUpstreamError } = require('../intake/intakeErrors')  // Slice B error
+const { UsageBudgetError } = require('../actions/usageError')
+const USAGE = Object.freeze({
+  usage_run_not_active: [409, () => t('diag.usageInactive')],
+  usage_run_closed: [409, () => t('diag.usageInactive')],
+  usage_not_enabled: [409, () => t('diag.usageInactive')],
+  usage_stopped: [409, () => t('diag.usageInactive')],
+  usage_expired: [409, () => t('diag.usageExpired')],
+  usage_limit_reached: [429, () => t('diag.usageLimit')],
+  usage_turn_limit_reached: [429, () => t('diag.usageLimit')],
+  usage_child_limit: [429, () => t('diag.usageLimit')],
+  usage_allocation_exhausted: [429, () => t('diag.usageLimit')],
+  usage_scope_required: [409, () => t('diag.usageScope')],
+  usage_allocation_required: [409, () => t('diag.usageScope')],
+  usage_binding_conflict: [409, () => t('diag.usageScope')],
+  usage_busy: [503, () => t('diag.usageEvidence')],
+  usage_audit_unavailable: [503, () => t('diag.usageEvidence')]
+})
 
 // Client-facing, fixed and safe. Never contain: parser reason, provider name/text,
 // raw, prompt, Context Card, stack, path, or err.message.
@@ -60,6 +77,7 @@ function redact (s) {
 
 // Classify by REAL type. Unknown errors fall through to internal_error.
 function classify (err) {
+  if (err instanceof UsageBudgetError && Object.hasOwn(USAGE, err.code)) return {code:err.code,stage:'usage_budget',reason:null,raw:null}
   if (err instanceof SubscriptionError) return { code: err.code, stage: 'subscription_chat', reason: null, raw: null }
   if (err instanceof DistillParseError) {
     return { code: 'invalid_llm_output', stage: 'distill_parse', reason: err.reason || null, raw: err.diagnostic && err.diagnostic.rawSample }
@@ -173,8 +191,8 @@ function handleIntakeError (err, ctx = {}, deps = {}) {
    * stringify/parse round trip rather than on this object.
    */
   return {
-    status: STATUS[c.code],
-    body: { error: { code: c.code, message: SAFE_MESSAGES[c.code](), correlationId, retryable: RETRYABLE[c.code] } }
+    status: USAGE[c.code]?.[0] || STATUS[c.code],
+    body: { error: { code: c.code, message: USAGE[c.code] ? USAGE[c.code][1]() : SAFE_MESSAGES[c.code](), correlationId, retryable: USAGE[c.code] ? false : RETRYABLE[c.code] } }
   }
 }
 
