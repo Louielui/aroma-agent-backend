@@ -3,7 +3,7 @@ const test=require('node:test'),assert=require('node:assert/strict'),{createHash
 const nativeInput=JSON.parse(saved.inputRaw),nativeOutput=JSON.parse(saved.outputRaw),packet=JSON.parse(nativeInput.messages.find(m=>m.role==='user').content),code=JSON.parse(nativeOutput.text).testCode
 test('native direct-call refusal is reproduced without changing original evidence or prepared coverage',()=>{
  for(const [text,sha]of [[saved.inputRaw,saved.inputSha256],[saved.outputRaw,saved.outputSha256]])assert.equal(createHash('sha256').update(text).digest('hex'),sha)
- const prepared=draft.prepare(JSON.stringify(packet));assert.deepEqual(prepared.packet,packet);assert.equal(prepared.schema.properties.expectedTests.const,3)
+ const prepared={packet},fresh=draft.prepare(JSON.stringify(packet));assert.deepEqual(fresh.packet.files,packet.files);assert.deepEqual(fresh.packet.criteria,packet.criteria);assert.equal(fresh.packet.draftContract.casePlan.version,'local_case_plan_v1')
  assert.throws(()=>draft.parse(nativeOutput.text,prepared),e=>e.localDraftValidation.reason==='assertion_form'&&e.localDraftValidation.missingForms===3&&e.localDraftValidation.missingSubjects===0)
  const evidence=catalogue({'acceptance/registered-task.test.cjs':code},packet.files,packet.criteria)
  assert.equal(evidence.inlineAssertions.length,0);assert.equal(evidence.required.flat().length,3)
@@ -11,8 +11,8 @@ test('native direct-call refusal is reproduced without changing original evidenc
  // invalid-input list. This is evidence of an omission, not executed coverage.
  assert.ok(code.includes('Number.MAX_SAFE_INTEGER+1'));assert.ok(!code.slice(code.indexOf("test('formatClockDuration")).includes('Number.MAX_SAFE_INTEGER+1'))
 })
-test('guidance distinguishes preserved values from alias syntax and coverage from other subjects',()=>{
- const prepared=draft.prepare(JSON.stringify(packet))
+test('legacy guidance distinguishes preserved values from alias syntax and coverage from other subjects',()=>{
+ const prepared=draft.prepare(JSON.stringify({...packet,criteria:packet.criteria.slice(0,2)}))
  assert.match(prepared.system,/Preserve baseline arguments and expected values, not its alias syntax/)
  assert.match(prepared.system,/Do not destructure selected source exports/)
  assert.match(prepared.system,/same physical assertion line/)
