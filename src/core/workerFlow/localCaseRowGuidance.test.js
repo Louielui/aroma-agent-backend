@@ -20,7 +20,11 @@ test('independent synthetic rows render a three-argument rejection matrix and va
  v.tests.c1.groups=[{method:'equal',rows:[['7','11','2','2']]},{method:'throws',rows:[['NaN','11','2','RangeError'],['7','NaN','2','RangeError'],['7','11','NaN','RangeError']]}]
  const exact='(BigInt(Number.MAX_SAFE_INTEGER)/60n)+"m "+(BigInt(Number.MAX_SAFE_INTEGER)%60n)+"s"'
  v.tests.c2.groups=[{method:'equal',rows:[['5',"'0m 5s'"],['Number.MAX_SAFE_INTEGER',exact]]}]
- const raw=JSON.stringify(v),r=draft.project(raw,p),code=r.generated.testCode
+ // Exercise the low-level renderer with an unrelated source contract only.
+ // The registered example profile now refuses these incomplete illustration rows.
+ assert.throws(()=>draft.project(JSON.stringify(v),p),e=>e.localDraftValidation.reason==='case_plan_baseline_coverage')
+ const spec=structuredClone(p.packet.draftContract.casePlan);delete spec.sourceHashes['src/localBrain/examples/examples.test.js']
+ const raw=JSON.stringify(v),generated=require('./localCasePlan').render(raw,spec),r={generated,origin:require('./localCasePlan').origin(raw,spec,generated)},code=r.generated.testCode
  for(const args of ['NaN,11,2','7,NaN,2','7,11,NaN'])assert.ok(code.includes('.orderBoxes('+args+'),RangeError)'))
  assert.ok(code.includes('.formatDuration(5),\'0m 5s\')'));assert.ok(code.includes(exact));assert.equal(r.origin.rawOutputSha256,hash(raw));assert.equal(r.origin.renderedTestSha256,hash(code));assert.equal(r.origin.testsExecuted,false);assert.equal(r.origin.modelAuthoredJavaScript,false)
 })

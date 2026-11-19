@@ -1,7 +1,7 @@
 'use strict'
 const fs=require('node:fs'),path=require('node:path').posix,{createHash}=require('node:crypto'),{codeMask}=require('./localTestEvidence'),{expression}=require('./localCaseExpression')
 const VERSION='local_case_plan_v1',hash=b=>createHash('sha256').update(b).digest('hex'),exact=(v,keys)=>v&&typeof v==='object'&&!Array.isArray(v)&&Object.keys(v).sort().join(',')===keys.slice().sort().join(','),errors=new Set(['Error','TypeError','RangeError','SyntaxError'])
-const rendererSha256=hash([__filename,require.resolve('./localCaseExpression')].map(f=>fs.readFileSync(f,'utf8').replace(/\r\n/g,'\n')).join('\n'))
+const rendererSha256=hash([__filename,require.resolve('./localCaseExpression'),require.resolve('./localCaseBaseline')].map(f=>fs.readFileSync(f,'utf8').replace(/\r\n/g,'\n')).join('\n'))
 function invalid(stage){const e=Error('invalid_worker_result');e.casePlanFailure=stage;throw e}
 function arity(symbol,source,goal){
  const escape=s=>s.replace(/[.*+?^${}()|[\]\\]/g,'\\$&'),name=escape(symbol),matches=[...codeMask(source).matchAll(new RegExp('\\bfunction\\s+'+name+'\\s*\\(([^)]*)\\)','g'))]
@@ -75,6 +75,7 @@ function render(text,spec){
   lines.push('})')
  }
  const testCode=lines.join('\n')+'\n';if(testCode.length>30000)invalid('limit')
+ require('./localCaseBaseline').check(spec,value)
  return{testCode,expectedTests:spec.expectedTests}
 }
 function origin(text,spec,generated){return{protocol:VERSION,rawOutputSha256:hash(text),renderedTestSha256:hash(generated.testCode),contractSha256:hash(JSON.stringify(spec)),rendererSha256,testsExecuted:false,modelAuthoredJavaScript:false}}
