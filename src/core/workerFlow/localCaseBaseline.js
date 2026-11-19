@@ -10,7 +10,30 @@ const sources={
  [ROOT+'examples.test.js']:'17471cd4ad56a4c4cf6a829b5c1bec22e7ea18be7fb8fbc3be94e60c71da9b89'
 }
 function invalid(stage,stats){const e=Error('invalid_worker_result');e.casePlanFailure=stage;e.baselineValidation=stats;throw e}
+
+const STOCK_VERSION = 'node_stock_variance_v1'
+const STOCK_FILE = ROOT+'stock.js'
+// The three exact Owner criteria pin this finite catalogue to its approved use.
+const STOCK_CRITERIA_SHA256 = 'ee6f3049ead727cf4e6979bb51c440a9a86dec14ed0493a9b11426797854100f'
+
+function isStockRecipe(criteria) {
+  return Array.isArray(criteria) && hash(JSON.stringify(criteria)) === STOCK_CRITERIA_SHA256
+}
+
+function stockProfile(spec) {
+  if (!isStockRecipe(spec?.tests?.map(test=>test.criterion))) return null
+  const stockSources = { [STOCK_FILE]: sources[STOCK_FILE] }
+  const subjects = [['orderBoxes',3],['orderBoxes',3],['stockVariance',2]]
+  if (!spec.sourceHashes || Object.keys(spec.sourceHashes).length !== 1 || spec.sourceHashes[STOCK_FILE] !== stockSources[STOCK_FILE] ||
+      spec.tests.length !== subjects.length || subjects.some(([symbol,arity],index) => {
+        const subject = spec.tests[index].subject
+        return subject?.file !== STOCK_FILE || subject.symbol !== symbol || subject.arity !== arity
+      })) invalid('baseline_source')
+  return { version:STOCK_VERSION, sourceHashes:stockSources, criteriaSha256:STOCK_CRITERIA_SHA256, requiredRows:35, stock:{equal:7,throws:28} }
+}
+
 function profile(spec){
+ const stock=stockProfile(spec);if(stock)return stock
  if(!spec?.sourceHashes||!Object.hasOwn(spec.sourceHashes,ROOT+'examples.test.js')||!spec.tests?.some(t=>t.subject?.file===ROOT+'stock.js'||t.subject?.file===ROOT+'duration.js'))return null
  if(Object.entries(sources).some(([file,h])=>spec.sourceHashes[file]!==h))invalid('baseline_source')
  const expected=[['stock.js','orderBoxes',3],['duration.js','formatDuration',1],['duration.js','formatClockDuration',1]]
@@ -27,11 +50,32 @@ function catalogue(){
  duration.push(...throws(['Number.MAX_SAFE_INTEGER+1','-1','1.5','NaN','Infinity',"'60'",'null','undefined','{}','60n'].map(s=>[s,'RangeError'])))
  return[stock,duration]
 }
-// Expose only audited existing-source cases to drafting. This is input reference
-// data, not output completion; check() still requires every returned case.
-function references(spec){
- if(!profile(spec))return null
- return catalogue().map((rows,i)=>({criterion:spec.tests[i].id,symbol:spec.tests[i].subject.symbol,cases:rows.map(v=>({method:v.method,arguments:v.row.slice(0,-1),expected:v.row.at(-1),...(v.alternatives?{alternativeExpectedExpressions:[...v.alternatives]}:{})}))}))
+function regressionRows(contract) {
+  const [stock,duration] = catalogue()
+  return contract.version === STOCK_VERSION ? [stock.filter(item=>item.method==='equal'),stock.filter(item=>item.method==='throws')] : [stock,duration]
+}
+
+function stockVarianceRows() {
+  const equal = [
+    ['0','0','0'],['-0','0','0'],['0','-0','0'],['7','3','4'],['3','7','-4'],['9','9','0'],
+    ['Number.MAX_SAFE_INTEGER','0','Number.MAX_SAFE_INTEGER'],['0','Number.MAX_SAFE_INTEGER','-Number.MAX_SAFE_INTEGER'],
+    ['Number.MAX_SAFE_INTEGER','Number.MAX_SAFE_INTEGER-1','1'],['Number.MAX_SAFE_INTEGER-1','Number.MAX_SAFE_INTEGER','-1']
+  ].map(row=>({method:'equal',row}))
+  const throws = ['-1','1.5',"'1'",'NaN','Infinity','Number.MAX_SAFE_INTEGER+1']
+    .flatMap(value=>[[value,'0','RangeError'],['0',value,'RangeError']])
+    .map(row=>({method:'throws',row}))
+  return { equal, throws }
+}
+
+function reference({method,row,alternatives}) {
+  return {method,arguments:row.slice(0,-1),expected:row.at(-1),...(alternatives?{alternativeExpectedExpressions:[...alternatives]}:{})}
+}
+
+// Expose only audited source and Owner cases. The returned draft supplies every row.
+function references(spec) {
+  const contract = profile(spec)
+  if (!contract) return null
+  return regressionRows(contract).map((rows,i)=>({criterion:spec.tests[i].id,symbol:spec.tests[i].subject.symbol,cases:rows.map(reference)}))
 }
 const key=args=>JSON.stringify(args.map(expression))
 const clockInputs = ['0','9','59','60','3599','3600','86399','86400','360000','Number.MAX_SAFE_INTEGER']
@@ -45,7 +89,12 @@ const clockExamples = clockCases.map(({argument,expected}) => (argument === 'Num
 // Bind only the explicit, source-pinned Owner recipe. No free-form inference,
 // evaluation of returned expressions, or addition of rows to model output.
 function newExamples(spec) {
-  if (!profile(spec)) return null
+ const contract=profile(spec)
+ if(!contract)return null
+ if(contract.version===STOCK_VERSION){
+  const {equal,throws}=stockVarianceRows()
+  return {criterion:spec.tests[2].id,symbol:spec.tests[2].subject.symbol,cases:equal.map(reference),rejectionCases:throws.map(reference)}
+ }
   const test = spec.tests[2]
   if (!test.criterion?.includes('): ' + clockExamples + '. Reject ')) return null
   return { criterion: test.id, symbol: test.subject.symbol, cases: clockCases.map(({argument,expected}) => ({argument,expected:JSON.stringify(expected)})) }
@@ -69,26 +118,51 @@ function checkNewExamples(spec, value) {
   return { exactCases: contract.cases.length, rejectionProbes: test.rejections.length }
 }
 
-function check(spec,value){
- const contract=profile(spec);if(!contract)return null
- let missing=0,wrong=0
- for(const [i,required]of catalogue().entries()){
-  const t=spec.tests[i],v=value.tests[t.id],rows=v.groups.flatMap(g=>g.rows.map(row=>({method:g.method==='deepEqual'?'equal':g.method,row}))).concat(Object.values(v.rejections).map(row=>({method:'throws',row})))
-  for(const expected of required){
-   const matches=rows.filter(r=>key(r.row.slice(0,-1))===key(expected.row.slice(0,-1)))
-   const allowed=expected.method==='throws'?[expected.row.at(-1)]:[expected.row.at(-1),...(expected.alternatives||[])].map(expression)
-   const valid=r=>r.method===expected.method&&allowed.includes(r.method==='throws'?r.row.at(-1):expression(r.row.at(-1)))
-   if(!matches.length)missing++
-   wrong+=matches.filter(r=>!valid(r)).length
+function measureRows(required, actual) {
+  const inputs = new Map()
+  for (const group of actual.groups) {
+    for (const row of group.rows) add(group.method==='deepEqual'?'equal':group.method,row)
   }
- }
- const stats={missingBaselineCases:missing,wrongBaselineExpectedValues:wrong}
- // A wrong expectation for a present input is distinguished from an absent
- // row. Duplicate good rows cannot hide a conflicting expectation.
- if(missing)invalid('baseline_coverage',stats)
- if(wrong)invalid('baseline_expected',stats)
- const newExampleProof = checkNewExamples(spec, value)
- return{...contract,missingBaselineCases:0,wrongBaselineExpectedValues:0,testsExecuted:false,...(newExampleProof?{newExampleProof}:{})}
+  for (const row of Object.values(actual.rejections)) add('throws',row)
+  function add(method,row) {
+    const id = key(row.slice(0,-1))
+    if (!inputs.has(id)) inputs.set(id,[])
+    inputs.get(id).push({method,expected:method==='throws'?row.at(-1):expression(row.at(-1))})
+  }
+  let missing=0,wrong=0
+  for (const item of required) {
+    const matches=inputs.get(key(item.row.slice(0,-1)))
+    if (!matches) { missing++; continue }
+    const allowed=item.method==='throws'?[item.row.at(-1)]:[item.row.at(-1),...(item.alternatives||[])].map(expression)
+    wrong+=matches.filter(candidate=>candidate.method!==item.method||!allowed.includes(candidate.expected)).length
+  }
+  return {missing,wrong}
+}
+
+function checkStockExamples(spec,value) {
+  const {equal,throws}=stockVarianceRows()
+  const {missing,wrong}=measureRows([...equal,...throws],value.tests[spec.tests[2].id])
+  const stats={missingNewCases:missing,wrongNewExpectedValues:wrong}
+  if (missing) invalid('new_coverage',stats)
+  if (wrong) invalid('new_expected',stats)
+  return {exactCases:equal.length,rejectionProbes:throws.length}
+}
+
+function check(spec,value) {
+  const contract=profile(spec)
+  if (!contract) return null
+  let missing=0,wrong=0
+  for (const [i,required] of regressionRows(contract).entries()) {
+    const counts=measureRows(required,value.tests[spec.tests[i].id])
+    missing+=counts.missing
+    wrong+=counts.wrong
+  }
+  const stats={missingBaselineCases:missing,wrongBaselineExpectedValues:wrong}
+  // Duplicate correct rows cannot hide a conflicting expectation.
+  if (missing) invalid('baseline_coverage',stats)
+  if (wrong) invalid('baseline_expected',stats)
+  const newExampleProof=contract.version===STOCK_VERSION?checkStockExamples(spec,value):checkNewExamples(spec,value)
+  return {...contract,...stats,testsExecuted:false,...(newExampleProof?{newExampleProof}:{})}
 }
 // Split only bounded rendered data expressions. Calls/identifiers still pass
 // through the unchanged expression parser; nothing is evaluated or imported.
@@ -131,10 +205,17 @@ function rendered(spec,code){
 }
 function review(input){
  const spec=require('./localCasePlan').prepare({files:input.source,criteria:input.acceptanceCriteria,goal:input.ownerGoal})
- if(!spec)return null
+ if(!spec){if(isStockRecipe(input.acceptanceCriteria))invalid('baseline_source');return null}
  if(!profile(spec))return null
  const names=Object.keys(input.protectedTests||{});if(names.length!==1)invalid('baseline_form')
  return rendered(spec,input.protectedTests[names[0]])
 }
 const GUIDE='Audited node_examples_baseline_v1: preserve all 35 orderBoxes rows (7 equal and 28 throws: 9 invalid values at ALL 3 positions, plus separate overflow) and all 17 formatDuration rows (7 exact strings and 10 throws, including MAX_SAFE_INTEGER+1). Expand the original matrices, do not summarize them. formatDuration(MAX_SAFE_INTEGER) is exactly the string "150119987579016m 31s", or retain the original BigInt quotient/remainder expression with the concrete input substituted. Baseline preservation is checked by the host against exact source hashes and a finite expression catalogue. Missing cases, unproved alternative expressions and conflicting expectations are refused before review; a review PASS cannot override this. The host never supplies missing rows or rewrites output. New-function criteria, all rejection probes, semantic review, exact-version approval and Sandbox remain mandatory. This catalogue is specific to this exact example source, not proof of arbitrary Node coverage or execution.'
-module.exports={profile,references,newExamples,check,rendered,review,GUIDE}
+function expectedFailureSubject(proof) {
+  if (proof?.version === STOCK_VERSION) return {file:STOCK_FILE,symbol:'stockVariance'}
+  if (proof?.version === VERSION) return {file:ROOT+'duration.js',symbol:'formatClockDuration'}
+  return null
+}
+
+const STOCK_GUIDE='Audited node_stock_variance_v1: draftContract.baselineContract.referenceCases assigns the seven existing orderBoxes results to c1 and all 28 refusals to c2. Copy each full tuple in its assigned criterion. In the three-position refusal matrix, vary only the indicated argument of (1,3,1). Preserve the separate overflow row. draftContract.newExampleContract assigns ten exact results and twelve full refusal tuples to c3. Each of the six invalid values must appear in BOTH parameter positions with zero in the other. The six required rN entries provide a row per invalid value; return the other position too in a throws group. A probe name alone does not cover both positions. Copy the supplied values and argument types exactly. The host checks the case rows without filling them or changing model output. Review and actual Sandbox evidence remain required.'
+module.exports={profile,references,newExamples,check,rendered,review,expectedFailureSubject,isStockRecipe,GUIDE,STOCK_GUIDE,STOCK_VERSION}
