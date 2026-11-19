@@ -9,6 +9,7 @@ import pathlib
 import re
 import subprocess
 import sqlite3
+import threading
 from collections import deque
 from concurrent.futures import ThreadPoolExecutor
 
@@ -19,6 +20,14 @@ MAX_BYTES = 512 * 1024 * 1024
 
 class RecoveryIO:
     """Bound I/O concurrency; every file still completes its original checks."""
+    def __init__(self, on_result=None):
+        self.on_result = on_result
+
+    def complete_one(self):
+        result = self.pending.popleft().result()
+        if self.on_result is not None:
+            self.on_result(result)
+
     def __enter__(self):
         self.pool = ThreadPoolExecutor(max_workers=8)
         self.pending = deque()
@@ -26,7 +35,7 @@ class RecoveryIO:
 
     def submit(self, function, *args):
         if len(self.pending) >= 16:
-            self.pending.popleft().result()
+            self.complete_one()
         self.pending.append(self.pool.submit(function, *args))
 
     def write(self, target, content):
@@ -39,7 +48,7 @@ class RecoveryIO:
         try:
             if kind is None:
                 while self.pending:
-                    self.pending.popleft().result()
+                    self.complete_one()
         finally:
             self.pool.shutdown(wait=True, cancel_futures=True)
 
@@ -121,7 +130,45 @@ def stage_recovery(destination, data_root):
                 "consistency": "file_assets_captured_before_repeatable_read_database_snapshot"}
     total = 0
     scheduled = set()
-    with RecoveryIO() as writes:
+    lock = threading.Lock()
+
+    def capture(file):
+        nonlocal total
+        # Parallelize the complete source operation, not merely destination
+        # fsync. The ordered parent collector drains every future before the
+        # database snapshot or a successful stage receipt can be returned.
+        relative = file.relative_to(data).as_posix()
+        asset_path(relative)
+        if file.is_symlink() or file.resolve() != data.joinpath(*pathlib.PurePosixPath(relative).parts):
+            raise ValueError("recovery_source_outside_scope")
+        before = file.stat()
+        sqlite_asset = relative == "memory-local-index/memory.sqlite"
+        if not sqlite_asset:
+            # Reserve aggregate bytes BEFORE reading in parallel. A rejected
+            # capture is never reused; no reservation is refunded or retried.
+            with lock:
+                total += before.st_size
+                if total > MAX_BYTES:
+                    raise ValueError("recovery_size_limit")
+        content = local_index_snapshot(file) if sqlite_asset else file.read_bytes()
+        after = file.stat()
+        if not sqlite_asset and ((before.st_size, before.st_mtime_ns) != (after.st_size, after.st_mtime_ns) or len(content) != before.st_size):
+            raise ValueError("recovery_source_changed_retry")
+        if not sqlite_asset:
+            json.loads(content.decode("utf-8"))
+        digest = hashlib.sha256(content).hexdigest()
+        with lock:
+            if sqlite_asset:
+                total += len(content)
+                if total > MAX_BYTES:
+                    raise ValueError("recovery_size_limit")
+            unique = digest not in scheduled
+            scheduled.add(digest)
+        if unique:
+            write_new(objects / digest, content)
+        return {"path": relative, "sha256": digest, "bytes": len(content)}
+
+    with RecoveryIO(on_result=manifest["files"].append) as captures:
         for name in DIRECTORIES + FILES:
             source = data / name
             manifest["components"][name] = "captured" if source.exists() else "absent"
@@ -129,28 +176,7 @@ def stage_recovery(destination, data_root):
                 continue
             paths = sorted(source.rglob("*.json")) if name in DIRECTORIES else [source]
             for file in paths:
-                # Junctions and symlinks are not followed into other directories or credentials.
-                relative = file.relative_to(data).as_posix()
-                asset_path(relative)
-                if file.is_symlink() or file.resolve() != data.joinpath(*pathlib.PurePosixPath(relative).parts):
-                    raise ValueError("recovery_source_outside_scope")
-                before = file.stat()
-                sqlite_asset = relative == "memory-local-index/memory.sqlite"
-                content = local_index_snapshot(file) if sqlite_asset else file.read_bytes()
-                after = file.stat()
-                if not sqlite_asset and (before.st_size, before.st_mtime_ns) != (after.st_size, after.st_mtime_ns):
-                    raise ValueError("recovery_source_changed_retry")
-                if not sqlite_asset:
-                    json.loads(content.decode("utf-8"))
-                total += len(content)
-                if total > MAX_BYTES:
-                    raise ValueError("recovery_size_limit")
-                digest = hashlib.sha256(content).hexdigest()
-                object_file = objects / digest
-                if digest not in scheduled:
-                    scheduled.add(digest)
-                    writes.write(object_file, content)
-                manifest["files"].append({"path": relative, "sha256": digest, "bytes": len(content)})
+                captures.submit(capture, file)
     return {"directory": str(target), "manifest": manifest}
 
 

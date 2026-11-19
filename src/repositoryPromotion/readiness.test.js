@@ -52,7 +52,7 @@ test('an Owner-authorized current-size manifest verifies all 40349 assets includ
 test('manifest byte and entry ceilings fail closed while other evidence keeps its two MB ceiling',async t=>{
  for(const kind of ['manifest','entries','request','worker','baselines']){
   const f=fixture(t)
-  if(kind==='manifest')fs.writeFileSync(path.join(f.bundle,'manifest.json'),' '.repeat(8*1024*1024+1))
+  if(kind==='manifest')fs.writeFileSync(path.join(f.bundle,'manifest.json'),' '.repeat(16*1024*1024+1))
   if(kind==='entries'){
    // Keep this below the byte ceiling so it specifically exercises entry count.
    reseal(f,(m,w)=>{m.files=Array.from({length:65537},()=>({path:'x',bytes:0,sha256:'d'.repeat(64)}));w.filesRestored.files=m.files.length})
@@ -65,6 +65,18 @@ test('manifest byte and entry ceilings fail closed while other evidence keeps it
   }
   await assert.rejects(validateReadiness(f.options,f.deps),kind==='manifest'||kind==='entries'?/readiness_manifest_limit/:/readiness_evidence_unavailable/)
  }
+})
+
+test('Owner-approved 16 MiB capacity checks every one of 59113 assets and rejects last-file damage',async t=>{
+ const f=fixture(t),bytes=Buffer.from('{}'),digest=hash(bytes),count=59113;fs.writeFileSync(path.join(f.bundle,'objects',digest),bytes)
+ let last,recordReads=0;f.deps.readRecord=async()=>{recordReads++;return f.record}
+ reseal(f,(manifest,worker)=>{
+  for(let i=1;i<count;i++){last='conversations/'+String(i).padStart(16,'0')+'-00000000-0000-4000-8000-000000000001.json';fs.writeFileSync(path.join(f.restore,'data',last),bytes);manifest.files.push({path:last,sha256:digest,bytes:bytes.length})}
+  worker.filesRestored.files=count
+ })
+ const size=fs.statSync(path.join(f.bundle,'manifest.json')).size;assert.ok(size>8*1024*1024);assert.ok(size<=16*1024*1024)
+ assert.equal((await validateReadiness(f.options,f.deps)).files,count);assert.equal(recordReads,1)
+ fs.writeFileSync(path.join(f.restore,'data',last),'!');await assert.rejects(validateReadiness(f.options,f.deps),/backup_restore_proof_unconfirmed/);assert.equal(recordReads,1)
 })
 
 test('sealed manifests cannot conceal malformed asset sizes, digests or aggregate size',async t=>{
