@@ -160,5 +160,8 @@ test('saved stock variance draft stops before review and leaves the isolated wor
  const sent=JSON.parse(evidence.find(v=>v.messages).messages.find(message=>message.role==='user').content)
  assert.deepEqual(sent.draftContract.baselineContract.referenceCases.map(v=>v.cases.length),[7,28])
  assert.equal(sent.draftContract.newExampleContract.rejectionCases.length,12)
+ const guidance=evidence.find(v=>v.messages).messages.find(message=>message.role==="system").content
+ assert.ok(guidance.includes('"r2":["1.5","0","RangeError"]'))
+ assert.ok(guidance.includes('["0","1.5","RangeError"]'))
  assert.ok(evidence.some(entry=>entry.text===raw))
 })

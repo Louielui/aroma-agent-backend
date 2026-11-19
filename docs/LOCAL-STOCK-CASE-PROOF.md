@@ -30,3 +30,19 @@ add the missing probes to exercise the review-pressure point with the
 original bad anchor. The mocked provider integration checks that a refusal
 before review cannot produce an approval, spend another call or start
 Sandbox. It does not measure fresh model behavior.
+
+The next real draft preserved all 35 existing rows and ten exact new results.
+It used consecutive probe keys for the two positions of one invalid value.
+The host refused the first mismatch at r2, which requires 1.5 and contained
+(0, -1). The output omitted both positions for NaN, Infinity and the
+unsafe integer. It stopped after one local call before review or guest
+execution. The exact output envelope and the original input hash bind the
+offline regression to that run.
+
+The stock draft prompt now derives an exact keyed first-parameter object
+from the installed probe contract and a separate second-parameter throws
+group. Both are instructions to the model. The expression parser, case and
+renderer hashes, exact existing and new expectations, and review RED gate
+use their existing implementations. An offline control changing only the
+keyed rows still fails for the six missing paired rows. Supplying both
+groups renders all 57 assertions across three protected tests.

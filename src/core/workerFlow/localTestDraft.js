@@ -11,6 +11,16 @@ assert.throws(() => require("../example.js").add(NaN, 3), RangeError)
 Use the real selected path/export and real required arguments/expectations instead; never copy example.js, add or these example values into the draft. An alias-only assertion, import, comment or test title does not satisfy the direct-call requirement. Do not split require and the assertion onto different physical lines.
 4. Check each subject separately against every clause of its Owner criteria and the selected baseline assertions. An invalid-input check for one function does not cover another function. For example, include Number.MAX_SAFE_INTEGER + 1 for a new safe-integer function only when the Owner criteria require it; preserving that check for an old formatter is not coverage for the new one. Keep every other required invalid type, boundary and exact expected example, including large values. Do not add unrelated cases or extra tests to satisfy the form.
 5. Before returning JSON, check the fixed test count, all required subjects (including new named exports), direct invocation lines, and every criterion's examples/invalid inputs. This self-check is not execution, review, permission or evidence that tests passed. No assertion may be weakened to meet the form.`
+function stockProbeGuide(probes){
+ const firstPosition=Object.fromEntries(probes.map(({id,expression,error})=>[id,[expression,'0',error]]))
+ const secondPosition={method:'throws',rows:probes.map(({expression,error})=>['0',expression,error])}
+ return [
+  'For stockVariance, each r-key is assigned to one distinct invalid value, in the exact mapping below. Do not use successive keys for the two positions of a single value.',
+  'Use this exact tests.c3.rejections object: '+JSON.stringify(firstPosition),
+  'Use this separate tests.c3.groups throws entry: '+JSON.stringify(secondPosition),
+  'Keep the ten c3 result rows in their result group. Return all six keyed rows and all six second-parameter rows, with zero in the other position. Preserve the audited c1 and c2 rows.'
+ ].join('\n')
+}
 function prepare(prompt){
  let p;try{p=JSON.parse(prompt)}catch{throw Error('invalid_worker_result')}
  if(!Array.isArray(p.criteria)||!p.criteria.length||!p.files||typeof p.goal!=='string')throw Error('invalid_worker_result')
@@ -20,8 +30,9 @@ function prepare(prompt){
  if(!casePlan&&baseline.isStockRecipe(p.criteria)){const e=Error('invalid_worker_result');e.localDraftValidation={reason:'case_plan_baseline_source'};throw e}
  const proof=casePlan?baseline.profile(casePlan):null,baselineContract=proof?{...proof,referenceCases:baseline.references(casePlan)}:null
  const newExampleContract=proof?baseline.newExamples(casePlan):null
+ const stockGuide=proof?.version===baseline.STOCK_VERSION?baseline.STOCK_GUIDE+'\n'+stockProbeGuide(casePlan.tests[2].rejections):null
  const exampleGuide=newExampleContract&&proof.version!==baseline.STOCK_VERSION?'\nMatch every row of draftContract.newExampleContract for the new subject. Copy the complete quoted clock values exactly, including the maximum. A value from the old duration formatter cannot satisfy a new clock example.':''
- return{packet:{...p,draftContract:{expectedTests,criteria:p.criteria.map((text,i)=>({id:i+1,text,requiredSubjects:required[i]})),assertionForm:{version:'selected_inline_assert_v1',subjects,includeNewNamedSubjects:true},baselineRole:'unchanged_reference_expected_to_fail',testsExecuted:false,...(casePlan?{casePlan}:{}),...(baselineContract?{baselineContract}:{}),...(newExampleContract?{newExampleContract}:{})}},system:casePlan?cases.SYSTEM+(baselineContract?'\n'+(proof.version===baseline.STOCK_VERSION?baseline.STOCK_GUIDE:baseline.GUIDE):'')+exampleGuide:SYSTEM+' draftContract.assertionForm is a host-owned output form requirement, not permission.'+WRITING_GUIDE,schema:casePlan?cases.schema(casePlan):{...contract.SCHEMA,properties:{...contract.SCHEMA.properties,expectedTests:{type:'integer',const:expectedTests}}}}
+ return{packet:{...p,draftContract:{expectedTests,criteria:p.criteria.map((text,i)=>({id:i+1,text,requiredSubjects:required[i]})),assertionForm:{version:'selected_inline_assert_v1',subjects,includeNewNamedSubjects:true},baselineRole:'unchanged_reference_expected_to_fail',testsExecuted:false,...(casePlan?{casePlan}:{}),...(baselineContract?{baselineContract}:{}),...(newExampleContract?{newExampleContract}:{})}},system:casePlan?cases.SYSTEM+(baselineContract?'\n'+(stockGuide||baseline.GUIDE):'')+exampleGuide:SYSTEM+' draftContract.assertionForm is a host-owned output form requirement, not permission.'+WRITING_GUIDE,schema:casePlan?cases.schema(casePlan):{...contract.SCHEMA,properties:{...contract.SCHEMA.properties,expectedTests:{type:'integer',const:expectedTests}}}}
 }
 function parse(text,prepared){
  const p=prepared.packet,details={responseChars:typeof text==='string'?text.length:null,expectedTests:p.draftContract.expectedTests}
