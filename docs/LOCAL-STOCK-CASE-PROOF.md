@@ -46,3 +46,16 @@ renderer hashes, exact existing and new expectations, and review RED gate
 use their existing implementations. An offline control changing only the
 keyed rows still fails for the six missing paired rows. Supplying both
 groups renders all 57 assertions across three protected tests.
+
+The PR195 live draft received both tables. All six first-position keys were
+correct, and the second-position group was absent. The host refused it
+before review, after one local call. The installed case-plan version now
+marks this exact stock recipe with a paired-rejection layout. Its response
+schema requires r1 through r6 under both rejections and secondRejections.
+The renderer validates each keyed expression, position, zero counterpart
+and error name from the original response. Optional groups cannot satisfy
+a missing key. The renderer emits only supplied rows. The independent
+rendered-test check still verifies all prior cases, exact expectations and
+the new-function RED anchor. The scoped contract and renderer hashes are
+recorded with the raw output and protected test. Existing evidence remains
+readable. The original failed response is preserved verbatim.

@@ -145,14 +145,15 @@ test('saved PR191 failures stop at the actual draft or review gate and pause the
 test('saved stock variance draft stops before review and leaves the isolated work budget paused', async t => {
  const archive=require('../../../test/localBrain/fixtures/stock-case-proof-native-v1.json').evidence
  const packet=JSON.parse(JSON.parse(archive['draft-input'].raw).messages.find(message=>message.role==='user').content)
- const raw=JSON.parse(archive['draft-output'].raw).text
+ const previous=require('../../../test/localBrain/fixtures/stock-paired-probes-native-v1.json')
+ const raw=JSON.parse(previous.draftOutput.raw).text
  const f=fixture(t,{selectedFiles:packet.files,draftResult:raw}),tasks=f.make()
  const id=tasks.request(OWNER,{bootCommit:f.head,requestId:randomUUID(),goal:packet.goal,execution:'local'}).run.id
  const scoped=await tasks.scope(OWNER,{id,bootCommit:f.head,criteria:packet.criteria,editable:Object.keys(packet.files),readonly:[]})
  await tasks.authorize(OWNER,{id,hash:scoped.approval.hash,nonce:scoped.approval.nonce});await tasks.settled()
  const value=tasks.get(OWNER,id),record=value.run
  assert.equal(record.state,'failed');assert.equal(value.approval,null);assert.equal(record.workRunId,null)
- assert.equal(record.draftValidation.reason,'case_plan_baseline_coverage');assert.equal(record.draftValidation.missingBaselineCases,18)
+ assert.equal(record.draftValidation.reason,'case_plan_boundary')
  assert.equal(f.sends,1);assert.equal(f.cloud,0);assert.equal(f.sandboxRuns,0)
  assert.equal(f.budget.status(id).state,'paused');assert.equal(f.budget.status(id).helper.unresolved,0)
  const evidenceDir=path.join(f.dir,'usage','evidence')
@@ -162,6 +163,8 @@ test('saved stock variance draft stops before review and leaves the isolated wor
  assert.equal(sent.draftContract.newExampleContract.rejectionCases.length,12)
  const guidance=evidence.find(v=>v.messages).messages.find(message=>message.role==="system").content
  assert.ok(guidance.includes('"r2":["1.5","0","RangeError"]'))
- assert.ok(guidance.includes('["0","1.5","RangeError"]'))
+ assert.ok(guidance.includes('Use this exact tests.c3.secondRejections object: '))
+ assert.ok(guidance.includes('"r2":["0","1.5","RangeError"]'))
+ assert.equal(sent.draftContract.casePlan.tests[2].pairedRejections,true)
  assert.ok(evidence.some(entry=>entry.text===raw))
 })
