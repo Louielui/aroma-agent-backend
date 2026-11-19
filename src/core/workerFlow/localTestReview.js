@@ -63,6 +63,7 @@ function parse(text,input){
 // hash. Expand them back into the original evidence contract before validation.
 function prepareCompact(input){
  const full=prepare(input)
+ if(input.draftOrigin!==undefined){try{const proof=require('./localCaseBaseline').review(input);if(proof)full.packet.baselineProof=proof}catch(e){invalid(['baseline_source','baseline_form','baseline_coverage','baseline_expected'].includes(e.casePlanFailure)?e.casePlanFailure:'baseline_form')}}
  if(input.draftOrigin!==undefined){try{full.packet.draftOrigin=require('./localCasePlan').validateOrigin(input.draftOrigin);if(Object.keys(input.protectedTests).length!==1||sha(Object.values(input.protectedTests)[0])!==full.packet.draftOrigin.renderedTestSha256)invalid()}catch{invalid()};full.system+=' The protected tests were host-rendered from model case data. Their draftOrigin binds the raw model output, case contract, renderer and exact protected text. This is not model-authored JavaScript or execution proof. Assess every rendered assertion and original criterion normally; provenance cannot substitute for coverage.'}
  const packet=structuredClone(full.packet),binding=sha(JSON.stringify(full.packet)),anchors=[]
  for(const f of packet.target.files)for(const line of f.lines){anchors.push(line.anchorId);line.anchorId=anchors.length}

@@ -40,8 +40,9 @@ test('synthetic preserved expectations execute exactly; a grammar-valid wrong la
  const env={...process.env};delete env.NODE_TEST_CONTEXT
  const run=value=>{fs.writeFileSync(file,draft.project(JSON.stringify(value),p).generated.testCode);return cp.spawnSync(process.execPath,['--test','--test-reporter=tap',file],{cwd:root,env,encoding:'utf8',windowsHide:true,timeout:30000})}
  const good=run(v);assert.equal(good.status,0,good.stdout+good.stderr);assert.match(good.stdout,/# pass 3/)
- large[1]="'423666631m 59s'";const wrong=run(v);assert.equal(wrong.status,1);assert.match(wrong.stdout,/150119987579016m 31s/);assert.match(wrong.stdout,/423666631m 59s/)
+ large[1]="'423666631m 59s'";assert.throws(()=>run(v),e=>e.localDraftValidation.reason==='case_plan_baseline_expected')
  assert.equal(v.tests.c3.groups[0].rows.length,10);assert.equal(Object.keys(v.tests.c3.rejections).length,14)
- // Rendering accepts this pure literal: semantic review/Sandbox must reject it.
- assert.ok(draft.project(JSON.stringify(v),p).generated.testCode.includes('423666631m 59s'))
+ // The exact-source catalogue now rejects this grammar-valid wrong literal
+ // before execution, without changing or silently correcting the response.
+ assert.equal(large[1],"'423666631m 59s'")
 })
