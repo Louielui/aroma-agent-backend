@@ -3,7 +3,7 @@ const test=require('node:test'),assert=require('node:assert/strict'),fs=require(
 const {createTasks}=require('./service'),{createRegistry}=require('./contract'),{createRunStore}=require('../operating/runStore'),{createStore}=require('../../actions/store'),{createRepositoryBudget}=require('./repositoryBudget'),{createInventory}=require('./repositoryScope'),usage=require('../../actions/usageBudget'),{digest}=require('../../workers/execution/windowsSandbox'),{createProjectWork}=require('../projectWork/service')
 const OWNER={id:'owner',role:'owner'}
 const generated={testCode:"const test=require('node:test'),assert=require('node:assert/strict');\n"+[1,2,3].map(value=>`test('returns increment ${value}',()=>assert.equal(require('../src/logic.js')(${value}),${value+1}));`).join('\n'),expectedTests:3}
-function fixture(t,{visible=false,failure=false,draftResult=null,structured=false,exampleSource=false,sourceLogic='module.exports=value=>value;\n'}={}){
+function fixture(t,{visible=false,failure=false,draftResult=null,structured=false,exampleSource=false,reviewResult=null,sourceLogic='module.exports=value=>value;\n'}={}){
  const appProjectRoot='C:/isolated-app-project'
  const dir=fs.mkdtempSync(path.join(os.tmpdir(),'repository-flow-'));t.after(()=>fs.rmSync(dir,{recursive:true,force:true}));const root=path.join(dir,'repo');fs.mkdirSync(path.join(root,'src'),{recursive:true});fs.writeFileSync(path.join(root,'src/logic.js'),sourceLogic);fs.writeFileSync(path.join(root,'src/readonly.js'),'module.exports=true;\n')
  if(exampleSource){const saved=require('../../../test/localBrain/fixtures/case-baseline-native-v1.json'),packet=JSON.parse(JSON.parse(saved.draftInputRaw).messages.find(m=>m.role==='user').content);for(const [name,text]of Object.entries(packet.files)){const file=path.join(root,name);fs.mkdirSync(path.dirname(file),{recursive:true});fs.writeFileSync(file,text)}}
@@ -18,7 +18,8 @@ function fixture(t,{visible=false,failure=false,draftResult=null,structured=fals
    assert.ok(body.messages[0].content.includes('CASE FIELD GUIDE'));assert.ok(body.messages[0].content.includes('BigInt(Number.MAX_SAFE_INTEGER)'))
    const row=body.format.properties.tests.properties.c1.properties.groups.items.properties.rows.items;assert.equal(row.minItems,2);assert.ok(row.description.includes('slot 1'));assert.ok(row.items.description.includes('quoted'))
    reply={protocol:spec.version,tests:Object.fromEntries(spec.tests.map((v,i)=>[v.id,{title:'Synthetic structured '+i,groups:[{method:'equal',rows:[[String(i+1),String(i+2)]]}],rejections:Object.fromEntries(v.rejections.map(r=>[r.id,[r.expression,r.error]]))}]))};if(structured==='missing')delete reply.tests.c3.rejections.r1}
-  if(sends===2){const packet=JSON.parse(body.messages.find(v=>v.role==='user').content),anchor=packet.target.files[0].lines.find(l=>l.kind==='assertion').anchorId;assert.equal(packet.stage,'test_draft');assert.equal(packet.target.files[0].lines[0].text,structured?"'use strict'":generated.testCode.split('\n')[0]);assert.equal(packet.baseline.role,'unchanged_reference_expected_to_fail');reply={...reply,binding:packet.binding,coverage:packet.criteria.map(v=>({criterion:v.id,status:'covered',checks:v.checks.map(check=>({id:check.id,status:'covered',anchors:[anchor],reason:'Offline increment check.'}))})),baseline:{expectation:'expected_failure',anchor,reason:'Unchanged identity function fails the increment assertion.'}}}
+  if(sends===2&&reviewResult){reply=reviewResult(JSON.parse(body.messages.find(v=>v.role==='user').content));}
+  else if(sends===2){const packet=JSON.parse(body.messages.find(v=>v.role==='user').content),anchor=packet.target.files[0].lines.find(l=>l.kind==='assertion').anchorId;assert.equal(packet.stage,'test_draft');assert.equal(packet.target.files[0].lines[0].text,structured?"'use strict'":generated.testCode.split('\n')[0]);assert.equal(packet.baseline.role,'unchanged_reference_expected_to_fail');reply={...reply,binding:packet.binding,coverage:packet.criteria.map(v=>({criterion:v.id,status:'covered',checks:v.checks.map(check=>({id:check.id,status:'covered',anchors:[anchor],reason:'Offline increment check.'}))})),baseline:{expectation:'expected_failure',anchor,reason:'Unchanged identity function fails the increment assertion.'}}}
   return{ok:true,body:(async function*(){yield Buffer.from(JSON.stringify({message:{content:typeof reply==='string'?reply:JSON.stringify(reply)},done:true,prompt_eval_count:20,eval_count:10})+'\n')})()}
  }})
  const never=new Proxy({}, {get:()=>()=>{cloud++;throw Error('CLOUD MUST NOT RUN')}})
@@ -115,4 +116,26 @@ test('retained PR190 tail-comma draft remains rejected with reference input, one
  const evidenceDir=path.join(f.dir,'usage','evidence'),evidence=fs.readdirSync(evidenceDir).filter(n=>n.endsWith('.json')).map(n=>JSON.parse(fs.readFileSync(path.join(evidenceDir,n),'utf8'))),record=evidence.find(e=>e.messages)
  const sent=JSON.parse(record.messages.find(m=>m.role==='user').content);assert.equal(sent.draftContract.baselineContract.referenceCases.reduce((n,t)=>n+t.cases.length,0),52)
  assert.ok(evidence.some(e=>e.text===raw));assert.equal(r.draftOrigin,undefined)
+})
+
+test('saved PR191 failures stop at the actual draft or review gate and pause the temporary root', async t => {
+ const archive=require('../../../test/localBrain/fixtures/clock-exact-red-native-v1.json').evidence
+ const nativeDraft=JSON.parse(archive['draft-output'].raw).text
+ const nativeReview=JSON.parse(JSON.parse(archive['review-output'].raw).text)
+ const packet=JSON.parse(JSON.parse(archive['draft-input'].raw).messages.find(message=>message.role==='user').content)
+ for(const phase of ['draft','review'])await t.test(phase,async child=>{
+  // The review control corrects only the bad case in an in-memory copy so
+  // the saved old-anchor response can reach its own independent gate.
+  const draftResult=phase==='draft'?nativeDraft:nativeDraft.replace('25019998757901m 36s','2501999792983:36:31')
+  const f=fixture(child,{exampleSource:true,draftResult,reviewResult:sent=>({...nativeReview,binding:sent.binding})})
+  const tasks=f.make(),id=tasks.request(OWNER,{bootCommit:f.head,requestId:randomUUID(),goal:packet.goal,execution:'local'}).run.id
+  const scoped=await tasks.scope(OWNER,{id,bootCommit:f.head,criteria:packet.criteria,editable:['src/localBrain/examples/duration.js'],readonly:['src/localBrain/examples/stock.js','src/localBrain/examples/examples.test.js']})
+  await tasks.authorize(OWNER,{id,hash:scoped.approval.hash,nonce:scoped.approval.nonce});await tasks.settled()
+  const record=tasks.get(OWNER,id)
+  assert.equal(record.run.state,'failed');assert.equal(record.approval,null);assert.equal(record.run.workRunId,null)
+  assert.equal(f.budget.status(id).state,'paused');assert.equal(f.budget.status(id).helper.unresolved,0)
+  assert.equal(f.cloud,0);assert.equal(f.sandboxRuns,0)
+  if(phase==='draft'){assert.equal(record.run.draftValidation.reason,'case_plan_new_expected');assert.equal(f.sends,1)}
+  else{assert.equal(record.run.reviewValidation.stage,'red_anchor');assert.equal(f.sends,2)}
+ })
 })

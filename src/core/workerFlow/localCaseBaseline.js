@@ -34,6 +34,41 @@ function references(spec){
  return catalogue().map((rows,i)=>({criterion:spec.tests[i].id,symbol:spec.tests[i].subject.symbol,cases:rows.map(v=>({method:v.method,arguments:v.row.slice(0,-1),expected:v.row.at(-1),...(v.alternatives?{alternativeExpectedExpressions:[...v.alternatives]}:{})}))}))
 }
 const key=args=>JSON.stringify(args.map(expression))
+const clockInputs = ['0','9','59','60','3599','3600','86399','86400','360000','Number.MAX_SAFE_INTEGER']
+const clockCases = clockInputs.map(argument => {
+  const seconds = argument === 'Number.MAX_SAFE_INTEGER' ? BigInt(Number.MAX_SAFE_INTEGER) : BigInt(argument)
+  const expected = [seconds / 3600n, seconds / 60n % 60n, seconds % 60n].map(part => String(part).padStart(2, '0')).join(':')
+  return { argument, expected }
+})
+const clockExamples = clockCases.map(({argument,expected}) => (argument === 'Number.MAX_SAFE_INTEGER' ? 'MAX_SAFE_INTEGER' : argument) + '=' + expected).join('; ')
+
+// Bind only the explicit, source-pinned Owner recipe. No free-form inference,
+// evaluation of returned expressions, or addition of rows to model output.
+function newExamples(spec) {
+  if (!profile(spec)) return null
+  const test = spec.tests[2]
+  if (!test.criterion?.includes('): ' + clockExamples + '. Reject ')) return null
+  return { criterion: test.id, symbol: test.subject.symbol, cases: clockCases.map(({argument,expected}) => ({argument,expected:JSON.stringify(expected)})) }
+}
+
+function checkNewExamples(spec, value) {
+  const contract = newExamples(spec)
+  if (!contract) return null
+  const test = spec.tests[2]
+  const actual = value.tests[contract.criterion]
+  const rows = actual.groups.flatMap(group => group.rows.map(row => ({method:group.method,row})))
+    .concat(Object.values(actual.rejections).map(row => ({method:'throws',row})))
+  for (const {argument,expected} of contract.cases) {
+    const matching = rows.filter(({row}) => expression(row[0]) === expression(argument))
+    if (!matching.length) invalid('new_coverage')
+    if (matching.some(({method,row}) => !['equal','deepEqual'].includes(method) || expression(row[1]) !== expression(expected))) invalid('new_expected')
+  }
+  for (const probe of test.rejections) {
+    if (!rows.some(({method,row}) => method === 'throws' && expression(row[0]) === expression(probe.expression) && row[1] === probe.error)) invalid('new_coverage')
+  }
+  return { exactCases: contract.cases.length, rejectionProbes: test.rejections.length }
+}
+
 function check(spec,value){
  const contract=profile(spec);if(!contract)return null
  let missing=0,wrong=0
@@ -52,7 +87,8 @@ function check(spec,value){
  // row. Duplicate good rows cannot hide a conflicting expectation.
  if(missing)invalid('baseline_coverage',stats)
  if(wrong)invalid('baseline_expected',stats)
- return{...contract,missingBaselineCases:0,wrongBaselineExpectedValues:0,testsExecuted:false}
+ const newExampleProof = checkNewExamples(spec, value)
+ return{...contract,missingBaselineCases:0,wrongBaselineExpectedValues:0,testsExecuted:false,...(newExampleProof?{newExampleProof}:{})}
 }
 // Split only bounded rendered data expressions. Calls/identifiers still pass
 // through the unchanged expression parser; nothing is evaluated or imported.
@@ -101,4 +137,4 @@ function review(input){
  return rendered(spec,input.protectedTests[names[0]])
 }
 const GUIDE='Audited node_examples_baseline_v1: preserve all 35 orderBoxes rows (7 equal and 28 throws: 9 invalid values at ALL 3 positions, plus separate overflow) and all 17 formatDuration rows (7 exact strings and 10 throws, including MAX_SAFE_INTEGER+1). Expand the original matrices, do not summarize them. formatDuration(MAX_SAFE_INTEGER) is exactly the string "150119987579016m 31s", or retain the original BigInt quotient/remainder expression with the concrete input substituted. Baseline preservation is checked by the host against exact source hashes and a finite expression catalogue. Missing cases, unproved alternative expressions and conflicting expectations are refused before review; a review PASS cannot override this. The host never supplies missing rows or rewrites output. New-function criteria, all rejection probes, semantic review, exact-version approval and Sandbox remain mandatory. This catalogue is specific to this exact example source, not proof of arbitrary Node coverage or execution.'
-module.exports={profile,references,check,rendered,review,GUIDE}
+module.exports={profile,references,newExamples,check,rendered,review,GUIDE}
