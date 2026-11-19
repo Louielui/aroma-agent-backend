@@ -97,3 +97,44 @@ test('the stock contract refuses source drift while unrelated criteria retain ge
  const other={...packet,criteria:packet.criteria.map((criterion,i)=>i===0?criterion+' A different Owner criterion.':criterion)}
   assert.equal(draft.prepare(JSON.stringify(other)).packet.draftContract.baselineContract,undefined)
 })
+
+test('saved stock draft with shifted probe keys requires the exact r1-r6 map and both positions', () => {
+  const archive = require('../../../test/localBrain/fixtures/stock-probe-guidance-native-v1.json')
+  assert.equal(hash(archive.draftOutput.raw), archive.draftOutput.sha256)
+  const nativeText = JSON.parse(archive.draftOutput.raw).text
+  const p = prepared()
+  assert.throws(() => draft.project(nativeText, p), error =>
+    error.localDraftValidation?.reason === 'case_plan_boundary')
+  const data = JSON.parse(nativeText)
+  assert.deepEqual(data.tests.c3.rejections.r2, ['0', '-1', 'RangeError'])
+
+  const field = prefix => {
+    const line = p.system.split('\n').find(value => value.startsWith(prefix))
+    assert.ok(line, prefix)
+    return JSON.parse(line.slice(prefix.length))
+  }
+  const firstPosition = field('Use this exact tests.c3.rejections object: ')
+  const secondPosition = field('Use this separate tests.c3.groups throws entry: ')
+  const probes = ['-1', '1.5', "'1'", 'NaN', 'Infinity', 'Number.MAX_SAFE_INTEGER+1']
+  assert.deepEqual(firstPosition, Object.fromEntries(probes.map((value, i) =>
+    ['r' + (i + 1), [value, '0', 'RangeError']])))
+  assert.deepEqual(secondPosition, {
+    method: 'throws', rows: probes.map(value => ['0', value, 'RangeError'])
+  })
+
+  // This control changes only the six keyed rows, preserving the recorded regression and result rows.
+  data.tests.c3.rejections = firstPosition
+  assert.throws(() => draft.project(JSON.stringify(data), p), error =>
+    error.localDraftValidation?.reason === 'case_plan_new_coverage' &&
+    error.localDraftValidation.missingNewCases === 6)
+  data.tests.c3.groups.push(secondPosition)
+  const result = draft.project(JSON.stringify(data), p)
+  assert.equal(result.generated.expectedTests, 3)
+  assert.equal(result.generated.testCode.match(/^assert\./gm).length, 57)
+  assert.deepEqual(review.prepareCompact(reviewInput(result.generated.testCode, result.origin))
+    .packet.baselineProof.newExampleProof, {exactCases: 10, rejectionProbes: 12})
+
+  const other = {...packet, criteria:packet.criteria.map((criterion, i) =>
+    i === 0 ? criterion + ' A different Owner criterion.' : criterion)}
+  assert.doesNotMatch(draft.prepare(JSON.stringify(other)).system, /Use this exact tests\.c3\.rejections object/)
+})
