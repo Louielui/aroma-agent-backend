@@ -41,12 +41,16 @@ function prepare(p){
 }
 function schema(spec){
  const object=properties=>({type:'object',additionalProperties:false,required:Object.keys(properties),properties}),string={type:'string',minLength:1,maxLength:600,pattern:'[^,;\\s]\\s*$',description:'One complete JS expression encoded as a JSON string. No dangling comma or semicolon inside the cell; JSON row separators stay outside it. String inputs/results need quoted JS literals inside the JSON string. No require, subject call, aliases, placeholder padding or computed return value in an argument.'},tests={}
- for(const t of spec.tests){const row={type:'array',minItems:t.subject.arity+1,maxItems:t.subject.arity+1,items:string,description:(t.subject.arity?'Argument slots 0..'+(t.subject.arity-1)+' in source parameter order; ':'No arguments; ')+'slot '+t.subject.arity+' is the expected JS expression (equal/deepEqual), or unquoted error constructor name (throws). For throws: '+t.subject.arity+' input arguments, then one error name only in slot '+t.subject.arity+'; an error constructor name is never an argument. Keep all other input positions from the baseline when varying one invalid argument; do not replace them with error names. Arguments are inputs, never the callee or result. Every slot is a nonempty expression string; no filler. A string-result cell contains only its complete quoted JS literal, with array brackets and separators outside that cell.'},rejections={}
+ for(const t of spec.tests){const row={type:'array',minItems:t.subject.arity+1,maxItems:t.subject.arity+1,items:string,description:(t.subject.arity?'Argument slots 0..'+(t.subject.arity-1)+' in source parameter order; ':'No arguments; ')+'slot '+t.subject.arity+' is the expected JS expression (equal/deepEqual), or unquoted error constructor name (throws). For throws: '+t.subject.arity+' input arguments, then one error name only in slot '+t.subject.arity+'; an error constructor name is never an argument. Keep all other input positions from the baseline when varying one invalid argument; do not replace them with error names. Arguments are inputs, never the callee or result. Every slot is a nonempty expression string; no filler. A string-result cell contains only its complete quoted JS literal, with array brackets and separators outside that cell.'},rejections={},secondRejections={}
+  // Ollama's grammar converter supports positional tuples via array-valued items.
+  const tuple=cells=>({...row,items:cells.map(value=>({type:'string',const:value})),additionalItems:false})
   for(const r of t.rejections){
-   const allowed=t.pairedRejections?[r.expression,'0',r.error]:t.subject.arity===1?[r.expression,r.error]:null
-   rejections[r.id]=allowed?{...row,items:{type:'string',enum:allowed}}:row
+   if(t.pairedRejections){
+    rejections[r.id]=tuple([r.expression,'0',r.error])
+    secondRejections[r.id]=tuple(['0',r.expression,r.error])
+   }else rejections[r.id]=t.subject.arity===1?{...row,items:{type:'string',enum:[r.expression,r.error]}}:row
   }
-  tests[t.id]=object({title:{type:'string',minLength:1,maxLength:120},groups:{type:'array',minItems:1,maxItems:16,items:object({method:{type:'string',enum:['equal','deepEqual','throws']},rows:{type:'array',minItems:1,maxItems:128,items:row}})},rejections:object(rejections),...(t.pairedRejections?{secondRejections:object(rejections)}:{})})
+  tests[t.id]=object({title:{type:'string',minLength:1,maxLength:120},groups:{type:'array',minItems:1,maxItems:16,items:object({method:{type:'string',enum:['equal','deepEqual','throws']},rows:{type:'array',minItems:1,maxItems:128,items:row}})},rejections:object(rejections),...(t.pairedRejections?{secondRejections:object(secondRejections)}:{})})
  }
  return object({protocol:{type:'string',const:VERSION},tests:object(tests)})
 }

@@ -59,3 +59,14 @@ rendered-test check still verifies all prior cases, exact expectations and
 the new-function RED anchor. The scoped contract and renderer hashes are
 recorded with the raw output and protected test. Existing evidence remains
 readable. The original failed response is preserved verbatim.
+
+The PR196 native draft returned both required objects but copied the
+first-position tuple into each second-position row. The host rejected
+the first copied row. Both objects shared the same item-level enum,
+so their schemas did not distinguish the argument positions. The
+stock recipe now uses fixed three-slot tuples with array-valued items
+and independent constants for each argument and error constructor.
+The native request format carries these separate tuple definitions.
+The existing host parser and rendered-test checks remain in force.
+The complete control renders the same assertions and RED subjects.
+The rejected output is archived verbatim and is never repaired by the host.
