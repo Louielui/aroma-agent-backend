@@ -13,12 +13,12 @@ Use the real selected path/export and real required arguments/expectations inste
 5. Before returning JSON, check the fixed test count, all required subjects (including new named exports), direct invocation lines, and every criterion's examples/invalid inputs. This self-check is not execution, review, permission or evidence that tests passed. No assertion may be weakened to meet the form.`
 function stockProbeGuide(probes){
  const firstPosition=Object.fromEntries(probes.map(({id,expression,error})=>[id,[expression,'0',error]]))
- const secondPosition={method:'throws',rows:probes.map(({expression,error})=>['0',expression,error])}
+ const secondPosition=Object.fromEntries(probes.map(({id,expression,error})=>[id,['0',expression,error]]))
  return [
-  'For stockVariance, each r-key is assigned to one distinct invalid value, in the exact mapping below. Do not use successive keys for the two positions of a single value.',
+  'For stockVariance, each r-key is assigned to one distinct invalid value, in the exact mapping below. Use the same keys for the same probe in both required objects.',
   'Use this exact tests.c3.rejections object: '+JSON.stringify(firstPosition),
-  'Use this separate tests.c3.groups throws entry: '+JSON.stringify(secondPosition),
-  'Keep the ten c3 result rows in their result group. Return all six keyed rows and all six second-parameter rows, with zero in the other position. Preserve the audited c1 and c2 rows.'
+  'Use this exact tests.c3.secondRejections object: '+JSON.stringify(secondPosition),
+  'Keep the ten c3 result rows in their result group. Return all six keys in each object, with zero in the other position. Preserve the audited c1 and c2 rows.'
  ].join('\n')
 }
 function prepare(prompt){

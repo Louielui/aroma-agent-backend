@@ -31,13 +31,22 @@ function prepare(p){
   const relative=path.relative('acceptance',subject.file);subject.arity=count;subject.callee='require('+JSON.stringify(relative.startsWith('.')?relative:'./'+relative)+').'+subject.symbol
   tests.push({id:'c'+(index+1),criterion,subject,rejections})
  }
- return{version:VERSION,expectedTests:p.criteria.length,sourceHashes:Object.fromEntries(Object.entries(p.files).map(([f,text])=>[f,hash(text)])),tests}
+ const spec={version:VERSION,expectedTests:p.criteria.length,sourceHashes:Object.fromEntries(Object.entries(p.files).map(([f,text])=>[f,hash(text)])),tests}
+ const baseline=require('./localCaseBaseline')
+ if(baseline.isStockRecipe(p.criteria)){
+  baseline.profile(spec)
+  tests[2].pairedRejections=true
+ }
+ return spec
 }
 function schema(spec){
  const object=properties=>({type:'object',additionalProperties:false,required:Object.keys(properties),properties}),string={type:'string',minLength:1,maxLength:600,pattern:'[^,;\\s]\\s*$',description:'One complete JS expression encoded as a JSON string. No dangling comma or semicolon inside the cell; JSON row separators stay outside it. String inputs/results need quoted JS literals inside the JSON string. No require, subject call, aliases, placeholder padding or computed return value in an argument.'},tests={}
  for(const t of spec.tests){const row={type:'array',minItems:t.subject.arity+1,maxItems:t.subject.arity+1,items:string,description:(t.subject.arity?'Argument slots 0..'+(t.subject.arity-1)+' in source parameter order; ':'No arguments; ')+'slot '+t.subject.arity+' is the expected JS expression (equal/deepEqual), or unquoted error constructor name (throws). For throws: '+t.subject.arity+' input arguments, then one error name only in slot '+t.subject.arity+'; an error constructor name is never an argument. Keep all other input positions from the baseline when varying one invalid argument; do not replace them with error names. Arguments are inputs, never the callee or result. Every slot is a nonempty expression string; no filler. A string-result cell contains only its complete quoted JS literal, with array brackets and separators outside that cell.'},rejections={}
-  for(const r of t.rejections)rejections[r.id]={...row,...(t.subject.arity===1?{items:{type:'string',enum:[r.expression,r.error]}}:{})}
-  tests[t.id]=object({title:{type:'string',minLength:1,maxLength:120},groups:{type:'array',minItems:1,maxItems:16,items:object({method:{type:'string',enum:['equal','deepEqual','throws']},rows:{type:'array',minItems:1,maxItems:128,items:row}})},rejections:object(rejections)})
+  for(const r of t.rejections){
+   const allowed=t.pairedRejections?[r.expression,'0',r.error]:t.subject.arity===1?[r.expression,r.error]:null
+   rejections[r.id]=allowed?{...row,items:{type:'string',enum:allowed}}:row
+  }
+  tests[t.id]=object({title:{type:'string',minLength:1,maxLength:120},groups:{type:'array',minItems:1,maxItems:16,items:object({method:{type:'string',enum:['equal','deepEqual','throws']},rows:{type:'array',minItems:1,maxItems:128,items:row}})},rejections:object(rejections),...(t.pairedRejections?{secondRejections:object(rejections)}:{})})
  }
  return object({protocol:{type:'string',const:VERSION},tests:object(tests)})
 }
@@ -64,18 +73,29 @@ function render(text,spec){
  let value;try{value=JSON.parse(text)}catch{invalid('shape')}
  if(!exact(value,['protocol','tests'])||value.protocol!==VERSION||!exact(value.tests,spec.tests.map(t=>t.id)))invalid('shape')
  const lines=["'use strict'","const test=require('node:test'),assert=require('node:assert/strict')"];let count=0
- for(const t of spec.tests){const v=value.tests[t.id];if(!exact(v,['title','groups','rejections'])||typeof v.title!=='string'||!v.title.trim()||v.title.length>120||!Array.isArray(v.groups)||!v.groups.length||v.groups.length>16)invalid('shape')
-  if(!exact(v.rejections,t.rejections.map(r=>r.id)))invalid('boundary')
+ for(const t of spec.tests){
+  const v=value.tests[t.id],keys=t.rejections.map(r=>r.id),fields=['title','groups','rejections']
+  if(t.pairedRejections){
+   if(!exact(v?.secondRejections,keys))invalid('boundary')
+   fields.push('secondRejections')
+  }
+  if(!exact(v,fields)||typeof v.title!=='string'||!v.title.trim()||v.title.length>120||!Array.isArray(v.groups)||!v.groups.length||v.groups.length>16)invalid('shape')
+  if(!exact(v.rejections,keys))invalid('boundary')
   lines.push('test('+JSON.stringify(v.title)+',()=>{')
-  const row=(method,values,required)=>{
+  const row=(method,values,required,position)=>{
    if(++count>512)invalid('limit');if(!Array.isArray(values)||values.length!==t.subject.arity+1||values.some(s=>typeof s!=='string'||s.length>600||!s.trim()))invalid('shape')
    const args=values.slice(0,-1),expected=values.at(-1),nodes=args.map(expression)
-   if(required&&(expected!==required.error||!nodes.includes(expression(required.expression))))invalid('boundary')
+   if(required){
+    const probe=expression(required.expression)
+    const matches=position===undefined?nodes.includes(probe):nodes[position]===probe&&nodes[1-position]===expression('0')
+    if(expected!==required.error||!matches)invalid('boundary')
+   }
    if(method==='throws'){if(!errors.has(expected))invalid('shape');lines.push('assert.throws(()=>'+t.subject.callee+'('+args.join(',')+'),'+expected+')')}
    else{expression(expected);lines.push('assert.'+method+'('+t.subject.callee+'('+args.join(',')+'),'+expected+')')}
   }
   for(const g of v.groups){if(!exact(g,['method','rows'])||!['equal','deepEqual','throws'].includes(g.method)||!Array.isArray(g.rows)||!g.rows.length||g.rows.length>128)invalid('shape');for(const values of g.rows)row(g.method,values)}
-  for(const r of t.rejections)row('throws',v.rejections[r.id],r)
+  for(const r of t.rejections)row('throws',v.rejections[r.id],r,t.pairedRejections?0:undefined)
+  if(t.pairedRejections)for(const r of t.rejections)row('throws',v.secondRejections[r.id],r,1)
   lines.push('})')
  }
  const testCode=lines.join('\n')+'\n';if(testCode.length>30000)invalid('limit')

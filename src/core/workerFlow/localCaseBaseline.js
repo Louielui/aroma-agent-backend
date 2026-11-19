@@ -124,6 +124,7 @@ function measureRows(required, actual) {
     for (const row of group.rows) add(group.method==='deepEqual'?'equal':group.method,row)
   }
   for (const row of Object.values(actual.rejections)) add('throws',row)
+  for (const row of Object.values(actual.secondRejections||{})) add('throws',row)
   function add(method,row) {
     const id = key(row.slice(0,-1))
     if (!inputs.has(id)) inputs.set(id,[])
@@ -217,5 +218,5 @@ function expectedFailureSubject(proof) {
   return null
 }
 
-const STOCK_GUIDE='Audited node_stock_variance_v1: draftContract.baselineContract.referenceCases assigns the seven existing orderBoxes results to c1 and all 28 refusals to c2. Copy each full tuple in its assigned criterion. In the three-position refusal matrix, vary only the indicated argument of (1,3,1). Preserve the separate overflow row. draftContract.newExampleContract assigns ten exact results and twelve full refusal tuples to c3. Each of the six invalid values must appear in BOTH parameter positions with zero in the other. The six required rN entries provide a row per invalid value; return the other position too in a throws group. A probe name alone does not cover both positions. Copy the supplied values and argument types exactly. The host checks the case rows without filling them or changing model output. Review and actual Sandbox evidence remain required.'
+const STOCK_GUIDE='Audited node_stock_variance_v1: draftContract.baselineContract.referenceCases assigns the seven existing orderBoxes results to c1 and all 28 refusals to c2. Copy each full tuple in its assigned criterion. In the three-position refusal matrix, vary only the indicated argument of (1,3,1). Preserve the separate overflow row. draftContract.newExampleContract assigns ten exact results and twelve full refusal tuples to c3. Each of the six invalid values must appear in BOTH parameter positions with zero in the other. Return the six first-parameter rows in c3.rejections and the six second-parameter rows in c3.secondRejections. Both keyed objects are required by the schema. Case groups cannot replace these required rows. Copy the supplied values and argument types exactly. The host checks the case rows without filling them or changing model output. Review and actual Sandbox evidence remain required.'
 module.exports={profile,references,newExamples,check,rendered,review,expectedFailureSubject,isStockRecipe,GUIDE,STOCK_GUIDE,STOCK_VERSION}

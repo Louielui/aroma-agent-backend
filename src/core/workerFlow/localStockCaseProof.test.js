@@ -15,6 +15,9 @@ const testFile = packet.protectedTestPath
 const sourceFile = 'src/localBrain/examples/stock.js'
 const prepared = () => draft.prepare(JSON.stringify(packet))
 
+function secondPosition(first) {
+  return Object.fromEntries(Object.entries(first).map(([key,[invalid,,error]]) => [key,['0',invalid,error]]))
+}
 function correctedCases(complete = true) {
   const data = JSON.parse(nativeDraft)
   // Restore only the unaffected argument slots in a temporary control.
@@ -22,9 +25,7 @@ function correctedCases(complete = true) {
     if (i>=9 && i<18) row[0] = '1'
     if (i>=18 && i<27) [row[0],row[1]] = ['1','3']
   }
-  if (complete) data.tests.c3.groups.push({
-    method:'throws',rows:Object.values(data.tests.c3.rejections).map(([invalid,,name])=>['0',invalid,name])
-  })
+  if (complete) data.tests.c3.secondRejections = secondPosition(data.tests.c3.rejections)
   return data
 }
 function reviewInput(code, origin) {
@@ -41,7 +42,10 @@ test('saved stock draft is rejected before review for changing 18 exact orderBox
   assert.equal(saved['draft-input'].callId,saved['draft-output'].callId)
   assert.equal(saved['review-input'].callId,saved['review-output'].callId)
   const p = prepared()
-  assert.throws(()=>draft.project(nativeDraft,p),e=>e.localDraftValidation?.reason==='case_plan_baseline_coverage'&&e.localDraftValidation.missingBaselineCases===18)
+  assert.throws(()=>draft.project(nativeDraft,p),e=>e.localDraftValidation?.reason==='case_plan_boundary')
+  const control = JSON.parse(nativeDraft)
+  control.tests.c3.secondRejections = secondPosition(control.tests.c3.rejections)
+  assert.throws(()=>draft.project(JSON.stringify(control),p),e=>e.localDraftValidation?.reason==='case_plan_baseline_coverage'&&e.localDraftValidation.missingBaselineCases===18)
   assert.deepEqual(p.packet.draftContract.baselineContract.referenceCases.map(v=>[v.criterion,v.cases.length]),[['c1',7],['c2',28]])
   assert.equal(p.packet.draftContract.newExampleContract.rejectionCases.length,12)
   assert.equal(saved['draft-output'].text,nativeDraft)
@@ -49,7 +53,7 @@ test('saved stock draft is rejected before review for changing 18 exact orderBox
 
 test('restoring old tuples alone cannot hide missing second-position stockVariance probes', () => {
   const p = prepared(), data = correctedCases(false)
-  assert.throws(()=>draft.project(JSON.stringify(data),p),e=>e.localDraftValidation?.reason==='case_plan_new_coverage'&&e.localDraftValidation.missingNewCases===6)
+  assert.throws(()=>draft.project(JSON.stringify(data),p),e=>e.localDraftValidation?.reason==='case_plan_boundary')
   const correct = correctedCases()
   assert.equal(draft.project(JSON.stringify(correct),p).generated.expectedTests,3)
   const conflicting = structuredClone(correct)
@@ -114,20 +118,17 @@ test('saved stock draft with shifted probe keys requires the exact r1-r6 map and
     return JSON.parse(line.slice(prefix.length))
   }
   const firstPosition = field('Use this exact tests.c3.rejections object: ')
-  const secondPosition = field('Use this separate tests.c3.groups throws entry: ')
+  const pairedRows = field('Use this exact tests.c3.secondRejections object: ')
   const probes = ['-1', '1.5', "'1'", 'NaN', 'Infinity', 'Number.MAX_SAFE_INTEGER+1']
   assert.deepEqual(firstPosition, Object.fromEntries(probes.map((value, i) =>
     ['r' + (i + 1), [value, '0', 'RangeError']])))
-  assert.deepEqual(secondPosition, {
-    method: 'throws', rows: probes.map(value => ['0', value, 'RangeError'])
-  })
+  assert.deepEqual(pairedRows, secondPosition(firstPosition))
 
   // This control changes only the six keyed rows, preserving the recorded regression and result rows.
   data.tests.c3.rejections = firstPosition
   assert.throws(() => draft.project(JSON.stringify(data), p), error =>
-    error.localDraftValidation?.reason === 'case_plan_new_coverage' &&
-    error.localDraftValidation.missingNewCases === 6)
-  data.tests.c3.groups.push(secondPosition)
+    error.localDraftValidation?.reason === 'case_plan_boundary')
+  data.tests.c3.secondRejections = pairedRows
   const result = draft.project(JSON.stringify(data), p)
   assert.equal(result.generated.expectedTests, 3)
   assert.equal(result.generated.testCode.match(/^assert\./gm).length, 57)
@@ -137,4 +138,62 @@ test('saved stock draft with shifted probe keys requires the exact r1-r6 map and
   const other = {...packet, criteria:packet.criteria.map((criterion, i) =>
     i === 0 ? criterion + ' A different Owner criterion.' : criterion)}
   assert.doesNotMatch(draft.prepare(JSON.stringify(other)).system, /Use this exact tests\.c3\.rejections object/)
+})
+
+test('saved stock draft requires separate structured rows for every second-parameter probe', () => {
+  const archive = require('../../../test/localBrain/fixtures/stock-paired-probes-native-v1.json')
+  assert.equal(hash(archive.draftOutput.raw), archive.draftOutput.sha256)
+  const raw = JSON.parse(archive.draftOutput.raw).text
+  const p = prepared()
+  const c3 = p.schema.properties.tests.properties.c3
+  assert.deepEqual(c3.required, ['title', 'groups', 'rejections', 'secondRejections'])
+  const keys = ['r1', 'r2', 'r3', 'r4', 'r5', 'r6']
+  assert.deepEqual(c3.properties.rejections.required, keys)
+  assert.deepEqual(c3.properties.secondRejections.required, keys)
+  assert.equal(c3.properties.secondRejections.additionalProperties, false)
+
+  const rejectsBoundary = response => assert.throws(() => draft.project(response, p),
+    error => error.localDraftValidation?.reason === 'case_plan_boundary')
+  rejectsBoundary(raw)
+
+  // Synthetic response with only the omitted object added. The archived text stays byte-exact.
+  const complete = JSON.parse(raw)
+  complete.tests.c3.secondRejections = secondPosition(complete.tests.c3.rejections)
+  for (const field of ['rejections', 'secondRejections']) {
+    for (const key of keys) {
+      const incomplete = structuredClone(complete)
+      delete incomplete.tests.c3[field][key]
+      rejectsBoundary(JSON.stringify(incomplete))
+    }
+  }
+  const optionalGroup = JSON.parse(raw)
+  optionalGroup.tests.c3.groups.push({method: 'throws', rows: Object.values(complete.tests.c3.secondRejections)})
+  rejectsBoundary(JSON.stringify(optionalGroup))
+  const wrongFirst = structuredClone(complete)
+  wrongFirst.tests.c3.rejections.r2 = ['0', '1.5', 'RangeError']
+  rejectsBoundary(JSON.stringify(wrongFirst))
+  const extraKey = structuredClone(complete)
+  extraKey.tests.c3.secondRejections.r7 = ['0', '-1', 'RangeError']
+  rejectsBoundary(JSON.stringify(extraKey))
+  const wrong = structuredClone(complete)
+  wrong.tests.c3.secondRejections.r2 = ['1.5', '0', 'RangeError']
+  rejectsBoundary(JSON.stringify(wrong))
+  wrong.tests.c3.secondRejections.r2 = ['0', '-1', 'RangeError']
+  rejectsBoundary(JSON.stringify(wrong))
+  wrong.tests.c3.secondRejections.r2 = ['0', '1.5', 'Error']
+  rejectsBoundary(JSON.stringify(wrong))
+  wrong.tests.c3.secondRejections.r2 = ['1', '1.5', 'RangeError']
+  rejectsBoundary(JSON.stringify(wrong))
+
+  const text = JSON.stringify(complete)
+  const result = draft.project(text, p)
+  assert.equal(result.origin.rawOutputSha256, hash(text))
+  assert.equal(result.generated.expectedTests, 3)
+  assert.equal(result.generated.testCode.match(/^assert\./gm).length, 57)
+  assert.deepEqual(review.prepareCompact(reviewInput(result.generated.testCode, result.origin))
+    .packet.baselineProof.newExampleProof, {exactCases: 10, rejectionProbes: 12})
+  const other = {...packet, criteria: packet.criteria.map((criterion, index) =>
+    index === 0 ? criterion + ' Different criterion.' : criterion)}
+  assert.equal(draft.prepare(JSON.stringify(other)).schema.properties.tests.properties.c3
+    .properties.secondRejections, undefined)
 })
