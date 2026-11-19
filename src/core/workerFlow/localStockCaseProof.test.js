@@ -197,3 +197,40 @@ test('saved stock draft requires separate structured rows for every second-param
   assert.equal(draft.prepare(JSON.stringify(other)).schema.properties.tests.properties.c3
     .properties.secondRejections, undefined)
 })
+
+test('stock rejection schema pins each transmitted tuple slot and excludes the saved copied rows', () => {
+  const archive = require('../../../test/localBrain/fixtures/stock-slot-schema-native-v1.json')
+  assert.equal(hash(archive.draftOutput.raw), archive.draftOutput.sha256)
+  const raw = JSON.parse(archive.draftOutput.raw).text
+  const response = JSON.parse(raw)
+  const p = prepared()
+  const probes = ['-1', '1.5', "'1'", 'NaN', 'Infinity', 'Number.MAX_SAFE_INTEGER+1']
+  const c3 = p.schema.properties.tests.properties.c3
+  const paired = response.tests.c3
+  for (const [i, probe] of probes.entries()) {
+    const key = 'r' + (i + 1)
+    for (const [field, values] of [['rejections', [probe, '0', 'RangeError']],
+      ['secondRejections', ['0', probe, 'RangeError']]]) {
+      const row = c3.properties[field].properties[key]
+      assert.equal(row.minItems, 3)
+      assert.equal(row.maxItems, 3)
+      assert.equal(row.additionalItems, false)
+      assert.deepEqual(row.items, values.map(value => ({type: 'string', const: value})))
+      const returned = paired[field][key]
+      assert.equal(row.items.every((slot, index) => returned[index] === slot.const),
+        field === 'rejections')
+    }
+  }
+  assert.throws(() => draft.project(raw, p), error =>
+    error.localDraftValidation?.reason === 'case_plan_boundary')
+
+  // Synthetic control only. Supply all six correct second-position rows explicitly.
+  paired.secondRejections = secondPosition(paired.rejections)
+  const text = JSON.stringify(response)
+  const result = draft.project(text, p)
+  assert.equal(result.origin.rawOutputSha256, hash(text))
+  assert.equal(result.generated.expectedTests, 3)
+  assert.equal(result.generated.testCode.match(/^assert\./gm).length, 57)
+  assert.deepEqual(review.prepareCompact(reviewInput(result.generated.testCode, result.origin))
+    .packet.baselineProof.newExampleProof, {exactCases: 10, rejectionProbes: 12})
+})

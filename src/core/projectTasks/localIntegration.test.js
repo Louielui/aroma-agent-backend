@@ -10,10 +10,11 @@ function fixture(t,{visible=false,failure=false,draftResult=null,structured=fals
  for(const [name,text]of Object.entries(selectedFiles||{})){const file=path.join(root,name);fs.mkdirSync(path.dirname(file),{recursive:true});fs.writeFileSync(file,text)}
  const git=(...args)=>execFileSync('git',args,{cwd:root,windowsHide:true,encoding:'utf8',stdio:['ignore','pipe','pipe']}).trim();git('init');git('add','src');git('-c','user.name=Offline Test','-c','user.email=offline@example.invalid','-c','core.hooksPath=','commit','-m','offline fixture');const head=git('rev-parse','HEAD')
  const inventory=createInventory({root,health:async()=>({status:'ok',bootCommit:head})}),store=createRunStore({dir:path.join(dir,'tasks'),workflow:'project_task'}),workStore=createRunStore({dir:path.join(dir,'work'),workflow:'project_work'}),budget=createRepositoryBudget({dir:path.join(dir,'usage'),modeFor:id=>store.get(id)?.input.execution,runtimeCommit:()=>head}),locks=createStore({dir:path.join(dir,'locks')});let promotion=0,work
- let sends=0,cloud=0,sandboxRuns=0;const events=[],selection=require('../../workers/execution/localCodingProvider').SELECTION
+ let sends=0,cloud=0,sandboxRuns=0,draftFormat;const events=[],selection=require('../../workers/execution/localCodingProvider').SELECTION
  const local=require('../workerFlow/localProviders').createLocalProviders({root:path.join(dir,'local-work'),onEvent:e=>events.push(e),executor:{readiness:async()=>({ready:true}),isBusy:()=>false,run:async pack=>{sandboxRuns++;assert.deepEqual(pack.tests,['acceptance/registered-task.test.cjs']);assert.equal(pack.files[pack.tests[0]],generated.testCode);assert.equal(pack.files['src/readonly.js'],'module.exports=true;\n');return sandboxRuns===1?{exitCode:1,total:3,failed:3,passed:0,skipped:0,cancelled:0}:{exitCode:0,total:3,passed:3,failed:0,skipped:0,cancelled:0}}},fetchFn:async(url,o)=>{
   assert.ok(url.startsWith('http://127.0.0.1:11435/'));assert.equal(o.redirect,'error');if(url.endsWith('/api/tags'))return{ok:true,json:async()=>({models:[{name:'qwen3.5:9b',digest:selection.digest}]})}
   assert.ok(url.endsWith('/api/chat'));sends++;if(failure)throw Error('simulated transport failure');const body=JSON.parse(o.body);assert.equal(body.model,'qwen3.5:9b');assert.equal(body.think,false)
+  if(sends===1)draftFormat=body.format
   let reply=sends===1?(draftResult||generated):sends===3?{changes:[{file:'src/logic.js',content:'module.exports=value=>value+1;\n'}],summary:'Increment only'}:{verdict:'pass',summary:'Contract checked',findings:[]}
   if(sends===1&&structured){const p=JSON.parse(body.messages.find(v=>v.role==='user').content),spec=p.draftContract.casePlan
    assert.ok(body.messages[0].content.includes('CASE FIELD GUIDE'));assert.ok(body.messages[0].content.includes('BigInt(Number.MAX_SAFE_INTEGER)'))
@@ -27,7 +28,7 @@ function fixture(t,{visible=false,failure=false,draftResult=null,structured=fals
  const registry=createRegistry(store),source=require('../projectWork/source').createSource({root,resolveRecipe:registry.resolve,health:async()=>({status:'ok',bootCommit:head})})
  const makeWork=()=>work=createProjectWork({source,providers:never,localProviders:local,store:workStore,visibleCodexWork:visible,appProjectRoot,resolveCodexThread:id=>store.get(id)?.codexThread||null,enabled:()=>true,resolveRecipe:registry.resolve,repositoryBudget:budget,onAccepted:()=>{promotion++}});makeWork()
  const options={store,localProviders:local,visibleCodexWork:visible,appProjectRoot,enabled:()=>true,sourceFor:inventory.sourceFor,provider:never,review:never.review,prepareWork:input=>work.prepare(OWNER,input),repository:{inventory,budget,lock:()=>locks.lockRun('d970a642-61b1-47a1-8baf-6b33e910ac05'),provider:never}}
- return{get sends(){return sends},get cloud(){return cloud},get sandboxRuns(){return sandboxRuns},events,dir,root,head,store,workStore,budget,inventory,sourceFor:inventory.sourceFor,make:(extra={})=>createTasks({...options,...extra,repository:{...options.repository,...extra.repository}}),makeWork,get work(){return work},get promotion(){return promotion}}
+ return{get draftFormat(){return draftFormat},get sends(){return sends},get cloud(){return cloud},get sandboxRuns(){return sandboxRuns},events,dir,root,head,store,workStore,budget,inventory,sourceFor:inventory.sourceFor,make:(extra={})=>createTasks({...options,...extra,repository:{...options.repository,...extra.repository}}),makeWork,get work(){return work},get promotion(){return promotion}}
 }
 
 // These transport/executor doubles verify composition only. Real OS Sandbox
@@ -145,7 +146,7 @@ test('saved PR191 failures stop at the actual draft or review gate and pause the
 test('saved stock variance draft stops before review and leaves the isolated work budget paused', async t => {
  const archive=require('../../../test/localBrain/fixtures/stock-case-proof-native-v1.json').evidence
  const packet=JSON.parse(JSON.parse(archive['draft-input'].raw).messages.find(message=>message.role==='user').content)
- const previous=require('../../../test/localBrain/fixtures/stock-paired-probes-native-v1.json')
+ const previous=require('../../../test/localBrain/fixtures/stock-slot-schema-native-v1.json')
  const raw=JSON.parse(previous.draftOutput.raw).text
  const f=fixture(t,{selectedFiles:packet.files,draftResult:raw}),tasks=f.make()
  const id=tasks.request(OWNER,{bootCommit:f.head,requestId:randomUUID(),goal:packet.goal,execution:'local'}).run.id
@@ -166,5 +167,9 @@ test('saved stock variance draft stops before review and leaves the isolated wor
  assert.ok(guidance.includes('Use this exact tests.c3.secondRejections object: '))
  assert.ok(guidance.includes('"r2":["0","1.5","RangeError"]'))
  assert.equal(sent.draftContract.casePlan.tests[2].pairedRejections,true)
+ const fields=f.draftFormat.properties.tests.properties.c3.properties
+ const fixedRow=(field,key)=>fields[field].properties[key].items.map(slot=>slot.const)
+ assert.deepEqual(fixedRow('rejections','r2'),['1.5','0','RangeError'])
+ assert.deepEqual(fixedRow('secondRejections','r2'),['0','1.5','RangeError'])
  assert.ok(evidence.some(entry=>entry.text===raw))
 })
