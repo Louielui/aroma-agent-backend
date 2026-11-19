@@ -3,10 +3,11 @@ const test=require('node:test'),assert=require('node:assert/strict'),fs=require(
 const {createTasks}=require('./service'),{createRegistry}=require('./contract'),{createRunStore}=require('../operating/runStore'),{createStore}=require('../../actions/store'),{createRepositoryBudget}=require('./repositoryBudget'),{createInventory}=require('./repositoryScope'),usage=require('../../actions/usageBudget'),{digest}=require('../../workers/execution/windowsSandbox'),{createProjectWork}=require('../projectWork/service')
 const OWNER={id:'owner',role:'owner'}
 const generated={testCode:"const test=require('node:test'),assert=require('node:assert/strict');\n"+[1,2,3].map(value=>`test('returns increment ${value}',()=>assert.equal(require('../src/logic.js')(${value}),${value+1}));`).join('\n'),expectedTests:3}
-function fixture(t,{visible=false,failure=false,draftResult=null,structured=false,exampleSource=false,reviewResult=null,sourceLogic='module.exports=value=>value;\n'}={}){
+function fixture(t,{visible=false,failure=false,draftResult=null,structured=false,exampleSource=false,selectedFiles=null,reviewResult=null,sourceLogic='module.exports=value=>value;\n'}={}){
  const appProjectRoot='C:/isolated-app-project'
  const dir=fs.mkdtempSync(path.join(os.tmpdir(),'repository-flow-'));t.after(()=>fs.rmSync(dir,{recursive:true,force:true}));const root=path.join(dir,'repo');fs.mkdirSync(path.join(root,'src'),{recursive:true});fs.writeFileSync(path.join(root,'src/logic.js'),sourceLogic);fs.writeFileSync(path.join(root,'src/readonly.js'),'module.exports=true;\n')
- if(exampleSource){const saved=require('../../../test/localBrain/fixtures/case-baseline-native-v1.json'),packet=JSON.parse(JSON.parse(saved.draftInputRaw).messages.find(m=>m.role==='user').content);for(const [name,text]of Object.entries(packet.files)){const file=path.join(root,name);fs.mkdirSync(path.dirname(file),{recursive:true});fs.writeFileSync(file,text)}}
+ if(exampleSource){const saved=require('../../../test/localBrain/fixtures/case-baseline-native-v1.json');selectedFiles=JSON.parse(JSON.parse(saved.draftInputRaw).messages.find(m=>m.role==='user').content).files}
+ for(const [name,text]of Object.entries(selectedFiles||{})){const file=path.join(root,name);fs.mkdirSync(path.dirname(file),{recursive:true});fs.writeFileSync(file,text)}
  const git=(...args)=>execFileSync('git',args,{cwd:root,windowsHide:true,encoding:'utf8',stdio:['ignore','pipe','pipe']}).trim();git('init');git('add','src');git('-c','user.name=Offline Test','-c','user.email=offline@example.invalid','-c','core.hooksPath=','commit','-m','offline fixture');const head=git('rev-parse','HEAD')
  const inventory=createInventory({root,health:async()=>({status:'ok',bootCommit:head})}),store=createRunStore({dir:path.join(dir,'tasks'),workflow:'project_task'}),workStore=createRunStore({dir:path.join(dir,'work'),workflow:'project_work'}),budget=createRepositoryBudget({dir:path.join(dir,'usage'),modeFor:id=>store.get(id)?.input.execution,runtimeCommit:()=>head}),locks=createStore({dir:path.join(dir,'locks')});let promotion=0,work
  let sends=0,cloud=0,sandboxRuns=0;const events=[],selection=require('../../workers/execution/localCodingProvider').SELECTION
@@ -138,4 +139,26 @@ test('saved PR191 failures stop at the actual draft or review gate and pause the
   if(phase==='draft'){assert.equal(record.run.draftValidation.reason,'case_plan_new_expected');assert.equal(f.sends,1)}
   else{assert.equal(record.run.reviewValidation.stage,'red_anchor');assert.equal(f.sends,2)}
  })
+})
+
+
+test('saved stock variance draft stops before review and leaves the isolated work budget paused', async t => {
+ const archive=require('../../../test/localBrain/fixtures/stock-case-proof-native-v1.json').evidence
+ const packet=JSON.parse(JSON.parse(archive['draft-input'].raw).messages.find(message=>message.role==='user').content)
+ const raw=JSON.parse(archive['draft-output'].raw).text
+ const f=fixture(t,{selectedFiles:packet.files,draftResult:raw}),tasks=f.make()
+ const id=tasks.request(OWNER,{bootCommit:f.head,requestId:randomUUID(),goal:packet.goal,execution:'local'}).run.id
+ const scoped=await tasks.scope(OWNER,{id,bootCommit:f.head,criteria:packet.criteria,editable:Object.keys(packet.files),readonly:[]})
+ await tasks.authorize(OWNER,{id,hash:scoped.approval.hash,nonce:scoped.approval.nonce});await tasks.settled()
+ const value=tasks.get(OWNER,id),record=value.run
+ assert.equal(record.state,'failed');assert.equal(value.approval,null);assert.equal(record.workRunId,null)
+ assert.equal(record.draftValidation.reason,'case_plan_baseline_coverage');assert.equal(record.draftValidation.missingBaselineCases,18)
+ assert.equal(f.sends,1);assert.equal(f.cloud,0);assert.equal(f.sandboxRuns,0)
+ assert.equal(f.budget.status(id).state,'paused');assert.equal(f.budget.status(id).helper.unresolved,0)
+ const evidenceDir=path.join(f.dir,'usage','evidence')
+ const evidence=fs.readdirSync(evidenceDir).map(name=>JSON.parse(fs.readFileSync(path.join(evidenceDir,name),'utf8')))
+ const sent=JSON.parse(evidence.find(v=>v.messages).messages.find(message=>message.role==='user').content)
+ assert.deepEqual(sent.draftContract.baselineContract.referenceCases.map(v=>v.cases.length),[7,28])
+ assert.equal(sent.draftContract.newExampleContract.rejectionCases.length,12)
+ assert.ok(evidence.some(entry=>entry.text===raw))
 })
