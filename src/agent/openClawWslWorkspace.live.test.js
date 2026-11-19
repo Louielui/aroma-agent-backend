@@ -59,6 +59,10 @@ const ASIDE = SANDBOX_ROOT + '/appr_live_aside'
 // builds its argv through the same pure function the runner uses, so a drift between what
 // the tests measure and what production sends is impossible.
 const { windowsArgvFor, exactWslExec } = require('../agent/exactWslExecRunner')
+const observedNativeRunner = require('./wslTestDiagnostics.fixture.cjs').wrap(exactWslExec)
+// The real provider still sends its original argv/options to the same exact
+// native runner. Only test-side bounded timing/error categories are added.
+const realWorkspace = options => createOpenClawWslWorkspace({ ...options, wslRunner: observedNativeRunner })
 const wsl = (argv) => spawnSync(WSL_EXE, windowsArgvFor(argv), {
   env: CHILD_ENV, encoding: 'utf8', shell: false, windowsHide: true, timeout: 120000
 })
@@ -143,7 +147,7 @@ test('LIVE-ENV. ⛔ this test file itself passes no Windows environment into the
 
 test('LIVE. the real provider prepares, detects and cleans a real WSL sandbox', opts, () => {
   scrub()
-  const ws = createOpenClawWslWorkspace({ verifyGrant })
+  const ws = realWorkspace({ verifyGrant })
   const p = ws.prepare(APPROVAL)
   const D = p.dir
   // the disposable clone needs an identity before a commit can move HEAD; a fresh clone has
@@ -249,7 +253,7 @@ test('LIVE. ⛔ a sandbox REPLACED by a pristine clone at the same path is refus
   // clean worktree and its own real .git — so HEAD, branch, remote, index and structural
   // checks all pass. Only the filesystem object is different.
   scrub()
-  const ws = createOpenClawWslWorkspace({ verifyGrant })
+  const ws = realWorkspace({ verifyGrant })
   const p = ws.prepare(APPROVAL)
   const D = p.dir
 
@@ -286,7 +290,7 @@ test('LIVE. ⛔ replacing only <clone>/.git is refused', opts, () => {
   // repository underneath it. The directory the verifier canonicalises is unchanged, so the
   // containment and structural checks are undisturbed.
   scrub()
-  const ws = createOpenClawWslWorkspace({ verifyGrant })
+  const ws = realWorkspace({ verifyGrant })
   const p = ws.prepare(APPROVAL)
   const D = p.dir
 
@@ -402,7 +406,7 @@ test('LIVE-EXEC. the provider really goes through the exact runner (a real stat,
   // The provider's own identity question, asked through the production path with nothing
   // injected: `stat -c %d:%i -- <path>`. A `--` inside the LINUX argv is an ordinary
   // argument to stat now, not a separator anything re-parses.
-  const ws = createOpenClawWslWorkspace({ verifyGrant })
+  const ws = realWorkspace({ verifyGrant })
   const r = exactWslExec(['/usr/bin/stat', '-c', '%d:%i', '--', SANDBOX_ROOT])
   assert.strictEqual(r.status, 0, r.stderr)
   assert.match(r.stdout.trim(), /^\d+:\d+$/)
