@@ -4,9 +4,12 @@ test('retained native row failure stays rejected without correction; new row ins
  assert.equal(hash(saved.inputRaw),saved.inputSha256);assert.equal(hash(saved.outputRaw),saved.outputSha256)
  assert.throws(()=>draft.project(output.text,{packet}),e=>e.localDraftValidation.reason==='case_plan_expression')
  const p=draft.prepare(JSON.stringify(packet));assert.deepEqual(p.packet.criteria,packet.criteria);assert.deepEqual(p.packet.files,packet.files);assert.deepEqual(p.packet.draftContract.casePlan,packet.draftContract.casePlan)
- const strip=v=>Array.isArray(v)?v.map(strip):v&&typeof v==='object'?Object.fromEntries(Object.entries(v).filter(([k])=>k!=='description').map(([k,x])=>[k,strip(x)])):v
+ // The only added constraint rejects a dangling cell delimiter; shape and all
+ // original bounds remain. Its exact semantics are tested in localCaseAtomic.
+ const strip=v=>Array.isArray(v)?v.map(strip):v&&typeof v==='object'?Object.fromEntries(Object.entries(v).filter(([k])=>!['description','pattern'].includes(k)).map(([k,x])=>[k,strip(x)])):v
  const originalSchema=JSON.parse(input.messages.find(m=>m.role==='system').content.split('HOST OUTPUT CONTRACT (field meanings and shape, not task data):\n')[1])
  assert.deepEqual(strip(p.schema),strip(originalSchema))
+ for(const t of p.packet.draftContract.casePlan.tests)assert.equal(p.schema.properties.tests.properties[t.id].properties.groups.items.properties.rows.items.items.pattern,'[^,;\\s]\\s*$')
  assert.ok(p.system.includes('THROWS ARGUMENT POSITIONS'));assert.ok(p.system.includes('STRING EXPRESSION BOUNDARY'));assert.ok(p.system.includes('Never interleave RangeError between arguments'))
  assert.throws(()=>draft.project(output.text,p),e=>e.localDraftValidation.reason==='case_plan_expression')
 })

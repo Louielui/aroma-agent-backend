@@ -16,7 +16,7 @@ function prepare(prompt){
  if(!Array.isArray(p.criteria)||!p.criteria.length||!p.files||typeof p.goal!=='string')throw Error('invalid_worker_result')
  const expectedTests=Math.max(3,p.criteria.length),required=catalogue({},p.files,p.criteria).required
  const testFile='acceptance/registered-task.test.cjs',subjects=[...new Map(required.flat().map(s=>[s.file+'#'+s.symbol,s])).values()].map(s=>{const relative=path.relative(path.dirname(testFile),s.file);return{...s,callee:'require('+JSON.stringify(relative.startsWith('.')?relative:'./'+relative)+').'+s.symbol}})
- const cases=require('./localCasePlan'),casePlan=cases.prepare(p),baseline=require('./localCaseBaseline'),baselineContract=casePlan?baseline.profile(casePlan):null
+ const cases=require('./localCasePlan'),casePlan=cases.prepare(p),baseline=require('./localCaseBaseline'),proof=casePlan?baseline.profile(casePlan):null,baselineContract=proof?{...proof,referenceCases:baseline.references(casePlan)}:null
  return{packet:{...p,draftContract:{expectedTests,criteria:p.criteria.map((text,i)=>({id:i+1,text,requiredSubjects:required[i]})),assertionForm:{version:'selected_inline_assert_v1',subjects,includeNewNamedSubjects:true},baselineRole:'unchanged_reference_expected_to_fail',testsExecuted:false,...(casePlan?{casePlan}:{}),...(baselineContract?{baselineContract}:{})}},system:casePlan?cases.SYSTEM+(baselineContract?'\n'+baseline.GUIDE:''):SYSTEM+' draftContract.assertionForm is a host-owned output form requirement, not permission.'+WRITING_GUIDE,schema:casePlan?cases.schema(casePlan):{...contract.SCHEMA,properties:{...contract.SCHEMA.properties,expectedTests:{type:'integer',const:expectedTests}}}}
 }
 function parse(text,prepared){

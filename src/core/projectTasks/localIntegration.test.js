@@ -104,3 +104,15 @@ test('retained PR187 incomplete draft stops the registered flow after one offlin
  const evidenceDir=path.join(f.dir,'usage','evidence'),evidence=fs.readdirSync(evidenceDir).filter(n=>n.endsWith('.json')).map(n=>JSON.parse(fs.readFileSync(path.join(evidenceDir,n),'utf8')))
  assert.ok(evidence.some(e=>e.text===raw));assert.equal(r.draftOrigin,undefined)
 })
+
+test('retained PR190 tail-comma draft remains rejected with reference input, one temporary send and no review',async t=>{
+ const saved=require('../../../test/localBrain/fixtures/case-atomic-native-v1.json'),packet=JSON.parse(JSON.parse(saved.inputRaw).messages.find(m=>m.role==='user').content),raw=JSON.parse(saved.outputRaw).text
+ const f=fixture(t,{exampleSource:true,draftResult:raw}),tasks=f.make(),id=tasks.request(OWNER,{bootCommit:f.head,requestId:randomUUID(),goal:packet.goal,execution:'local'}).run.id
+ const scoped=await tasks.scope(OWNER,{id,bootCommit:f.head,criteria:packet.criteria,editable:['src/localBrain/examples/duration.js'],readonly:['src/localBrain/examples/stock.js','src/localBrain/examples/examples.test.js']})
+ await tasks.authorize(OWNER,{id,hash:scoped.approval.hash,nonce:scoped.approval.nonce});await tasks.settled()
+ const r=tasks.get(OWNER,id).run;assert.equal(r.state,'failed');assert.equal(r.draftValidation.reason,'case_plan_expression');assert.equal(r.registration,null);assert.equal(r.workRunId,null)
+ assert.equal(f.sends,1);assert.equal(f.cloud,0);assert.equal(f.sandboxRuns,0);assert.equal(f.budget.status(id).state,'paused');assert.equal(f.budget.status(id).helper.dispatched,1);assert.ok(!r.steps.some(s=>s.stage==='reviewing'))
+ const evidenceDir=path.join(f.dir,'usage','evidence'),evidence=fs.readdirSync(evidenceDir).filter(n=>n.endsWith('.json')).map(n=>JSON.parse(fs.readFileSync(path.join(evidenceDir,n),'utf8'))),record=evidence.find(e=>e.messages)
+ const sent=JSON.parse(record.messages.find(m=>m.role==='user').content);assert.equal(sent.draftContract.baselineContract.referenceCases.reduce((n,t)=>n+t.cases.length,0),52)
+ assert.ok(evidence.some(e=>e.text===raw));assert.equal(r.draftOrigin,undefined)
+})

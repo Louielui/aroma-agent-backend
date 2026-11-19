@@ -27,6 +27,12 @@ function catalogue(){
  duration.push(...throws(['Number.MAX_SAFE_INTEGER+1','-1','1.5','NaN','Infinity',"'60'",'null','undefined','{}','60n'].map(s=>[s,'RangeError'])))
  return[stock,duration]
 }
+// Expose only audited existing-source cases to drafting. This is input reference
+// data, not output completion; check() still requires every returned case.
+function references(spec){
+ if(!profile(spec))return null
+ return catalogue().map((rows,i)=>({criterion:spec.tests[i].id,symbol:spec.tests[i].subject.symbol,cases:rows.map(v=>({method:v.method,arguments:v.row.slice(0,-1),expected:v.row.at(-1),...(v.alternatives?{alternativeExpectedExpressions:[...v.alternatives]}:{})}))}))
+}
 const key=args=>JSON.stringify(args.map(expression))
 function check(spec,value){
  const contract=profile(spec);if(!contract)return null
@@ -95,4 +101,4 @@ function review(input){
  return rendered(spec,input.protectedTests[names[0]])
 }
 const GUIDE='Audited node_examples_baseline_v1: preserve all 35 orderBoxes rows (7 equal and 28 throws: 9 invalid values at ALL 3 positions, plus separate overflow) and all 17 formatDuration rows (7 exact strings and 10 throws, including MAX_SAFE_INTEGER+1). Expand the original matrices, do not summarize them. formatDuration(MAX_SAFE_INTEGER) is exactly the string "150119987579016m 31s", or retain the original BigInt quotient/remainder expression with the concrete input substituted. Baseline preservation is checked by the host against exact source hashes and a finite expression catalogue. Missing cases, unproved alternative expressions and conflicting expectations are refused before review; a review PASS cannot override this. The host never supplies missing rows or rewrites output. New-function criteria, all rejection probes, semantic review, exact-version approval and Sandbox remain mandatory. This catalogue is specific to this exact example source, not proof of arbitrary Node coverage or execution.'
-module.exports={profile,check,rendered,review,GUIDE}
+module.exports={profile,references,check,rendered,review,GUIDE}
