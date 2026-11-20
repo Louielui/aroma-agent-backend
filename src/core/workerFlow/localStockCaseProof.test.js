@@ -82,7 +82,7 @@ test('saved false PASS cannot cite the orderBoxes result as RED after rebinding 
   assert.match(old.text,/\.orderBoxes\(0,Number.MIN_VALUE,Number.MIN_VALUE\)/)
   const rebound = {...nativeReview,binding:compact.packet.binding}
   assert.throws(()=>review.parseCompact(JSON.stringify(rebound),input),e=>e.reviewValidation?.stage==='red_anchor')
-  const allowed=compact.schema.anyOf.find(branch=>branch.properties.verdict.const==='pass').properties.baseline.properties.anchor.enum
+  const allowed=compact.schema.$defs.red.properties.anchor.enum
   assert.equal(allowed.length,10)
   assert.ok(allowed.every(id=>/^assert\.(?:equal|deepEqual)\(.*\.stockVariance\(/.test(lines.find(line=>line.anchorId===id).text)))
   assert.deepEqual(compact.packet.baseline.expectedFailureSubject,{file:sourceFile,symbol:'stockVariance'})
@@ -242,11 +242,13 @@ test('compact stock wire branches enforce verdict, findings, coverage and direct
   assert.deepEqual([pass.properties.verdict.const,changes.properties.verdict.const],['pass','changes_requested'])
   assert.deepEqual(pass.properties.findings.const,[])
   assert.equal(changes.properties.findings.minItems,1)
-  const passCriterion = pass.properties.coverage.items.properties
+  const passCriterion = pass.properties.coverage.items.anyOf[0].properties
   assert.equal(passCriterion.status.const,'covered')
-  assert.equal(passCriterion.checks.items.properties.status.const,'covered')
-  assert.equal(passCriterion.checks.items.properties.anchors.minItems,1)
-  const passRed = pass.properties.baseline.properties
+  assert.deepEqual(passCriterion.checks.items,{$ref:'#/$defs/c1'})
+  assert.equal(compact.schema.$defs.c1.properties.status.const,'covered')
+  assert.equal(compact.schema.$defs.refs.minItems,1)
+  assert.deepEqual(pass.properties.baseline,{$ref:'#/$defs/red'})
+  const passRed = compact.schema.$defs.red.properties
   assert.equal(passRed.expectation.const,'expected_failure')
   assert.equal(passRed.anchor.enum.length,10)
   const lines = compact.packet.target.files.flatMap(file=>file.lines)

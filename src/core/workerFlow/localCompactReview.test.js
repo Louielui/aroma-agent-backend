@@ -25,4 +25,38 @@ test('compact binding, all checks, executable subjects and explicit negative ver
  const changedTests=structuredClone(input);changedTests.protectedTests[Object.keys(changedTests.protectedTests)[0]]+='\n';assert.throws(()=>review.parseCompact(JSON.stringify(a),changedTests),/invalid_worker_result/)
  const negative=structuredClone(a);negative.verdict='changes_requested';negative.findings=[{anchor:a.baseline.anchor,message:'Offline negative finding.'}];negative.coverage[2].status='uncertain';negative.coverage[2].checks=negative.coverage[2].checks.map(c=>({...c,status:'uncertain',anchors:[]}));assert.equal(review.parseCompact(JSON.stringify(negative),input).verdict,'changes_requested')
 })
+test('compact wire binds each criterion to its own check IDs and count in both verdict branches',()=>{
+ const input=structuredClone(fixture.packet)
+ input.acceptanceCriteria[0]+='; Preserve the required subject on this additional check.'
+ const prepared=review.prepareCompact(input), response=accepted(input)
+ const expected=prepared.packet.criteria.map(c=>c.checks.map(k=>k.id))
+ assert.ok(new Set(expected.map(ids=>ids.length)).size>1)
+ for(const branch of prepared.schema.anyOf){
+  const coverage=branch.properties.coverage
+  assert.equal(coverage.minItems,expected.length)
+  assert.equal(coverage.maxItems,expected.length)
+  const choices=coverage.items.anyOf
+  assert.ok(Array.isArray(choices),'schema must bind check IDs to the containing criterion')
+  assert.deepEqual(choices.map(choice=>choice.properties.criterion.const),prepared.packet.criteria.map(c=>c.id))
+  for(const [index,choice] of choices.entries()){
+   const checks=choice.properties.checks,ids=expected[index]
+   assert.equal(checks.minItems,ids.length)
+   assert.equal(checks.maxItems,ids.length)
+   for(const entry of checks.items.anyOf??[checks.items]){
+    const check=prepared.schema.$defs[entry.$ref.split('/').at(-1)]
+    assert.deepEqual(check.properties.id,{type:'integer',enum:ids})
+   }
+  }
+ }
+ const reordered=structuredClone(response)
+ reordered.coverage.reverse()
+ for(const criterion of reordered.coverage)criterion.checks.reverse()
+ assert.equal(review.parseCompact(JSON.stringify(reordered),input).verdict,'pass')
+ const wrong=structuredClone(response)
+ wrong.coverage.at(-1).checks[0].id=999
+ assert.throws(()=>review.parseCompact(JSON.stringify(wrong),input),error=>error.reviewValidation?.stage==='finding')
+ const duplicate=structuredClone(response)
+ duplicate.coverage[0].checks[1].id=duplicate.coverage[0].checks[0].id
+ assert.throws(()=>review.parseCompact(JSON.stringify(duplicate),input),error=>error.reviewValidation?.stage==='finding')
+})
 module.exports={accepted}

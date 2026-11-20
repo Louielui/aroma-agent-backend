@@ -105,6 +105,22 @@ The local compact response schema now selects one whole verdict branch.
 Pass requires an empty findings array, covered criteria and checks, and
 expected_failure with an eligible executable assertion. The stock branch
 restricts RED to direct stockVariance result comparisons.
+
+## Criterion-local check IDs after PR200
+
+PR200's saved output used check IDs 2 and 3 for criteria 2 and 3. Each criterion
+had one check, so its expected ID was 1. The reply had empty findings and used
+the direct stockVariance result assertion at line 43 for expected RED. The
+host rejected the misnumbered reply and paused its root before test approval.
+Its rendered draft retained all 57 assertions, including 12 positional refusals.
+
+Both compact verdict branches now bind a criterion ID to its own finite check
+ID set and exact check count. Shared local schema definitions keep the wire
+compact. The guidance states that check numbering restarts within a criterion.
+Valid ordering remains flexible. The host still checks for duplicate and
+missing criteria and checks, verbatim evidence binding, executable subjects,
+empty pass findings and the direct result proof for expected RED. The host
+does not rewrite IDs. Saved input and output are replayed without inference.
 Changes requested requires a grounded finding and retains the honest
 negative baseline option. The schema omits pass when no eligible RED
 anchor exists. The host still checks exact binding, all required checks,
