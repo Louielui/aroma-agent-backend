@@ -80,7 +80,7 @@ test('saved false PASS cannot cite the orderBoxes result as RED after rebinding 
   const lines = compact.packet.target.files[0].lines
   const old = lines.find(line=>line.anchorId===nativeReview.baseline.anchor)
   assert.match(old.text,/\.orderBoxes\(0,Number.MIN_VALUE,Number.MIN_VALUE\)/)
-  const rebound = {...nativeReview,binding:compact.packet.binding}
+  const rebound = {...nativeReview,binding:compact.packet.binding,summary:compact.schema.anyOf.find(v=>v.properties.verdict.const===nativeReview.verdict).properties.summary.const}
   assert.throws(()=>review.parseCompact(JSON.stringify(rebound),input),e=>e.reviewValidation?.stage==='red_anchor')
   const allowed=compact.schema.$defs.red.properties.anchor.enum
   assert.equal(allowed.length,10)
@@ -278,7 +278,7 @@ test('local draft revision preserves complete findings and checks through refere
   const lines = evidence.target.files[0].lines
   const red = schema.$defs.red.properties.anchor.enum[0]
   const response = {
-    binding:evidence.binding, verdict:'changes_requested', summary:'Synthetic rejected review.',
+    binding:evidence.binding, verdict:'changes_requested', summary:schema.anyOf.find(v=>v.properties.verdict.const==='changes_requested').properties.summary.const,
     findings:[{anchor:red,message:'Check the exact expected stock result.'}],
     coverage:evidence.criteria.map(({id,checks,requiredSubjects}) => ({
       criterion:id, status:id===3?'missing':'covered', checks:checks.map(check => ({
