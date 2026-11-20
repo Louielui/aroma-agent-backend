@@ -84,7 +84,8 @@ test('the saved PASS cannot use an old assertion as RED evidence after rebinding
   assert.match(oldAnchor.text, /\.orderBoxes\(3,10,4\)/)
   const rebound = { ...nativeReview, binding: packed.packet.binding }
   assert.throws(() => review.parseCompact(JSON.stringify(rebound), input), error => error.reviewValidation?.stage === 'red_anchor')
-  const expectedFailure = packed.schema.anyOf.find(branch => branch.properties.verdict.const === 'pass').properties.baseline
+  assert.deepEqual(packed.schema.anyOf.find(branch => branch.properties.verdict.const === 'pass').properties.baseline, {$ref:'#/$defs/red'})
+  const expectedFailure = packed.schema.$defs.red
   const eligible = expectedFailure.properties.anchor.enum
   assert.ok(!eligible.includes(oldAnchor.anchorId))
   assert.ok(eligible.every(id => /^assert\.(?:equal|deepEqual)\(.*\.formatClockDuration\(/.test(lines.find(line => line.anchorId === id).text)))
