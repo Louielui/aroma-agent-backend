@@ -82,7 +82,7 @@ test('saved false PASS cannot cite the orderBoxes result as RED after rebinding 
   assert.match(old.text,/\.orderBoxes\(0,Number.MIN_VALUE,Number.MIN_VALUE\)/)
   const rebound = {...nativeReview,binding:compact.packet.binding}
   assert.throws(()=>review.parseCompact(JSON.stringify(rebound),input),e=>e.reviewValidation?.stage==='red_anchor')
-  const allowed=compact.schema.properties.baseline.anyOf.find(branch=>branch.properties.expectation.const==='expected_failure').properties.anchor.enum
+  const allowed=compact.schema.anyOf.find(branch=>branch.properties.verdict.const==='pass').properties.baseline.properties.anchor.enum
   assert.equal(allowed.length,10)
   assert.ok(allowed.every(id=>/^assert\.(?:equal|deepEqual)\(.*\.stockVariance\(/.test(lines.find(line=>line.anchorId===id).text)))
   assert.deepEqual(compact.packet.baseline.expectedFailureSubject,{file:sourceFile,symbol:'stockVariance'})
@@ -233,4 +233,27 @@ test('stock rejection schema pins each transmitted tuple slot and excludes the s
   assert.equal(result.generated.testCode.match(/^assert\./gm).length, 57)
   assert.deepEqual(review.prepareCompact(reviewInput(result.generated.testCode, result.origin))
     .packet.baselineProof.newExampleProof, {exactCases: 10, rejectionProbes: 12})
+})
+
+test('compact stock wire branches enforce verdict, findings, coverage and direct result RED together', () => {
+  const good = draft.project(JSON.stringify(correctedCases()),prepared())
+  const compact = review.prepareCompact(reviewInput(good.generated.testCode,good.origin))
+  const [pass, changes] = compact.schema.anyOf
+  assert.deepEqual([pass.properties.verdict.const,changes.properties.verdict.const],['pass','changes_requested'])
+  assert.deepEqual(pass.properties.findings.const,[])
+  assert.equal(changes.properties.findings.minItems,1)
+  const passCriterion = pass.properties.coverage.items.properties
+  assert.equal(passCriterion.status.const,'covered')
+  assert.equal(passCriterion.checks.items.properties.status.const,'covered')
+  assert.equal(passCriterion.checks.items.properties.anchors.minItems,1)
+  const passRed = pass.properties.baseline.properties
+  assert.equal(passRed.expectation.const,'expected_failure')
+  assert.equal(passRed.anchor.enum.length,10)
+  const lines = compact.packet.target.files.flatMap(file=>file.lines)
+  for (const id of passRed.anchor.enum) {
+    assert.match(lines.find(line=>line.anchorId===id).text,/^assert\.(?:equal|deepEqual)\(.*\.stockVariance\(/)
+  }
+  assert.ok(lines.some(line=>/\.stockVariance\(/.test(line.text)&&!passRed.anchor.enum.includes(line.anchorId)))
+  assert.ok(lines.some(line=>/\.orderBoxes\(/.test(line.text)&&!passRed.anchor.enum.includes(line.anchorId)))
+  assert.equal(changes.properties.baseline.anyOf[1].properties.expectation.const,'not_established')
 })
