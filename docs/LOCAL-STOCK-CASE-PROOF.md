@@ -70,3 +70,25 @@ The native request format carries these separate tuple definitions.
 The existing host parser and rendered-test checks remain in force.
 The complete control renders the same assertions and RED subjects.
 The rejected output is archived verbatim and is never repaired by the host.
+
+PR197 live acceptance verified the positional schema, all twelve rejection
+rows and the protected draft review. In the approved Sandbox baseline both
+orderBoxes tests passed and the stockVariance comparison failed because the
+new export was absent. The first implementation returned negative zero at
+the protected comparison on line 44. The measured repair normalized zero,
+but the implementation still accepted 1.5 because its finite-range checks
+did not require an integer. The protected case on line 54 failed. Three
+guest runs stopped and four local calls were recorded. There was no GREEN
+candidate for result review.
+
+Local coding now restates the exact stock recipe for initial implementation
+and measured repair. It requires Number.isSafeInteger on both arguments,
+rejects negatives, computes the signed difference and normalizes every zero
+result to positive zero. Local repair guidance says a test can report only
+its first failing assertion and asks the model to recheck the complete
+original specification. The stock text is selected only for the matching
+registered criteria and scope. Other recipes retain their own requirements.
+Draft schema, case renderer, protected tests, RED binding, evidence receipts
+and retry limits retain their existing enforcement. Offline replay uses the
+original model responses without modifying code or results. A new real model
+and Sandbox acceptance requires separate approval.
