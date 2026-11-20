@@ -5,7 +5,7 @@ function fixture(){
  const input={ownerGoal:packet.goal,acceptanceCriteria:packet.criteria,source:packet.files,protectedTests:{[name]:projected.generated.testCode},workOrder:{allowedFiles:[name],protectedFiles:[name],expectedTests:3},testsExecuted:false,appliedToLive:false,draftOrigin:projected.origin},prepared=review.prepareCompact(input),lines=prepared.packet.target.files.flatMap(f=>f.lines)
  const refs=c=>c.requiredSubjects.map(s=>lines.find(l=>l.kind==='assertion'&&l.subjects.some(v=>v.file===s.file&&v.symbol===s.symbol)).anchorId)
  // Protocol response double only. It is not a real semantic review verdict.
- const reply={binding:prepared.packet.binding,verdict:'pass',summary:'Synthetic binding fixture only',findings:[],coverage:prepared.packet.criteria.map(c=>({criterion:c.id,status:'covered',checks:c.checks.map(k=>({id:k.id,status:'covered',anchors:refs(c),reason:'Synthetic protocol reference.'}))})),baseline:{expectation:'expected_failure',anchor:refs(prepared.packet.criteria[2])[0],reason:'Synthetic expected-failure reference.'}}
+ const reply={binding:prepared.packet.binding,verdict:'pass',summary:prepared.schema.anyOf.find(v=>v.properties.verdict.const==='pass').properties.summary.const,findings:[],coverage:prepared.packet.criteria.map(c=>({criterion:c.id,status:'covered',checks:c.checks.map(k=>({id:k.id,status:'covered',anchors:refs(c),reason:'Synthetic protocol reference.'}))})),baseline:{expectation:'expected_failure',anchor:refs(prepared.packet.criteria[2])[0],reason:'Synthetic expected-failure reference.'}}
  return{input,prepared,reply}
 }
 test('case provenance is disclosed, packet-bound and retained with all thirteen review conditions',()=>{

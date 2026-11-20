@@ -27,6 +27,7 @@ test('review guidance and status-conditioned schema preserve all data and reject
  assert.deepEqual(prepared.schema.anyOf.find(branch=>branch.properties.verdict.const==='pass').properties.baseline,{$ref:'#/$defs/red'})
  assert.deepEqual(prepared.schema.$defs.red.properties.anchor.enum,assertions);assert.match(prepared.system,/read-only preservation/);assert.match(prepared.system,/comment.*call form/)
  const invalid=JSON.parse(saved.reviewOutput.text);invalid.binding=prepared.packet.binding
+ invalid.summary=prepared.schema.anyOf.find(v=>v.properties.verdict.const===invalid.verdict).properties.summary.const
  assert.throws(()=>review.parseCompact(JSON.stringify(invalid),packet),e=>e.reviewValidation.stage==='finding')
 })
 test('no assertion candidates leaves negative review branches, not fabricated executable anchors',()=>{
@@ -35,6 +36,6 @@ test('no assertion candidates leaves negative review branches, not fabricated ex
  assert.deepEqual(choices,[{$ref:'#/$defs/g1'}])
  assert.deepEqual(p.schema.$defs.g1.properties.status.enum,['missing','uncertain'])
  assert.equal(baseline.anyOf.length,1);assert.equal(baseline.anyOf[0].properties.expectation.const,'not_established')
- const first=p.packet.target.files[0].lines[0].anchorId,r={binding:p.packet.binding,verdict:'changes_requested',summary:'Synthetic negative protocol check, not a model review.',findings:[{anchor:first,message:'No source assertions supplied.'}],coverage:p.packet.criteria.map(c=>({criterion:c.id,status:'missing',checks:c.checks.map(k=>({id:k.id,status:'missing',anchors:[],reason:'No source assertion supplied.'}))})),baseline:{anchor:first,expectation:'not_established',reason:'No new behavior assertion.'}}
+ const first=p.packet.target.files[0].lines[0].anchorId,r={binding:p.packet.binding,verdict:'changes_requested',summary:p.schema.anyOf[0].properties.summary.const,findings:[{anchor:first,message:'No source assertions supplied.'}],coverage:p.packet.criteria.map(c=>({criterion:c.id,status:'missing',checks:c.checks.map(k=>({id:k.id,status:'missing',anchors:[],reason:'No source assertion supplied.'}))})),baseline:{anchor:first,expectation:'not_established',reason:'No new behavior assertion.'}}
  assert.equal(review.parseCompact(JSON.stringify(r),packet).verdict,'changes_requested')
 })

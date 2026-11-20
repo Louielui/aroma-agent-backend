@@ -150,3 +150,18 @@ Line references point into the exact previous test instead of repeating its
 assertions in each assessment. Offline replay uses the saved PR201 material and
 the existing transport budget. Fresh model decoding and Sandbox execution
 require separate acceptance.
+
+## Static review summary after PR202
+
+PR202 rendered 57 assertions and cited a direct `stockVariance` result
+comparison for expected RED. Its saved review summary nevertheless claimed
+that implementation was complete and tests had passed. The review packet
+recorded `testsExecuted: false`. Acceptance stopped before test approval.
+
+Each compact verdict now requires its own fixed static-review summary in
+the submitted schema and in host validation. A mismatch fails with the
+`summary` diagnostic. Raw responses remain in immutable model evidence.
+Findings, covered checks and anchor evidence retain their existing validation.
+Expected RED remains a prediction for the unchanged baseline. The bounded
+revision packet still cites exact prior test lines. Live decoding and Sandbox
+execution require separate acceptance.

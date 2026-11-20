@@ -29,9 +29,9 @@ test('inline export anchors require a direct selected relative module call, neve
 test('inline named exports keep the full compact-review binding and all criterion checks',()=>{
  const review=require('./localTestReview'),prior=require('../../../test/localBrain/fixtures/test-draft-review-v4.json')
  const input={...prior.packet,ownerGoal:packet.goal,acceptanceCriteria:packet.criteria,source:packet.files,protectedTests:{[file]:generated.testCode}}
- const p=review.prepareCompact(input).packet,lines=p.target.files.flatMap(f=>f.lines)
+ const {packet:p,schema}=review.prepareCompact(input),lines=p.target.files.flatMap(f=>f.lines)
  const refs=c=>c.requiredSubjects.map(s=>lines.find(l=>l.kind==='assertion'&&l.subjects.some(v=>v.file===s.file&&v.symbol===s.symbol)).anchorId)
- const response={binding:p.binding,verdict:'pass',summary:'OFFLINE format double; not a semantic review or execution',findings:[],coverage:p.criteria.map(c=>({criterion:c.id,status:'covered',checks:c.checks.map(k=>({id:k.id,status:'covered',anchors:[...new Set(refs(c))],reason:'Synthetic protocol check only.'}))})),baseline:{expectation:'expected_failure',anchor:refs(p.criteria.at(-1))[0],reason:'New export is absent from unchanged baseline.'}}
+ const response={binding:p.binding,verdict:'pass',summary:schema.anyOf.find(v=>v.properties.verdict.const==='pass').properties.summary.const,findings:[],coverage:p.criteria.map(c=>({criterion:c.id,status:'covered',checks:c.checks.map(k=>({id:k.id,status:'covered',anchors:[...new Set(refs(c))],reason:'Synthetic protocol check only.'}))})),baseline:{expectation:'expected_failure',anchor:refs(p.criteria.at(-1))[0],reason:'New export is absent from unchanged baseline.'}}
  const result=review.parseCompact(JSON.stringify(response),input)
  assert.equal(result.reviewBasis.coverage.flatMap(c=>c.checks).length,13)
  const stock=result.reviewBasis.coverage[0].assertions[0];assert.match(stock.quote,/require\('.*stock.js'\)\.orderBoxes/)

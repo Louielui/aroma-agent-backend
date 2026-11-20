@@ -3,7 +3,7 @@ const test=require('node:test'),assert=require('node:assert/strict'),fs=require(
 const {createTasks}=require('./service'),{createRegistry}=require('./contract'),{createRunStore}=require('../operating/runStore'),{createStore}=require('../../actions/store'),{createRepositoryBudget}=require('./repositoryBudget'),{createInventory}=require('./repositoryScope'),usage=require('../../actions/usageBudget'),{digest}=require('../../workers/execution/windowsSandbox'),{createProjectWork}=require('../projectWork/service')
 const OWNER={id:'owner',role:'owner'}
 const generated={testCode:"const test=require('node:test'),assert=require('node:assert/strict');\n"+[1,2,3].map(value=>`test('returns increment ${value}',()=>assert.equal(require('../src/logic.js')(${value}),${value+1}));`).join('\n'),expectedTests:3}
-function fixture(t,{visible=false,failure=false,draftResult=null,structured=false,exampleSource=false,selectedFiles=null,reviewResult=null,sourceLogic='module.exports=value=>value;\n'}={}){
+function fixture(t,{visible=false,failure=false,draftResult=null,structured=false,exampleSource=false,selectedFiles=null,reviewResult=null,reviewSummary,sourceLogic='module.exports=value=>value;\n'}={}){
  const appProjectRoot='C:/isolated-app-project'
  const dir=fs.mkdtempSync(path.join(os.tmpdir(),'repository-flow-'));t.after(()=>fs.rmSync(dir,{recursive:true,force:true}));const root=path.join(dir,'repo');fs.mkdirSync(path.join(root,'src'),{recursive:true});fs.writeFileSync(path.join(root,'src/logic.js'),sourceLogic);fs.writeFileSync(path.join(root,'src/readonly.js'),'module.exports=true;\n')
  if(exampleSource){const saved=require('../../../test/localBrain/fixtures/case-baseline-native-v1.json');selectedFiles=JSON.parse(JSON.parse(saved.draftInputRaw).messages.find(m=>m.role==='user').content).files}
@@ -20,8 +20,8 @@ function fixture(t,{visible=false,failure=false,draftResult=null,structured=fals
    assert.ok(body.messages[0].content.includes('CASE FIELD GUIDE'));assert.ok(body.messages[0].content.includes('BigInt(Number.MAX_SAFE_INTEGER)'))
    const row=body.format.properties.tests.properties.c1.properties.groups.items.properties.rows.items;assert.equal(row.minItems,2);assert.ok(row.description.includes('slot 1'));assert.ok(row.items.description.includes('quoted'))
    reply={protocol:spec.version,tests:Object.fromEntries(spec.tests.map((v,i)=>[v.id,{title:'Synthetic structured '+i,groups:[{method:'equal',rows:[[String(i+1),String(i+2)]]}],rejections:Object.fromEntries(v.rejections.map(r=>[r.id,[r.expression,r.error]]))}]))};if(structured==='missing')delete reply.tests.c3.rejections.r1}
-  if(sends===2&&reviewResult){reply=reviewResult(JSON.parse(body.messages.find(v=>v.role==='user').content));}
-  else if(sends===2){const packet=JSON.parse(body.messages.find(v=>v.role==='user').content),anchor=packet.target.files[0].lines.find(l=>l.kind==='assertion').anchorId;assert.equal(packet.stage,'test_draft');assert.equal(packet.target.files[0].lines[0].text,structured?"'use strict'":generated.testCode.split('\n')[0]);assert.equal(packet.baseline.role,'unchanged_reference_expected_to_fail');reply={...reply,binding:packet.binding,coverage:packet.criteria.map(v=>({criterion:v.id,status:'covered',checks:v.checks.map(check=>({id:check.id,status:'covered',anchors:[anchor],reason:'Offline increment check.'}))})),baseline:{expectation:'expected_failure',anchor,reason:'Unchanged identity function fails the increment assertion.'}}}
+  if(sends===2&&reviewResult){reply=reviewResult(JSON.parse(body.messages.find(v=>v.role==='user').content),body.format);}
+  else if(sends===2){const packet=JSON.parse(body.messages.find(v=>v.role==='user').content),anchor=packet.target.files[0].lines.find(l=>l.kind==='assertion').anchorId;assert.equal(packet.stage,'test_draft');assert.equal(packet.target.files[0].lines[0].text,structured?"'use strict'":generated.testCode.split('\n')[0]);assert.equal(packet.baseline.role,'unchanged_reference_expected_to_fail');reply={...reply,summary:reviewSummary??body.format.anyOf.find(v=>v.properties.verdict.const==='pass').properties.summary.const,binding:packet.binding,coverage:packet.criteria.map(v=>({criterion:v.id,status:'covered',checks:v.checks.map(check=>({id:check.id,status:'covered',anchors:[anchor],reason:'Offline increment check.'}))})),baseline:{expectation:'expected_failure',anchor,reason:'Unchanged identity function fails the increment assertion.'}}}
   return{ok:true,body:(async function*(){yield Buffer.from(JSON.stringify({message:{content:typeof reply==='string'?reply:JSON.stringify(reply)},done:true,prompt_eval_count:20,eval_count:10})+'\n')})()}
  }})
  const never=new Proxy({}, {get:()=>()=>{cloud++;throw Error('CLOUD MUST NOT RUN')}})
@@ -55,6 +55,23 @@ test('local transport failure is preserved, counted once and pauses the same roo
  const f=fixture(t,{failure:true}),tasks=f.make(),id=tasks.request(OWNER,{bootCommit:f.head,requestId:randomUUID(),goal:'Repair increment',execution:'local'}).run.id
  const scoped=await tasks.scope(OWNER,{id,bootCommit:f.head,criteria:['Increment'],editable:['src/logic.js'],readonly:[]});await tasks.authorize(OWNER,{id,hash:scoped.approval.hash,nonce:scoped.approval.nonce});await tasks.settled()
  const r=tasks.get(OWNER,id).run;assert.equal(r.state,'failed');assert.equal(r.reason,'local_transport_or_protocol_error');assert.equal(f.budget.status(id).state,'paused');assert.equal(f.sends,1);assert.equal(f.cloud,0);assert.equal(f.budget.status(id).helper.dispatched,1)
+})
+
+test('a false static summary stops before test approval and remains only in raw model evidence',async t=>{
+ const reviewSummary='Implementation complete. All tests pass.'
+ const f=fixture(t,{reviewSummary}),tasks=f.make(),id=tasks.request(OWNER,{bootCommit:f.head,requestId:randomUUID(),goal:'Repair increment',execution:'local'}).run.id
+ const scoped=await tasks.scope(OWNER,{id,bootCommit:f.head,criteria:['Increment'],editable:['src/logic.js'],readonly:[]})
+ await tasks.authorize(OWNER,{id,hash:scoped.approval.hash,nonce:scoped.approval.nonce})
+ await tasks.settled()
+ const {run,approval}=tasks.get(OWNER,id),status=f.budget.status(id)
+ assert.equal(run.state,'failed');assert.equal(run.reason,'invalid_worker_result');assert.equal(run.reviewValidation.stage,'summary')
+ assert.equal(approval,null);assert.equal(run.acceptanceReview,undefined);assert.equal(run.workRunId,null)
+ assert.ok(!JSON.stringify(run).includes(reviewSummary))
+ const evidenceDir=path.join(f.dir,'usage','evidence')
+ const outputs=fs.readdirSync(evidenceDir).map(name=>JSON.parse(fs.readFileSync(path.join(evidenceDir,name),'utf8'))).filter(value=>value.text)
+ assert.equal(outputs.length,2)
+ assert.ok(outputs.some(output=>JSON.parse(output.text).summary===reviewSummary))
+ assert.deepEqual([f.sends,f.cloud,f.sandboxRuns,status.state,status.helper.dispatched],[2,0,0,'paused',2])
 })
 
 test('local draft validation failure records a safe stage before review and pauses without another call',async t=>{
@@ -129,7 +146,7 @@ test('saved PR191 failures stop at the actual draft or review gate and pause the
   // The review control corrects only the bad case in an in-memory copy so
   // the saved old-anchor response can reach its own independent gate.
   const draftResult=phase==='draft'?nativeDraft:nativeDraft.replace('25019998757901m 36s','2501999792983:36:31')
-  const f=fixture(child,{exampleSource:true,draftResult,reviewResult:sent=>({...nativeReview,binding:sent.binding})})
+  const f=fixture(child,{exampleSource:true,draftResult,reviewResult:(sent,schema)=>({...nativeReview,binding:sent.binding,summary:schema.anyOf.find(v=>v.properties.verdict.const===nativeReview.verdict).properties.summary.const})})
   const tasks=f.make(),id=tasks.request(OWNER,{bootCommit:f.head,requestId:randomUUID(),goal:packet.goal,execution:'local'}).run.id
   const scoped=await tasks.scope(OWNER,{id,bootCommit:f.head,criteria:packet.criteria,editable:['src/localBrain/examples/duration.js'],readonly:['src/localBrain/examples/stock.js','src/localBrain/examples/examples.test.js']})
   await tasks.authorize(OWNER,{id,hash:scoped.approval.hash,nonce:scoped.approval.nonce});await tasks.settled()
