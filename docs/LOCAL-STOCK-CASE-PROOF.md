@@ -128,3 +128,25 @@ the expected result and rejection matrix, subject evidence and RED
 independently. Saved output remains unmodified. Offline transport doubles
 show which schema is submitted. Fresh model decoding and Sandbox execution
 require separate acceptance.
+
+## Pre-coding review and revision after PR201
+
+PR201's saved draft rendered 57 assertions, including all 12 positional
+refusals. Its review used the legal criterion-local IDs and cited the direct
+`stockVariance` result on line 43. It requested changes based on missing
+implementation even though the unchanged baseline was the intended RED input.
+The attempted draft revision exceeded the existing context limit before dispatch.
+
+The compact review prompt asks for executable test assertions before coding
+and treats an absent new export in the baseline as expected RED. The existing
+verdict, complete criterion checks, empty pass findings and direct RED gates
+still apply. The stored review and its raw response keep their original verdict
+and evidence.
+
+The model's draft revision receives the full goal, criteria, source, case
+contract and previous protected test. Feedback retains each finding, criterion
+and check assessment, the RED reference, and the review and draft bindings.
+Line references point into the exact previous test instead of repeating its
+assertions in each assessment. Offline replay uses the saved PR201 material and
+the existing transport budget. Fresh model decoding and Sandbox execution
+require separate acceptance.

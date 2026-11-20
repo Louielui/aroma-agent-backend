@@ -259,3 +259,57 @@ test('compact stock wire branches enforce verdict, findings, coverage and direct
   assert.ok(lines.some(line=>/\.orderBoxes\(/.test(line.text)&&!passRed.anchor.enum.includes(line.anchorId)))
   assert.equal(changes.properties.baseline.anyOf[1].properties.expectation.const,'not_established')
 })
+
+test('pre-coding review asks for stockVariance assertions and treats missing source implementation as RED', () => {
+  const good = draft.project(JSON.stringify(correctedCases()),prepared())
+  const input = reviewInput(good.generated.testCode,good.origin)
+  assert.doesNotMatch(input.source[sourceFile],/\bstockVariance\b/)
+  const { system } = review.prepareCompact(input)
+  assert.match(system,/Review test assertions before coding/)
+  assert.match(system,/Never require implementation in the draft or baseline/)
+  assert.match(system,/A missing new export is expected RED/)
+  assert.match(system,/cite a direct stockVariance result assertion/)
+})
+
+test('local draft revision preserves complete findings and checks through references to the exact previous test', () => {
+  const good = draft.project(JSON.stringify(correctedCases()),prepared())
+  const context = reviewInput(good.generated.testCode,good.origin)
+  const { packet: evidence, schema } = review.prepareCompact(context)
+  const lines = evidence.target.files[0].lines
+  const red = schema.$defs.red.properties.anchor.enum[0]
+  const response = {
+    binding:evidence.binding, verdict:'changes_requested', summary:'Synthetic rejected review.',
+    findings:[{anchor:red,message:'Check the exact expected stock result.'}],
+    coverage:evidence.criteria.map(({id,checks,requiredSubjects}) => ({
+      criterion:id, status:id===3?'missing':'covered', checks:checks.map(check => ({
+        id:check.id, status:id===3?'missing':'covered', reason:'Retain this exact check assessment.',
+        anchors:id===3?[]:lines.filter(line=>line.kind==='assertion'&&line.subjects.some(subject=>
+          requiredSubjects.some(required=>subject.symbol===required.symbol&&subject.file===required.file))).map(line=>line.anchorId)
+      }))
+    })),
+    baseline:{anchor:red,expectation:'expected_failure',reason:'Source lacks the new export.'}
+  }
+  const reviewFeedback = review.parseCompact(JSON.stringify(response),context)
+  const prompt = { ...packet, previousDraft:good.generated, reviewFeedback, repairInstruction:'Revise only the tests.' }
+  const initial = prepared()
+  const revision = draft.prepare(JSON.stringify(prompt))
+  const { reviewFeedback:compact, ...rest } = revision.packet
+  const { reviewFeedback:original, ...input } = prompt
+  assert.deepEqual(rest,{...input,draftContract:initial.packet.draftContract})
+  assert.deepEqual(revision.schema,initial.schema)
+  assert.match(revision.system,/one-based lines in previousDraft\.testCode/)
+  assert.equal(compact.verdict,original.verdict)
+  assert.equal(compact.summary,original.summary)
+  assert.deepEqual(compact.findings,original.findings)
+  const { coverage,baseline,binding,rawResponseSha256,draftOrigin } = original.reviewBasis
+  const assessment = ({status,reason,assertions}) => ({status,reason,lines:assertions.map(assertion=>assertion.line)})
+  assert.deepEqual(compact.reviewBasis,{binding,rawResponseSha256,draftOrigin,
+    coverage:coverage.map(c=>({criterion:c.criterion,...assessment(c),checks:c.checks.map(k=>({id:k.id,...assessment(k)}))})),
+    baseline:{file:baseline.file,line:baseline.line,anchor:baseline.anchor,expectation:baseline.expectation,reason:baseline.reason}
+  })
+  assert.ok(JSON.stringify(compact).length < JSON.stringify(original).length / 3)
+  for (const c of coverage) for (const assertion of c.assertions) {
+    assert.equal(good.generated.testCode.split('\n')[assertion.line-1],assertion.quote)
+  }
+  assert.equal(reviewFeedback.reviewBasis.baseline.quote,baseline.quote)
+})
