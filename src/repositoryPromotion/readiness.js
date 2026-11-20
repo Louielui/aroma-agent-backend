@@ -1,7 +1,7 @@
 'use strict'
 const fs=require('node:fs'),path=require('node:path'),crypto=require('node:crypto')
 const {SHA}=require('./policy')
-const MANIFEST_BYTES=16*1024*1024,MANIFEST_FILES=65536,RECOVERY_BYTES=512*1024*1024
+const MANIFEST_BYTES=16*1024*1024,MANIFEST_FILES=131072,RECOVERY_BYTES=512*1024*1024
 const hash=value=>crypto.createHash('sha256').update(value).digest('hex')
 const canonical=value=>JSON.stringify(Array.isArray(value)?value.map(v=>JSON.parse(canonical(v))):value&&typeof value==='object'?Object.fromEntries(Object.keys(value).sort().map(k=>[k,JSON.parse(canonical(value[k]))])):value)
 function inside(root,file){const relative=path.relative(path.resolve(root),path.resolve(file));if(!relative||relative.startsWith('..')||path.isAbsolute(relative)||fs.realpathSync(file).toLowerCase()!==path.resolve(file).toLowerCase())throw Error('readiness_path_unconfirmed')}

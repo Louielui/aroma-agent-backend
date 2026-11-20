@@ -74,3 +74,16 @@ still validate. Tests accept a greater-than8MiB59,113entry synthetic manifest,
 detect corruption in its final restored file, and reject16MiB+1byte,65,537entries,
 oversized other evidence and malformed asset totals. This capacity decision is
 not authority to run a real backup, activate models or deploy.
+
+## Scheduled manifest file-count compatibility
+
+The verified schedule completed at `2026-11-20T01:23:13.070Z` with 75,412
+restored files, an 11,468,693-byte manifest and 9,637,631 asset bytes. Its file
+count exceeded the former 65,536-entry readiness ceiling. Readiness allows
+131,072 entries subject to the existing 16 MiB manifest and 512 MiB aggregate
+asset bounds. The 240-second backup deadline, 24-hour evidence age, 2,000,000-byte
+other-evidence limit and complete per-file, restore, table and memory checks
+remain in force. Readiness uses the original schedule completion time for expiry.
+The synthetic regression exercises all 75,412 entries and detects corruption at
+the final restored file. Another fixture rejects 131,073 entries inside the byte
+envelope. Verification can use the existing backup and isolated restore.

@@ -92,3 +92,23 @@ Draft schema, case renderer, protected tests, RED binding, evidence receipts
 and retry limits retain their existing enforcement. Offline replay uses the
 original model responses without modifying code or results. A new real model
 and Sandbox acceptance requires separate approval.
+
+PR198 returned all twelve stock rejection rows and rendered the same 57
+protected assertions as the earlier verified draft. Its compact test review
+declared pass with two findings and baseline not_established. The submitted
+baseline anchor pointed to a stockVariance rejection assertion outside
+the direct-result RED set. The host rejected the unchanged response
+before test registration and coding. The original input, output and
+diagnostics remain sealed.
+
+The local compact response schema now selects one whole verdict branch.
+Pass requires an empty findings array, covered criteria and checks, and
+expected_failure with an eligible executable assertion. The stock branch
+restricts RED to direct stockVariance result comparisons.
+Changes requested requires a grounded finding and retains the honest
+negative baseline option. The schema omits pass when no eligible RED
+anchor exists. The host still checks exact binding, all required checks,
+the expected result and rejection matrix, subject evidence and RED
+independently. Saved output remains unmodified. Offline transport doubles
+show which schema is submitted. Fresh model decoding and Sandbox execution
+require separate acceptance.
