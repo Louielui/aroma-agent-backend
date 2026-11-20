@@ -14,4 +14,14 @@ function orderBoxes(current,par,packSize) {
   if(count>BigInt(Number.MAX_SAFE_INTEGER))throw new RangeError('box count exceeds safe integer range')
   return Number(count)
 }
-module.exports={orderBoxes}
+function stockVariance(counted, recorded) {
+  if (!Number.isSafeInteger(counted) || !Number.isSafeInteger(recorded)) {
+    throw new RangeError('both arguments must be safe integers');
+  }
+  if (counted < 0 || recorded < 0) {
+    throw new RangeError('both arguments must be nonnegative');
+  }
+  const diff = counted - recorded;
+  return diff === 0 ? 0 : diff;
+}
+module.exports={orderBoxes,stockVariance}
