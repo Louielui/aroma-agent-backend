@@ -41,6 +41,7 @@ const COMPACT_SUMMARIES = {
  pass:'Static review passed. Tests were not run. Baseline RED expected.',
  changes_requested:'Static review requested changes. Tests were not run.'
 }
+const STOCK_RED_REASON='The unchanged baseline does not export stockVariance, so the cited direct result assertion is expected to fail.'
 function schema(ids,count,eligibleRedIds){
  const anchor={type:'string',enum:ids}
  const item=(properties,required=Object.keys(properties))=>({type:'object',additionalProperties:false,required,properties})
@@ -93,12 +94,15 @@ function prepareCompact(input){
  const item=properties=>({type:'object',additionalProperties:false,required:Object.keys(properties),properties})
  const assertionIds=packet.target.files.flatMap(f=>f.lines.filter(l=>l.kind==='assertion'&&l.subjects.length).map(l=>l.anchorId))
  const redIds=full.eligibleRedIds===null?assertionIds:full.eligibleRedIds.map(id=>anchors.indexOf(id)+1)
+ // The stock recipe binds the missing-export cause to its audited baseline.
+ const stockRed=packet.baseline.expectedFailureSubject?.symbol==='stockVariance'
+ const redGuidance=stockRed?' Copy the fixed expected_failure reason exactly.':''
  const ref=name=>({$ref:'#/$defs/'+name})
  const reason=ref('r'),anchor=ref('a'),covered={const:'covered'}
  // Local references share repeated rows without inflating the prompt or changing the output.
  const definitions={r:{type:'string',minLength:1,maxLength:320},a:{type:'integer',minimum:1,maximum:anchors.length}}
  if(assertionIds.length)definitions.refs={type:'array',minItems:1,maxItems:50,items:{enum:assertionIds}}
- if(redIds.length)definitions.red=item({anchor:{enum:redIds},expectation:{const:'expected_failure'},reason})
+ if(redIds.length)definitions.red=item({anchor:{enum:redIds},expectation:{const:'expected_failure'},reason:stockRed?{const:STOCK_RED_REASON}:reason})
  for(const criterion of packet.criteria){
   const id={type:'integer',enum:criterion.checks.map(check=>check.id)}
   if(assertionIds.length)definitions['c'+criterion.id]=item({id,status:covered,anchors:ref('refs'),reason})
@@ -121,7 +125,7 @@ function prepareCompact(input){
  const pass=item({...common,verdict:{const:'pass'},summary:{const:COMPACT_SUMMARIES.pass},findings:{const:[]},
   coverage:coverage(covered,id=>ref('c'+id)),baseline:ref('red')})
  const schema={$defs:definitions,anyOf:redIds.length?[pass,changes]:[changes]}
- return{packet,schema,system:COMPACT_SYSTEM+full.system.slice(SYSTEM.length),anchors}
+ return{packet,schema,system:COMPACT_SYSTEM+full.system.slice(SYSTEM.length)+redGuidance,anchors}
 }
 function parseCompact(text,input){
  const p=prepareCompact(input);let r
@@ -140,6 +144,8 @@ function parseCompact(text,input){
  if(!exact(r.baseline,['anchor','expectation','reason']))invalid('finding',text)
  const expanded={stage:'test_draft',verdict:r.verdict,summary:r.summary,findings,coverage,baseline:{...r.baseline,anchor:anchor(r.baseline.anchor),reason:reason(r.baseline.reason)}}
  const out=parse(JSON.stringify(expanded),input)
+ const redReason=p.schema.$defs.red?.properties.reason.const
+ if(r.baseline.expectation==='expected_failure'&&redReason!==undefined&&r.baseline.reason!==redReason)invalid('red_reason',text)
  out.reviewBasis.wireProtocol='host_anchor_compact_v2';out.reviewBasis.binding=p.packet.binding;out.reviewBasis.rawResponseSha256=sha(text)
  if(p.packet.draftOrigin)out.reviewBasis.draftOrigin=p.packet.draftOrigin
  return out

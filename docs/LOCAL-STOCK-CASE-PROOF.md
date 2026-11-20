@@ -165,3 +165,18 @@ Findings, covered checks and anchor evidence retain their existing validation.
 Expected RED remains a prediction for the unchanged baseline. The bounded
 revision packet still cites exact prior test lines. Live decoding and Sandbox
 execution require separate acceptance.
+
+## Missing export and expected RED after PR203
+
+PR203 returned the fixed static summary and cited a direct `stockVariance`
+result comparison at line 43. The reason described the comparison without
+identifying the cause of its expected failure. Approval stopped at that point.
+
+For the audited stock baseline, `expected_failure` now requires an exact
+reason stating that the baseline lacks the `stockVariance` export and that the
+cited direct result assertion is therefore expected to fail. The decoder
+schema and the host check the same reason. An invalid reason reports
+`red_reason` before test approval. The direct anchor, full check coverage,
+fixed summaries, empty pass findings, and original model evidence retain
+their existing checks. A negative review can still report `not_established`
+with its own reason. The revision packet and its transport limit are unchanged.

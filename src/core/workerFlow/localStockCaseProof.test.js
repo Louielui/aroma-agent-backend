@@ -86,7 +86,7 @@ test('saved false PASS cannot cite the orderBoxes result as RED after rebinding 
   assert.equal(allowed.length,10)
   assert.ok(allowed.every(id=>/^assert\.(?:equal|deepEqual)\(.*\.stockVariance\(/.test(lines.find(line=>line.anchorId===id).text)))
   assert.deepEqual(compact.packet.baseline.expectedFailureSubject,{file:sourceFile,symbol:'stockVariance'})
-  const fixed={...rebound,baseline:{...rebound.baseline,anchor:allowed[0]}}
+  const fixed={...rebound,baseline:{...rebound.baseline,anchor:allowed[0],reason:compact.schema.$defs.red.properties.reason.const}}
   const readBack=review.parseCompact(JSON.stringify(fixed),input)
   assert.equal(readBack.verdict,'pass')
   assert.equal(readBack.reviewBasis.baseline.subjects[0].symbol,'stockVariance')
@@ -271,6 +271,28 @@ test('pre-coding review asks for stockVariance assertions and treats missing sou
   assert.match(system,/cite a direct stockVariance result assertion/)
 })
 
+test('stock RED requires the missing-export cause from the saved PR203 failure', () => {
+  const good = draft.project(JSON.stringify(correctedCases()),prepared())
+  const input = reviewInput(good.generated.testCode,good.origin)
+  const compact = review.prepareCompact(input)
+  const summary = compact.schema.anyOf.find(branch=>branch.properties.verdict.const==='pass').properties.summary.const
+  const anchor = compact.schema.$defs.red.properties.anchor.enum[0]
+  const reply = {...nativeReview,binding:compact.packet.binding,summary,
+    baseline:{anchor,expectation:'expected_failure',reason:'stockVariance result comparison in the new-function test.'}}
+  const bad = JSON.stringify(reply)
+  assert.throws(()=>review.parseCompact(bad,input),e=>e.reviewValidation?.stage==='red_reason'&&e.reviewValidation.responseChars===bad.length)
+  const reason='The unchanged baseline does not export stockVariance, so the cited direct result assertion is expected to fail.'
+  assert.deepEqual(compact.schema.$defs.red.properties.reason,{const:reason})
+  const validated=review.parseCompact(JSON.stringify({...reply,baseline:{...reply.baseline,reason}}),input)
+  assert.equal(validated.reviewBasis.baseline.reason,reason)
+  assert.match(validated.reviewBasis.baseline.quote,/\.stockVariance\(/)
+  const changes=compact.schema.anyOf.find(branch=>branch.properties.verdict.const==='changes_requested').properties
+  const negative={...reply,verdict:'changes_requested',summary:changes.summary.const,findings:[{anchor,message:'Offline test finding.'}]}
+  assert.throws(()=>review.parseCompact(JSON.stringify(negative),input),e=>e.reviewValidation?.stage==='red_reason')
+  const uncertain={...negative,baseline:{anchor,expectation:'not_established',reason:'The comparison does not yet prove the expected result.'}}
+  assert.equal(review.parseCompact(JSON.stringify(uncertain),input).reviewBasis.baseline.reason,uncertain.baseline.reason)
+})
+
 test('local draft revision preserves complete findings and checks through references to the exact previous test', () => {
   const good = draft.project(JSON.stringify(correctedCases()),prepared())
   const context = reviewInput(good.generated.testCode,good.origin)
@@ -287,7 +309,7 @@ test('local draft revision preserves complete findings and checks through refere
           requiredSubjects.some(required=>subject.symbol===required.symbol&&subject.file===required.file))).map(line=>line.anchorId)
       }))
     })),
-    baseline:{anchor:red,expectation:'expected_failure',reason:'Source lacks the new export.'}
+    baseline:{anchor:red,expectation:'expected_failure',reason:schema.$defs.red.properties.reason.const}
   }
   const reviewFeedback = review.parseCompact(JSON.stringify(response),context)
   const prompt = { ...packet, previousDraft:good.generated, reviewFeedback, repairInstruction:'Revise only the tests.' }
