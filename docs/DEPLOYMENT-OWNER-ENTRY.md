@@ -60,8 +60,8 @@ Prepared readiness evidence is valid for at most 24 hours; source revision/hash
 changes invalidate it immediately. Scope/base/SHA/material changes and expired or
 replayed nonce/claim fail closed. No failed run is used as execution authority.
 
-Recovery manifests have a separate bounded JSON envelope: at most 8 MiB and
-32,768 asset entries. This supports the observed 15,452-file, 2,354,423-byte
+Recovery manifests have a separate bounded JSON envelope: at most 16 MiB and
+131,072 asset entries. This supports the observed 75,412-file, 11,468,693-byte
 scheduled manifest without raising the 2,000,000-byte limit on requests, worker
 receipts or memory baselines. Reads allocate at most the declared limit plus one
 byte and reject file identity/size changes. Oversized manifests report

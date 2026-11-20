@@ -55,8 +55,8 @@ test('manifest byte and entry ceilings fail closed while other evidence keeps it
   if(kind==='manifest')fs.writeFileSync(path.join(f.bundle,'manifest.json'),' '.repeat(16*1024*1024+1))
   if(kind==='entries'){
    // Keep this below the byte ceiling so it specifically exercises entry count.
-   reseal(f,(m,w)=>{m.files=Array.from({length:65537},()=>({path:'x',bytes:0,sha256:'d'.repeat(64)}));w.filesRestored.files=m.files.length})
-   assert.ok(fs.statSync(path.join(f.bundle,'manifest.json')).size<=8*1024*1024)
+   reseal(f,(m,w)=>{m.files=Array.from({length:131073},()=>({path:'x',bytes:0,sha256:'d'.repeat(64)}));w.filesRestored.files=m.files.length})
+   assert.ok(fs.statSync(path.join(f.bundle,'manifest.json')).size<=16*1024*1024)
   }
   if(kind==='request')fs.writeFileSync(path.join(f.directory,'request.json'),' '.repeat(2000001))
   if(kind==='worker'||kind==='baselines'){
@@ -67,8 +67,8 @@ test('manifest byte and entry ceilings fail closed while other evidence keeps it
  }
 })
 
-test('Owner-approved 16 MiB capacity checks every one of 59113 assets and rejects last-file damage',async t=>{
- const f=fixture(t),bytes=Buffer.from('{}'),digest=hash(bytes),count=59113;fs.writeFileSync(path.join(f.bundle,'objects',digest),bytes)
+test('current scheduled backup size verifies all 75412 assets and rejects last-file damage',async t=>{
+ const f=fixture(t),bytes=Buffer.from('{}'),digest=hash(bytes),count=75412;fs.writeFileSync(path.join(f.bundle,'objects',digest),bytes)
  let last,recordReads=0;f.deps.readRecord=async()=>{recordReads++;return f.record}
  reseal(f,(manifest,worker)=>{
   for(let i=1;i<count;i++){last='conversations/'+String(i).padStart(16,'0')+'-00000000-0000-4000-8000-000000000001.json';fs.writeFileSync(path.join(f.restore,'data',last),bytes);manifest.files.push({path:last,sha256:digest,bytes:bytes.length})}
