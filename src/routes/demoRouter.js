@@ -220,7 +220,7 @@ function setMemoryReceipt(res,state) {
   res.locals ||= {};res.locals.memoryReceipt=state
   if(!res.headersSent)res.setHeader('X-Memory-Receipt',state)
 }
-function createDemoRouter ({ getAdapterFn = getAdapterForLane, processIntakeFn = processIntake, conversationStore = INERT_CONVERSATION_STORE, readBacklogFn = null, backlogTimeoutMs = 2500, errandStoreFn = null, operatingManager = null, memoryJournal = null, mailChat = null, liveContext = null, sevenShiftsReport = null, hrRechecks = null, developmentPlan = null, codeDiagnosis = null, codeRepair = null, chatWork = null, chatTasks = null, taskPlanner = null, taskDialogue = null, schedulerChat = null, procurementChat = null, capabilityGaps = null, publicCompletion = require('../topics/publicAnswerFollowups').createService(), imageAdapterFn = selection => {
+function createDemoRouter ({ dailyDialogue = null, getAdapterFn = getAdapterForLane, processIntakeFn = processIntake, conversationStore = INERT_CONVERSATION_STORE, readBacklogFn = null, backlogTimeoutMs = 2500, errandStoreFn = null, operatingManager = null, memoryJournal = null, mailChat = null, liveContext = null, sevenShiftsReport = null, hrRechecks = null, developmentPlan = null, codeDiagnosis = null, codeRepair = null, chatWork = null, chatTasks = null, taskPlanner = null, taskDialogue = null, schedulerChat = null, procurementChat = null, capabilityGaps = null, publicCompletion = require('../topics/publicAnswerFollowups').createService(), imageAdapterFn = selection => {
   if (process.env.CHAT_BACKEND !== 'codex-subscription') throw Error('image_chat_unavailable')
   return new (require('../adapters/CodexSubscriptionAdapter').CodexSubscriptionAdapter)(selection)
 }, modelCenter = null, planningRevision = require('../governance/bootCommit').BOOT_COMMIT, modelsFn = async () => new (require('../adapters/CodexSubscriptionAdapter').CodexSubscriptionAdapter)().models() } = {}) {
@@ -1179,7 +1179,18 @@ function createDemoRouter ({ getAdapterFn = getAdapterForLane, processIntakeFn =
 
         // ALWAYS 4-arg — never the legacy 3-arg processIntake.
         let result
-        try { result = await processIntakeFn(message, adapter, history || [], opts) }
+        try {
+          const intake = () => processIntakeFn(message, adapter, history || [], opts)
+          // The existing composer sends one fresh ID in both fields for a text submission.
+          // These identify a foreground request. The session and exact origin authorize it.
+          const foregroundId = req.body.workflowRequestId
+          const manual = dailyDialogue && interactionMode === 'chat' && req.get('accept') === 'text/event-stream' &&
+            isValidConversationId(foregroundId) && foregroundId === req.body.websiteRequestId && !req.get('x-xiangxiang-usage-turn')
+          if (manual && (!ownerSessionIdOf(req) || !require('../core/operating/chatRequest').sameOrigin(req))) {
+            return res.status(403).json({error:{code:'owner_session_required',message:t('diag.usageScope'),retryable:false}})
+          }
+          result = manual ? await dailyDialogue(req.body.conversationId, foregroundId, intake) : await intake()
+        }
         catch (e) { if (investigationStarted) { try { investigationReceipts.finish(investigationId, null, true) } catch (_) {} } throw e }
         if (interactionMode === 'chat' && result?.capabilityGap && capabilityGaps && isValidConversationId(req.body.conversationId)) {
           try {

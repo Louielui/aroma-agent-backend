@@ -39,6 +39,42 @@ test('formal local chat follows authenticated page, scoped catalogue, selection 
   assert.ok(metadataCalls>=3);assert.equal(nativeCalls,0);assert.equal(JSON.parse(fs.readFileSync(path.join(dir,'memory-capture/settings.json'))).enabled,false);assert.equal(fs.existsSync(path.join(dir,'scheduler-action-runs','usage-budget')),false)
  }finally{if(intake)intake.processIntake=oldIntake;local?.close();for(const k of keys)if(saved[k]===undefined)delete process.env[k];else process.env[k]=saved[k];fs.rmSync(dir,{recursive:true,force:true})}
 })
+
+test('authenticated manual SSE chat uses the independent cap across two saved turns',async t=>{
+ const dir=fs.mkdtempSync(path.join(os.tmpdir(),'manual-owner-http-'))
+ const env={AROMA_DATA_DIR:dir,CHAT_BACKEND:'local',LOCAL_BRAIN_ONLY:'1',LOCAL_MODEL:'qwen3.5:9b',LOCAL_APP_PORT:'18099',CONVERSATION_DEMO:'on'}
+ const previous=Object.fromEntries(Object.keys(env).map(k=>[k,process.env[k]]))
+ Object.assign(process.env,env)
+ t.after(()=>{for(const [k,v] of Object.entries(previous))if(v===undefined)delete process.env[k];else process.env[k]=v;fs.rmSync(dir,{recursive:true,force:true})})
+ const profile=require('../../src/localBrain/deploymentProfile.json'),calls=[]
+ const provider=new (require('../../src/adapters/LocalAdapter').LocalAdapter)({env:{LOCAL_MODEL:profile.model,LOCAL_MODEL_DIGEST:profile.digest,LOCAL_MODEL_CONTEXT:String(profile.context)},fetchFn:async(url,o)=>{
+  if(url.endsWith('/api/tags'))return Response.json({models:[{name:profile.model,digest:profile.digest}]})
+  assert.equal(url,profile.endpoint+'/api/chat')
+  calls.push(JSON.parse(o.body))
+  return new Response(JSON.stringify({done:true,message:{content:JSON.stringify({intent:'chit_chat',mode:'chat',reply:'Mock cobalt reply',tasks:[],risks:[],memoryReferences:[]})}})+'\n')
+ }})
+ const local=require('../../src/localBrain/production').createComposition({dataDir:dir,memoryEnabled:false,adapter:provider})
+ const grant=require('../../src/localBrain/dailyDialogue').createDailyDialogue({dir:path.join(dir,'owner-local-dialogue'),runtimeCommit:()=>'b'.repeat(40)})
+ local.dailyDialogue=grant.run
+ const app=require('../../src/app').createApp({ownerPassword:'fixture-password-only',serviceToken:'fixture-token-only',localBrain:local})
+ const cookie=app.locals.ownerSessions.issue(),conversationId=crypto.randomUUID(),headers={accept:'text/event-stream'}
+ const send=(message,extra={},session=cookie,id=crypto.randomUUID())=>request(app,'/api/v1/demo/intake',{cookie:session,headers:{...headers,...extra},body:{message,conversationId,workflowRequestId:id,websiteRequestId:id,history:[]}})
+ const final=r=>JSON.parse(r.raw.match(/data: (\{"type":"final".*\})/)[1]).body
+ assert.equal(final(await send('Hello')).error.code,'usage_not_enabled')
+ const id=crypto.randomUUID();grant.activate({id,commit:'b'.repeat(40),limit:12,windowMs:60000})
+ assert.equal((await send('Hello',{origin:'http://example.invalid'})).status,403)
+ assert.equal((await send('Hello',{authorization:'Bearer fixture-token-only'},null)).status,403)
+ assert.equal(calls.length,0)
+ for(const message of ['Hello there.','Hello again.']){
+  const body=final(await send(message));assert.equal(body.reply,'Mock cobalt reply',JSON.stringify(body))
+ }
+ assert.ok(calls.length>=2)
+ assert.ok(calls.slice(1).some(c=>c.messages.some(m=>m.content.includes('Mock cobalt reply'))))
+ grant.pause(id)
+ assert.equal(final(await send('Hello once more')).error.code,'usage_run_not_active')
+ assert.equal(grant.status().helper.dispatched,calls.length)
+})
+
 test('subscription catalogue stays compatible and local backend without local-only authority stays closed',async()=>{
  const saved={CHAT_BACKEND:process.env.CHAT_BACKEND,LOCAL_BRAIN_ONLY:process.env.LOCAL_BRAIN_ONLY};let reads=0
  try{

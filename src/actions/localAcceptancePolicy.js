@@ -36,4 +36,4 @@ function forProfile(id){return id===PROFILE.id?original:id===BOUNDARY_PROFILE.id
 function registeredProfile(id){return{id,identity:'owner-local-repository-repair:'+id,model:deployment.model,effort:'auto',turns:1,helper:8,website:0,digest:deployment.digest,windowMs:1800000,turnMs:1800000,slots:[{id,purpose:'coding',limit:8}]}}
 const REGISTERED_PHASES=Object.freeze(['local_test_draft','local_test_review','local_coding','local_code_review'])
 function registeredPolicy(profile){const base=policy(profile);return Object.freeze({...base,validate(row){base.validate(row);if(row.attempts.some(a=>!REGISTERED_PHASES.includes(a.phase)))fail('usage_audit_unavailable')},reserve(row,scope,input,kind,now,commit){if(!REGISTERED_PHASES.includes(input.phase))fail('usage_operation_not_allowed');return base.reserve(row,scope,input,kind,now,commit)}})}
-module.exports={PROFILE,BOUNDARY_PROFILE,CODING_PROFILE,forProfile,registeredProfile,registeredPolicy,...original}
+module.exports={policyForDialogue:policy,PROFILE,BOUNDARY_PROFILE,CODING_PROFILE,forProfile,registeredProfile,registeredPolicy,...original}

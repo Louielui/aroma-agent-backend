@@ -96,9 +96,11 @@ function createUsageBudget({store,evidenceDir,now=Date.now,runtimeCommit=()=>req
  if(!store?.lockRun)throw error('usage_store_required')
  if(!Number.isInteger(lockWaitMs)||lockWaitMs<0||lockWaitMs>1000)throw error('invalid_request')
  profile=structuredClone(profile)
- if(hash(profile)!==hash(LOCAL_CODING_PROFILE)&&hash(profile)!==hash(LOCAL_BOUNDARY_PROFILE)&&hash(profile)!==hash(LOCAL_ACCEPTANCE_PROFILE)&&hash(profile)!==hash(PROFILE)&&hash(profile)!==hash(UNDERSTANDING_PROFILE)&&hash(profile)!==hash(ADVICE_PROFILE)&&hash(profile)!==hash(PRIORITY_PROFILE)&&hash(profile)!==hash(CONVERSATION_PROFILE)&&hash(profile)!==hash(GOAL_PROFILE)&&hash(profile)!==hash(CLARITY_PROFILE)&&hash(profile)!==hash(PLANNING_PROFILE)&&hash(profile)!==hash(CONTINUATION_PROFILE)&&hash(profile)!==hash(MARKDOWN_PROFILE)&&hash(profile)!==hash(DRAFT_PROFILE)&&hash(profile)!==hash(HANDOFF_PROFILE)&&hash(profile)!==hash(VERIFIER_PROFILE)&&hash(profile)!==hash(EDIT_PROFILE)&&hash(profile)!==hash(SCOPE_PROFILE)&&hash(profile)!==hash(LEARNING_PROFILE)&&hash(profile)!==hash(LATENCY_PROFILE)&&hash(profile)!==hash(MEMORY_ARBITRATION_PROFILE)&&hash(profile)!==hash(DELEGATION_LIST_PROFILE)&&hash(profile)!==hash(DELEGATION_RETEST_PROFILE)&&hash(profile)!==hash(SPEED_PROFILE)&&hash(profile)!==hash(FOREGROUND_PROFILE)&&hash(profile)!==hash(LEAN_PROFILE)&&hash(profile)!==hash(LOCK_RETEST_PROFILE)&&hash(profile)!==hash(ROSTER_EVIDENCE_PROFILE)&&hash(profile)!==hash(developmentProfile(profile.id))&&hash(profile)!==hash(localDevelopmentProfile(profile.id)))throw error('usage_profile_not_allowed')
- const isRegisteredLocal=profile.identity==='owner-local-repository-repair:'+profile.id,localPolicy=localAcceptance.forProfile(profile.id)||(isRegisteredLocal?localAcceptance.registeredPolicy(profile):null),isLocal=localPolicy!==null
- const predecessors=isLocal&&!isRegisteredLocal&&profile.id!==LOCAL_CODING_PROFILE.id?[LATENCY_PROFILE,MEMORY_ARBITRATION_PROFILE,DELEGATION_LIST_PROFILE,DELEGATION_RETEST_PROFILE,SPEED_PROFILE,FOREGROUND_PROFILE,LEAN_PROFILE,LOCK_RETEST_PROFILE,ROSTER_EVIDENCE_PROFILE]:profile.id===ROSTER_EVIDENCE_PROFILE.id?[LATENCY_PROFILE,MEMORY_ARBITRATION_PROFILE,DELEGATION_LIST_PROFILE,DELEGATION_RETEST_PROFILE,SPEED_PROFILE,FOREGROUND_PROFILE,LEAN_PROFILE,LOCK_RETEST_PROFILE]:profile.id===LOCK_RETEST_PROFILE.id?[LATENCY_PROFILE,MEMORY_ARBITRATION_PROFILE,DELEGATION_LIST_PROFILE,DELEGATION_RETEST_PROFILE,SPEED_PROFILE,FOREGROUND_PROFILE,LEAN_PROFILE]:profile.id===LEAN_PROFILE.id?[LATENCY_PROFILE,MEMORY_ARBITRATION_PROFILE,DELEGATION_LIST_PROFILE,DELEGATION_RETEST_PROFILE,SPEED_PROFILE,FOREGROUND_PROFILE]:profile.id===FOREGROUND_PROFILE.id?[LATENCY_PROFILE,MEMORY_ARBITRATION_PROFILE,DELEGATION_LIST_PROFILE,DELEGATION_RETEST_PROFILE,SPEED_PROFILE]:profile.id===SPEED_PROFILE.id?[LATENCY_PROFILE,MEMORY_ARBITRATION_PROFILE,DELEGATION_LIST_PROFILE,DELEGATION_RETEST_PROFILE]:profile.id===DELEGATION_RETEST_PROFILE.id?[LATENCY_PROFILE,MEMORY_ARBITRATION_PROFILE,DELEGATION_LIST_PROFILE]:profile.id===DELEGATION_LIST_PROFILE.id?[LATENCY_PROFILE,MEMORY_ARBITRATION_PROFILE]:profile.id===MEMORY_ARBITRATION_PROFILE.id?[LATENCY_PROFILE]:[],independent=predecessors.length>0||profile.id===LOCAL_CODING_PROFILE.id||isRegisteredLocal
+ const dailyPolicy=require('./dailyDialoguePolicy').policy(profile)
+ if(dailyPolicy&&isAcceptanceRoot(profile.id))throw error('usage_profile_not_allowed')
+ if(!dailyPolicy&&hash(profile)!==hash(LOCAL_CODING_PROFILE)&&hash(profile)!==hash(LOCAL_BOUNDARY_PROFILE)&&hash(profile)!==hash(LOCAL_ACCEPTANCE_PROFILE)&&hash(profile)!==hash(PROFILE)&&hash(profile)!==hash(UNDERSTANDING_PROFILE)&&hash(profile)!==hash(ADVICE_PROFILE)&&hash(profile)!==hash(PRIORITY_PROFILE)&&hash(profile)!==hash(CONVERSATION_PROFILE)&&hash(profile)!==hash(GOAL_PROFILE)&&hash(profile)!==hash(CLARITY_PROFILE)&&hash(profile)!==hash(PLANNING_PROFILE)&&hash(profile)!==hash(CONTINUATION_PROFILE)&&hash(profile)!==hash(MARKDOWN_PROFILE)&&hash(profile)!==hash(DRAFT_PROFILE)&&hash(profile)!==hash(HANDOFF_PROFILE)&&hash(profile)!==hash(VERIFIER_PROFILE)&&hash(profile)!==hash(EDIT_PROFILE)&&hash(profile)!==hash(SCOPE_PROFILE)&&hash(profile)!==hash(LEARNING_PROFILE)&&hash(profile)!==hash(LATENCY_PROFILE)&&hash(profile)!==hash(MEMORY_ARBITRATION_PROFILE)&&hash(profile)!==hash(DELEGATION_LIST_PROFILE)&&hash(profile)!==hash(DELEGATION_RETEST_PROFILE)&&hash(profile)!==hash(SPEED_PROFILE)&&hash(profile)!==hash(FOREGROUND_PROFILE)&&hash(profile)!==hash(LEAN_PROFILE)&&hash(profile)!==hash(LOCK_RETEST_PROFILE)&&hash(profile)!==hash(ROSTER_EVIDENCE_PROFILE)&&hash(profile)!==hash(developmentProfile(profile.id))&&hash(profile)!==hash(localDevelopmentProfile(profile.id)))throw error('usage_profile_not_allowed')
+ const isRegisteredLocal=profile.identity==='owner-local-repository-repair:'+profile.id,localPolicy=dailyPolicy||localAcceptance.forProfile(profile.id)||(isRegisteredLocal?localAcceptance.registeredPolicy(profile):null),isLocal=localPolicy!==null
+ const predecessors=isLocal&&!dailyPolicy&&!isRegisteredLocal&&profile.id!==LOCAL_CODING_PROFILE.id?[LATENCY_PROFILE,MEMORY_ARBITRATION_PROFILE,DELEGATION_LIST_PROFILE,DELEGATION_RETEST_PROFILE,SPEED_PROFILE,FOREGROUND_PROFILE,LEAN_PROFILE,LOCK_RETEST_PROFILE,ROSTER_EVIDENCE_PROFILE]:profile.id===ROSTER_EVIDENCE_PROFILE.id?[LATENCY_PROFILE,MEMORY_ARBITRATION_PROFILE,DELEGATION_LIST_PROFILE,DELEGATION_RETEST_PROFILE,SPEED_PROFILE,FOREGROUND_PROFILE,LEAN_PROFILE,LOCK_RETEST_PROFILE]:profile.id===LOCK_RETEST_PROFILE.id?[LATENCY_PROFILE,MEMORY_ARBITRATION_PROFILE,DELEGATION_LIST_PROFILE,DELEGATION_RETEST_PROFILE,SPEED_PROFILE,FOREGROUND_PROFILE,LEAN_PROFILE]:profile.id===LEAN_PROFILE.id?[LATENCY_PROFILE,MEMORY_ARBITRATION_PROFILE,DELEGATION_LIST_PROFILE,DELEGATION_RETEST_PROFILE,SPEED_PROFILE,FOREGROUND_PROFILE]:profile.id===FOREGROUND_PROFILE.id?[LATENCY_PROFILE,MEMORY_ARBITRATION_PROFILE,DELEGATION_LIST_PROFILE,DELEGATION_RETEST_PROFILE,SPEED_PROFILE]:profile.id===SPEED_PROFILE.id?[LATENCY_PROFILE,MEMORY_ARBITRATION_PROFILE,DELEGATION_LIST_PROFILE,DELEGATION_RETEST_PROFILE]:profile.id===DELEGATION_RETEST_PROFILE.id?[LATENCY_PROFILE,MEMORY_ARBITRATION_PROFILE,DELEGATION_LIST_PROFILE]:profile.id===DELEGATION_LIST_PROFILE.id?[LATENCY_PROFILE,MEMORY_ARBITRATION_PROFILE]:profile.id===MEMORY_ARBITRATION_PROFILE.id?[LATENCY_PROFILE]:[],independent=!!dailyPolicy||predecessors.length>0||profile.id===LOCAL_CODING_PROFILE.id||isRegisteredLocal
  let verifiedLocalParents=null
  function predecessorHash(){
   const currentLocal=isLocal?hash(predecessors.map(p=>({rootId:p.id,hash:hash(store.get(p.id))}))):null
@@ -134,7 +136,7 @@ function createUsageBudget({store,evidenceDir,now=Date.now,runtimeCommit=()=>req
   for(;;){
    const releases=[];let failedRoot=profile.id;attempts++
    const releaseAll=()=>{let failure;for(const release of releases.reverse())try{release()}catch(e){failure||=e}return failure}
-   try{for(const p of [...predecessors,...(isLocal?[LOCAL_ACCEPTANCE_PROFILE,LOCAL_BOUNDARY_PROFILE]:[profile])]){failedRoot=p.id;releases.push(store.lockRun(p.id))}}
+   try{for(const p of [...predecessors,...(isLocal&&!dailyPolicy?[LOCAL_ACCEPTANCE_PROFILE,LOCAL_BOUNDARY_PROFILE]:[profile])]){failedRoot=p.id;releases.push(store.lockRun(p.id))}}
    catch(e){
     const cleanup=releaseAll();if(cleanup)throw lockFailure('usage_audit_unavailable',cleanup,'release',failedRoot,attempts,performance.now()-started)
     const remaining=lockWaitMs-(performance.now()-started)
@@ -187,7 +189,7 @@ function createUsageBudget({store,evidenceDir,now=Date.now,runtimeCommit=()=>req
    if(b.op==='usage_acceptance_activate'||b.op==='usage_local_acceptance_activate'){
     if(b.rootId!==profile.id)throw error('usage_profile_not_allowed')
     if(r)throw error('usage_attempt_replayed')
-    if(isLocal&&!isRegisteredLocal&&profile.id!==LOCAL_CODING_PROFILE.id&&store.get(profile.id===LOCAL_BOUNDARY_PROFILE.id?LOCAL_ACCEPTANCE_PROFILE.id:LOCAL_BOUNDARY_PROFILE.id))throw error('usage_binding_conflict')
+    if(isLocal&&!dailyPolicy&&!isRegisteredLocal&&profile.id!==LOCAL_CODING_PROFILE.id&&store.get(profile.id===LOCAL_BOUNDARY_PROFILE.id?LOCAL_ACCEPTANCE_PROFILE.id:LOCAL_BOUNDARY_PROFILE.id))throw error('usage_binding_conflict')
     if(!/^[a-f0-9]{64}$/.test(b.predecessorHash||'')||b.predecessorHash!==predecessorHash())throw error('usage_binding_conflict')
     if(!activationReady||activationReady()!==true)throw error('usage_idle_required')
     if(isLocal&&(!/^[a-f0-9]{40}$/.test(b.commit||'')||b.commit!==runtimeCommit()))throw error('usage_binding_conflict')
@@ -204,18 +206,23 @@ function createUsageBudget({store,evidenceDir,now=Date.now,runtimeCommit=()=>req
   });return{budget:status()}
  }
  function enterTurn(turnId,conversationId,requestId,purpose='dialogue'){return change(r=>{if(!r||r.state!=='active')throw error('usage_run_not_active');const t=r.turns.find(t=>t.id===turnId);if(!t||t.conversationId!==conversationId||!ID.test(requestId||''))throw error('usage_scope_required');if(t.entered)throw error('usage_turn_replayed');if(isLocal){if(!profile.slots.some(s=>s.id===turnId&&s.purpose===purpose))throw error('usage_operation_not_allowed');localPolicy.assertTime(r,null,now(),runtimeCommit());t.enteredAt=now()}t.entered=true;t.requestId=requestId;t.hostPid=process.pid;save(r,'turn_entered',{turnId});return Object.freeze({rootId:r.id,turnId,conversationId,requestId,childId:null})})}
- function finishTurn(s){change(r=>{assertScope(r,s);r.turns.find(t=>t.id===s.turnId).finished=true;save(r,'turn_finished',{turnId:s.turnId})})}
+ function finishTurn(s){change(r=>{assertScope(r,s);r.turns.find(t=>t.id===s.turnId).finished=true;if(dailyPolicy&&r.pauseRequested&&r.turns.every(t=>t.finished))r.state='paused';save(r,'turn_finished',{turnId:s.turnId})})}
  function withScope(s,fn){const r=load();assertScope(r,s);return context.run({service:api,scope:Object.freeze({...s}),permit:null},fn)}
  function withAllocation(workId,purpose,fn){const c=context.getStore(),r=load();assertScope(r,c?.scope);if(!r.extension)return fn();if(workId!==r.extension.material.workId||!Object.hasOwn(extension.MODELS,purpose))throw error('usage_binding_conflict');return context.run({...c,allocation:{workId,purpose}},fn)}
  function rejection(code,s=context.getStore()?.scope){if(s)change(r=>{assertScope(r,s);r.turns.find(t=>t.id===s.turnId).blocked=code;save(r,'refused',{turnId:s.turnId,code})});return error(code)}
  function nativeRejection(code){const e=rejection(code);const s=context.getStore()?.scope;if(s)change(r=>{assertScope(r,s).nativeBlocked=code;save(r,'native_refused',{turnId:s.turnId,code})});return e}
  function turnFailure(s){const r=load();return r?.turns.find(t=>t.id===s.turnId)?.blocked||null}
- function childScope(id){const s=context.getStore()?.scope;if(!ID.test(id||''))throw error('usage_scope_required');change(r=>{assertScope(r,s);const prior=r.children.find(c=>c.id===id);if(prior&&(prior.turnId!==s.turnId||prior.finished))throw error('usage_binding_conflict');if(!prior){if(r.children.length>=128)throw error('usage_child_limit');r.children.push({id,turnId:s.turnId,finished:false});save(r,'child_bound',{childId:id,turnId:s.turnId})}});return Object.freeze({...s,childId:id})}
+ function childScope(id){if(dailyPolicy)throw error('usage_operation_not_allowed');const s=context.getStore()?.scope;if(!ID.test(id||''))throw error('usage_scope_required');change(r=>{assertScope(r,s);const prior=r.children.find(c=>c.id===id);if(prior&&(prior.turnId!==s.turnId||prior.finished))throw error('usage_binding_conflict');if(!prior){if(r.children.length>=128)throw error('usage_child_limit');r.children.push({id,turnId:s.turnId,finished:false});save(r,'child_bound',{childId:id,turnId:s.turnId})}});return Object.freeze({...s,childId:id})}
  function finishChild(s){change(r=>{assertScope(r,s);const c=r.children.find(c=>c.id===s.childId);if(!c)throw error('usage_scope_required');c.finished=true;save(r,'child_finished',{childId:s.childId})})}
  function capture(kind,value,s=context.getStore()?.scope){
   if(!s)return null;const bytes=JSON.stringify(value===undefined?null:value)
   if(Buffer.byteLength(bytes)>2000000)throw error('usage_evidence_too_large');if(!/^[a-z_]{1,40}$/.test(kind)||!evidenceDir)throw error('usage_audit_unavailable')
   const id=crypto.randomUUID(),file=path.join(evidenceDir,id+'.json'),ref={id,kind,sha256:crypto.createHash('sha256').update(bytes).digest('hex'),bytes:Buffer.byteLength(bytes)}
+  if(dailyPolicy)return change(row=>{
+   assertScope(row,s)
+   save(row,'evidence_digest',{turnId:s.turnId,kind,sha256:ref.sha256,bytes:ref.bytes})
+   return {kind,sha256:ref.sha256,bytes:ref.bytes}
+  })
   return change(r=>{
    assertScope(r,s)
    try{fs.mkdirSync(evidenceDir,{recursive:true});fs.writeFileSync(file,bytes,{flag:'wx',mode:0o600});save(r,'evidence',{turnId:s.turnId,...ref})}
@@ -235,7 +242,31 @@ function createUsageBudget({store,evidenceDir,now=Date.now,runtimeCommit=()=>req
  function encode(s,token){if(!validScope(s)||!/^([a-f0-9]{64})$/.test(token||''))throw error('usage_scope_required');const data=Buffer.from(JSON.stringify(s)).toString('base64url');return data+'.'+crypto.createHmac('sha256',token).update('usage-scope-v1:'+data).digest('hex')}
  function withHeader(header,token,fn){if(header===undefined)return context.run({service:api,scope:null,permit:null},fn);if(typeof header!=='string'||header.length>900||!/^[A-Za-z0-9_-]+\.[a-f0-9]{64}$/.test(header)||!/^[a-f0-9]{64}$/.test(token||''))throw error('usage_scope_required');const[data,signature]=header.split('.'),expected=crypto.createHmac('sha256',token).update('usage-scope-v1:'+data).digest('hex');if(!crypto.timingSafeEqual(Buffer.from(signature),Buffer.from(expected)))throw error('usage_scope_required');let s;try{s=JSON.parse(Buffer.from(data,'base64url'))}catch{throw error('usage_scope_required')};return withScope(s,fn)}
  function stopOnFailure(code){if(!isLocal)return;change(r=>{if(!r||r.state!=='active')return;r.stopReason=/^[a-z_]{1,90}$/.test(code||'')?code:'local_work_failed';save(r,'local_work_failed',{code:r.stopReason})})}
- const api={stopOnFailure,acceptsModel,handle,status,readStatus,enterTurn,finishTurn,withScope,withAllocation,childScope,finishChild,capture,reserve,encode,withHeader,rejection,nativeRejection,turnFailure,setActivationWitness:fn=>{activationReady=fn},isActive:()=>load()?.state==='active'};return api
+ function enterDailyTurn(conversationId,requestId){
+  if(!dailyPolicy||!ID.test(conversationId||'')||!ID.test(requestId||''))throw error('usage_scope_required')
+  return change(row=>{
+   if(!row||row.state!=='active')throw error('usage_run_not_active')
+   localPolicy.assertTime(row,null,now(),runtimeCommit())
+   if(row.turns.some(t=>t.requestId===requestId))throw error('usage_turn_replayed')
+   if(row.attempts.length>=limits.helper)throw error('usage_limit_reached')
+   const slot=profile.slots[row.turns.length]
+   if(!slot)throw error('usage_turn_limit_reached')
+   row.turns.push({id:slot.id,conversationId,requestId,entered:true,enteredAt:now(),finished:false,hostPid:process.pid})
+   save(row,'turn_entered',{turnId:slot.id,conversationId})
+   return Object.freeze({rootId:profile.id,turnId:slot.id,conversationId,requestId,childId:null})
+  })
+ }
+ function pauseDaily(){
+  if(!dailyPolicy)throw error('usage_operation_not_allowed')
+  return change(row=>{
+   if(!row||row.state!=='active')throw error('usage_run_not_active')
+   row.pauseRequested=true
+   row.stopReason='owner_paused'
+   if(row.turns.every(t=>t.finished))row.state='paused'
+   save(row,'owner_pause_requested')
+  })
+ }
+ const api={pauseDaily,enterDailyTurn,stopOnFailure,acceptsModel,handle,status,readStatus,enterTurn,finishTurn,withScope,withAllocation,childScope,finishChild,capture,reserve,encode,withHeader,rejection,nativeRejection,turnFailure,setActivationWitness:fn=>{activationReady=fn},isActive:()=>load()?.state==='active'};return api
 }
 // A long-lived Bridge and backend resolve the same durable selection on every
 // call, not only at boot. No selection file or second accounting store exists.
