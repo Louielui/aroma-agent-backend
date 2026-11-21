@@ -51,6 +51,20 @@ test('expiry, invalid cap and wrong source fail before inference',async t=>{
   await assert.rejects(f.turn('late'),/usage_expired/)
   assert.equal(f.sends.length,0)
 })
+test('an Owner pause closes admission immediately while an earlier turn is still draining',async t=>{
+  const f=fixture(t);f.activate()
+  let finish
+  const pending=f.dialogue.run(f.conversation,randomUUID(),()=>new Promise(resolve=>{finish=resolve}))
+  f.open().pause(f.id)
+  try {
+    const prior=f.dialogue.status()
+    assert.equal(prior.turnsUsed,1)
+    await assert.rejects(f.turn('later browser press',f.open()),{code:'usage_run_not_active'})
+    assert.equal(f.dialogue.status().turnsUsed,prior.turnsUsed)
+    assert.equal(f.sends.length,0)
+  } finally {finish();await pending}
+  assert.equal(f.dialogue.status().state,'paused')
+})
 test('pause after reservation blocks the native send and retains spent capacity and evidence',async t=>{
   const f=fixture(t);f.activate()
   await f.dialogue.run(f.conversation,randomUUID(),()=>{

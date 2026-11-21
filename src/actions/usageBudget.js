@@ -245,7 +245,7 @@ function createUsageBudget({store,evidenceDir,now=Date.now,runtimeCommit=()=>req
  function enterDailyTurn(conversationId,requestId){
   if(!dailyPolicy||!ID.test(conversationId||'')||!ID.test(requestId||''))throw error('usage_scope_required')
   return change(row=>{
-   if(!row||row.state!=='active')throw error('usage_run_not_active')
+   if(!row||row.state!=='active'||row.pauseRequested)throw error('usage_run_not_active')
    localPolicy.assertTime(row,null,now(),runtimeCommit())
    if(row.turns.some(t=>t.requestId===requestId))throw error('usage_turn_replayed')
    if(row.attempts.length>=limits.helper)throw error('usage_limit_reached')
