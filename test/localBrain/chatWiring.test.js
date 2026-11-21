@@ -75,6 +75,84 @@ test('authenticated manual SSE chat uses the independent cap across two saved tu
  assert.equal(grant.status().helper.dispatched,calls.length)
 })
 
+test('manual supplied identifier uses the same saved conversation and verifies both replies within four native calls', async t => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'owner-identifier-chat-'))
+  const profile = require('../../src/localBrain/deploymentProfile.json')
+  const env = { AROMA_DATA_DIR: dir, AROMA_ARTIFACT_DIR: dir, CHAT_BACKEND: 'local', LOCAL_BRAIN_ONLY: '1',
+    LOCAL_MODEL: profile.model, LOCAL_MODEL_DIGEST: profile.digest, LOCAL_MODEL_CONTEXT: String(profile.context),
+    LOCAL_APP_PORT: '18099', CONVERSATION_DEMO: 'on', TURN_ROUTER: 'on', A4_KNOWLEDGE_ROUTING: 'on',
+    GOAL_DECOMPOSER: 'on', READ_ACCESS: 'on', XIANGXIANG_MEMORY: 'off' }
+  const previous = Object.fromEntries(Object.keys(env).map(key => [key, process.env[key]]))
+  const originalFetch = global.fetch
+  t.after(() => {
+    global.fetch = originalFetch
+    for (const [key, value] of Object.entries(previous)) {
+      if (value === undefined) delete process.env[key]
+      else process.env[key] = value
+    }
+    fs.rmSync(dir, {recursive:true, force:true})
+  })
+  Object.assign(process.env, env)
+  const first = '這次對話的虛構包裹代號是「青梨-47」。請告訴我代號。'
+  const second = '上一輪的虛構包裹代號是什麼？'
+  const phases = []
+  let verifierDecision = {decision:'allow_final',question:null}
+  global.fetch = async (url, options) => {
+    if (url === profile.endpoint + '/api/tags') return Response.json({models:[{name:profile.model,digest:profile.digest}]})
+    assert.equal(url, profile.endpoint + '/api/chat')
+    const body = JSON.parse(options.body)
+    const props = body.format?.properties || {}
+    let value
+    if (body.messages[0].content.includes('Classify the requested activity, not isolated nouns.')) {
+      phases.push('intent')
+      value = {intent:'NONE',confidence:'LOW'}
+    } else if (props.question_restated) {
+      phases.push('goal_understanding')
+      value = {question_restated:'Repeat the supplied identifier.',facts:[],joins:[]}
+    } else if (props.decision?.enum?.includes('allow_final')) {
+      phases.push('final_verification')
+      value = verifierDecision
+    } else {
+      phases.push('answer')
+      const prompt = body.messages.find(m => m.role === 'user').content
+      assert.ok(prompt.includes(first), 'original Owner message reaches the answer model')
+      if (phases.length === 3) assert.ok(prompt.includes(second))
+      value = {intent:'question',mode:'chat',reply:'青梨-47',tasks:[],risks:[],memoryReferences:[]}
+    }
+    return new Response(JSON.stringify({done:true,message:{content:JSON.stringify(value)}}) + '\n')
+  }
+  const local = require('../../src/localBrain/production').createComposition({dataDir:dir,memoryEnabled:false})
+  const grant = require('../../src/localBrain/dailyDialogue').createDailyDialogue({dir:path.join(dir,'owner-local-dialogue'),runtimeCommit:()=>'b'.repeat(40)})
+  local.dailyDialogue = grant.run
+  const app = require('../../src/app').createApp({ownerPassword:'fixture-only',serviceToken:'fixture-only',localBrain:local})
+  const cookie = app.locals.ownerSessions.issue(), conversationId = crypto.randomUUID(), id = crypto.randomUUID()
+  grant.activate({id,commit:'b'.repeat(40),limit:4,windowMs:900000})
+  for (const message of [first, second]) {
+    const requestId = crypto.randomUUID()
+    const response = await request(app,'/api/v1/demo/intake',{cookie,headers:{accept:'text/event-stream'},
+      body:{message,conversationId,workflowRequestId:requestId,websiteRequestId:requestId,history:[]}})
+    const final = JSON.parse(response.raw.match(/data: (\{"type":"final".*\})/)[1]).body
+    assert.equal(final.reply, '青梨-47', JSON.stringify({error:final.error,phases}))
+  }
+  assert.deepEqual(phases, ['answer','final_verification','answer','final_verification'])
+  grant.pause(id)
+  const status = grant.status()
+  assert.deepEqual([status.state,status.turnsUsed,status.helper.reserved,status.helper.dispatched,status.helper.available],['paused',2,4,4,0])
+  assert.ok(status.turns.every(turn => turn.finished && turn.conversationId === conversationId))
+
+  // A separately isolated mock allocation proves the final decision can still
+  // withhold the answer; observing a verifier call alone would not prove that.
+  const other = crypto.randomUUID(), requestId = crypto.randomUUID()
+  grant.activate({id:other,commit:'b'.repeat(40),limit:2,windowMs:900000})
+  verifierDecision = {decision:'clarify',question:'Which fictional label do you mean?'}
+  const checked = await request(app,'/api/v1/demo/intake',{cookie,headers:{accept:'text/event-stream'},
+    body:{message:first,conversationId:crypto.randomUUID(),workflowRequestId:requestId,websiteRequestId:requestId,history:[]}})
+  const final = JSON.parse(checked.raw.match(/data: (\{"type":"final".*\})/)[1]).body
+  assert.equal(final.reply, verifierDecision.question)
+  assert.deepEqual(phases.slice(4), ['answer','final_verification'])
+  grant.pause(other)
+})
+
 test('subscription catalogue stays compatible and local backend without local-only authority stays closed',async()=>{
  const saved={CHAT_BACKEND:process.env.CHAT_BACKEND,LOCAL_BRAIN_ONLY:process.env.LOCAL_BRAIN_ONLY};let reads=0
  try{
