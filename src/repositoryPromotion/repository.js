@@ -36,8 +36,15 @@ function parseStatus (raw) {
   return rows
 }
 function secretPath (p) {return /(^|\/)(?:\.env(?:\.|$)|browser-profile|data|\.aroma|credentials?(?:\.|\/)|password\.txt|[^/]+\.creds$)/i.test(p)}
+function walkRevisions (root,include,exclude,options=[]) {
+  // Ref inventories can exceed Windows' process argument limit. Send the same
+  // union and exclusions to Git as validated revisions, without capping the set.
+  if([...include,...exclude].some(sha=>typeof sha!=='string'||sha.length!==40||!SHA.test(sha)))throw Error('invalid_git_revision')
+  const revisions=[...include,...exclude.map(sha=>'^'+sha)]
+  return command(root,['rev-list',...options,'--stdin'],{input:revisions.join('\n')+'\n'}).split('\n').filter(Boolean)
+}
 function scanObjects (root,targets,remoteTips) {
-  const rows=command(root,['rev-list','--objects',...targets,'--not',...remoteTips]).split('\n').filter(Boolean)
+  const rows=walkRevisions(root,targets,remoteTips,['--objects'])
   if(!rows.length)return{objects:0,blobs:0,findings:[]}
   const names=new Map(rows.map(line=>{const i=line.indexOf(' ');return[i<0?line:line.slice(0,i),i<0?'':line.slice(i+1)]}))
   const bytes=command(root,['cat-file','--batch'],{input:[...names.keys()].join('\n')+'\n',buffer:true})
@@ -89,7 +96,7 @@ function createRepository ({root,runtimeRoot=root,artifacts,remote=REMOTE,runtim
     const [behind,ahead]=git(['rev-list','--left-right','--count',remoteState.main+'...'+head]).split(/\s+/).map(Number)
     const branches=git(['for-each-ref','--format=%(refname) %(objectname)','refs/heads']).split('\n').map(line=>{const[ref,sha]=line.split(' ');return{ref,sha}})
     const publishedCandidates=branches.filter(r=>!privateRefs.includes(r.ref)&&!r.ref.startsWith('refs/heads/backup/private-checkpoint-'))
-    const unpublished=git(['rev-list',...publishedCandidates.map(r=>r.sha),'--not',...remoteState.tips]).split('\n').filter(Boolean)
+    const unpublished=walkRevisions(root,publishedCandidates.map(r=>r.sha),remoteState.tips)
     const dirty=parseStatus(command(root,['status','--porcelain=v1','-z','--untracked-files=all'],{buffer:true}).toString('utf8'))
     const runtimeExpected=runtimeGit(['rev-parse','HEAD'])
     const observed=await runtimeReader()
@@ -130,7 +137,7 @@ function createRepository ({root,runtimeRoot=root,artifacts,remote=REMOTE,runtim
     const live=remoteRefs(),targets=[]
     const refs=inspection.branches || git(['for-each-ref','--format=%(refname) %(objectname)','refs/heads']).split('\n').map(line=>{const[ref,sha]=line.split(' ');return{ref,sha}})
     const eligible=refs.filter(r=>!privateRefs.includes(r.ref)&&!r.ref.startsWith('refs/heads/backup/private-checkpoint-'))
-    const unpublished=new Set(eligible.length?git(['rev-list',...new Set(eligible.map(r=>r.sha)),'--not',...live.tips]).split('\n').filter(Boolean):[])
+    const unpublished=new Set(eligible.length?walkRevisions(root,[...new Set(eligible.map(r=>r.sha))],live.tips):[])
     for(const r of eligible){
       // A remotely reachable tip has no unique ancestors. One union traversal
       // proves this for every branch instead of launching Git twice per ref.
