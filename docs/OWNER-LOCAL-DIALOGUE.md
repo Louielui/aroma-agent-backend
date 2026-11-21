@@ -19,3 +19,7 @@ through answer generation, final knowledge verification and the native budget.
 Mixed requests, attachments, unsupported wording and missing saved provenance
 use the ordinary pipeline. Two verified replies in four calls are an offline
 fixture result for this narrow request shape, not a default daily allowance.
+
+## Expiry at admission
+
+The host checks the deadline before registering a turn. At or after the deadline, the chat receives a non-retryable 409 with the expiry message and a tracking number. The existing local request receipt links that number to the manual submission, conversation, grant, host decision time and expiry. It contains no prompt or response text. A pre-turn refusal does not change the grant ledger or reserve a model call. The same check still runs at reservation and dispatch.

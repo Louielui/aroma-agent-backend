@@ -153,6 +153,57 @@ test('manual supplied identifier uses the same saved conversation and verifies b
   grant.pause(other)
 })
 
+test('manual SSE expiry is a correlated pre-turn refusal at the host deadline', async t => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'local-admission-'))
+  const env = { AROMA_DATA_DIR:dir, AROMA_ARTIFACT_DIR:dir, CHAT_BACKEND:'local',
+    LOCAL_BRAIN_ONLY:'1', LOCAL_MODEL:'qwen3.5:9b', LOCAL_APP_PORT:'18099', CONVERSATION_DEMO:'on' }
+  const previous = Object.fromEntries(Object.keys(env).map(key => [key, process.env[key]]))
+  Object.assign(process.env, env)
+  t.after(() => {
+    for (const [key, value] of Object.entries(previous)) {
+      if (value === undefined) delete process.env[key]
+      else process.env[key] = value
+    }
+    fs.rmSync(dir, {recursive:true, force:true})
+  })
+  // Host times from the PR212 admission failure. No production assets or model transport.
+  let now = Date.parse('2026-11-21T19:20:12.455Z')
+  const expiresAt = now + 900000, commit = 'b'.repeat(40)
+  const ledgerDir = path.join(dir,'owner-local-dialogue')
+  const grant = require('../../src/localBrain/dailyDialogue').createDailyDialogue({dir:ledgerDir,now:()=>now,runtimeCommit:()=>commit})
+  let calls = 0
+  const provider = {providerName:'local',model:env.LOCAL_MODEL,preflight:async()=>({available:true,provider:'local',model:env.LOCAL_MODEL}),
+    complete:async()=>{calls++; throw Error('unexpected model call')}}
+  const local = require('../../src/localBrain/production').createComposition({dataDir:dir,memoryEnabled:false,adapter:provider})
+  local.dailyDialogue = grant.run
+  const app = require('../../src/app').createApp({ownerPassword:'fixture-only',serviceToken:'fixture-only',localBrain:local})
+  const cookie = app.locals.ownerSessions.issue(), conversationId = crypto.randomUUID(), id = crypto.randomUUID()
+  grant.activate({id,commit,limit:4,windowMs:900000})
+  const ledger = () => fs.readFileSync(path.join(ledgerDir,id+'.json'))
+  const original = ledger()
+  const message = '這次對話的虛構包裹代號是「青梨-47」。請告訴我代號。'
+  for (now of [expiresAt, expiresAt+1, Date.parse('2026-11-21T19:38:16.493Z')]) {
+    const requestId = crypto.randomUUID()
+    const response = await request(app,'/api/v1/demo/intake',{cookie,headers:{accept:'text/event-stream'},
+      body:{message,conversationId,workflowRequestId:requestId,websiteRequestId:requestId,history:[]}})
+    const final = JSON.parse(response.raw.match(/data: (\{"type":"final".*\})/)[1])
+    assert.equal(final.body.error.code,'usage_expired')
+    assert.equal(final.status,409)
+    const {correlationId} = final.body.error
+    assert.match(correlationId,require('../../src/actions/contract').ID)
+    assert.equal(final.body.error.retryable,false)
+    const receipts = fs.readdirSync(path.join(dir,'local-brain')).map(name => JSON.parse(fs.readFileSync(path.join(dir,'local-brain',name))))
+    const matches = receipts.filter(row => row.admissionRefusal?.correlationId === correlationId)
+    assert.equal(matches.length,1)
+    assert.deepEqual(matches[0].admissionRefusal,{code:'usage_expired',correlationId,requestId,conversationId,grantId:id,evaluatedAt:now,expiresAt})
+    assert.equal(matches[0].requestId,requestId)
+    assert.ok(!JSON.stringify(matches[0]).includes('青梨'))
+    assert.deepEqual(ledger(),original)
+    const status = grant.status()
+    assert.deepEqual([status.turnsUsed,status.helper.reserved,status.helper.dispatched,calls],[0,0,0,0])
+  }
+})
+
 test('subscription catalogue stays compatible and local backend without local-only authority stays closed',async()=>{
  const saved={CHAT_BACKEND:process.env.CHAT_BACKEND,LOCAL_BRAIN_ONLY:process.env.LOCAL_BRAIN_ONLY};let reads=0
  try{

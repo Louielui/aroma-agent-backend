@@ -1,6 +1,7 @@
 'use strict'
 // Allocation policy for the existing UsageBudget ledger, never a second counter.
 const deployment=require('../localBrain/deploymentProfile.json')
+const {UsageBudgetError}=require('./usageError')
 const PROFILE=Object.freeze({id:'abec5422-a464-440e-898a-70d35f956478',identity:'owner-local-brain-acceptance-20261115',model:deployment.model,effort:'auto',turns:7,helper:38,website:0,digest:deployment.digest,learningSource:Object.freeze({id:'xx-a2b8cbbc-2cf9-4d4f-8876-8f9b00b49537',version:3,hash:'876e7fb2ee15a10e824a668043e7af7300be5935c325d8678416e9bc469df447'}),windowMs:900000,turnMs:90000,slots:Object.freeze(['82f85017-3b6c-4e99-8e1f-624e64834f10','82f85017-3b6c-4e99-8e1f-624e64834f11','82f85017-3b6c-4e99-8e1f-624e64834f12','82f85017-3b6c-4e99-8e1f-624e64834f13','82f85017-3b6c-4e99-8e1f-624e64834f14','82f85017-3b6c-4e99-8e1f-624e64834f15','82f85017-3b6c-4e99-8e1f-624e64834f16'].map((id,i)=>Object.freeze({id,purpose:i===6?'background':'dialogue',limit:i===6?2:6})))})
 // A definition only, not activation. Six fresh dialogue slots; no learning lane.
 const BOUNDARY_PROFILE=Object.freeze({id:'57a05d0c-f684-4a10-9f7a-899629d87dc4',identity:'owner-local-boundary-acceptance-20261115',model:deployment.model,effort:'auto',turns:6,helper:36,website:0,digest:deployment.digest,windowMs:900000,turnMs:90000,slots:Object.freeze(['ea952897-e445-4bb5-b1e6-7347d4b00901','ea952897-e445-4bb5-b1e6-7347d4b00902','ea952897-e445-4bb5-b1e6-7347d4b00903','ea952897-e445-4bb5-b1e6-7347d4b00904','ea952897-e445-4bb5-b1e6-7347d4b00905','ea952897-e445-4bb5-b1e6-7347d4b00906'].map((id,i)=>Object.freeze({id,purpose:'dialogue',limit:6,scenario:i<3?'minimum_transfer':'capability_offline',repeat:i%3+1})))})
@@ -13,7 +14,13 @@ function validate(row){
 function assertTime(row,turn,now,commit){
  if(row.stopReason)fail('usage_stopped')
  if(commit!==row.commit)fail('usage_binding_conflict')
- if(now>=row.expiresAt||turn?.enteredAt&&now>=turn.enteredAt+PROFILE.turnMs)fail('usage_expired')
+ const expiresAt=turn?.enteredAt ? Math.min(row.expiresAt,turn.enteredAt+PROFILE.turnMs) : row.expiresAt
+ if(now>=expiresAt){
+  const error=new UsageBudgetError('usage_expired')
+  error.evaluatedAt=now
+  error.expiresAt=expiresAt
+  throw error
+ }
 }
 function reserve(row,scope,input,kind,now,commit){
  const turn=row.turns.find(t=>t.id===scope.turnId),slot=PROFILE.slots.find(s=>s.id===scope.turnId);assertTime(row,turn,now,commit)

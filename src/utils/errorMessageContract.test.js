@@ -160,3 +160,14 @@ test('safe usage refusal renders its code and correlation receipt without sugges
  assert.ok(r.includes('usage_run_not_active'));assert.ok(r.includes('receipt-fixture'));assert.ok(r.includes(t('diag.usageInactive')))
  assert.equal(errorLine({error:{code:'internal_error',message:t('diag.internal'),correlationId:'private-reference'}}),t('diag.internal'))
 })
+test('chat renders the host expiry decision and its tracking number',()=>{
+ const {UsageBudgetError}=require('../actions/usageError')
+ const {handleIntakeError}=require('./intakeDiagnostics')
+ const id='aea83ade-fe16-4a27-beae-e51d99739dc8'
+ const mapped=handleIntakeError(new UsageBudgetError('usage_expired'),{correlationId:id},{sink:()=>{}})
+ const line=liftFromApp('errorLine')(JSON.parse(JSON.stringify(mapped.body)))
+ assert.ok(line.includes(t('diag.usageExpired')))
+ assert.ok(line.includes(id))
+ assert.equal(mapped.status,409)
+ assert.equal(handleIntakeError(Object.assign(Error('usage_expired'),{code:'usage_expired'}),{correlationId:id},{sink:()=>{}}).status,500)
+})

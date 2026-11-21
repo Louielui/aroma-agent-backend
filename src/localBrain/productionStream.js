@@ -19,9 +19,15 @@ function middleware({dataDir}){return(req,res,next)=>{
  }
  emit.signal=abort.signal;emit.budget={sent:0,limit:12}
  res.json=body=>{
-  if(res.destroyed)return res
+  const refusal=res.locals.dailyAdmissionRefusal
+  if(res.destroyed && !refusal)return res
   const timing={totalMs:performance.now()-start},receipt={at:new Date().toISOString(),requestId:body.requestId||null,provider:'local',model:process.env.LOCAL_MODEL,timing,trace,memoryReceipt:res.locals.memoryReceipt||null}
+  if(refusal){
+   receipt.requestId=refusal.requestId
+   receipt.admissionRefusal={...refusal,code:body.error.code}
+  }
   const dir=path.join(dataDir,'local-brain');fs.mkdirSync(dir,{recursive:true});fs.writeFileSync(path.join(dir,require('node:crypto').randomUUID()+'.json'),JSON.stringify(receipt),{flag:'wx',mode:0o600})
+  if(res.destroyed)return res
   if(stream){require('./server').writeLocalEvent(res,{type:'final',status:res.statusCode,body,timing,memoryReceipt:receipt.memoryReceipt});res.end();return res}
   return original({...body,localTiming:timing,memoryReceipt:receipt.memoryReceipt})
  }
