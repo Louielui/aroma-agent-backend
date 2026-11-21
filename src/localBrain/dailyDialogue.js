@@ -1,0 +1,62 @@
+'use strict'
+const path = require('node:path')
+const usage = require('../actions/usageBudget')
+const { UsageBudgetError } = require('../actions/usageError')
+const { hash } = require('../actions/contract')
+const { CONTROL, profile } = require('../actions/dailyDialoguePolicy')
+const { createStore } = require('../actions/store')
+const OWNER = Object.freeze({ id:'owner', role:'owner' })
+const fail = code => { throw new UsageBudgetError(code) }
+
+// Host-only management. The browser receives only run(), never activation or pause.
+function createDailyDialogue({ dir = path.join(require('../store/dataDir').resolveDataDir(),'owner-local-dialogue'),
+  now = Date.now, runtimeCommit = () => require('../governance/bootCommit').BOOT_COMMIT } = {}) {
+  const store = createStore({dir})
+  function budget(spec) {
+    return usage.createUsageBudget({ store, now, runtimeCommit, activationReady:()=>true,
+      evidenceDir:path.join(dir,'evidence'), profile:profile(spec.id,spec.limit,spec.windowMs) })
+  }
+  function current() {
+    const control = store.get(CONTROL)
+    if (!control) return null
+    if (!control.current || hash(control.current)!==control.materialHash) fail('usage_audit_unavailable')
+    return control.current
+  }
+  function activate({id, commit, limit, windowMs}) {
+    if (typeof commit!=='string' || !/^[0-9a-f]{40}$/.test(commit) || commit!==runtimeCommit()) fail('usage_binding_conflict')
+    const material = {id,commit,limit,windowMs}
+    const next = budget(material)
+    const release = store.lockRun(CONTROL)
+    try {
+      if (store.exists(id)) fail('usage_attempt_replayed')
+      const prior = current()
+      if (prior && budget(prior).readStatus().state!=='paused') fail('usage_unresolved_work')
+      next.handle(OWNER,{op:'usage_local_acceptance_activate',rootId:id,predecessorHash:hash([]),commit})
+      // Publish last. If the process stops before this write the new grant is unreachable.
+      store.save({id:CONTROL,current:material,materialHash:hash(material),timeline:[{event:'selected',prior:prior?.id||null}]})
+    } finally { release() }
+  }
+  function status() {
+    const spec=current()
+    return spec ? budget(spec).readStatus() : {state:'not_activated'}
+  }
+  function pause(id) {
+    const spec=current()
+    if (!spec || spec.id!==id) fail('usage_binding_conflict')
+    budget(spec).pauseDaily()
+  }
+  async function run(conversationId,requestId,operation) {
+    if (usage.currentScope()) fail('usage_binding_conflict')
+    const spec=current()
+    if (!spec) fail('usage_not_enabled')
+    const b=budget(spec), scope=b.enterDailyTurn(conversationId,requestId)
+    try {
+      const result=await b.withScope(scope,operation)
+      const blocked=b.turnFailure(scope)
+      if (blocked) fail(blocked)
+      return result
+    } finally { b.finishTurn(scope) }
+  }
+  return {activate,status,pause,run}
+}
+module.exports={createDailyDialogue}

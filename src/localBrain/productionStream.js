@@ -22,7 +22,7 @@ function middleware({dataDir}){return(req,res,next)=>{
   if(res.destroyed)return res
   const timing={totalMs:performance.now()-start},receipt={at:new Date().toISOString(),requestId:body.requestId||null,provider:'local',model:process.env.LOCAL_MODEL,timing,trace,memoryReceipt:res.locals.memoryReceipt||null}
   const dir=path.join(dataDir,'local-brain');fs.mkdirSync(dir,{recursive:true});fs.writeFileSync(path.join(dir,require('node:crypto').randomUUID()+'.json'),JSON.stringify(receipt),{flag:'wx',mode:0o600})
-  if(stream){require('./server').writeLocalEvent(res,{type:'final',body,timing,memoryReceipt:receipt.memoryReceipt});res.end();return res}
+  if(stream){require('./server').writeLocalEvent(res,{type:'final',status:res.statusCode,body,timing,memoryReceipt:receipt.memoryReceipt});res.end();return res}
   return original({...body,localTiming:timing,memoryReceipt:receipt.memoryReceipt})
  }
  events.run(emit,()=>{emit({type:'received',provider:'local'});next()})
