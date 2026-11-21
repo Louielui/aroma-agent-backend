@@ -87,3 +87,32 @@ remain in force. Readiness uses the original schedule completion time for expiry
 The synthetic regression exercises all 75,412 entries and detects corruption at
 the final restored file. Another fixture rejects 131,073 entries inside the byte
 envelope. Verification can use the existing backup and isolated restore.
+
+## Bounded restore writes and complete destination verification
+
+Two scheduled runs reached the existing 240-second deadline in
+`restore_files`. The first stopped after 60.688 seconds in the stage, with
+87,610 of 88,311 destination files and no destination canonical snapshot.
+The second stopped after 87.782 seconds in the stage, with all 88,774 files
+and the canonical snapshot present but without a verified restore receipt.
+Nearly 99% of the paths in each manifest held files no larger than 256 bytes.
+The retained receipts do not identify the exact operation interrupted in
+the second run.
+
+The restore writer had a serial source read and a repeated parent directory
+check for each path. Restore now reuses parent directories and runs the
+archive read, hash/length check and exclusive durable write in the existing
+8-worker, 16-pending-task executor. It still verifies the sealed archive
+before creating the destination. Workers verify the exact bytes they copy
+and complete all writes before the destination verification pass begins.
+The final pass independently reads and verifies every destination file and
+the canonical snapshot. The original manifest bytes are pinned through
+receipt generation. Late destination damage, a changed archive object or a
+changed manifest cannot produce a successful receipt.
+
+The outer 240-second deadline, original proof age, 16 MiB manifest,
+131,072-entry readiness limit, 512 MiB asset bound, four-table verification,
+credential exclusions and destination ACLs retain their existing meaning.
+Isolated synthetic tests validate this change and preserve the interrupted
+scheduled evidence. Fresh real backup and isolated restore evidence is
+required for deployment readiness.

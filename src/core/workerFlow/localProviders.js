@@ -3,7 +3,7 @@ const {createLocalCodingProvider,SELECTION}=require('../../workers/execution/loc
 const {parse,schema}=require('./reviewContract')
 // One local transport, one existing Sandbox lane, one existing work-order ledger.
 // No subscription clients, runtime endpoint overrides or fallback are selected.
-function createLocalProviders({root,executor,env={},fetchFn,onEvent}={}){
+function createLocalProviders({root,executor,env={},fetchFn,onEvent,pr205KnowledgePackDir}={}){
  if(!root||!executor?.run||!executor?.readiness||!executor?.isBusy)throw Error('local_coding_disabled')
  const provider=phase=>createLocalCodingProvider({env,fetchFn,onEvent,phase})
  const drafting=provider('local_test_draft'),coding=provider('local_coding')
@@ -19,7 +19,7 @@ function createLocalProviders({root,executor,env={},fetchFn,onEvent}={}){
  }
  return{
   selection:SELECTION,
-  draft:{preflight:()=>drafting.preflight(options),async complete(prompt,o){const contract=require('./localTestDraft'),prepared=contract.prepare(prompt),r=await drafting.complete(JSON.stringify(prepared.packet),{...o,...options,system:prepared.system,responseFormat:{type:'json_schema',schema:prepared.schema}}),projected=contract.project(r.text,prepared);return projected.origin?{...r,text:JSON.stringify(projected.generated),draftOrigin:projected.origin}:r}},
+  draft:{preflight:()=>drafting.preflight(options),async complete(prompt,o){const contract=require('./localTestDraft'),prepared=contract.prepare(prompt,{pr205KnowledgePackDir}),r=await drafting.complete(JSON.stringify(prepared.packet),{...o,...options,system:prepared.system,responseFormat:{type:'json_schema',schema:prepared.schema}}),projected=contract.project(r.text,prepared);return projected.origin?{...r,text:JSON.stringify(projected.generated),draftOrigin:projected.origin}:r}},
   isolation:()=>executor.readiness(),
   // Model metadata only; no subscription auth checks and no generation.
   async status(){await coding.preflight(options);return{local:{ready:true,...SELECTION}}},

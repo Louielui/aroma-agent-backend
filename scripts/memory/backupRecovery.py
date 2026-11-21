@@ -54,9 +54,14 @@ class RecoveryIO:
 
 
 def verify_file(target, digest, size, reason):
+    read_verified(target, digest, size, reason)
+
+
+def read_verified(target, digest, size, reason):
     content = target.read_bytes()
     if (size is not None and len(content) != size) or hashlib.sha256(content).hexdigest() != digest:
         raise ValueError(reason)
+    return content
 
 
 def encode(value):
@@ -198,9 +203,9 @@ def finish_recovery(staged, snapshot_path):
     return {"state": "saved", "path": str(target), "manifestHash": sealed["sha256"], **proof}
 
 
-def verify_recovery(source):
-    target = pathlib.Path(source).resolve()
-    sealed = json.loads((target / "manifest.json").read_text(encoding="utf-8"))
+def verified_bundle(target):
+    manifest_bytes = (target / "manifest.json").read_bytes()
+    sealed = json.loads(manifest_bytes.decode("utf-8"))
     manifest = sealed["manifest"]
     if manifest.get("format") != 1 or manifest.get("kind") != "xiangxiang-memory-recovery" or \
             hashlib.sha256(encode(manifest).encode("utf-8")).hexdigest() != sealed.get("sha256"):
@@ -218,26 +223,49 @@ def verify_recovery(source):
                 raise ValueError("invalid_recovery_path")
             seen.add(item["path"])
             checks.verify(target / "objects" / item["sha256"], item["sha256"], item["bytes"])
-    return {"state": "verified", "files": len(manifest["files"]), "tables": manifest["canonical"]["tables"],
-            "credentials": manifest["credentials"], "hindsight": manifest["hindsight"]}
+    proof = {"state": "verified", "files": len(manifest["files"]), "tables": manifest["canonical"]["tables"],
+             "credentials": manifest["credentials"], "hindsight": manifest["hindsight"]}
+    return manifest, proof, hashlib.sha256(manifest_bytes).hexdigest()
+
+
+def verify_recovery(source):
+    _, proof, _ = verified_bundle(pathlib.Path(source).resolve())
+    return proof
+
+
+def restore_asset(source, target, digest, size):
+    # Check the exact bytes used for the copy, even if an archive object
+    # changed after the separate bundle verification.
+    content = read_verified(source, digest, size, "recovery_hash_mismatch")
+    write_new(target, content)
 
 
 def restore_files(source, destination):
     target = pathlib.Path(destination).resolve()
-    proof = verify_recovery(source)
-    private_directory(target)
     bundle = pathlib.Path(source).resolve()
-    manifest = json.loads((bundle / "manifest.json").read_text(encoding="utf-8"))["manifest"]
-    with RecoveryIO() as writes:
+    manifest, proof, manifest_digest = verified_bundle(bundle)
+    private_directory(target)
+    data = target / "data"
+    if manifest["files"]:
+        data.mkdir(mode=0o700)
+    parents = {data}
+    destinations = []
+    with RecoveryIO() as copies:
         for item in manifest["files"]:
-            file = target / "data" / pathlib.Path(*asset_path(item["path"]).parts)
-            file.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
-            writes.write(file, (bundle / "objects" / item["sha256"]).read_bytes())
+            file = data / pathlib.Path(*asset_path(item["path"]).parts)
+            parent = file.parent
+            if parent not in parents:
+                parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+                parents.add(parent)
+            digest, size = item["sha256"], item["bytes"]
+            copies.submit(restore_asset, bundle / "objects" / digest, file, digest, size)
+            destinations.append((file, digest, size))
     write_new(target / "canonical.json", (bundle / "canonical.json").read_bytes())
+    # Read each destination after every output, including canonical.json, is
+    # durable. A file damaged late in the copy phase must still fail restore.
     with RecoveryIO() as checks:
-        for item in manifest["files"]:
-            file = target / "data" / pathlib.Path(*asset_path(item["path"]).parts)
-            checks.verify(file, item["sha256"], reason="recovery_restore_unconfirmed")
-    if hashlib.sha256((target / "canonical.json").read_bytes()).hexdigest() != manifest["canonical"]["sha256"]:
-        raise ValueError("recovery_restore_unconfirmed")
+        for file, digest, size in destinations:
+            checks.verify(file, digest, size, "recovery_restore_unconfirmed")
+    verify_file(target / "canonical.json", manifest["canonical"]["sha256"], None, "recovery_restore_unconfirmed")
+    verify_file(bundle / "manifest.json", manifest_digest, None, "recovery_manifest_invalid")
     return {**proof, "state": "isolated_files_restored", "path": str(target)}
