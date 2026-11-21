@@ -5,7 +5,9 @@ const {randomUUID}=require('node:crypto'),{digest}=require('../../workers/execut
 const {ID}=require('../operating/runStore'),{keys,request:validate,definition}=require('./contract')
 const {createOwnerApprovalStore}=require('../../agent/ownerApprovalStore')
 const owner=a=>{if(a?.id!=='owner'||a.role!=='owner')throw Error('permission_denied')}
-const goalKey=(goal,execution)=>digest((execution==='local'?'local\n':'')+goal.normalize('NFC').trim().replace(/\r\n/g,'\n'))
+function requestKey({bootCommit,execution,goal}){
+ return JSON.stringify([bootCommit,execution==='local'?'local':'subscription',goal.normalize('NFC').trim().replace(/\r\n/g,'\n')])
+}
 const nextAction=r=>r.workRunId?'view_coding_result':({awaiting_scope:'select_scope',awaiting_scope_approval:'approve_scope_and_usage',awaiting_approval:'approve_tests',registered:'prepare_coding',interrupted:'inspect_interruption',failed:'inspect_failure',needs_attention:'inspect_findings'}[r.state]||'view_progress')
 function createRepositoryRequests({store,enabled,lock,record,inventory,sourceFor,launch,budget,busy=()=>false,localEnabled=()=>false,approvals=createOwnerApprovalStore(),now=()=>Date.now()}){
  const tickets=new Map(),sessions=new Map()
@@ -19,9 +21,9 @@ function createRepositoryRequests({store,enabled,lock,record,inventory,sourceFor
  function request(actor,input){return guarded(actor,()=>{
   if(!keys(input,['bootCommit','requestId','goal',...(Object.hasOwn(input||{},'execution')?['execution']:[])])||!ID.test(input.requestId||'')||!/^[a-f0-9]{40}$/.test(input.bootCommit||'')||typeof input.goal!=='string'||!input.goal.trim()||input.goal.length>12000||input.goal.includes('\0'))throw Error('invalid_request')
   if(Object.hasOwn(input,'execution')&&(input.execution!=='local'||!localEnabled()))throw Error('local_coding_disabled')
-  const key=goalKey(input.goal,input.execution),rows=store.all(),prior=rows.find(r=>r.requestId===input.requestId||r.requestIds?.includes(input.requestId))
-  if(prior){if(goalKey(prior.input.goal,prior.input.execution)!==key)throw Error('request_conflict');return view(prior)}
-  const matches=rows.filter(r=>goalKey(r.input.goal,r.input.execution)===key)
+  const key=requestKey(input),rows=store.all(),prior=rows.find(r=>r.requestId===input.requestId||r.requestIds?.includes(input.requestId))
+  if(prior){if(requestKey(prior.input)!==key)throw Error('request_conflict');return view(prior)}
+  const matches=rows.filter(r=>requestKey(r.input)===key)
   if(matches.length>1)throw Error('task_selection_required')
   if(matches.length){const r=matches[0];if((r.requestIds?.length||0)>=128)throw Error('request_limit');r.requestIds=[...(r.requestIds||[r.requestId]),input.requestId];record(r,'owner_continued',{requestId:input.requestId,automaticExecution:false});return view(r)}
   const r={id:randomUUID(),workflow:'project_task',kind:'repository_repair',state:'awaiting_scope',requestId:input.requestId,requestIds:[input.requestId],input:{...input,criteria:[],editable:[]},startedAt:new Date().toISOString(),steps:[],sections:[],registration:null,workRunId:null}
@@ -31,6 +33,7 @@ function createRepositoryRequests({store,enabled,lock,record,inventory,sourceFor
  async function scope(actor,input){owner(actor);if(!enabled())throw Error('not_enabled');if(!keys(input,['id','bootCommit','criteria','editable','readonly']))throw Error('invalid_request')
   const release=lock();try{
    const r=store.get(input.id);if(r?.kind!=='repository_repair'||!['awaiting_scope','awaiting_scope_approval'].includes(r.state)||busy())throw Error('scope_unavailable')
+   if(input.bootCommit!==r.input.bootCommit)throw Error('source_changed')
    if(!Array.isArray(input.readonly))throw Error('invalid_request')
    const selected=validate({bootCommit:input.bootCommit,requestId:r.requestId,goal:r.input.goal,...(r.input.execution?{execution:r.input.execution}:{}),criteria:input.criteria,editable:input.editable,scope:{profile:'repository',files:[...input.editable,...input.readonly],budgetRoot:r.id}})
    const files=await inventory.list(input.bootCommit);if(selected.scope.files.some(n=>!files.some(f=>f.path===n&&f.eligible)))throw Error('repository_package_limit')
@@ -74,4 +77,4 @@ function createRepositoryRequests({store,enabled,lock,record,inventory,sourceFor
  }
  return{request,continue:continued,scope,authorize,view,async inventory(actor,id){owner(actor);const r=store.get(id);if(!r||r.kind!=='repository_repair')throw Error('invalid_request');return{files:await inventory.list(r.input.bootCommit)}}}
 }
-module.exports={createRepositoryRequests,goalKey,nextAction}
+module.exports={createRepositoryRequests,requestKey,nextAction}
