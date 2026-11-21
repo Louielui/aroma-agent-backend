@@ -13,6 +13,11 @@ function createOwnerCodeSource (repo, bootCommit) {
   return require('../../src/core/codeDiagnosis/source').createCodeSource({ root: repo, env: { READ_ACCESS: 'on' }, bootCommit })
 }
 
+function resolvePr205KnowledgePackDir (env, ownerHome = require('node:os').homedir()) {
+  return env.XIANGXIANG_PR205_KNOWLEDGE_PACK_DIR ??
+    path.join(ownerHome, 'Documents', 'Codex', 'local-candidates', 'pr205-followup-knowledge-pack-v1')
+}
+
 function main () {
   const repo = path.resolve(__dirname, '../..')
   const env = require('dotenv').parse(fs.readFileSync(path.join(repo, '.env')))
@@ -40,7 +45,7 @@ function main () {
   const workerFlow = createWorkflow({ dir: path.join(workerRoot, 'runs'), providers: workerProviders, enabled, invocationLedger,
     onEvent: value => memoryRuntime && memoryRuntime.event('worker', value.id + ':' + value.stage + ':' + value.at, JSON.stringify(value), 'measured_result', value.at) })
   const taskStore = require('../../src/core/operating/runStore').createRunStore({ dir: path.join(workerRoot, 'project-tasks'), workflow: 'project_task' })
-  const localProviders=env.XIANGXIANG_LOCAL_CODING==='on'?workerProviders.local():null
+  const localProviders=env.XIANGXIANG_LOCAL_CODING==='on'?workerProviders.local({pr205KnowledgePackDir:resolvePr205KnowledgePackDir(env)}):null
   const taskRegistry = require('../../src/core/projectTasks/contract').createRegistry(taskStore)
   const resolveRecipe = taskRegistry.resolve
   const repositoryBudget=require('../../src/core/projectTasks/repositoryBudget').createRepositoryBudget({modeFor:id=>taskStore.get(id)?.input.execution,dir:path.join(workerRoot,'project-task-usage'),root:repo})
@@ -111,4 +116,4 @@ function main () {
   server.listen(DEFAULT_PORT, '127.0.0.1', () => console.log('Xiangxiang subscription bridge ready on loopback.'))
 }
 if (require.main === module) main()
-module.exports = { main, createOwnerCodeSource }
+module.exports = { main, createOwnerCodeSource, resolvePr205KnowledgePackDir }

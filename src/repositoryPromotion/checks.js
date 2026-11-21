@@ -72,27 +72,47 @@ const LOCAL_TRANSPORT_BLOBS=Object.freeze({
  'src/adapters/LocalAdapter.js':'d7d840cee7352dded95fafb1d37245a4486e2a3b',
  'src/localBrain/view.html':'f0c360d1ab6f7c4a2bd758b6b34ad57ce3de7453'
 })
-function pinnedLocalAddition(piece){
- const expected=LOCAL_TRANSPORT_BLOBS[diffPath(piece)],lines=piece.split('\n'),hunks=lines.filter(l=>l.startsWith('@@'))
- if(!expected||!lines.includes('new file mode 100644')||hunks.length!==1||!/^@@ -0,0 \+1,\d+ @@$/.test(hunks[0]))return false
+function initialAdditionBytes(lines){
+ const hunks=lines.filter(l=>l.startsWith('@@'))
+ if(!lines.includes('new file mode 100644')||hunks.length!==1||!/^@@ -0,0 \+1,\d+ @@$/.test(hunks[0]))return null
  const content=lines.filter(l=>l.startsWith('+')&&!l.startsWith('+++')).map(l=>l.slice(1)),count=Number(hunks[0].match(/\+1,(\d+)/)[1])
- if(content.length!==count)return false
- const bytes=Buffer.from(content.join('\n')+(lines.includes('\\ No newline at end of file')?'':'\n'))
+ if(content.length!==count)return null
+ return Buffer.from(content.join('\n')+(lines.includes('\\ No newline at end of file')?'':'\n'))
+}
+function pinnedLocalAddition(file,lines){
+ const expected=LOCAL_TRANSPORT_BLOBS[file]
+ const bytes=expected&&initialAdditionBytes(lines)
+ if(!bytes)return false
  return require('node:crypto').createHash('sha1').update(Buffer.from('blob '+bytes.length+'\0')).update(bytes).digest('hex')===expected
+}
+const ARCHIVED_TEST_PACK='test/localBrain/fixtures/pr205-knowledge-pack-v1.json'
+// Pin the entire initial archive. Only its one existing mock request method is
+// excluded from write classification. The raw diff still feeds review and its
+// hash, and the path still requires the protected-source exception.
+function pinnedArchivedTestPack(file,lines){
+ if(file!==ARCHIVED_TEST_PACK||lines[0]!=='diff --git a/'+file+' b/'+file||
+    !lines.includes('--- /dev/null')||!lines.includes('+++ b/'+file))return false
+ const bytes=initialAdditionBytes(lines)
+ return bytes!==null&&digest(bytes)==='1c862b565150fcacffbfec6803ee734e505f6fa815efc31e9dfb9383a755f534'
 }
 function contentRiskText(pieces){
   const added=[],adjustments=[]
-  for(const piece of pieces){const lines=piece.split('\n'),localOnly=pinnedLocalAddition(piece)
+  for(const piece of pieces){const lines=piece.split('\n'),file=diffPath(piece),localOnly=pinnedLocalAddition(file,lines),archived=pinnedArchivedTestPack(file,lines)
     for(let i=0;i<lines.length;i++)if(lines[i].startsWith('+')&&!lines[i].startsWith('+++')){
       let value=lines[i].slice(1),previous=lines[i-1],before=lines[i-2],after=lines[i+1]
       const normalized=deadlineLine(value)
       if(localOnly&&/\bmethod:\s*['"]POST['"]/.test(value)){
         value=value.replace(/\bmethod:\s*['"]POST['"]/g,'pinned_local_transport_method')
-        adjustments.push({file:diffPath(piece),reason:'pinned_local_only_initial_transport'})
+        adjustments.push({file,reason:'pinned_local_only_initial_transport'})
+      }
+      const archivedMethod=/\bmethod:\s*'POST'/
+      if(archived&&archivedMethod.test(value)){
+        value=value.replace(archivedMethod,'pinned_archived_test_method')
+        adjustments.push({file,reason:'pinned_archived_test_method'})
       }
       if(normalized&&previous?.startsWith('-')&&!previous.startsWith('---')&&deadlineLine(previous.slice(1))===normalized&&before?.startsWith(' ')&&/,\s*\{\s*$/.test(before)&&after?.startsWith(' ')&&/\bheaders\s*:/.test(after)&&/\bbody\s*:/.test(after)){
         value=value.replace(/\bmethod:\s*['"](?:POST|PUT|PATCH|DELETE)['"]/,'previously_reviewed_transport_method')
-        adjustments.push({file:diffPath(piece),reason:'identical_transport_pure_deadline_change'})
+        adjustments.push({file,reason:'identical_transport_pure_deadline_change'})
       }
       added.push(value)
     }

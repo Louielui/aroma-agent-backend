@@ -17,3 +17,46 @@ test('new writes, changed methods, destination/payload changes and side-effectfu
  header+[before,'-'+old,'+'+changed.replace('270000','writeSomething()'),after].join('\n')]
  for(const diff of cases)assert.ok(classifyChanges([],contentRiskText([diff]).addedText).includes('business_data_write'),diff)
 })
+
+test('the exact archived test stays reviewable while mutations and other writes keep their normal classification',t=>{
+ const fs=require('node:fs'),os=require('node:os'),path=require('node:path')
+ const {reviewPacket}=require('./checks'),{digest}=require('./repository'),{execFileSync}=require('node:child_process')
+ const file='test/localBrain/fixtures/pr205-knowledge-pack-v1.json'
+ const text=fs.readFileSync(path.resolve(__dirname,'../..',file),'utf8').replace(/\r\n/g,'\n')
+ const root=fs.mkdtempSync(path.join(os.tmpdir(),'knowledge-pack-gate-'))
+ t.after(()=>{
+  assert.ok(path.resolve(root).startsWith(path.resolve(os.tmpdir())+path.sep))
+  fs.rmSync(root,{recursive:true,force:true})
+ })
+ const git=(...args)=>execFileSync('git',['-c','user.name=Fixture','-c','user.email=fixture@example.test','-C',root,...args],{windowsHide:true,stdio:['ignore','pipe','pipe']})
+ const ref=()=>git('rev-parse','HEAD').toString().trim()
+ const write=(name,body)=>{const dest=path.join(root,name);fs.mkdirSync(path.dirname(dest),{recursive:true});fs.writeFileSync(dest,body)}
+ const commit=(message)=>{git('add','.');git('commit','-m',message);return ref()}
+ git('init','-b','main')
+ write('base.js','module.exports=1\n')
+ const base=commit('base')
+ write(file,text)
+ const pinned=commit('add exact archive')
+ const packet=reviewPacket({root,commit:pinned,base,tests:{}})
+ const raw=git('diff','--binary','--no-ext-diff',base,pinned).toString('utf8')
+ assert.equal(packet.batches.join(''),raw)
+ assert.equal(packet.reviewedDiffHash,digest(raw))
+ assert.ok(packet.changedPaths.includes(file))
+ assert.match(raw,/method:\s*'POST'/)
+ assert.deepEqual(classifyChanges(packet.changedPaths,packet.addedText),['security_permission_change'])
+ assert.deepEqual(packet.contentAdjustments,[{file,reason:'pinned_archived_test_method'}])
+ write('src/newWriter.js',"fetch(url,{method:'POST'});\n")
+ write('src/newMigration.js','const query = "DROP TABLE records";\n')
+ const withWrites=reviewPacket({root,commit:commit('add real writes'),base,tests:{}})
+ assert.deepEqual(classifyChanges(withWrites.changedPaths,withWrites.addedText),
+  ['business_data_write','destructive_database_migration','security_permission_change'])
+ const addition=raw.replace('new file mode 100644','new file mode 100755')
+ const moved=raw.replaceAll(file,'test/localBrain/fixtures/copied-knowledge-pack.json')
+ const modified=raw.replace('PRIVATE_SENTINEL','CHANGED_SENTINEL')
+ assert.notEqual(modified,raw)
+ for(const piece of [addition,moved,modified,raw.replace(/method:\s*'POST'/,"method:'DELETE'")]){
+  const risk=contentRiskText([piece])
+  assert.ok(classifyChanges([],risk.addedText).includes('business_data_write'))
+  assert.deepEqual(risk.adjustments,[])
+ }
+})
