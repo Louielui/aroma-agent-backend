@@ -29,3 +29,14 @@ fixture result for this narrow request shape, not a default daily allowance.
 The host checks the deadline before registering a turn. At or after the deadline, the chat receives a non-retryable 409 with the expiry message and a tracking number. The existing local request receipt links that number to the manual submission, conversation, grant, host decision time and expiry. It contains no prompt or response text. A pre-turn refusal does not change the grant ledger or reserve a model call. The same check still runs at reservation and dispatch.
 
 A manual local wellbeing greeting and an immediate request to recall that greeting use the saved Owner messages for the answer and retain final verification. Attached context, mixed requests and unrelated history continue through ordinary routing. The same per-grant cap applies.
+
+## Observing a two-turn test
+Wait for the terminal SSE response or the Owner's visible response/error. Then run
+`node scripts/localBrain/dailyDialogue.cjs after-turn <grant-id> <conversation-id> <workflow-request-id>`
+once for that request. Inspect the phase receipts before sending the next question.
+Use ordinary status only at idle management boundaries. Do not poll the mutable
+grant JSON, pipe Get-Content over it or hold an open handle during inference.
+A pre-admission refusal has no registered turn; inspect its correlation receipt.
+Daily ledger I/O failures retain their operation and bounded OS code in private
+store-failure evidence when storage permits. The original refusal and reservation
+remain authoritative. A missing diagnostic leaves the underlying cause unknown.

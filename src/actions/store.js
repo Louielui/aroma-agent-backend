@@ -1,14 +1,41 @@
 'use strict'
 const fs = require('node:fs'), path = require('node:path'), { randomUUID } = require('node:crypto'), { ID, target } = require('./contract')
+// Keep only operating-system enums. OS messages and paths may identify private data.
+const errno = require('node:os').constants.errno
+function fileFailure(operation, cause) {
+  return Object.assign(Error('audit_unavailable'), {
+    fileOperation:operation, osCode:Object.hasOwn(errno,cause?.code) ? cause.code : 'UNKNOWN'
+  })
+}
 function createStore ({ dir = path.join(require('../store/dataDir').resolveDataDir(),'scheduler-action-runs') } = {}) {
   const file = id => { if (!ID.test(id || '')) throw Error('invalid_request'); return path.join(dir,id+'.json') }
   const exists = id => {try{fs.statSync(file(id));return true}catch(e){if(e.code==='ENOENT')return false;throw Error('audit_unavailable')}}
-  const get = id => { try { const r=JSON.parse(fs.readFileSync(file(id),'utf8')); if(r.id!==id || !Array.isArray(r.timeline))throw Error('invalid_run'); return r } catch(e){if(e.code==='ENOENT')return null;throw Error('audit_unavailable')} }
+  const get = id => {
+    let bytes
+    try { bytes=fs.readFileSync(file(id),'utf8') }
+    catch(e) { if(e.code==='ENOENT')return null; throw fileFailure('read',e) }
+    try {
+      const row=JSON.parse(bytes)
+      if(row.id!==id || !Array.isArray(row.timeline))throw Error('invalid_run')
+      return row
+    } catch(e) { throw fileFailure('decode',e) }
+  }
   const save = r => {
-    fs.mkdirSync(dir,{recursive:true}); const dest=file(r.id),tmp=dest+'.'+randomUUID()+'.tmp'
-    let fd
-    try {fd=fs.openSync(tmp,'wx',0o600);fs.writeFileSync(fd,JSON.stringify(r));fs.fsyncSync(fd);fs.closeSync(fd);fd=null;fs.renameSync(tmp,dest)}
-    catch(_){if(fd!=null)fs.closeSync(fd);try{fs.unlinkSync(tmp)}catch(_){}throw Error('audit_unavailable')}
+    const dest=file(r.id),tmp=dest+'.'+randomUUID()+'.tmp'
+    let fd,operation='mkdir',created=false
+    try {
+      fs.mkdirSync(dir,{recursive:true})
+      operation='open'; fd=fs.openSync(tmp,'wx',0o600); created=true
+      operation='encode'; const bytes=JSON.stringify(r)
+      operation='write'; fs.writeFileSync(fd,bytes)
+      operation='fsync'; fs.fsyncSync(fd)
+      operation='close'; fs.closeSync(fd); fd=null
+      operation='rename'; fs.renameSync(tmp,dest)
+    } catch(e) {
+      if(fd!=null)try{fs.closeSync(fd)}catch{}
+      if(created)try{fs.unlinkSync(tmp)}catch{}
+      throw fileFailure(operation,e)
+    }
   }
   const list = () => {try{return fs.readdirSync(dir).filter(n=>ID.test(n.slice(0,-5))&&n.endsWith('.json')).map(n=>get(n.slice(0,-5)))}catch(e){if(e.code==='ENOENT')return [];throw Error('audit_unavailable')}}
   function lock (targetId) {

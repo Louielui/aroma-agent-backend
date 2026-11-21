@@ -112,3 +112,55 @@ test('coding, memory, website and cloud requests cannot spend the daily allowanc
   }
   assert.equal(f.open().status().helper.reserved,0)
 })
+
+test('observing a turn opens no ledger before its matching terminal workflow receipt', async t => {
+  const f = fixture(t), service = f.dialogue, requestId = randomUUID()
+  const workflow = require('../core/operating/runStore').createRunStore({dir:path.join(f.dir,'workflows'),workflow:'investigation'})
+  const row = {id:requestId, workflow:'investigation', conversationId:f.conversation, state:'planning', steps:[], sections:[]}
+  workflow.save(row)
+  f.activate(2)
+  const originalRead = fs.readFileSync
+  let ledgerReads = 0
+  t.mock.method(fs,'readFileSync',function(file,...args) {
+    if (typeof file === 'string' && path.dirname(file) === f.dir) ledgerReads++
+    return originalRead.call(fs,file,...args)
+  })
+  const observe = () => service.afterTurn(f.id, f.conversation, requestId, workflow)
+  assert.throws(observe,/turn_not_complete/)
+  assert.equal(ledgerReads,0)
+  await service.run(f.conversation,requestId,() => f.adapter.complete('hello',{invocationPhase:'answer'}))
+  row.state = 'completed'
+  workflow.save(row)
+  assert.throws(() => service.afterTurn(f.id,randomUUID(),requestId,workflow),/turn_not_complete/)
+  assert.throws(() => service.afterTurn(randomUUID(),f.conversation,requestId,workflow),/usage_binding_conflict/)
+  const result = observe()
+  assert.equal(result.turn.requestId, requestId)
+  assert.deepEqual(result.attempts.map(a=>[a.phase,a.state]),[['answer','succeeded']])
+  assert.ok(ledgerReads>0)
+})
+
+test('a refused daily input audit preserves the file operation and errno without releasing its reservation', async t => {
+  const f = fixture(t)
+  f.activate(1)
+  const originalRename = fs.renameSync
+  const grantFile = path.join(f.dir, f.id+'.json')
+  t.mock.method(fs,'renameSync',function(source,dest) {
+    if (dest === grantFile) {
+      const entry = JSON.parse(fs.readFileSync(source,'utf8')).timeline.at(-1)
+      if (entry.event==='evidence_digest' && entry.kind==='local_model_input')
+        throw Object.assign(Error('private fake path'), {code:'EPERM'})
+    }
+    return originalRename.call(fs,source,dest)
+  })
+  await assert.rejects(f.turn('sensitive fixture'),/usage_audit_unavailable/)
+  const status=f.open().status(), helper=status.helper
+  assert.deepEqual([helper.reserved,helper.failed,helper.dispatched,helper.available],[1,1,0,0])
+  assert.equal(f.sends.length,0)
+  const directory=path.join(f.dir,'evidence')
+  const files=fs.readdirSync(directory).filter(file=>file.startsWith('store-failure-'))
+  assert.equal(files.length,1)
+  const text=fs.readFileSync(path.join(directory,files[0]),'utf8'), diag=JSON.parse(text)
+  assert.deepEqual([diag.fileOperation,diag.osCode,diag.event,diag.requestId,diag.rootId],
+    ['rename','EPERM','evidence_digest',status.turns[0].requestId,f.id])
+  assert.doesNotMatch(text,/private fake path|sensitive fixture/)
+})

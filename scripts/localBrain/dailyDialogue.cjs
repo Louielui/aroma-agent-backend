@@ -12,6 +12,11 @@ async function main([op,...args]) {
     console.log(JSON.stringify({state:status.state,id:status.id,expiresAt:status.expiresAt,helper:status.helper}))
     return
   }
+  if (op==='after-turn' && args.length===3) {
+    const workflow=require('../../src/core/operating/runStore').createRunStore({workflow:'investigation'})
+    console.log(JSON.stringify(service.afterTurn(...args,workflow)))
+    return
+  }
   if (!process.stdin.isTTY || !process.stdout.isTTY) throw Error('owner_terminal_required')
   const [id,commit,limitText,windowText]=args
   if (!ID.test(id||'') || !BOOT_COMMIT || commit!==BOOT_COMMIT) throw Error('exact_local_source_required')
