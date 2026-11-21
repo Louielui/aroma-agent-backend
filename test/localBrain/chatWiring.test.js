@@ -75,7 +75,8 @@ test('authenticated manual SSE chat uses the independent cap across two saved tu
  assert.equal(grant.status().helper.dispatched,calls.length)
 })
 
-test('manual supplied identifier uses the same saved conversation and verifies both replies within four native calls', async t => {
+for (const greeting of [false, true]) test(
+  'manual ' + (greeting ? 'wellbeing greeting' : 'supplied identifier') + ' and saved follow-up each get a verified reply within four native calls', async t => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'owner-identifier-chat-'))
   const profile = require('../../src/localBrain/deploymentProfile.json')
   const env = { AROMA_DATA_DIR: dir, AROMA_ARTIFACT_DIR: dir, CHAT_BACKEND: 'local', LOCAL_BRAIN_ONLY: '1',
@@ -93,10 +94,10 @@ test('manual supplied identifier uses the same saved conversation and verifies b
     fs.rmSync(dir, {recursive:true, force:true})
   })
   Object.assign(process.env, env)
-  const first = '這次對話的虛構包裹代號是「青梨-47」。請告訴我代號。'
-  const second = '上一輪的虛構包裹代號是什麼？'
+  const first = greeting ? '香香你好嗎？' : '這次對話的虛構包裹代號是「青梨-47」。請告訴我代號。'
+  const second = greeting ? '我剛才問了你什麼？' : '上一輪的虛構包裹代號是什麼？'
   const phases = []
-  let answer = '青梨-47'
+  let answer = greeting ? '你好，很高興跟你聊天。' : '青梨-47'
   let memoryReads = 0
   const formats = []
   let verifierDecision = {decision:'allow_final',question:null}
@@ -137,13 +138,18 @@ test('manual supplied identifier uses the same saved conversation and verifies b
   const cookie = app.locals.ownerSessions.issue(), conversationId = crypto.randomUUID(), id = crypto.randomUUID()
   grant.activate({id,commit:'b'.repeat(40),limit:4,windowMs:900000})
   for (const message of [first, second]) {
+    if (greeting && message === second) answer = '你剛才問我「香香你好嗎？」。'
     const requestId = crypto.randomUUID()
     const response = await request(app,'/api/v1/demo/intake',{cookie,headers:{accept:'text/event-stream'},
       body:{message,conversationId,workflowRequestId:requestId,websiteRequestId:requestId,history:[]}})
     const final = JSON.parse(response.raw.match(/data: (\{"type":"final".*\})/)[1]).body
-    assert.equal(final.reply, '青梨-47', JSON.stringify({error:final.error,phases}))
+    assert.equal(final.reply, answer, JSON.stringify({error:final.error,phases}))
   }
   assert.deepEqual(phases, ['answer','final_verification','answer','final_verification'])
+  const spent = grant.status()
+  assert.deepEqual(spent.attempts.map(a => [a.phase, a.state]), phases.map(phase => [phase, 'succeeded']))
+  assert.equal(spent.helper.available, 0)
+  assert.equal(spent.helper.unresolved, 0)
   grant.pause(id)
   const status = grant.status()
   assert.deepEqual([status.state,status.turnsUsed,status.helper.reserved,status.helper.dispatched,status.helper.available],['paused',2,4,4,0])
@@ -160,6 +166,9 @@ test('manual supplied identifier uses the same saved conversation and verifies b
   assert.equal(final.reply, verifierDecision.question)
   assert.deepEqual(phases.slice(4), ['answer','final_verification'])
   grant.pause(other)
+
+  assert.equal(memoryReads, 0)
+  if (greeting) return
 
   verifierDecision = {decision:'allow_final',question:null}
   for (answer of ['青梨 -47', '青梨-47，之前叫靛藍628']) {

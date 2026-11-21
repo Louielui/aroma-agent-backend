@@ -67,4 +67,17 @@ function suppliedIdentifierValue(message, history, token) {
   return followup && followup[1] === binding[1] && followup[2] === binding[2] ? literal : null
 }
 
-module.exports = {fromSavedConversation, checkConversationClaim, promptFacts, ownerSources, suppliedIdentifierValue}
+// A wellbeing greeting needs no records. A request to recall that greeting
+// is bound to the immediately preceding Owner turn in the saved transcript.
+function isWellbeingExchange(message, history, token) {
+  const owners = ownerSources(token)
+  if (!owners || owners.at(-1) !== message || !Array.isArray(history)) return false
+  if (!/^(?:香香[，, ]*)?你好嗎[？?！!。]?$/u.test(owners[0])) return false
+  if (owners.length === 1) return history.length === 0
+  return owners.length === 2 && history.length === 2 &&
+    history[0]?.role === 'user' && history[0].text === owners[0] &&
+    history[1]?.role === 'assistant' &&
+    /^(?:我剛才問了?你什麼|我剛剛問了?你什麼)[？?]?$/u.test(message)
+}
+
+module.exports = {fromSavedConversation, checkConversationClaim, promptFacts, ownerSources, suppliedIdentifierValue, isWellbeingExchange}
