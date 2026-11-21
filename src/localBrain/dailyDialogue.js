@@ -2,7 +2,7 @@
 const path = require('node:path')
 const usage = require('../actions/usageBudget')
 const { UsageBudgetError } = require('../actions/usageError')
-const { hash } = require('../actions/contract')
+const { hash, ID } = require('../actions/contract')
 const { CONTROL, profile } = require('../actions/dailyDialoguePolicy')
 const { createStore } = require('../actions/store')
 const OWNER = Object.freeze({ id:'owner', role:'owner' })
@@ -45,11 +45,26 @@ function createDailyDialogue({ dir = path.join(require('../store/dataDir').resol
     if (!spec || spec.id!==id) fail('usage_binding_conflict')
     budget(spec).pauseDaily()
   }
-  async function run(conversationId,requestId,operation) {
-    if (usage.currentScope()) fail('usage_binding_conflict')
-    const spec=current()
-    if (!spec) fail('usage_not_enabled')
-    const b=budget(spec), scope=b.enterDailyTurn(conversationId,requestId)
+  async function run(conversationId,requestId,operation,onAdmissionRefusal) {
+    let spec, b, scope
+    try {
+      if (usage.currentScope()) fail('usage_binding_conflict')
+      spec=current()
+      if (!spec) fail('usage_not_enabled')
+      b=budget(spec)
+      scope=b.enterDailyTurn(conversationId,requestId)
+    } catch (error) {
+      // Only admission failures reach this observer. The intake mapper owns the public code.
+      const expiry = error instanceof UsageBudgetError && error.code === 'usage_expired'
+      onAdmissionRefusal?.({
+        grantId:typeof spec?.id === 'string' && ID.test(spec.id) ? spec.id : null,
+        requestId:typeof requestId === 'string' && ID.test(requestId) ? requestId : null,
+        conversationId:typeof conversationId === 'string' && ID.test(conversationId) ? conversationId : null,
+        evaluatedAt:expiry ? error.evaluatedAt : now(),
+        expiresAt:expiry ? error.expiresAt : null
+      })
+      throw error
+    }
     try {
       const result=await b.withScope(scope,operation)
       const blocked=b.turnFailure(scope)

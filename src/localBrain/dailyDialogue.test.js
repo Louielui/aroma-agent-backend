@@ -26,7 +26,7 @@ function fixture(t) {
   const dialogue = open()
   const turn = (prompt, service = dialogue) => service.run(conversation, randomUUID(), () => adapter.complete(prompt, {invocationPhase:'answer'}))
   const activate = (limit = 3) => dialogue.activate({id,commit,limit,windowMs:60000})
-  return {dialogue, open, turn, activate, sends, dir, id, commit, conversation, expire:()=>{now+=60000}}
+  return {dialogue, open, turn, activate, adapter, sends, dir, id, commit, conversation, expire:()=>{now+=60000}, advance:ms=>{now+=ms}}
 }
 test('default off, mock multi-turn local replies, durable ceiling across restart plus pause',async t=>{
   const f=fixture(t)
@@ -50,6 +50,20 @@ test('expiry, invalid cap and wrong source fail before inference',async t=>{
   f.activate(); f.expire()
   await assert.rejects(f.turn('late'),/usage_expired/)
   assert.equal(f.sends.length,0)
+})
+test('one millisecond before expiry a manual answer and final check can still complete',async t=>{
+  const f=fixture(t)
+  f.activate(2)
+  f.advance(59999)
+  await f.dialogue.run(f.conversation,randomUUID(),async()=>{
+    for(const phase of ['answer','final_verification']){
+      await f.adapter.complete('fixture request',{invocationPhase:phase})
+    }
+  })
+  const row=f.open().status()
+  assert.equal(row.turnsUsed,1)
+  assert.equal(f.sends.length,2)
+  assert.deepEqual(row.attempts.map(a=>[a.phase,a.state]),[['answer','succeeded'],['final_verification','succeeded']])
 })
 test('an Owner pause closes admission immediately while an earlier turn is still draining',async t=>{
   const f=fixture(t);f.activate()

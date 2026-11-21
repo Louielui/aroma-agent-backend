@@ -1190,7 +1190,9 @@ function createDemoRouter ({ dailyDialogue = null, getAdapterFn = getAdapterForL
             return res.status(403).json({error:{code:'owner_session_required',message:t('diag.usageScope'),retryable:false}})
           }
           if (manual) opts.manualLocalDialogue = true
-          result = manual ? await dailyDialogue(req.body.conversationId, foregroundId, intake) : await intake()
+          result = manual ? await dailyDialogue(req.body.conversationId, foregroundId, intake, refusal => {
+            res.locals.dailyAdmissionRefusal = { ...refusal, correlationId }
+          }) : await intake()
         }
         catch (e) { if (investigationStarted) { try { investigationReceipts.finish(investigationId, null, true) } catch (_) {} } throw e }
         if (interactionMode === 'chat' && result?.capabilityGap && capabilityGaps && isValidConversationId(req.body.conversationId)) {
