@@ -117,7 +117,22 @@ function createUsageBudget({store,evidenceDir,now=Date.now,runtimeCommit=()=>req
  const acceptsModel=input=>(profile.models||[{model:profile.model,effort:profile.effort}]).some(m=>m.model===input.model&&m.effort===input.effort)
  const profileHash=hash(profile)
  const extensionTickets=new Map(),isDevelopment=profile.identity==='owner-repository-repair:'+profile.id
- function load(locked=false){if(!locked){try{if(store.exists?.(profile.id)===false)return null}catch{throw error('usage_audit_unavailable')};return change(r=>r)}let r;try{r=store.get(profile.id)}catch{throw error('usage_audit_unavailable')};if(!r)return null
+ // A failed ledger cannot reliably record its own failure. Write one restricted
+ // diagnostic alongside the existing evidence, then propagate the original refusal.
+ function ledgerFailure(cause,event,facts={}) {
+  const failure=error('usage_audit_unavailable')
+  if(!dailyPolicy || !evidenceDir || !cause?.fileOperation)return failure
+  const scope=context.getStore()?.scope, id=crypto.randomUUID()
+  const diagnostic={kind:'usage_store_failure',at:new Date(now()).toISOString(),rootId:profile.id,
+   turnId:scope?.turnId||facts.turnId||null,requestId:scope?.requestId||null,
+   event,fileOperation:cause.fileOperation,osCode:cause.osCode}
+  try{
+   fs.mkdirSync(evidenceDir,{recursive:true})
+   fs.writeFileSync(path.join(evidenceDir,'store-failure-'+id+'.json'),JSON.stringify(diagnostic),{flag:'wx',mode:0o600})
+  }catch{ /* The refusal still applies when diagnostic storage is unavailable. */ }
+  return failure
+ }
+ function load(locked=false){if(!locked){try{if(store.exists?.(profile.id)===false)return null}catch{throw error('usage_audit_unavailable')};return change(r=>r)}let r;try{r=store.get(profile.id)}catch(e){throw ledgerFailure(e,'load')};if(!r)return null
   if(r.profileHash!==profileHash||r.identity!==profile.identity||JSON.stringify(r.limits)!==JSON.stringify(limits)||!['active','paused','closed'].includes(r.state)||!Array.isArray(r.turns)||r.turns.length>limits.turns||!Array.isArray(r.attempts)||!Array.isArray(r.children)||r.children.length>128||new Set(r.turns.map(t=>t.id)).size!==r.turns.length||new Set(r.attempts.map(t=>t.id)).size!==r.attempts.length||r.attempts.filter(a=>a.kind==='helper').length>limits.helper+(r.extension&&isDevelopment?2:0)||r.attempts.filter(a=>a.kind==='website').length>limits.website||r.attempts.some(a=>!ID.test(a.id||'')||!['helper','website'].includes(a.kind)||!['reserved','dispatched','succeeded','failed'].includes(a.state)||!r.turns.some(t=>t.id===a.turnId)||a.kind==='helper'&&!acceptsModel(a)))throw error('usage_audit_unavailable')
   try{if(r.extension&&(!isDevelopment||!extension.validGrant(r,profileHash))||!r.extension&&r.attempts.some(a=>a.extensionId||a.allocation))throw error('usage_audit_unavailable')}catch{throw error('usage_audit_unavailable')}
   if(r.turns.some(t=>!ID.test(t.id||'')||!ID.test(t.conversationId||'')||typeof t.entered!=='boolean'||typeof t.finished!=='boolean'||t.entered&&(!ID.test(t.requestId||'')||!Number.isSafeInteger(t.hostPid)))||r.children.some(c=>!ID.test(c.id||'')||typeof c.finished!=='boolean'||!r.turns.some(t=>t.id===c.turnId))||r.attempts.some(a=>!Number.isSafeInteger(a.hostPid)||a.dispatchedAt&&!['cli_process_started','provider_turn_start',...(isLocal?['local_http_send']:[])].includes(a.dispatchBasis)))throw error('usage_audit_unavailable')
@@ -147,7 +162,7 @@ function createUsageBudget({store,evidenceDir,now=Date.now,runtimeCommit=()=>req
    try{return fn(load(true))}finally{const cleanup=releaseAll();if(cleanup)throw lockFailure('usage_audit_unavailable',cleanup,'release',failedRoot,attempts,performance.now()-started)}
   }
  }
- function save(r,event,facts={}){r.timeline.push({at:new Date(now()).toISOString(),event,...facts});try{store.save(r)}catch{throw error('usage_audit_unavailable')}}
+ function save(r,event,facts={}){r.timeline.push({at:new Date(now()).toISOString(),event,...facts});try{store.save(r)}catch(e){throw ledgerFailure(e,event,facts)}}
  function assertScope(r,s){if(!r||r.state!=='active')throw error('usage_run_not_active');if(!validScope(s)||s.rootId!==r.id)throw error('usage_scope_required');const t=r.turns.find(t=>t.id===s.turnId),child=s.childId&&r.children.find(c=>c.id===s.childId&&c.turnId===s.turnId&&!c.finished);if(!t||!t.entered||t.finished&&!child||t.conversationId!==s.conversationId||t.requestId!==s.requestId||s.childId&&!child)throw error('usage_scope_required');return t}
  function statusOf(r){if(!r)return{state:'not_activated',id:profile.id,identity:profile.identity,limits:{...limits},turnsUsed:0,helper:{reserved:0,available:limits.helper},website:{reserved:0,available:limits.website}}
   const counts=kind=>{const a=r.attempts.filter(a=>a.kind===kind),dispatched=a.filter(v=>v.dispatchedAt).length,cap=r.limits[kind]+(kind==='helper'&&r.extension?2:0),expired=kind==='helper'&&r.extension&&now()>=r.extension.expiresAt;return{limit:cap,reserved:a.length,dispatched,failed:a.filter(v=>v.state==='failed').length,succeeded:a.filter(v=>v.state==='succeeded').length,unresolved:a.filter(v=>['reserved','dispatched'].includes(v.state)).length,reservedNotDispatched:a.length-dispatched,available:isLocal&&(r.stopReason||now()>=r.expiresAt)?0:expired?0:cap-a.length,...(isLocal&&r.stopReason?{unusedStopped:cap-a.length}:{}),...(expired?{unusedExpired:cap-a.length}:{})}}

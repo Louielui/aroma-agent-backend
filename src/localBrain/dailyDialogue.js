@@ -40,6 +40,22 @@ function createDailyDialogue({ dir = path.join(require('../store/dataDir').resol
     const spec=current()
     return spec ? budget(spec).readStatus() : {state:'not_activated'}
   }
+  // Operator observation is gated on a terminal HTTP workflow. finishTurn has
+  // already returned before demoRouter persists that workflow's terminal state.
+  function afterTurn(grantId,conversationId,requestId,workflow) {
+    if (![grantId,conversationId,requestId].every(id=>typeof id==='string' && ID.test(id))) fail('invalid_request')
+    const receipt=workflow.get(requestId)
+    if (!receipt || receipt.conversationId!==conversationId || !['completed','failed'].includes(receipt.state))
+      fail('turn_not_complete')
+    const spec=current()
+    if (spec?.id!==grantId) fail('usage_binding_conflict')
+    // Use the ledger writer's lock for a single snapshot, even if a later
+    // request has just begun. No PowerShell file handle spans a model call.
+    const snapshot=budget(spec).status()
+    const turn=snapshot.turns.find(t=>t.conversationId===conversationId && t.requestId===requestId)
+    if (!turn?.finished) fail('turn_not_complete')
+    return {grantId,turn,attempts:snapshot.attempts.filter(a=>a.turnId===turn.id),helper:snapshot.helper}
+  }
   function pause(id) {
     const spec=current()
     if (!spec || spec.id!==id) fail('usage_binding_conflict')
@@ -72,6 +88,6 @@ function createDailyDialogue({ dir = path.join(require('../store/dataDir').resol
       return result
     } finally { b.finishTurn(scope) }
   }
-  return {activate,status,pause,run}
+  return {activate,status,afterTurn,pause,run}
 }
 module.exports={createDailyDialogue}

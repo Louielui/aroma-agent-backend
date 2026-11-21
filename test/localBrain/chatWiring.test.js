@@ -82,7 +82,8 @@ for (const greeting of [false, true]) test(
   const env = { AROMA_DATA_DIR: dir, AROMA_ARTIFACT_DIR: dir, CHAT_BACKEND: 'local', LOCAL_BRAIN_ONLY: '1',
     LOCAL_MODEL: profile.model, LOCAL_MODEL_DIGEST: profile.digest, LOCAL_MODEL_CONTEXT: String(profile.context),
     LOCAL_APP_PORT: '18099', CONVERSATION_DEMO: 'on', TURN_ROUTER: 'on', A4_KNOWLEDGE_ROUTING: 'on',
-    GOAL_DECOMPOSER: 'on', READ_ACCESS: 'on', XIANGXIANG_MEMORY: 'on', CONTEXT_DECISIONS_OPENAI: 'on' }
+    GOAL_DECOMPOSER: 'on', READ_ACCESS: 'on', XIANGXIANG_MEMORY: 'on', CONTEXT_DECISIONS_OPENAI: 'on',
+    CONTEXT_XIANGXIANG_OPERATIONS: 'on' }
   const previous = Object.fromEntries(Object.keys(env).map(key => [key, process.env[key]]))
   const originalFetch = global.fetch
   t.after(() => {
@@ -144,6 +145,14 @@ for (const greeting of [false, true]) test(
       body:{message,conversationId,workflowRequestId:requestId,websiteRequestId:requestId,history:[]}})
     const final = JSON.parse(response.raw.match(/data: (\{"type":"final".*\})/)[1]).body
     assert.equal(final.reply, answer, JSON.stringify({error:final.error,phases}))
+    if (greeting) {
+      const {execFileSync}=require('node:child_process')
+      const receipt=JSON.parse(execFileSync(process.execPath,[
+        path.join(root,'scripts/localBrain/dailyDialogue.cjs'),'after-turn',id,conversationId,requestId
+      ],{encoding:'utf8',windowsHide:true}))
+      assert.equal(receipt.turn.finished,true)
+      assert.deepEqual(receipt.attempts.map(a=>[a.phase,a.state]),[['answer','succeeded'],['final_verification','succeeded']])
+    }
   }
   assert.deepEqual(phases, ['answer','final_verification','answer','final_verification'])
   const spent = grant.status()
