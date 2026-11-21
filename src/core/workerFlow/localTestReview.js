@@ -26,7 +26,13 @@ function prepare(input){
  }
  const expectedFailureSubject=require('./localCaseBaseline').expectedFailureSubject(packet.baselineProof)
  const lines=target.flatMap(f=>f.lines)
- const eligibleRedIds=expectedFailureSubject?lines.filter(line=>line.kind==='assertion'&&/^assert\.(?:equal|deepEqual)\(/.test(line.text)&&line.subjects.length===1&&line.subjects[0].file===expectedFailureSubject.file&&line.subjects[0].symbol===expectedFailureSubject.symbol).map(line=>line.anchorId):null
+ const literalRed=require('./localPr205Draft').reviewRed(input)
+ let eligibleRedIds=expectedFailureSubject?lines.filter(line=>line.kind==='assertion'&&/^assert\.(?:equal|deepEqual)\(/.test(line.text)&&line.subjects.length===1&&line.subjects[0].file===expectedFailureSubject.file&&line.subjects[0].symbol===expectedFailureSubject.symbol).map(line=>line.anchorId):null
+ if(literalRed){
+  eligibleRedIds=lines.filter(line=>line.kind==='assertion'&&line.text===literalRed&&line.subjects[0]?.symbol==='requestKind').map(line=>line.anchorId)
+  if(eligibleRedIds.length!==1)invalid('red_anchor')
+  system+=' For PR205, use the sole eligible RED anchor. The unchanged requestKind returns null for the exact English missing-parts phrase, and the direct result assertion expects inspect.'
+ }
  if(expectedFailureSubject){packet.baseline.expectedFailureSubject=expectedFailureSubject;system+=' For this source-bound recipe, expected_failure must cite a direct '+expectedFailureSubject.symbol+' result assertion for the new export. Existing export assertions are regression evidence only.'}
  return{packet,schema:schema(lines.map(l=>l.anchorId),criteria.length,eligibleRedIds),system,eligibleRedIds}
 }
