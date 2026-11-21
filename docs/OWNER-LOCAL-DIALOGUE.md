@@ -16,6 +16,10 @@ immediately following turn. When the saved Owner messages establish that scope
 and the normal conversation router and final verifier are enabled, business
 intent voting and goal planning add no source selection. Both turns still go
 through answer generation, final knowledge verification and the native budget.
+For this literal-only request, the answer prompt uses the saved Owner messages
+and omits cross-conversation recall. The reply schema binds the exact quoted
+identifier. Even when the verifier permits a final answer, a changed identifier
+or additional prose cannot be released. A clarification can still withhold it.
 Mixed requests, attachments, unsupported wording and missing saved provenance
 use the ordinary pipeline. Two verified replies in four calls are an offline
 fixture result for this narrow request shape, not a default daily allowance.
