@@ -6,7 +6,7 @@ test('explicit local Node intake keeps engine, goal and dedup identity without g
  assert.deepEqual(classify(goal),{op:'request',goal,execution:'local'})
  for(const q of ['Someone said: '+goal,'"'+goal+'"','Can local Node repair code?','本機修碼可以嗎？','不要本機修正，先解釋'])assert.equal(classify(q),null)
  assert.equal(classify('ask Codex to fix this').execution,undefined)
- const service=createChatTasks({bootCommit:'a'.repeat(40),env:{READ_ACCESS:'on',XIANGXIANG_LOCAL_CODING:'on'},request:async b=>{seen.push(b);return{run:{id,workflow:'project_task',requestId,input:{goal,execution:'local'}}}}})
+ const service=createChatTasks({bootCommit:'a'.repeat(40),env:{READ_ACCESS:'on',XIANGXIANG_LOCAL_CODING:'on'},request:async b=>{seen.push(b);return{run:{id,workflow:'project_task',requestId,input:{goal,execution:'local',bootCommit:b.bootCommit}}}}})
  await service.prepare({id:'owner',role:'owner'},{message:goal,requestId});assert.equal(seen[0].execution,'local');assert.equal(seen[0].op,'request')
  await assert.rejects(service.prepare({id:'staff',role:'staff'},{message:goal,requestId}),/permission_denied/)
  const off=createChatTasks({bootCommit:'a'.repeat(40),env:{READ_ACCESS:'on'},request:()=>{throw Error('no transport')}});await assert.rejects(off.prepare({id:'owner',role:'owner'},{message:goal,requestId}),/local_coding_disabled/)

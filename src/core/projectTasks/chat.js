@@ -17,10 +17,12 @@ function createChatTasks({bootCommit,env=process.env,request=input=>require('../
   if(env.READ_ACCESS!=='on')throw Error('not_enabled')
   if(!input||Object.keys(input).sort().join(',')!=='message,requestId'||!ID.test(input.requestId||''))throw Error('invalid_request')
   const intent=classify(input.message);if(!intent)throw Error('invalid_request');if(intent.execution==='local'&&env.XIANGXIANG_LOCAL_CODING!=='on')throw Error('local_coding_disabled')
-  const v=await request({...intent,requestId:input.requestId,...(intent.op==='request'?{bootCommit}:{})})
+  const command={...intent,requestId:input.requestId,...(intent.op==='request'?{bootCommit}:{})}
+  const v=await request(command)
   if(v.error)throw Error(v.error)
   if(v.run?.workflow!=='project_task'||!ID.test(v.run.id||''))throw Error('invalid_worker_result')
-  if(intent.op==='continue'?v.run.id!==intent.id:typeof v.run.input?.goal!=='string'||require('./repositoryRequest').goalKey(v.run.input.goal,v.run.input.execution)!==require('./repositoryRequest').goalKey(intent.goal,intent.execution)||!(v.run.requestId===input.requestId||v.run.requestIds?.includes(input.requestId)))throw Error('invalid_worker_result')
+  const {requestKey}=require('./repositoryRequest')
+  if(intent.op==='continue'?v.run.id!==intent.id:typeof v.run.input?.goal!=='string'||requestKey(v.run.input)!==requestKey(command)||!(v.run.requestId===input.requestId||v.run.requestIds?.includes(input.requestId)))throw Error('invalid_worker_result')
   return{run:v.run,nextAction:v.nextAction,reused:v.run.requestId!==input.requestId}
  }}
 }
