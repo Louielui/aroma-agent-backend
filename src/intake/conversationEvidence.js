@@ -51,4 +51,19 @@ function checkConversationClaim(clause, token) {
 // cannot introduce counts into a prompt or attest business records.
 function promptFacts(token){return token&&typeof token==='object'?issued.get(token)||null:null}
 function ownerSources(token){return token&&typeof token==='object'?ownerTranscripts.get(token)||null:null}
-module.exports = {fromSavedConversation, checkConversationClaim, promptFacts, ownerSources}
+
+// Only a complete literal restatement, or its immediate same-subject follow-up,
+// establishes that both the subject and its value already came from the Owner.
+// Recognizing it can remove planning work; it supplies no text to the answer.
+function isSuppliedIdentifierRequest(message, history, token) {
+  const owners = ownerSources(token)
+  if (!owners || owners.at(-1) !== message || !Array.isArray(history) || owners.length > 2) return false
+  const binding = /^(?:這次|本次)對話的虛構([\p{Script=Han}]{1,12})(代號|編號)是(?:「[\p{L}\p{N}_-]{1,32}」|『[\p{L}\p{N}_-]{1,32}』)。請(?:告訴我|重述|重複)\2[。！]?$/u.exec(owners[0])
+  if (!binding) return false
+  if (owners.length === 1) return history.length === 0
+  if (history.length !== 2 || history[0]?.role !== 'user' || history[0].text !== owners[0] || history[1]?.role !== 'assistant') return false
+  const followup = /^上一輪的虛構([\p{Script=Han}]{1,12})(代號|編號)是什麼[？?]$/u.exec(message)
+  return !!followup && followup[1] === binding[1] && followup[2] === binding[2]
+}
+
+module.exports = {fromSavedConversation, checkConversationClaim, promptFacts, ownerSources, isSuppliedIdentifierRequest}

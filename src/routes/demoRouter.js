@@ -1189,6 +1189,7 @@ function createDemoRouter ({ dailyDialogue = null, getAdapterFn = getAdapterForL
           if (manual && (!ownerSessionIdOf(req) || !require('../core/operating/chatRequest').sameOrigin(req))) {
             return res.status(403).json({error:{code:'owner_session_required',message:t('diag.usageScope'),retryable:false}})
           }
+          if (manual) opts.manualLocalDialogue = true
           result = manual ? await dailyDialogue(req.body.conversationId, foregroundId, intake) : await intake()
         }
         catch (e) { if (investigationStarted) { try { investigationReceipts.finish(investigationId, null, true) } catch (_) {} } throw e }

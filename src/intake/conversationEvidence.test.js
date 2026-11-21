@@ -7,6 +7,27 @@ const message=anchor+' 先談設計。'
 const facts=(messages=history(),current=message)=>require('./conversationEvidence').fromSavedConversation({messages},current)
 const say=(reply,conversationEvidence=facts())=>enforceRouteEvidence({reply,message,evidenceSets:[],reviewedNoReadAdvice:true,conversationEvidence})
 
+test('literal restatement requires a complete Owner binding and an exact same-subject follow-up', () => {
+  const {isSuppliedIdentifierRequest: accepts} = require('./conversationEvidence')
+  const first = '本次對話的虛構箱子編號是『松葉-81』。請重述編號。'
+  const second = '上一輪的虛構箱子編號是什麼？'
+  const history = [{role:'user',text:first},{role:'assistant',text:'松葉-81'}]
+  const token = facts(history, second)
+  assert.equal(accepts(first, [], facts([], first)), true)
+  assert.equal(accepts(second, history, token), true)
+  for (const other of [second.replace('箱子','車票'), second.replace('編號','代號'), second + '再查庫存。']) {
+    assert.equal(accepts(other, history, facts(history, other)), false)
+  }
+  for (const other of [first.replace('虛構','實際'), first.replace('編號。','代號。'), first.replace('81』','81」'), first + '請下載。']) {
+    assert.equal(accepts(other, [], facts([], other)), false)
+  }
+  assert.equal(accepts(second, history, {...token}), false)
+  assert.equal(accepts(second, history, facts([], second)), false)
+  assert.equal(accepts(first, history, facts([], first)), false)
+  assert.equal(accepts(second, [history[1],history[0]], token), false)
+  assert.equal(accepts(second, history, facts([...history,...history], second)), false)
+})
+
 test('saved conversation counts are a separate evidence class, not business rows',()=>{
  for(const reply of ['這已經是你第四次提出同一個構想。','這是你第4次提起這個想法。','這是你第四次詢問同一個問題。']) {
   const out=say(reply);assert.equal(out.violated,false,reply);assert.equal(out.reply,reply)

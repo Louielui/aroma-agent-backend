@@ -574,6 +574,10 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
   const routeGoverns = routerMode === 'on' && routeDecision !== null
   const socialFastPath = (subscriptionMode || localMode) && routeGoverns && canUseSocialFastPath(message, routeDecision, history, opts)
   const simpleFastPath = socialFastPath || ((subscriptionMode || localMode) && routeGoverns && canUseGeneralFastPath(message,routeDecision,history,opts))
+  const suppliedIdentifier = localMode && opts?.manualLocalDialogue === true && opts.interactionMode === 'chat' &&
+    a4SemanticRoutingEnabled(process.env) && routeGoverns && routeDecision.route === 'CONVERSATION' &&
+    !opts.contextCard && !opts.attachSection && !opts.sectionPreamble &&
+    require('./conversationEvidence').isSuppliedIdentifierRequest(message, history, opts.conversationEvidence)
 
   /**
    * ── O1: THE ONE LIVE SEMANTIC CALL SITE ─────────────────────────────────────
@@ -623,7 +627,7 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
   // context but does not read business sources. They can run independently;
   // every source selection and answer must join the routing promise first.
   async function resolveSemanticRoute () {
-  if (!socialFastPath && routeDecision?.reason !== 'general_knowledge' && semanticEgressOk && routeGoverns && routeDecision.route === 'CONVERSATION' && opts && opts.interactionMode === 'chat') {
+  if (!suppliedIdentifier && !socialFastPath && routeDecision?.reason !== 'general_knowledge' && semanticEgressOk && routeGoverns && routeDecision.route === 'CONVERSATION' && opts && opts.interactionMode === 'chat') {
     // This classifier is advisory and fail-closed. A failed provider call once
     // held an Owner investigation for 111 seconds before the unchanged Goal
     // Decomposer could continue. Bound only these two intent opinions; never
@@ -1101,6 +1105,7 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
   const controlAdapter = subscriptionAdapter || (opts && opts.controlAdapter) || adapter
 
   function decomposeOnce () {
+    if (suppliedIdentifier) return null
     if (goalPlanPromise !== undefined) return goalPlanPromise
     goalPlanPromise = (async () => {
       /**
@@ -2132,7 +2137,7 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
         await recordProviderUsage(gptResult)
         try {
           distilled = parseDistillResponse(gptResult.text, tel)
-          if (simpleFastPath && (distilled.mode !== 'chat' || distilled.nextRead || distilled.answerPlan ||
+          if ((simpleFastPath || suppliedIdentifier) && (distilled.mode !== 'chat' || distilled.nextRead || distilled.answerPlan ||
             (Array.isArray(distilled.tasks) && distilled.tasks.length))) throw new SubscriptionError('subscription_invalid_output')
           llmResult = gptResult
           activeProvider = localMode ? 'local' : (gpt.providerName === 'claude' ? CLAUDE : OPENAI) // preserve legacy adapter attribution
