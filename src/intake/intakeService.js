@@ -577,7 +577,7 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
   const suppliedIdentifier = localMode && opts?.manualLocalDialogue === true && opts.interactionMode === 'chat' &&
     a4SemanticRoutingEnabled(process.env) && routeGoverns && routeDecision.route === 'CONVERSATION' &&
     !opts.contextCard && !opts.attachSection && !opts.sectionPreamble &&
-    require('./conversationEvidence').isSuppliedIdentifierRequest(message, history, opts.conversationEvidence)
+    require('./conversationEvidence').suppliedIdentifierValue(message, history, opts.conversationEvidence)
 
   /**
    * ── O1: THE ONE LIVE SEMANTIC CALL SITE ─────────────────────────────────────
@@ -1300,6 +1300,10 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
   }
 
   async function buildPromptForUncached (providerName, composeOnly = false) {
+    if (suppliedIdentifier) {
+      const ownerMessages = require('./conversationEvidence').ownerSources(opts.conversationEvidence)
+      return 'Repeat only the exact fictional identifier supplied by the Owner in this conversation. Preserve every character.\n' + JSON.stringify(ownerMessages)
+    }
     // Fast answers retain approved communication preferences. Only the bounded
     // canonical preference read is needed; no topic/history recall or planner.
     if (simpleFastPath) {
@@ -1963,6 +1967,13 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
   }
   const localAnswerFormat = format => {
     if (!localMode) return format
+    if (suppliedIdentifier) {
+      return {type:'json_schema', name:'supplied_identifier', strict:true, schema:{
+        type:'object', additionalProperties:false, required:['intent','mode','reply'],
+        properties:{intent:{type:'string',enum:['question']}, mode:{type:'string',enum:['chat']},
+          reply:{type:'string',enum:[suppliedIdentifier]}}
+      }}
+    }
     let selected=format
     if(hindsightCache?.sources?.length){
       const base = format || { type:'json_schema', name:'local_memory_answer', schema:withReadChoices(DISTILL_WITH_READ_DECISION_SCHEMA, [], 'No tool operations are available in this turn.') }
@@ -2488,6 +2499,13 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
      * A second copy of this test is how the two drift apart.
      * ══════════════════════════════════════════════════════════════════════
      */
+    // The knowledge verifier decides whether other sources are needed. It never
+    // inspects the draft. Check literal fidelity separately before releasing it.
+    if (suppliedIdentifier && verdict.ok && verdict.decision !== 'clarify') {
+      if (verdict.decision !== 'allow_final' || distilled.reply !== suppliedIdentifier) {
+        throw new (require('../adapters/LocalAdapter').LocalModelError)('local_evidence_decision_conflict')
+      }
+    }
     const clarifyRestrained = verdict.decision === 'clarify' && decideWorldAsk({
       resolverIntent: null,
       route: routeDecision ? routeDecision.route : null,

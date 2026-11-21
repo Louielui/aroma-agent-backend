@@ -81,7 +81,7 @@ test('manual supplied identifier uses the same saved conversation and verifies b
   const env = { AROMA_DATA_DIR: dir, AROMA_ARTIFACT_DIR: dir, CHAT_BACKEND: 'local', LOCAL_BRAIN_ONLY: '1',
     LOCAL_MODEL: profile.model, LOCAL_MODEL_DIGEST: profile.digest, LOCAL_MODEL_CONTEXT: String(profile.context),
     LOCAL_APP_PORT: '18099', CONVERSATION_DEMO: 'on', TURN_ROUTER: 'on', A4_KNOWLEDGE_ROUTING: 'on',
-    GOAL_DECOMPOSER: 'on', READ_ACCESS: 'on', XIANGXIANG_MEMORY: 'off' }
+    GOAL_DECOMPOSER: 'on', READ_ACCESS: 'on', XIANGXIANG_MEMORY: 'on', CONTEXT_DECISIONS_OPENAI: 'on' }
   const previous = Object.fromEntries(Object.keys(env).map(key => [key, process.env[key]]))
   const originalFetch = global.fetch
   t.after(() => {
@@ -96,6 +96,9 @@ test('manual supplied identifier uses the same saved conversation and verifies b
   const first = '這次對話的虛構包裹代號是「青梨-47」。請告訴我代號。'
   const second = '上一輪的虛構包裹代號是什麼？'
   const phases = []
+  let answer = '青梨-47'
+  let memoryReads = 0
+  const formats = []
   let verifierDecision = {decision:'allow_final',question:null}
   global.fetch = async (url, options) => {
     if (url === profile.endpoint + '/api/tags') return Response.json({models:[{name:profile.model,digest:profile.digest}]})
@@ -117,14 +120,20 @@ test('manual supplied identifier uses the same saved conversation and verifies b
       const prompt = body.messages.find(m => m.role === 'user').content
       assert.ok(prompt.includes(first), 'original Owner message reaches the answer model')
       if (phases.length === 3) assert.ok(prompt.includes(second))
-      value = {intent:'question',mode:'chat',reply:'青梨-47',tasks:[],risks:[],memoryReferences:[]}
+      formats.push(body.format?.properties?.reply?.enum)
+      assert.ok(!prompt.includes('靛藍628'), 'unrelated recalled identifier stays outside the prompt')
+      value = {intent:'question',mode:'chat',reply:answer,tasks:[],risks:[],memoryReferences:[]}
     }
     return new Response(JSON.stringify({done:true,message:{content:JSON.stringify(value)}}) + '\n')
   }
   const local = require('../../src/localBrain/production').createComposition({dataDir:dir,memoryEnabled:false})
+  const memoryClient = {
+    preferences:async () => ({state:'ok',total:0,items:[]}),
+    recall:async () => { memoryReads++; return [{text:'靛藍628'}] }
+  }
   const grant = require('../../src/localBrain/dailyDialogue').createDailyDialogue({dir:path.join(dir,'owner-local-dialogue'),runtimeCommit:()=>'b'.repeat(40)})
   local.dailyDialogue = grant.run
-  const app = require('../../src/app').createApp({ownerPassword:'fixture-only',serviceToken:'fixture-only',localBrain:local})
+  const app = require('../../src/app').createApp({ownerPassword:'fixture-only',serviceToken:'fixture-only',localBrain:local,memoryClient})
   const cookie = app.locals.ownerSessions.issue(), conversationId = crypto.randomUUID(), id = crypto.randomUUID()
   grant.activate({id,commit:'b'.repeat(40),limit:4,windowMs:900000})
   for (const message of [first, second]) {
@@ -151,6 +160,21 @@ test('manual supplied identifier uses the same saved conversation and verifies b
   assert.equal(final.reply, verifierDecision.question)
   assert.deepEqual(phases.slice(4), ['answer','final_verification'])
   grant.pause(other)
+
+  verifierDecision = {decision:'allow_final',question:null}
+  for (answer of ['青梨 -47', '青梨-47，之前叫靛藍628']) {
+    const bad = crypto.randomUUID(), rid = crypto.randomUUID()
+    grant.activate({id:bad,commit:'b'.repeat(40),limit:2,windowMs:900000})
+    const response = await request(app,'/api/v1/demo/intake',{cookie,headers:{accept:'text/event-stream'},
+      body:{message:first,conversationId:crypto.randomUUID(),workflowRequestId:rid,websiteRequestId:rid,history:[]}})
+    const rejected = JSON.parse(response.raw.match(/data: (\{"type":"final".*\})/)[1]).body
+    assert.ok(rejected.error, 'verifier permission cannot release a changed identifier or unrelated assertions')
+    assert.ok(!response.raw.includes(answer))
+    assert.deepEqual(grant.status().attempts.map(a=>a.phase), ['answer','final_verification'])
+    grant.pause(bad)
+  }
+  assert.equal(memoryReads, 0)
+  assert.deepEqual(formats, Array(5).fill(['青梨-47']))
 })
 
 test('manual SSE expiry is a correlated pre-turn refusal at the host deadline', async t => {

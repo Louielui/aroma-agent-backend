@@ -8,13 +8,14 @@ const facts=(messages=history(),current=message)=>require('./conversationEvidenc
 const say=(reply,conversationEvidence=facts())=>enforceRouteEvidence({reply,message,evidenceSets:[],reviewedNoReadAdvice:true,conversationEvidence})
 
 test('literal restatement requires a complete Owner binding and an exact same-subject follow-up', () => {
-  const {isSuppliedIdentifierRequest: accepts} = require('./conversationEvidence')
+  const {suppliedIdentifierValue} = require('./conversationEvidence')
+  const accepts = (...args) => suppliedIdentifierValue(...args) !== null
   const first = '本次對話的虛構箱子編號是『松葉-81』。請重述編號。'
   const second = '上一輪的虛構箱子編號是什麼？'
   const history = [{role:'user',text:first},{role:'assistant',text:'松葉-81'}]
   const token = facts(history, second)
-  assert.equal(accepts(first, [], facts([], first)), true)
-  assert.equal(accepts(second, history, token), true)
+  assert.equal(suppliedIdentifierValue(first, [], facts([], first)), '松葉-81')
+  assert.equal(suppliedIdentifierValue(second, history, token), '松葉-81')
   for (const other of [second.replace('箱子','車票'), second.replace('編號','代號'), second + '再查庫存。']) {
     assert.equal(accepts(other, history, facts(history, other)), false)
   }
