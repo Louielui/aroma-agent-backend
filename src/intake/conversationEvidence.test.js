@@ -108,3 +108,19 @@ test('operational assertions in headings are guarded separately from a supported
  assert.deepEqual(require('./answerPlan').splitSentences('## 已經有3件\n\n'+conversation),['## 已經有3件',conversation])
  for(const reply of ['存貨，全部不足。', '存貨，有3件。', '我可以查存貨，目前全部不足。'])assert.equal(say(reply).violated,true,reply)
 })
+
+test('wellbeing turns require the whole message and the immediately preceding authenticated greeting', () => {
+  const {isWellbeingExchange: eligible} = require('./conversationEvidence')
+  const first = '香香你好嗎?', second = '我剛才問了你什麼？'
+  const h = [{role:'user',text:first},{role:'assistant',text:'你好！'}]
+  assert.ok(eligible(first, [], facts([], first)))
+  assert.ok(eligible(second, h, facts(h, second)))
+  for (const text of [first + '查庫存', second + '查紀錄', '那筆訂單呢？']) {
+    assert.equal(eligible(text, [], facts([], text)), false)
+    assert.equal(eligible(text, h, facts(h, text)), false)
+  }
+  assert.equal(eligible(second, [], facts([], second)), false)
+  assert.equal(eligible(second, h, {...facts(h, second)}), false)
+  assert.equal(eligible(second, h, facts([...h,...h], second)), false)
+  assert.equal(eligible(second, h, facts([{role:'user',text:'查庫存'},h[1]], second)), false)
+})

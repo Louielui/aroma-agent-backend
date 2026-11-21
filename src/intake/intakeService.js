@@ -574,10 +574,12 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
   const routeGoverns = routerMode === 'on' && routeDecision !== null
   const socialFastPath = (subscriptionMode || localMode) && routeGoverns && canUseSocialFastPath(message, routeDecision, history, opts)
   const simpleFastPath = socialFastPath || ((subscriptionMode || localMode) && routeGoverns && canUseGeneralFastPath(message,routeDecision,history,opts))
-  const suppliedIdentifier = localMode && opts?.manualLocalDialogue === true && opts.interactionMode === 'chat' &&
+  const manualConversation = localMode && opts?.manualLocalDialogue === true && opts.interactionMode === 'chat' &&
     a4SemanticRoutingEnabled(process.env) && routeGoverns && routeDecision.route === 'CONVERSATION' &&
-    !opts.contextCard && !opts.attachSection && !opts.sectionPreamble &&
-    require('./conversationEvidence').suppliedIdentifierValue(message, history, opts.conversationEvidence)
+    !opts.contextCard && !opts.attachSection && !opts.sectionPreamble
+  const evidence = require('./conversationEvidence')
+  const wellbeingExchange = manualConversation && evidence.isWellbeingExchange(message, history, opts.conversationEvidence)
+  const suppliedIdentifier = manualConversation && evidence.suppliedIdentifierValue(message, history, opts.conversationEvidence)
 
   /**
    * ── O1: THE ONE LIVE SEMANTIC CALL SITE ─────────────────────────────────────
@@ -627,7 +629,7 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
   // context but does not read business sources. They can run independently;
   // every source selection and answer must join the routing promise first.
   async function resolveSemanticRoute () {
-  if (!suppliedIdentifier && !socialFastPath && routeDecision?.reason !== 'general_knowledge' && semanticEgressOk && routeGoverns && routeDecision.route === 'CONVERSATION' && opts && opts.interactionMode === 'chat') {
+  if (!wellbeingExchange && !suppliedIdentifier && !socialFastPath && routeDecision?.reason !== 'general_knowledge' && semanticEgressOk && routeGoverns && routeDecision.route === 'CONVERSATION' && opts && opts.interactionMode === 'chat') {
     // This classifier is advisory and fail-closed. A failed provider call once
     // held an Owner investigation for 111 seconds before the unchanged Goal
     // Decomposer could continue. Bound only these two intent opinions; never
@@ -1105,7 +1107,7 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
   const controlAdapter = subscriptionAdapter || (opts && opts.controlAdapter) || adapter
 
   function decomposeOnce () {
-    if (suppliedIdentifier) return null
+    if (wellbeingExchange || suppliedIdentifier) return null
     if (goalPlanPromise !== undefined) return goalPlanPromise
     goalPlanPromise = (async () => {
       /**
@@ -1300,6 +1302,10 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
   }
 
   async function buildPromptForUncached (providerName, composeOnly = false) {
+    if (wellbeingExchange) {
+      return 'Reply briefly and naturally to the latest Owner message in its language. Use only this conversation.\n' +
+        JSON.stringify(evidence.ownerSources(opts.conversationEvidence))
+    }
     if (suppliedIdentifier) {
       const ownerMessages = require('./conversationEvidence').ownerSources(opts.conversationEvidence)
       return 'Repeat only the exact fictional identifier supplied by the Owner in this conversation. Preserve every character.\n' + JSON.stringify(ownerMessages)
@@ -1967,11 +1973,11 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
   }
   const localAnswerFormat = format => {
     if (!localMode) return format
-    if (suppliedIdentifier) {
-      return {type:'json_schema', name:'supplied_identifier', strict:true, schema:{
+    if (suppliedIdentifier || wellbeingExchange) {
+      return {type:'json_schema', name:suppliedIdentifier ? 'supplied_identifier' : 'wellbeing_reply', strict:true, schema:{
         type:'object', additionalProperties:false, required:['intent','mode','reply'],
         properties:{intent:{type:'string',enum:['question']}, mode:{type:'string',enum:['chat']},
-          reply:{type:'string',enum:[suppliedIdentifier]}}
+          reply:suppliedIdentifier ? {type:'string',enum:[suppliedIdentifier]} : {type:'string'}}
       }}
     }
     let selected=format
@@ -2148,7 +2154,7 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
         await recordProviderUsage(gptResult)
         try {
           distilled = parseDistillResponse(gptResult.text, tel)
-          if ((simpleFastPath || suppliedIdentifier) && (distilled.mode !== 'chat' || distilled.nextRead || distilled.answerPlan ||
+          if ((simpleFastPath || suppliedIdentifier || wellbeingExchange) && (distilled.mode !== 'chat' || distilled.nextRead || distilled.answerPlan ||
             (Array.isArray(distilled.tasks) && distilled.tasks.length))) throw new SubscriptionError('subscription_invalid_output')
           llmResult = gptResult
           activeProvider = localMode ? 'local' : (gpt.providerName === 'claude' ? CLAUDE : OPENAI) // preserve legacy adapter attribution

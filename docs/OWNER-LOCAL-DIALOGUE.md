@@ -27,3 +27,5 @@ fixture result for this narrow request shape, not a default daily allowance.
 ## Expiry at admission
 
 The host checks the deadline before registering a turn. At or after the deadline, the chat receives a non-retryable 409 with the expiry message and a tracking number. The existing local request receipt links that number to the manual submission, conversation, grant, host decision time and expiry. It contains no prompt or response text. A pre-turn refusal does not change the grant ledger or reserve a model call. The same check still runs at reservation and dispatch.
+
+A manual local wellbeing greeting and an immediate request to recall that greeting use the saved Owner messages for the answer and retain final verification. Attached context, mixed requests and unrelated history continue through ordinary routing. The same per-grant cap applies.
