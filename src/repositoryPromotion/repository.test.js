@@ -57,6 +57,29 @@ test('batched remote inventory keeps every shared tip and fetches an unknown rem
  assert.ok(f.repo.remoteRefs().refs.some(r=>r.ref===kept.remoteBackups[0].ref&&r.sha===localOnly));assert.equal(g(f.root,'show','feature/local-only:local-only.js'),'local-only')
 })
 
+test('long revision inventories still preserve unique commits and scan every new blob',async t=>{
+ const f=fixture(t)
+ const sharedRefs=Array.from({length:820},(_,i)=>'create refs/heads/fixture/shared-'+i+' '+f.base)
+ cp.execFileSync('git',['-C',f.root,'update-ref','--stdin'],{input:sharedRefs.join('\n')+'\n',stdio:['pipe','pipe','pipe']})
+ g(f.root,'checkout','-b','feature/local-only')
+ fs.writeFileSync(path.join(f.root,'fixture-unique.js'),'module.exports=42\n')
+ g(f.root,'add','.')
+ g(f.root,'commit','-m','unique blob')
+ const local=g(f.root,'rev-parse','HEAD')
+ const largeRemoteTips=Array(820).fill(f.base)
+ const before=await f.repo.inspect()
+ assert.deepEqual(before.unpublished,[local])
+ assert.equal(before.branches.length,822)
+ const expected=scanObjects(f.root,[local],[f.base])
+ assert.deepEqual(expected,{objects:3,blobs:1,findings:[]})
+ assert.deepEqual(scanObjects(f.root,[local],largeRemoteTips),expected)
+ assert.deepEqual(scanObjects(f.root,[local],[...largeRemoteTips,local]),{objects:0,blobs:0,findings:[]})
+ assert.throws(()=>scanObjects(f.root,[local],[f.base+'\n--all']),/invalid_git_revision/)
+ const kept=f.repo.preserve(before)
+ assert.deepEqual(kept.remoteBackups.map(ref=>ref.sha),[local])
+ assert.equal(f.repo.remoteRefs().main,f.base)
+})
+
 test('history guard refuses alternate deletion, implicit main push and non-fast-forward refspec forms',()=>{
  for(const args of [['branch','-d','last'],['push','--delete=last','origin'],['push','origin','main'],['push','--mirror','origin'],['push','origin','+'+'a'.repeat(40)+':refs/heads/feature/safe'],['update-ref','refs/heads/main','a'.repeat(40)]])assert.throws(()=>safeGitArgs(args));
  assert.doesNotThrow(()=>safeGitArgs(['commit','-m','reset']));
