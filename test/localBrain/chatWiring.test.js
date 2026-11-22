@@ -141,10 +141,15 @@ for (const [greeting,standing] of [[false,false],[true,false],[true,true]]) test
   }
   const local = require('../../src/localBrain/production').createComposition({dataDir:dir,memoryEnabled:false})
   let principleReads = 0
+  let historicalSubject = null
   const memoryClient = {
     preferences:async () => ({state:'ok',total:0,items:[]}),
     recall:async () => { memoryReads++; return [{text:'靛藍628'}] },
-    ownerPrinciples:async () => { principleReads++; return [] }
+    ownerPrinciples:async () => { principleReads++; return [] },
+    ownerHistory:async (query, conversationId) => {
+      historicalSubject = {query,conversationId}
+      return [{id:'xx-5ec5de7d-b495-4a90-8ac6-d31a8dfd55d0',version:1,text:'舊店的週末午餐有兩組班表。',partial:true}]
+    }
   }
   const grant = require('../../src/localBrain/dailyDialogue').createDailyDialogue({dir:path.join(dir,'owner-local-dialogue'),runtimeCommit:()=>'b'.repeat(40)})
   local.dailyDialogue = grant.run
@@ -200,15 +205,34 @@ for (const [greeting,standing] of [[false,false],[true,false],[true,true]]) test
       assert.equal(receipt.attempts.length,0)
       return outcome
     }
-    const missing=await ask('你知道我的理念是什麼嗎?',saved)
+    const pasted = text => '\x60' + text + '\x60。'
+    const actualShape = pasted('更正，我對 Aroma 的理念是：『只供隔離驗收的甲』')
+    const missing=await ask(pasted('你知道我的理念是什麼嗎?'),saved)
     assert.match(missing.reply,/查了.*未找到/)
     assert.equal(principleReads,1)
-    const prior=await ask('我剛才問咗咩？',saved)
-    assert.equal(prior.reply,'你剛才問我「你知道我的理念是什麼嗎?」。')
-    const quoted=await ask('請查舊對話「'+old+'」，我對 Aroma 的理念是什麼？',saved)
+    const corrected=await ask(actualShape,saved)
+    assert.equal(corrected.reply,'我會以你現在的說法為準：「只供隔離驗收的甲」。')
+    assert.ok(conversationStore.get(saved).messages.some(row=>row.role==='user'&&row.content===actualShape))
+    const prior=await ask(pasted('我頭先問咗咩？'),saved)
+    assert.ok(prior.reply.includes(actualShape))
+    const current=await ask(pasted('你仲記唔記得我做 Aroma 嘅理念'),saved)
+    assert.match(current.reply,/「只供隔離驗收的甲」/)
+    const quoted=await ask(pasted('請查舊對話「'+old+'」，我對 Aroma 的理念是什麼？'),saved)
     assert.match(quoted.reply,/為鄰居做飯。/)
+    assert.doesNotMatch(quoted.reply,/只供隔離驗收的甲/)
+    const remembered=await ask('我以前有沒有提過舊店的週末午餐？',saved)
+    assert.match(remembered.reply,/一部分.*舊店的週末午餐/u)
+    assert.deepEqual(historicalSubject,{query:'舊店的週末午餐',conversationId:saved})
+    const supplied=await ask('更正，這次的代號是「青梨-47」',saved)
+    assert.match(supplied.reply,/青梨-47/)
+    const latest=await ask('今次嘅代號係咩？',saved)
+    assert.equal(latest.reply,'這次的代號是「青梨-47」。')
     assert.equal(principleReads,1)
     assert.equal(phases.length,4)
+    assert.deepEqual(
+      [grant.status().helper.reserved,grant.status().helper.dispatched,grant.status().helper.succeeded],
+      [4,4,4]
+    )
     grant.manageStanding('pause',id,'b'.repeat(40))
     assert.equal(grant.status().state,'paused')
     assert.equal(grant.status().helper.available,0)
