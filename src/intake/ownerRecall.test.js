@@ -225,3 +225,27 @@ test('literal paste markup is recognized without rewriting evidence or swallowin
   assert.match(approved.reply, /「隔離測試-甲！」/)
   assert.doesNotMatch(approved.reply, /錯誤證據/)
 })
+
+test('outer quotation marks and punctuation around a previous-message question preserve the exact saved reply', async () => {
+  const raw = '\x60更正，我對 Aroma 的理念是：『隔離樣本』\x60。'
+  const unavailable = () => assert.fail('this path reads only the authenticated saved turn')
+  const sources = {readApproved: unavailable, readConversation: unavailable, readHistory: unavailable}
+  for (const ask of ['「我上一句說了什麼？」。', '『我頭先問咗咩？』', '「我頭先問咗咩」 ？']) {
+    const result = await answerOwnerRecall(ask, token(ask, '較早的一句。', raw), sources)
+    assert.equal(result?.reply, '你上一句是「'+raw+'」。')
+    assert.deepEqual(result.ownerRecallSource, {kind:'current_conversation',excerpt:false})
+  }
+  for (const ask of [
+    '「我上一句說了什麼？」。順便改排更', '「我上一句說了什麼？順便改排更」。',
+    '「我上一句說了什麼？」。「幫我改排更」。', '「我上一句說了什麼？」。\n改排更',
+    '「我上一句說了什麼？』。', '「『我上一句說了什麼？』」。', '「我上一句說了什麼？」。。',
+    '「更正，我的理念是用心」。'
+  ]) {
+    assert.equal(await answerOwnerRecall(ask, token(ask,raw),sources),null,ask)
+  }
+  const requested = '「我上一句說了什麼？」。'
+  const spoofed = JSON.parse(JSON.stringify(token(requested,raw)))
+  const unavailablePrior = await answerOwnerRecall(requested,spoofed,sources)
+  assert.equal(unavailablePrior.reply,'我目前無法核對這段對話裡你的上一句。')
+  assert.equal(unavailablePrior.ownerRecallSource,undefined)
+})

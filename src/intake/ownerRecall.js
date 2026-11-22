@@ -12,6 +12,7 @@ const quotedStatement = /^(?:「([^」]+)」|『([^』]+)』)[。．.!！?？]?$
 const extraRequest = /(?:順便|另外|同時|再|然後|並|仲要|一併)\s*(?:請|幫|替我|查|改|做|更新|刪除|重啟|部署|送出|派工)|(?:[，,。．.!！?？；;]\s*)(?:請|幫我|替我|麻煩你|把|查|改|更新|刪除|重啟|部署|送出|派工)/u
 const address = /^(?:香香[，, ]*)/u
 const sameThreadQuestion = /^(?:我(?:剛才|剛剛|啱啱|頭先|先頭)(?:(?:問咗?|講咗)(?:你)?(?:咩|乜嘢|乜)|問了?(?:你)?(?:什麼|甚麼))|我上一句(?:問了什麼|說了什麼|講咗咩))(?:呀|啊|呢)?[？?]?$/u
+const quotedPreviousQuestion = /^(?:「([^「」『』]+)」|『([^「」『』]+)』)$/u
 const subject = '(?:理念|價值觀|價值观|核心價值|經營原則|管理原則|做事原則)'
 const scope = '(?:對\\s*Aroma\\s*(?:嘅|的)?|(?:做|經營)\\s*Aroma\\s*(?:嘅|的)?|個人(?:的|嘅)?|帶團隊(?:的|嘅)?|(?:的|嘅)?(?:Aroma\\s*(?:的|嘅)?)?)'
 const question = new RegExp('^(?:(?:你(?:仲記唔記得|記唔記得|知唔知|知道|記得|還記得)|請(?:告訴我|重述))\\s*)?(?:我'+scope+'|Aroma\\s*(?:的|嘅)?)(?:餐飲|經營)?'+subject+'(?:是(?:什麼|甚麼)|係咩)?(?:嗎|嗎呢|呢|呀)?[？?。]?$', 'iu')
@@ -144,7 +145,10 @@ async function answerOwnerRecall(message,token,{readApproved,readConversation,re
   if (!recognized) return null
   const requested=recognized.replace(address,'')
   const questionText=repeatedEnding.test(requested) ? '' : requested.replace(sentenceEnd,'')
-  if (sameThreadQuestion.test(questionText)) {
+  // A full quotation can wrap a previous-turn question. Keep the raw turn as evidence.
+  const quotedPrevious=quotedPreviousQuestion.exec(questionText.trimEnd())
+  const previousQuestion=quotedPrevious ? (quotedPrevious[1]??quotedPrevious[2]).trim() : questionText
+  if (sameThreadQuestion.test(previousQuestion)) {
     const previous=history?.at(-1)
     if (!safeQuote(previous)) return reply('我目前無法核對這段對話裡你的上一句。')
     const {quote}=qualify(previous), clipped=previous.length>800
