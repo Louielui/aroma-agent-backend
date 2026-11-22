@@ -146,6 +146,7 @@
   var LOCAL_BRAIN = /*LOCAL_BRAIN*/
   var CENTRAL_MODELS = /*MODEL_CENTER*/
   var brainSelection = null, brainSaving = false, brainReady = false, modelsPromise = null, modelProviderStates = {}
+  var chatLoginRequired = false
   var brainMode = document.getElementById('brain-mode'), brainStatus = document.getElementById('brain-status')
   var chatLevel = document.getElementById('chat-level')
   if (chatLevel && SUBSCRIPTION_CHAT) chatLevel.classList.remove('hidden')
@@ -945,6 +946,11 @@
     showComposer(true)
     active = c
     if (SUBSCRIPTION_CHAT && CENTRAL_MODELS) { brainReady = false; brainSelection = null; loadChatModels() }
+    if (c.loginDraft !== undefined && !msg.value) {
+      msg.value = c.loginDraft
+      delete c.loginDraft
+      autoGrow()
+    }
     imageNotice(''); refreshImages()
     clear(log)
     log.appendChild(c.thread)
@@ -2161,30 +2167,17 @@
 
   async function submit () {
     if (pending || brainSaving || (clientUpdates && clientUpdates.blocked())) return
-    /**
-     * ⛔ TWO THINGS BEFORE ANYTHING IS SENT, AND BOTH ARE HR-42.
-     *
-     * 1. SENDING FROM A SECTION OPENS AN ORDINARY CONVERSATION. Not a hidden per-section
-     *    thread — he would have conversations he cannot find again. Without this branch
-     *     is null on the section view and the guard below would SWALLOW the message,
-     *    which is the exact defect HR-42 records, in the screen added to fix the context
-     *    problem. 「It would have looked like she ignored me.」
-     *
-     * 2. THE ATTACHMENT IS CAPTURED FIRST, because newConversation → selectConversation
-     *    clears it. And it rides the FIRST TURN ONLY: 「no lingering scope, no guessing」.
-     *    A context that quietly persisted for ten turns would be the invisible carried state
-     *    this whole shape exists to remove, and the preview disappearing says so on screen.
-     *
-     * The !active guard stays after both, because the NEXT destination must not be able to
-     * reintroduce a silent swallow.
-     */
+    // HR-42: Capture the one-turn attachment before opening an ordinary
+    // conversation from a section. Conversation selection clears attachments.
+    // Keep the no-destination guard after both operations.
     var carry = attachedKind
     if (!active && carry) newConversation(false)
     if (!active) return
     var pictures = (active.pendingImages || []).slice()
     if (active.imagePreparing) return
     if (pictures.length && (carry || forcedMode)) { imageNotice(t('imageChat.context')); return }
-    var text = msg.value.trim() || (pictures.length ? t('imageChat.defaultRequest') : '')
+    var inputDraft = msg.value
+    var text = inputDraft.trim() || (pictures.length ? t('imageChat.defaultRequest') : '')
     if (!text) return
     if (topicController) {
       var topicConversation = active
@@ -2199,6 +2192,7 @@
       if (!brainReady || active !== modelConversation) return
     }
     clearErrors()
+    var titleBefore = active.title
     if (active.history.length === 0) {
       active.title = titleFrom(text)
       titleEl.textContent = active.title
@@ -2207,7 +2201,8 @@
     var conv = active
     clearEmptyScreen(conv)   // captured BEFORE anything renders: a click must not steal this turn
     var unsavedBefore = conv.unsaved === true; conv.unsaved = true
-    drawImages(addUser(text, conv), pictures)
+    var userTurn = addUser(text, conv)
+    drawImages(userTurn, pictures)
     conv.pendingImages = []
     imageNotice('')
     var priorHistory = priorHistoryForRequest(conv.history)
@@ -2215,10 +2210,7 @@
     msg.value = ''
     autoGrow()
     setPending(true)
-    // WHICH conversation is still working. Since a reply now lands in its own conversation
-    // while the Owner reads another, nothing on screen said which one was still waiting.
-    // It is a property of the CONVERSATION, not of the page: two can be in flight at once,
-    // and a page-level flag would be a second source of truth that disagrees with this one.
+    // Pending replies belong to their originating conversation, even after a switch.
     conv.working = true
     renderConvList()
     var typing = addTyping(conv)
@@ -2247,11 +2239,8 @@
       method: 'POST',
       headers: { 'Content-Type': 'application/json',...(LOCAL_BRAIN&&!pictures.length?{Accept:'text/event-stream'}:{}) },
       credentials: 'same-origin',
-      // No interactionMode unless a shortcut forced one — the SERVER routes. Sending a
-      // lane the Owner never chose would put the old upfront decision back, invisibly.
-      // ⛔ THE SECTION ID TRAVELS, NEVER THE LINES. The server re-derives them from its own
-      // store, so text the browser composed can never enter the prompt wearing the section's
-      // name — the same discipline as workRequestRoute re-deriving the file from his words.
+      // The server chooses the lane unless a shortcut was selected.
+      // Only the section ID crosses the wire. The server reads its lines.
       body: JSON.stringify(pictures.length ? { message: text, images: pictures, conversationId: conv.cid, chatLevel: chatLevel.value, chatModel: chatModel } : Object.assign(
         forced
           ? { message: text, interactionMode: forced, history: priorHistory, providerHint: provider, previousLane: previousLane, conversationId: conv.cid }
@@ -2270,6 +2259,21 @@
       stopWebsitePoll()
       typing.stopWaiting()
       if (typing.root.parentNode) typing.root.parentNode.removeChild(typing.root)
+      if (LOCAL_BRAIN && o.status === 401 && o.body.error === 'owner_auth_required') {
+        conv.history.pop()
+        conv.title = titleBefore
+        conv.unsaved = unsavedBefore
+        conv.pendingImages = pictures
+        if (userTurn.root.parentNode) userTurn.root.parentNode.removeChild(userTurn.root)
+        if (active === conv) {
+          msg.value = inputDraft
+          autoGrow()
+          titleEl.textContent = isListed(conv) ? conv.title : t('brand.name')
+          renderEmptyScreen(conv)
+        } else conv.loginDraft = inputDraft
+        requireChatLogin()
+        return
+      }
       // Remember what this turn became, so a short reply next time continues it rather
       // than arriving as a fresh, contentless input. Chat responses carry the lane
       // explicitly; the other two are identified by the shape they return.
@@ -2295,10 +2299,7 @@
       if (pictures.length) conv.pendingImages = pictures
       addError(t('err.connection'), conv)
     }).then(function () {
-      // THE ONE PLACE THAT RUNS ON EVERY OUTCOME. Clearing this in the success handler and
-      // again in the catch would work today and rot the first time someone adds a third
-      // branch. A stuck indicator is worse than no indicator: it promises an answer that
-      // is never coming.
+      // Clear the working state after every response or transport failure.
       conv.working = false
       renderConvList()
       setPending(false)
@@ -2306,19 +2307,8 @@
     })
   }
 
-  /**
-   * WHAT THE OWNER READS WHEN A TURN FAILS.
-   *
-   * ⛔ THE SUFFIX IS A CLAIM ABOUT THE FUTURE, SO ONLY THE SERVER MAY MAKE IT. This used to
-   * append 「（可重新送出）」 to every error without exception — the word `retryable` did not
-   * appear anywhere in this file — so the Owner was invited to re-send failures the server
-   * had already marked `retryable: false`. Telling him to retry something that can never
-   * succeed wastes his time and teaches him to distrust the message.
-   *
-   * ⛔ THE GENERIC SENTENCE IS A FALLBACK, NOT A DEFAULT. `message` is preferred whenever the
-   * server sends one; 「系統暫時無法處理這個請求。」 stands in only when there is nothing else,
-   * because a blank error turn says even less.
-   */
+  // Prefer the supplied message. Only an explicit server retryable flag adds
+  // a retry hint. Otherwise show the message or the server-busy fallback.
   function errorLine (res) {
     var e = res && res.error
     var message = (e && e.message) ? e.message : t('err.serverBusy')
@@ -3296,6 +3286,21 @@
     if (!selected || !selected.available) return t('brain.modelUnavailable')
     return t('brain.effortUnavailable')
   }
+  function requireChatLogin () {
+    brainReady = false
+    if (chatLoginRequired) return
+    chatLoginRequired = true
+    if (executionStatus) executionStatus.textContent = ''
+    if (brainStatus) {
+      brainStatus.textContent = t('localBrain.loginRequired') + ' '
+      var login = el('a', '', t('localBrain.loginAction'))
+      login.setAttribute('href', '/owner/login?next=%2Fdemo')
+      login.setAttribute('target', '_blank')
+      login.setAttribute('rel', 'noopener')
+      brainStatus.appendChild(login)
+    }
+    refreshImages()
+  }
   function loadChatModels () {
     if (!SUBSCRIPTION_CHAT || pending) return modelsPromise
     if (modelsLoading) return modelsPromise
@@ -3304,7 +3309,11 @@
     var selectionHeaders = CENTRAL_MODELS && loadingConversation ? { 'X-Xiangxiang-Conversation': loadingConversation } : {}
     if (CENTRAL_MODELS && topicController) selectionHeaders['X-Xiangxiang-Topic'] = topicController.topic
     modelsPromise = fetch('/api/v1/demo/models', { credentials: 'same-origin', headers: selectionHeaders })
-      .then(function (r) { if (!r.ok) throw Error('models_unavailable'); return r.json() })
+      .then(function (r) {
+        if (LOCAL_BRAIN && r.status === 401 && loadingConversation === (active && active.cid)) requireChatLogin()
+        if (!r.ok) throw Error('models_unavailable')
+        return r.json()
+      })
       .then(function (catalog) {
         if (!['subscriptions', 'chatgpt-subscription',...(LOCAL_BRAIN?['local']:[])].includes(catalog.billing) || !Array.isArray(catalog.models) || !catalog.models.length) throw Error('models_unavailable')
         if (CENTRAL_MODELS && loadingConversation && (!catalog.selection || !catalog.selection.effective)) throw Error('models_unavailable')
@@ -3318,16 +3327,23 @@
             note: LOCAL_BRAIN ? (row.available?t('localBrain.limits'):t('localBrain.unavailable')) : row.available ? (notes[row.model] || (brainCompany(row.model) === 'claude' ? t('provider.claudeSubscriptionNote') : t('provider.subscriptionNote'))) : t('provider.modelUnavailable') }
         })
         if (CENTRAL_MODELS && catalog.selection) {
+          var wasLoginRequired = chatLoginRequired
+          chatLoginRequired = false
           brainSelection = catalog.selection; chatModel = brainSelection.effective.model; modelEfforts[chatModel] = brainSelection.effective.effort
           var chosen = PROVIDERS.find(function (p) { return p.model === chatModel })
           brainReady = !!chosen && chosen.available && (chosen.supportsEffort === false ? brainSelection.effective.effort === 'auto' : chosen.efforts.includes(brainSelection.effective.effort))
           if (brainStatus) brainStatus.textContent = brainReady ? '' : brainAvailabilityMessage(chosen)
+          if (wasLoginRequired) checkExecutionBridge()
         }
         renderPicker()
       }).catch(function () {
-        if (CENTRAL_MODELS) { brainReady = false; if (brainStatus) brainStatus.textContent = LOCAL_BRAIN ? t('localBrain.unavailable') : t('brain.failed') }
+        if (CENTRAL_MODELS) {
+          brainReady = false
+          if (brainStatus && !chatLoginRequired) brainStatus.textContent = LOCAL_BRAIN ? t('localBrain.unavailable') : t('brain.failed')
+        }
         renderPicker()
-        pickerMenu.appendChild(el('div', 'opt-note', LOCAL_BRAIN ? t('localBrain.unavailable') : t('provider.modelsUnavailable')))
+        if (chatLoginRequired) pickerMenu.appendChild(el('div', 'opt-note', t('localBrain.loginRequired')))
+        else pickerMenu.appendChild(el('div', 'opt-note', LOCAL_BRAIN ? t('localBrain.unavailable') : t('provider.modelsUnavailable')))
       }).then(function () { modelsLoading = false; refreshImages(); if (CENTRAL_MODELS && loadingConversation !== (active && active.cid)) return loadChatModels() })
     return modelsPromise
   }
@@ -3842,9 +3858,13 @@
   function checkExecutionBridge(){
     if(!executionStatus||executionChecking||document.hidden)return
     executionChecking=true
-    XiangxiangTopics.readExecutionLabel(LOCAL_BRAIN,t).then(function(label){executionStatus.textContent=label}).finally(function(){executionChecking=false})
+    XiangxiangTopics.readExecutionLabel(LOCAL_BRAIN,t,requireChatLogin).then(function(label){executionStatus.textContent=chatLoginRequired?'':label}).finally(function(){executionChecking=false})
   }
-  if(executionStatus){executionStatus.textContent=t('actions.bridgeChecking');checkExecutionBridge();setInterval(checkExecutionBridge,10000);document.addEventListener('visibilitychange',checkExecutionBridge)}
+  if(executionStatus){executionStatus.textContent=t('actions.bridgeChecking');checkExecutionBridge();setInterval(checkExecutionBridge,10000)}
+  document.addEventListener('visibilitychange', function () {
+    if (!document.hidden && chatLoginRequired) loadChatModels()
+    checkExecutionBridge()
+  })
 
   bootHistory()
 
