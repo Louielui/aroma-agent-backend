@@ -520,6 +520,16 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
 
   // Check subscription availability before auxiliary model calls or source reads.
   const localMode = process.env.LOCAL_BRAIN_ONLY === '1'
+  if (localMode && opts?.manualLocalDialogue === true && opts.interactionMode === 'chat' &&
+      !opts.contextCard && !opts.attachSection && !opts.sectionPreamble &&
+      !require('./conversationEvidence').isWellbeingExchange(message,history,opts.conversationEvidence)) {
+    const canRead = resolveFlag(process.env,'READ_ACCESS') === 'on'
+    const recall=await require('./ownerRecall').answerOwnerRecall(message,opts.conversationEvidence,{
+      readApproved:canRead && process.env.XIANGXIANG_MEMORY==='on' ? () => opts.memoryClient?.ownerPrinciples?.() : undefined,
+      readConversation:canRead ? opts.ownerConversationLookup : undefined
+    })
+    if (recall) return {...recall,requestId}
+  }
   const subscriptionMode = !localMode && subscriptionChatEnabled(process.env, opts && opts.interactionMode)
   const chatProfile = profileFor(opts && opts.chatLevel)
   const subscriptionAdapter = localMode ? adapter : subscriptionMode ? ((opts && opts.openaiAdapter) || new CodexSubscriptionAdapter({ effort: chatProfile.effort, model: opts && opts.chatModel })) : null

@@ -103,6 +103,7 @@ function createRuntime({ store = createStructuredStore(), engine = createHindsig
   const ownerClient = {
     engine: 'memory_gateway',
     preferences: () => gateway.preferences(OWNER),
+    ownerPrinciples: () => gateway.ownerPrinciples(OWNER),
     recall: (query, options) => gateway.recall(OWNER, query, options),
     get: async id => {
       const r = await gateway.get(OWNER, id)

@@ -126,15 +126,18 @@ function createConversationStore (options = {}) {
    * it every transcript in the account would put the whole history on the wire to draw a
    * list of names.
    */
-  function list () {
+  function list ({strict = false} = {}) {
     let names
-    try { names = fs.readdirSync(dir) } catch (_) { return [] } // not created yet is not an error
+    try { names = fs.readdirSync(dir) } catch (error) {
+      if (strict && error.code !== 'ENOENT') throw error
+      return []
+    }
     const out = []
     for (const name of names) {
       if (!name.endsWith('.json')) continue
       const id = name.slice(0, -5)
       if (!isValidId(id)) continue // a stray file is not a conversation
-      const c = readOne(id, false)   // lenient: one bad file may not hide the rest
+      const c = readOne(id, strict)   // the sidebar remains lenient
       if (!c) continue
       out.push({
         id: c.id,

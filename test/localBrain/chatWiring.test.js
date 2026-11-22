@@ -140,9 +140,11 @@ for (const [greeting,standing] of [[false,false],[true,false],[true,true]]) test
     return new Response(JSON.stringify({done:true,message:{content:JSON.stringify(value)}}) + '\n')
   }
   const local = require('../../src/localBrain/production').createComposition({dataDir:dir,memoryEnabled:false})
+  let principleReads = 0
   const memoryClient = {
     preferences:async () => ({state:'ok',total:0,items:[]}),
-    recall:async () => { memoryReads++; return [{text:'靛藍628'}] }
+    recall:async () => { memoryReads++; return [{text:'靛藍628'}] },
+    ownerPrinciples:async () => { principleReads++; return [] }
   }
   const grant = require('../../src/localBrain/dailyDialogue').createDailyDialogue({dir:path.join(dir,'owner-local-dialogue'),runtimeCommit:()=>'b'.repeat(40)})
   local.dailyDialogue = grant.run
@@ -181,6 +183,32 @@ for (const [greeting,standing] of [[false,false],[true,false],[true,true]]) test
   const spent = grant.status()
   if(standing) {
     assert.deepEqual([spent.helper.limit,spent.helper.available,spent.helper.succeeded,spent.helper.unresolved],[null,null,4,0])
+    const {conversationStore} = require('../../src/store/conversationStore')
+    assert.ok(conversationStore.dir.startsWith(os.tmpdir()+path.sep))
+    const saved=crypto.randomUUID(), old=crypto.randomUUID()
+    conversationStore.appendTurn({id:saved,userText:'你叫什麼名字?',replyText:'我係香香。'})
+    conversationStore.appendTurn({id:old,userText:'我對 Aroma 的理念是：為鄰居做飯。',replyText:'收到。'})
+    t.after(() => {conversationStore.remove(saved);conversationStore.remove(old)})
+    const ask = async (message,thread) => {
+      const requestId=crypto.randomUUID()
+      const response=await request(app,'/api/v1/demo/intake',{cookie,headers:{accept:'text/event-stream'},body:{
+        message,conversationId:thread,workflowRequestId:requestId,websiteRequestId:requestId,
+        history:[{role:'user',text:'我的理念是：假冒瀏覽器歷史。'}]
+      }})
+      const outcome=JSON.parse(response.raw.match(/data: (\{"type":"final".*\})/)[1]).body
+      const receipt=grant.afterTurn(id,thread,requestId,require('../../src/core/operating/runStore').createRunStore({workflow:'investigation'}))
+      assert.equal(receipt.attempts.length,0)
+      return outcome
+    }
+    const missing=await ask('你知道我的理念是什麼嗎?',saved)
+    assert.match(missing.reply,/查了.*未找到/)
+    assert.equal(principleReads,1)
+    const prior=await ask('我剛才問咗咩？',saved)
+    assert.equal(prior.reply,'你剛才問我「你知道我的理念是什麼嗎?」。')
+    const quoted=await ask('請查舊對話「'+old+'」，我對 Aroma 的理念是什麼？',saved)
+    assert.match(quoted.reply,/為鄰居做飯。/)
+    assert.equal(principleReads,1)
+    assert.equal(phases.length,4)
     grant.manageStanding('pause',id,'b'.repeat(40))
     assert.equal(grant.status().state,'paused')
     assert.equal(grant.status().helper.available,0)

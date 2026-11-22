@@ -137,6 +137,19 @@ function createGateway({ store, engine, readConversation, clock = () => new Date
         date:r.source.at,version:r.version,approval:r.approval,source:r.source}))
     return {state:items.length === second.length && first.length === second.length ? 'ok' : 'partial',total:second.length,items}
   }
+  async function ownerPrinciples(actor) {
+    owner(actor)
+    const {approvedPrinciple}=require('./ownerPrinciples')
+    const rows=(await list(actor,{status:'active'})).filter(row=>approvedPrinciple(row,clock()))
+    // Check the exact canonical text again. Never substitute a ranked index
+    // excerpt, a policy-retained turn or a superseded approval.
+    return Promise.all(rows.map(async row=>{
+      const confirmed=await get(actor,row.id)
+      if (!approvedPrinciple(confirmed,clock()) || evidenceHash(confirmed)!==evidenceHash(row)) throw Error('stale_evidence')
+      const {id,version,subject,text}=confirmed
+      return {id,version,subject,text}
+    }))
+  }
   async function recall(actor, query, options = {}) {
     if (!text(query, 2000) || exclusionReason(query, false)) throw Error('invalid_query')
     const records = (await list(actor, options)).filter(current)
@@ -404,7 +417,7 @@ function createGateway({ store, engine, readConversation, clock = () => new Date
     }
   }
   return { engine: 'memory_gateway', authorize, get, list, propose: (actor, input) => create(actor, input, false),
-    observe: (actor, input) => create(actor, input, true), transition, getDecision, preferences, recall, index, rebuildIndex, working, finishWork,
+    observe: (actor, input) => create(actor, input, true), transition, getDecision, preferences, ownerPrinciples, recall, index, rebuildIndex, working, finishWork,
     grant, authenticate, reflect, consolidate, status, progress, audit: async (actor, id) => { const r = await get(actor, id); return r ? store.audit(id) : [] } }
 }
 module.exports = { createGateway, OWNER, TYPES, SCOPES, STATUSES, stableId }
