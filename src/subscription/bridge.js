@@ -7,6 +7,7 @@ const { REASONING_EFFORTS, isBrainModel: isChatModel, isClaudeModel, DEFAULT_BRA
 const { adoptionView } = require('../core/projectWork/adoptionView')
 const MAX_BODY = 1024 * 1024
 const DEFAULT_PORT = 8091
+const localPublic = require('../localBrain/publicSearch')
 
 function validToken (token) { return typeof token === 'string' && /^[a-f0-9]{64}$/.test(token) }
 function authenticated (header, token) {
@@ -30,7 +31,7 @@ function validateInput (input) {
   return input
 }
 
-function createBridge ({ token, clientOptions, memoryClientOptions = clientOptions, completeFn = complete, claudeFn = require('./claudeClient').complete, claudeCheckFn = require('./claudeClient').checkSubscription, claudeModelsFn = require('./claudeClient').listModels, backgroundModel = null, checkFn = checkSubscription, modelsFn = listSubscriptionModels, subscriptionFn = require('./subscriptionEvidence').readCodexEvidence, workerFlow = null, workerProviders = null, controlledDispatch = null, websiteEnabled = false, memoryEnabled = false, memoryStore = null, codeSourceFactory = null, taskPlanSource = null, codeRepair = null, projectWork = null, projectAdoption = null, projectTasks = null, schedulerActions = null, executionReader = null, workReader = null, schedulerReader = null, invocationLedger = null, publicSearchEnabled = false, publicSearchFn = require('./publicSearch').search, findWebsiteFn = require('./websiteClient').findWebsite, usageBudget = require('../actions/usageBudget').owner(), bootCommit = require('../governance/bootCommit').BOOT_COMMIT }) {
+function createBridge ({ token, clientOptions, memoryClientOptions = clientOptions, completeFn = complete, claudeFn = require('./claudeClient').complete, claudeCheckFn = require('./claudeClient').checkSubscription, claudeModelsFn = require('./claudeClient').listModels, backgroundModel = null, checkFn = checkSubscription, modelsFn = listSubscriptionModels, subscriptionFn = require('./subscriptionEvidence').readCodexEvidence, workerFlow = null, workerProviders = null, controlledDispatch = null, websiteEnabled = false, memoryEnabled = false, memoryStore = null, codeSourceFactory = null, taskPlanSource = null, codeRepair = null, projectWork = null, projectAdoption = null, projectTasks = null, schedulerActions = null, executionReader = null, workReader = null, schedulerReader = null, invocationLedger = null, publicSearchEnabled = false, localPublicGrant = null, publicSearchFn = require('./publicSearch').search, findWebsiteFn = require('./websiteClient').findWebsite, usageBudget = require('../actions/usageBudget').owner(), bootCommit = require('../governance/bootCommit').BOOT_COMMIT }) {
   if (!validToken(token)) throw new Error('bridge requires a 256-bit local token')
   let busy = false; let memoryBusy = false
   const activeCalls = new Map()
@@ -105,10 +106,10 @@ function createBridge ({ token, clientOptions, memoryClientOptions = clientOptio
       if (!res.destroyed) { res.writeHead(status, { 'content-type': 'application/json', 'cache-control': 'no-store' }); res.end(JSON.stringify(body)) }
     }
     if (!authenticated(req.headers.authorization, token) || req.headers.origin) { reply(401, { code: 'subscription_unavailable' }); req.resume(); return }
-    if (req.method !== 'POST' || !['/controlled-dispatch', '/delegation-metadata', '/execution-health', '/complete', '/status', '/models', '/workers', '/website', '/v1/chat/completions', '/memory-store', '/code-diagnosis-source', '/task-plan-source', '/code-repair', '/project-work', '/project-adoption', '/project-tasks', '/execution-metadata', '/work-metadata', '/runtime-metadata', '/invocation-metadata','/work-outcome','/subscription-metadata','/scheduler-action', '/procurement-tick', '/public-search'].includes(req.url)) { reply(404, { code: 'subscription_unavailable' }); req.resume(); return }
+    if (req.method !== 'POST' || !['/controlled-dispatch', '/delegation-metadata', '/execution-health', '/complete', '/status', '/models', '/workers', '/website', '/v1/chat/completions', '/memory-store', '/code-diagnosis-source', '/task-plan-source', '/code-repair', '/project-work', '/project-adoption', '/project-tasks', '/execution-metadata', '/work-metadata', '/runtime-metadata', '/invocation-metadata','/work-outcome','/subscription-metadata','/scheduler-action', '/procurement-tick', '/public-search', localPublic.RPC].includes(req.url)) { reply(404, { code: 'subscription_unavailable' }); req.resume(); return }
     const isMemory = req.url === '/v1/chat/completions'
     const isStore = req.url === '/memory-store'||req.url==='/work-outcome'
-    const isCatalogue = req.url === '/controlled-dispatch' || req.url === '/delegation-metadata' || req.url === '/public-search' || req.url === '/execution-health' || req.url === '/scheduler-action' || req.url === '/procurement-tick' || req.url === '/models' || req.url === '/execution-metadata' || req.url === '/work-metadata' || req.url === '/runtime-metadata' || req.url === '/invocation-metadata' || req.url === '/subscription-metadata'
+    const isCatalogue = req.url === '/controlled-dispatch' || req.url === '/delegation-metadata' || req.url === '/public-search' || req.url === localPublic.RPC || req.url === '/execution-health' || req.url === '/scheduler-action' || req.url === '/procurement-tick' || req.url === '/models' || req.url === '/execution-metadata' || req.url === '/work-metadata' || req.url === '/runtime-metadata' || req.url === '/invocation-metadata' || req.url === '/subscription-metadata'
     // Closed account metadata uses its own single-flight session. Reading it
     // neither acquires nor releases the execution lane or dispatches a turn.
     if (!isStore && !isCatalogue && ((isMemory ? memoryBusy : busy) || (!isMemory && req.url !== '/project-tasks' && projectTasks?.isActive()) || (!isMemory && req.url !== '/code-repair' && codeRepair?.isActive()) || (!isMemory && !['/project-work', '/project-adoption', '/project-tasks'].includes(req.url) && projectWork?.isActive()) || (!isMemory && req.url !== '/workers' && workerFlow?.isActive?.()) || (!isMemory && !['/project-adoption', '/project-work', '/project-tasks'].includes(req.url) && projectAdoption?.isActive()))) { reply(503, { code: 'subscription_unavailable' }); req.resume(); return }
@@ -135,6 +136,39 @@ function createBridge ({ token, clientOptions, memoryClientOptions = clientOptio
         if(!readOnly&&(busy||memoryBusy||activeCalls.size||codeRepair?.isActive())){reply(200,{error:'worker_busy'});return}
         if(!readOnly)busy=true
         try{reply(200,await controlledDispatch.handle({id:'owner',role:'owner'},input))}catch(e){const allowed=['permission_denied','invalid_request','controlled_dispatch_disabled','controlled_background_not_idle','controlled_scope_required','source_changed','not_enabled','worker_busy','approval_unavailable','source_dirty','source_sensitive','source_unavailable','request_conflict','repository_package_limit','local_package_limit','local_coding_disabled','scope_unavailable','task_not_found','task_selection_required','request_limit','target_locked','evidence_unavailable','evidence_changed','presentation_too_large','recovery_unavailable','recovery_background_not_idle',...require('../actions/usageBudget').ERRORS];reply(200,{error:allowed.includes(e.message)?e.message:'controlled_dispatch_unavailable'})}finally{if(!readOnly)busy=false}
+      }else if(req.url===localPublic.RPC){
+        if(!localPublicGrant||!invocationLedger||req.headers['x-xiangxiang-usage']||!localPublic.validDispatch(input)){reply(403,{code:'public_search_not_authorized'});return}
+        if(busy||memoryBusy||activeCalls.size||[workerFlow,projectTasks,projectWork,projectAdoption,codeRepair].some(work=>work?.isActive?.())){reply(503,{code:'subscription_unavailable'});return}
+        const admission=localPublicGrant.admit(input)
+        const role='public_search',model=localPublic.DISCOVERY_MODEL
+        let id,result=null,error=null
+        busy=true
+        activeCalls.set(role,{model,effort:'low',startedAt:new Date().toISOString()})
+        try {
+          id=invocationLedger.begin({role,model,effort:'low',dispatchBasis:'cli_process_started',trace:{requestId:input.requestId,phase:'public_query_plan'}})
+          if(!id)throw Error('public_search_unavailable')
+          const signal=AbortSignal.any([controller.signal,AbortSignal.timeout(Math.max(1,admission.expiresAt-Date.now()))])
+          const found=await publicSearchFn({...clientOptions,signal,admission,onDispatch:()=>{
+            admission.dispatch(id)
+            invocationLedger.dispatched(id)
+            if(invocationLedger.read().state==='unavailable')throw Error('public_search_unavailable')
+          }},localPublic.publicQuery(admission.item))
+          if(!Array.isArray(found.pages)||found.pages.length>4||!found.pages.every(localPublic.checkedPage)||found.actualModel!==model||signal.aborted)throw Error('public_search_unavailable')
+          result=found
+        } catch(cause){error=cause}
+        finally {
+          try {
+            if(id){
+              invocationLedger.finish(id,result,error)
+              if(invocationLedger.read().state==='unavailable')throw Error('public_search_unavailable')
+            }
+          } catch(cause){result=null;error=cause}
+          finally {
+            try {admission.finish(result)} finally {activeCalls.delete(role);busy=false}
+          }
+        }
+        if(error)throw error
+        reply(200,{searchedAt:result.searchedAt,pages:result.pages})
       }else if(req.url==='/public-search'){
         if(!publicSearchEnabled || !require('./publicSearch').validInput(input)){reply(400,{code:'subscription_invalid_output'});return}
         if(busy || workerFlow?.isActive?.() || projectTasks?.isActive() || projectWork?.isActive() || projectAdoption?.isActive() || codeRepair?.isActive()) {reply(503,{code:'subscription_unavailable'});return}

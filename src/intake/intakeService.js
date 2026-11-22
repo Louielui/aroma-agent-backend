@@ -530,6 +530,13 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
       readConversation:canRead ? opts.ownerConversationLookup : undefined
     })
     if (recall) return {...recall,requestId}
+    if (opts.readLocalPublic && require('../context/flags').readAccessEnabled(process.env,'public_knowledge')) {
+      const publicAnswer=await require('../localBrain/publicSearch').answer(message,adapter,opts.foregroundRequestId,opts.readLocalPublic)
+      if (publicAnswer) {
+        if (opts.telemetry && publicAnswer.model) Object.assign(opts.telemetry,{provider:'local',model:publicAnswer.model,readContextUsed:true,replyCitesContext:publicAnswer.sourceBound})
+        return {...publicAnswer,requestId}
+      }
+    }
   }
   const subscriptionMode = !localMode && subscriptionChatEnabled(process.env, opts && opts.interactionMode)
   const chatProfile = profileFor(opts && opts.chatLevel)

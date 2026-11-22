@@ -3,16 +3,20 @@
 // access still requires its existing Gateway authorization; this adds no rights.
 const {AsyncLocalStorage}=require('node:async_hooks'),path=require('node:path'),fs=require('node:fs'),crypto=require('node:crypto')
 const permitted=new AsyncLocalStorage(),root=path.resolve(__dirname,'../..'),python='C:/Aroma/hindsight-runtime/Scripts/python.exe'
+const scopedInventoryRead=new AsyncLocalStorage()
 const businessOrigin=new URL(require('../context/adapters/aromaSystemRead').DEFAULT_BASE_URL).origin
 function allowedUrl(value,method='GET'){
  try{
   const u=new URL(value);if(u.username||u.password||u.hash)return false
   if(u.origin==='http://127.0.0.1:11435')return method==='POST'?/^\/api\/(?:chat|show)$/.test(u.pathname):method==='GET'&&/^\/api\/(?:tags|ps)$/.test(u.pathname)
   if(u.origin==='http://127.0.0.1:11436')return method==='POST'&&u.pathname==='/count_tokens'
-  // Existing authenticated storage RPC only. Bridge model/worker endpoints stay closed.
-  if(u.origin==='http://127.0.0.1:8091')return method==='POST'&&!u.search&&(u.pathname==='/memory-store'||u.pathname==='/controlled-dispatch'&&require('../adapters/ControlledDispatchAdapter').enabled(process.env))
+  // Closed authenticated RPCs only. No Bridge completion or direct public HTTPS.
+  if(u.origin==='http://127.0.0.1:8091')return method==='POST'&&!u.search&&(u.pathname==='/memory-store'||u.pathname==='/controlled-dispatch'&&require('../adapters/ControlledDispatchAdapter').enabled(process.env)||u.pathname===require('./publicSearch').RPC&&require('./publicSearch').configured(process.env))
   if(u.protocol!=='https:'||u.port)return false
-  if(u.origin===businessOrigin)return method==='GET'&&/^\/ai\/(?:inventory|suppliers|daily-counts|order-planning|purchase-orders|invoices)(?:\/|$)/.test(u.pathname)
+  if(u.origin===businessOrigin){
+   if(u.pathname==='/api/v1/ai/inventory')return method==='GET'&&!u.search&&scopedInventoryRead.getStore()===true&&require('./publicSearch').configured(process.env)
+   return method==='GET'&&/^\/ai\/(?:inventory|suppliers|daily-counts|order-planning|purchase-orders|invoices)(?:\/|$)/.test(u.pathname)
+  }
   if(u.hostname==='www.googleapis.com')return method==='GET'&&/^\/(?:drive\/v3|gmail\/v1|calendar\/v3|oauth2\/v\d)(?:\/|$)/.test(u.pathname)
   if(u.hostname==='oauth2.googleapis.com')return method==='POST'&&u.pathname==='/token'
   if(['gmail.googleapis.com','sheets.googleapis.com'].includes(u.hostname))return method==='GET'&&/^\/(?:gmail\/v1|v4\/spreadsheets)(?:\/|$)/.test(u.pathname)
@@ -62,4 +66,5 @@ function install({audit=()=>{}}={}){
  }
  return ()=>restore.reverse().forEach(fn=>fn())
 }
-module.exports={install,allowedUrl,allowedChild}
+function withPublicInventoryRead(read){return scopedInventoryRead.run(true,read)}
+module.exports={install,allowedUrl,allowedChild,withPublicInventoryRead}

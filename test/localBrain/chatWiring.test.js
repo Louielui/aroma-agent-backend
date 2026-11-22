@@ -372,3 +372,67 @@ test('local status rendering distinguishes native inference from a deliberately 
  for(const h of [null,{}, {state:'ready'}, {inference:{provider:'claude',state:'ready',cloudFallback:false}}, {inference:{provider:'local',state:'ready',cloudFallback:true}}])assert.equal(label(h,true,k=>k),'localBrain.unavailable')
  assert.equal(label({state:'ready'},false,k=>k),'actions.bridgeReady');assert.equal(label({state:'unavailable'},false,k=>k),'actions.bridgeOffline')
 })
+
+
+test('same-thread recall takes priority over the new authenticated Cantonese public-search path', async t => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'public-search-chat-'))
+  const profile = require('../../src/localBrain/deploymentProfile.json')
+  const env = { AROMA_DATA_DIR: dir, AROMA_ARTIFACT_DIR: dir, CHAT_BACKEND: 'local', LOCAL_BRAIN_ONLY: '1',
+    LOCAL_MODEL: profile.model, LOCAL_MODEL_DIGEST: profile.digest, LOCAL_APP_PORT: '18099',
+    CONVERSATION_DEMO: 'on', READ_ACCESS: 'on', CONTEXT_PUBLIC_KNOWLEDGE: 'on' }
+  const previous = Object.fromEntries(Object.keys(env).map(key => [key, process.env[key]]))
+  Object.assign(process.env, env)
+  t.after(() => {
+    for (const [key, value] of Object.entries(previous)) {
+      if (value === undefined) delete process.env[key]
+      else process.env[key] = value
+    }
+    fs.rmSync(dir, { recursive: true, force: true })
+  })
+  const at = '2026-11-22T17:00:00.000Z'
+  const quote = 'The grey bus tub is 8 inches deep.'
+  const item = { id: 'bus-tub', retailer: 'Costco', city: 'Winnipeg', depthInches: 8, product: 'bus tub', inventoryRef: null }
+  const egressGrant = { id: crypto.randomUUID(), items: [item] }
+  const egress = [], model = []
+  const search = require('../../src/localBrain/publicSearch')
+  const provider = new (require('../../src/adapters/LocalAdapter').LocalAdapter)({
+    env: { LOCAL_MODEL: profile.model, LOCAL_MODEL_DIGEST: profile.digest, LOCAL_MODEL_CONTEXT: String(profile.context) },
+    fetchFn: async (url, options) => {
+      if (url.endsWith('/api/tags')) return Response.json({ models: [{ name: profile.model, digest: profile.digest }] })
+      assert.equal(url, profile.endpoint + '/api/chat')
+      model.push(JSON.parse(options.body))
+      return new Response(JSON.stringify({ done: true, message: { content: JSON.stringify({ sourceId: 'p1', quote }) } }) + '\n')
+    }
+  })
+  const local = require('../../src/localBrain/production').createComposition({ dataDir: dir, memoryEnabled: false, adapter: provider })
+  local.readPublic = search.createReader({ grant: () => egressGrant, search: async input => {
+    egress.push(input)
+    return { searchedAt: at, pages: [{ id: 'p1', kind: 'publisher_page', text: quote, title: 'Product',
+      url: 'https://www.costco.ca/example.html', retrievedAt: at, hash: 'a'.repeat(64) }] }
+  } })
+  const commit = 'b'.repeat(40)
+  const dialogue = require('../../src/localBrain/dailyDialogue').createDailyDialogue({
+    dir: path.join(dir, 'owner-local-dialogue'), runtimeCommit: () => commit
+  })
+  const id = crypto.randomUUID()
+  dialogue.activate({ id, commit, limit: 4, windowMs: 60000 })
+  local.dailyDialogue = dialogue.run
+  const app = require('../../src/app').createApp({ ownerPassword: 'fixture-password-only', serviceToken: 'fixture-token-only', localBrain: local })
+  const cookie = app.locals.ownerSessions.issue(), conversationId = crypto.randomUUID()
+  const send = async (message, session, requestId = crypto.randomUUID()) => request(app, '/api/v1/demo/intake', {
+    cookie: session, headers: { accept: 'text/event-stream' },
+    body: { message, conversationId, workflowRequestId: requestId, websiteRequestId: requestId, history: [] }
+  })
+  const final = response => JSON.parse(response.raw.match(/data: (\{"type":"final".*\})/)[1]).body
+  const question = '幫我查 Winnipeg Costco 有冇 8 吋深嘅 bus tub'
+  assert.equal((await send(question, null)).status, 401)
+  assert.match(final(await send(question, cookie)).reply, /未能確認 Winnipeg Costco 門店今日有冇貨/)
+  const recall = final(await send('我頭先問咗咩？', cookie))
+  assert.ok(recall.reply.includes(question), recall.reply)
+  assert.equal(egress.length, 1)
+  assert.equal(model.length, 1)
+  assert.equal(model[0].model, profile.model)
+  assert.equal(model[0].think, false)
+  assert.equal(model[0].options.num_predict, 512)
+  assert.equal(dialogue.status().helper.dispatched, 1)
+})

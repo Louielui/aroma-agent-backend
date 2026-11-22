@@ -98,8 +98,12 @@ function main () {
   procurement=require('../../src/actions/procurement').createProcurement({store:schedulerActionStore,scheduler:require('../../src/actions/procurementWindows').createScheduler(),gateway:procurementGateway,enabled:()=>procurementEnv.XIANGXIANG_PROCUREMENT_SCHEDULER==='on'})
   const schedulerActions = require('../../src/actions/service').createGateway({store:schedulerActionStore,procurement,usageBudget:require('../../src/actions/usageBudget').owner()})
   const controlledDispatch=require('../../src/subscription/controlledDispatch').createControlledDispatch({projectTasks,projectWork,enabled:()=>env.XIANGXIANG_CONTROLLED_DISPATCH==='on'&&enabled(),localEnabled:()=>!!localProviders,isolationStatus:workerProviders.isolationStatus,subscriptionReady:appProjectReady,otherActive:target=>target==='task'?projectWork.isActive()||projectAdoption.isActive()||workerFlow.isActive():projectTasks.isActive()||projectAdoption.isActive()||workerFlow.isActive(),executionReady:()=>{if(!memoryRuntime)return true;const s=memoryRuntime.status(),c=memoryRuntime.consolidation.status();return s.enabled===false&&s.active===false&&c.busy===false},bootCommit:require('../../src/governance/bootCommit').BOOT_COMMIT})
+  const localPublic = require('../../src/localBrain/publicSearch')
+  const publicDir = path.join(require('../../src/store/dataDir').resolveDataDir(env),'local-public-search')
+  const localPublicGrant = localPublic.configured(env) ? localPublic.createGrant({dir:publicDir,
+    grant:()=>localPublic.readGrant({dir:publicDir,env,commit:require('../../src/governance/bootCommit').BOOT_COMMIT})}) : null
   const server = createBridge({ controlledDispatch, schedulerActions, backgroundModel: require('../../src/subscription/chatModels').DEFAULT_BRAIN_MODEL, token: env.CODEX_CHAT_BRIDGE_TOKEN, clientOptions: { executable: chatExecutable, cwd, allowCredits: env.CODEX_CHAT_ALLOW_CREDITS === 'true' }, memoryClientOptions: { executable, cwd, allowCredits: env.CODEX_CHAT_ALLOW_CREDITS === 'true' }, workerFlow, workerProviders, websiteEnabled: env.XIANGXIANG_WEBSITE_FLOW === 'on', memoryEnabled: env.XIANGXIANG_MEMORY === 'on',
-    publicSearchEnabled: env.PUBLIC_SEARCH_PROVIDER === 'claude-subscription',
+    publicSearchEnabled: env.PUBLIC_SEARCH_PROVIDER === 'claude-subscription', localPublicGrant,
     memoryStore: require('../../src/memory/structuredStore').createStructuredStore({ local: true }),
     schedulerReader: require('../../src/home/schedulerWitness').readWindowsSchedulerWitness,
     invocationLedger,

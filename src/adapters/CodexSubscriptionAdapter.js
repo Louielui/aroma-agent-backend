@@ -16,10 +16,23 @@ function subscriptionChatEnabled (env = process.env, lane) {
 function localRequest (route, input, env, signal) {
   if(process.env.LOCAL_BRAIN_ONLY==='1')throw new (require('./LocalAdapter').LocalModelError)('local_capability_unavailable')
   assertLiveEgressAllowed('openai-codex')
+  return requestBridge(route, input, env, signal, () => require('../actions/usageBudget').currentHeader(env.CODEX_CHAT_BRIDGE_TOKEN))
+}
+
+// Local chat may use this exact evidence endpoint without forwarding a legacy budget scope.
+function requestLocalPublicEvidence (input, env = process.env) {
+  const publicSearch = require('../localBrain/publicSearch')
+  if (env.LOCAL_BRAIN_ONLY !== '1' || !publicSearch.configured(env) || !publicSearch.validDispatch(input)) {
+    return Promise.reject(new SubscriptionError('subscription_unavailable'))
+  }
+  return requestBridge(publicSearch.RPC, input, env, AbortSignal.timeout(115000), () => null)
+}
+
+function requestBridge (route, input, env, signal, readScope) {
   if (!validToken(env.CODEX_CHAT_BRIDGE_TOKEN)) return Promise.reject(new SubscriptionError())
   return new Promise((resolve, reject) => {
     const bytes = JSON.stringify(input)
-    const scope=require('../actions/usageBudget').currentHeader(env.CODEX_CHAT_BRIDGE_TOKEN)
+    const scope = readScope()
     const req = http.request({ hostname: '127.0.0.1', port: DEFAULT_PORT, path: route, method: 'POST', signal,
       headers: { authorization: 'Bearer ' + env.CODEX_CHAT_BRIDGE_TOKEN, 'content-type': 'application/json', 'content-length': Buffer.byteLength(bytes),...(scope?{'x-xiangxiang-usage':scope}:{}) } }, res => {
       let data = ''
@@ -63,4 +76,4 @@ class CodexSubscriptionAdapter extends LLMAdapter {
     return result
   }
 }
-module.exports = { CodexSubscriptionAdapter, subscriptionChatEnabled, localRequest }
+module.exports = { CodexSubscriptionAdapter, subscriptionChatEnabled, localRequest, requestLocalPublicEvidence }
