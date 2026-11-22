@@ -78,3 +78,22 @@ the active write independent of conversation age and lifetime usage. SQL
 failures refuse dispatch without refunding a prior reservation. The existing
 memory backup's fixed asset list remains separate from this operational
 database. Loss of the database cannot activate standing access.
+
+## Owner statements and principles
+For a manual local question asking for the immediately preceding message, the
+server reads the saved Owner turn in the current conversation. For a bounded
+personal or Aroma principles question it checks current Owner declarations first,
+then reads eligible current, exact-content Owner-approved memory records. An
+explicit correction takes precedence. Conflicting records remain visible as
+ambiguity, and excerpts are labelled. The response quotes the verified material
+and identifies its source. No inferred belief is promoted to a quote.
+
+To designate an older thread, send a bounded question such as
+「請查舊對話『Aroma 開店理念』，我對 Aroma 的理念是什麼？」. An exact title,
+a Winnipeg date on which the conversation started (YYYY-MM-DD), or its full
+conversation ID is accepted. An ambiguous title or date prompts for a tighter
+selection. Only Owner statements in that specific transcript can be quoted.
+The Memory Gateway and historical conversation lookup remain behind read access.
+Unreadable sources and a completed search with no match have separate replies.
+The bounded source replies are rendered locally without model inference or
+operational investigation. The normal verified greeting flow remains available.

@@ -1189,7 +1189,10 @@ function createDemoRouter ({ dailyDialogue = null, getAdapterFn = getAdapterForL
           if (manual && (!ownerSessionIdOf(req) || !require('../core/operating/chatRequest').sameOrigin(req))) {
             return res.status(403).json({error:{code:'owner_session_required',message:t('diag.usageScope'),retryable:false}})
           }
-          if (manual) opts.manualLocalDialogue = true
+          if (manual) {
+            opts.manualLocalDialogue = true
+            opts.ownerConversationLookup = reference => require('../intake/ownerRecall').resolveConversationReference(conversationStore,reference)
+          }
           result = manual ? await dailyDialogue(req.body.conversationId, foregroundId, intake, refusal => {
             res.locals.dailyAdmissionRefusal = { ...refusal, correlationId }
           }) : await intake()
