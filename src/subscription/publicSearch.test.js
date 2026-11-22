@@ -155,3 +155,29 @@ test('search invocation ledger records one fresh dispatch and observed usage, ne
   for(let n=0;n<2;n++){const r=await fetch('http://127.0.0.1:'+server.address().port+'/public-search',{method:'POST',headers:{authorization:'Bearer '+token,'content-type':'application/json'},body:JSON.stringify({query:'weather'})});assert.equal(r.status,200)}
   const rows=ledger.read().records;assert.equal(rows.length,1);assert.equal(rows[0].role,'public_search');assert.equal(rows[0].actualModel,'claude-opus-5-5');assert.equal(rows[0].usage.outputTokens,2);assert.equal(rows[0].provesCharge,false)
 })
+
+
+test('local catalogue discovery returns only read publisher evidence and never calls a cloud composer', async () => {
+  let claims = 0
+  const admission = { claim: () => { claims++ } }
+  const page = { url: URL, title: 'Mock source', text: 'Publisher original text.', retrievedAt: now, hash: 'b'.repeat(64) }
+  const out = await search({
+    admission, clock: () => now, check: async () => {}, latencySink: () => {},
+    run: async (args, options) => {
+      const claim = require('./publicSearch').claimLocalDiscovery
+      assert.throws(() => claim(args.slice(), options.input))
+      assert.throws(() => claim(args, '{}'))
+      assert.equal(claim(args, options.input), true)
+      events().forEach(options.onEvent)
+      return events().at(-1)
+    },
+    readPages: async () => ({ pages: [page], checks: [] }),
+    readFallback: async () => ({ pages: [], checks: [], attempted: 0 }),
+    compose: () => assert.fail('no cloud composition in the local answer route')
+  }, { query: 'Winnipeg weather' })
+  assert.equal(claims, 1)
+  assert.equal(out.searchedAt, now)
+  assert.equal(out.webSearchCalls, 1)
+  assert.deepEqual(out.pages, [{ ...page, id: 'p1', kind: 'publisher_page' }])
+  assert.equal(require('./publicSearch').claimLocalDiscovery([], '{}'), false)
+})

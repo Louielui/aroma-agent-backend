@@ -61,7 +61,7 @@ function runClaudeUnobserved (args, { cwd, timeoutMs = 90000, signal, input = ''
   const resolved = resolveCommand(process.env)
   if (!resolved.ok) return Promise.reject(Error('claude_unavailable'))
   let budget
-  try{if(!require('../../subscription/claudeClient').isMetadataOnly(args,{controlRequestId,input}))budget=require('../../actions/usageBudget').nativePermit('helper',{model:args.includes('--model')?args[args.indexOf('--model')+1]:null,effort:args.includes('--effort')?args[args.indexOf('--effort')+1]:'auto'})}catch(e){return Promise.reject(e)}
+  try{if(!require('../../subscription/claudeClient').isMetadataOnly(args,{controlRequestId,input})&&!require('../../subscription/publicSearch').claimLocalDiscovery(args,input))budget=require('../../actions/usageBudget').nativePermit('helper',{model:args.includes('--model')?args[args.indexOf('--model')+1]:null,effort:args.includes('--effort')?args[args.indexOf('--effort')+1]:'auto'})}catch(e){return Promise.reject(e)}
   return new Promise((resolve, reject) => {
     if (signal?.aborted) { reject(Error('worker_cancelled')); return }
     const child = spawnImpl(resolved.command, args, { cwd, env: buildChildEnv(process.env), windowsHide: true, shell: false, stdio: ['pipe', 'pipe', 'pipe'] })

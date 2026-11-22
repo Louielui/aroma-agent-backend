@@ -1327,7 +1327,7 @@ function createApp (options = {}) {
   app.use(createDemoRouter({
     ...(localBrain?{getAdapterFn:()=>localBrain.provider,modelsFn:brainCatalogue,
       dailyDialogue:localBrain.dailyDialogue}:{}),
-    processIntakeFn: require('./intake/readTask').createIntakeHandler({task:readTask,fallback:(message,adapter,history,context)=>require('./intake/intakeService').processIntake(message,adapter,history,{...context,...(localBrain?{memoryClient,latencySink:require('./localBrain/productionStream').pipelineTiming}:{} )})}),
+    processIntakeFn: require('./intake/readTask').createIntakeHandler({task:readTask,fallback:(message,adapter,history,context)=>require('./intake/intakeService').processIntake(message,adapter,history,{...context,...(localBrain?{memoryClient,readLocalPublic:localBrain.readPublic,latencySink:require('./localBrain/productionStream').pipelineTiming}:{} )})}),
     hrRechecks,
     capabilityGaps,
     sevenShiftsReport,

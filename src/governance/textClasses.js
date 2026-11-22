@@ -78,6 +78,7 @@ const FILE_CLASS = Object.freeze({
   'intake/ownerRecall.js': CLASS.MATCHING, // Owner recall scope guards and original-source replies; never translate input patterns.
   'intake/suppliedCalculation.js': CLASS.MATCHING, // Owner quotation/constraint grammar; never translated.
   'intake/suppliedCalculationReply.js': CLASS.MODEL, // Canned conversational replies, not interface labels.
+  'localBrain/publicSearch.js': CLASS.MATCHING, // Cantonese request grammar, fixed evidence prompts and result wording.
   'localBrain/fixtures.js': CLASS.MODEL, // Synthetic source evidence and adversarial acceptance text, never translated.
   'localBrain/server.js': CLASS.INTERFACE, // Isolated host status and model catalogue labels.
   'localBrain/view.html': CLASS.INTERFACE, // Local acceptance interface, no prompt or permission text parsing.
