@@ -579,6 +579,8 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
     !opts.contextCard && !opts.attachSection && !opts.sectionPreamble
   const evidence = require('./conversationEvidence')
   const wellbeingExchange = manualConversation && evidence.isWellbeingExchange(message, history, opts.conversationEvidence)
+  const previousGreeting = wellbeingExchange ? evidence.ownerSources(opts.conversationEvidence).at(-2) : null
+  const greetingRecallReply = previousGreeting ? '你剛才問我「' + previousGreeting + '」。' : null
   const suppliedIdentifier = manualConversation && evidence.suppliedIdentifierValue(message, history, opts.conversationEvidence)
 
   /**
@@ -1302,6 +1304,11 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
   }
 
   async function buildPromptForUncached (providerName, composeOnly = false) {
+    if (greetingRecallReply) {
+      return 'Repeat the immediately preceding Owner question verbatim using the required reply format. ' +
+        'These are the saved Owner messages in this conversation, oldest to newest.\n' +
+        JSON.stringify(evidence.ownerSources(opts.conversationEvidence))
+    }
     if (wellbeingExchange) {
       return 'Reply briefly and naturally to the latest Owner message in its language. Use only this conversation.\n' +
         JSON.stringify(evidence.ownerSources(opts.conversationEvidence))
@@ -1977,7 +1984,9 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
       return {type:'json_schema', name:suppliedIdentifier ? 'supplied_identifier' : 'wellbeing_reply', strict:true, schema:{
         type:'object', additionalProperties:false, required:['intent','mode','reply'],
         properties:{intent:{type:'string',enum:['question']}, mode:{type:'string',enum:['chat']},
-          reply:suppliedIdentifier ? {type:'string',enum:[suppliedIdentifier]} : {type:'string'}}
+          reply:suppliedIdentifier || greetingRecallReply
+            ? {type:'string',enum:[suppliedIdentifier || greetingRecallReply]}
+            : {type:'string'}}
       }}
     }
     let selected=format
@@ -2468,6 +2477,7 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
       verify: timedVerify,
       message,
       history,
+      previousGreeting,
       availableWorlds: { internal: w.includes('internal'), public: w.includes('public') }
     })
     logFinalRequirement({ requestId, outcome: verdict.outcome, requiredWorlds: verdict.requiredWorlds, ownerMessageCount: finalOwnerAuthoredContext(message, history).length, durationMs: Date.now() - startedAt })
@@ -2512,7 +2522,10 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
         throw new (require('../adapters/LocalAdapter').LocalModelError)('local_evidence_decision_conflict')
       }
     }
-    const clarifyRestrained = verdict.decision === 'clarify' && decideWorldAsk({
+    if (greetingRecallReply && verdict.decision === 'allow_final' && distilled.reply !== greetingRecallReply) {
+      throw new (require('../adapters/LocalAdapter').LocalModelError)('local_evidence_decision_conflict')
+    }
+    const clarifyRestrained = !greetingRecallReply && verdict.decision === 'clarify' && decideWorldAsk({
       resolverIntent: null,
       route: routeDecision ? routeDecision.route : null,
       routerSources: (routeDecision && routeDecision.sources) || [],

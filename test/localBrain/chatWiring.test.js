@@ -98,10 +98,11 @@ for (const greeting of [false, true]) test(
   const first = greeting ? '香香你好嗎？' : '這次對話的虛構包裹代號是「青梨-47」。請告訴我代號。'
   const second = greeting ? '我剛才問了你什麼？' : '上一輪的虛構包裹代號是什麼？'
   const phases = []
-  let answer = greeting ? '你好，很高興跟你聊天。' : '青梨-47'
+  let answer = greeting ? '香香一切安好，Louie。有乜吩咐？' : '青梨-47'
   let memoryReads = 0
   const formats = []
   let verifierDecision = {decision:'allow_final',question:null}
+  let followupVerifierOverride
   global.fetch = async (url, options) => {
     if (url === profile.endpoint + '/api/tags') return Response.json({models:[{name:profile.model,digest:profile.digest}]})
     assert.equal(url, profile.endpoint + '/api/chat')
@@ -116,7 +117,17 @@ for (const greeting of [false, true]) test(
       value = {question_restated:'Repeat the supplied identifier.',facts:[],joins:[]}
     } else if (props.decision?.enum?.includes('allow_final')) {
       phases.push('final_verification')
-      value = verifierDecision
+      const isGreetingFollowup = greeting && phases.length === 4
+      if (isGreetingFollowup) {
+        const prompt = body.messages.find(m => m.role === 'user').content
+        assert.ok(prompt.includes(first), 'the verifier sees the same saved Owner question')
+        assert.ok(prompt.includes(second), 'the verifier sees the current follow-up')
+      }
+      value = isGreetingFollowup
+        ? followupVerifierOverride ?? (props.decision.enum.includes('require_memory')
+          ? {decision:'require_memory',question:null}
+          : verifierDecision)
+        : verifierDecision
     } else {
       phases.push('answer')
       const prompt = body.messages.find(m => m.role === 'user').content
@@ -177,7 +188,33 @@ for (const greeting of [false, true]) test(
   grant.pause(other)
 
   assert.equal(memoryReads, 0)
-  if (greeting) return
+  if (greeting) {
+    assert.deepEqual(formats.slice(0, 2), [undefined, ['你剛才問我「香香你好嗎？」。']])
+    for (const bad of [
+      {answer:'你問我今天有何安排。', verdict:{decision:'allow_final',question:null}},
+      {answer:'你剛才問我「香香你好嗎？」。', verdict:{decision:'require_memory',question:null}}
+    ]) {
+      const trial = crypto.randomUUID(), thread = crypto.randomUUID()
+      grant.activate({id:trial,commit:'b'.repeat(40),limit:2,windowMs:900000})
+      const {conversationStore} = require('../../src/store/conversationStore')
+      assert.ok(conversationStore.dir.startsWith(os.tmpdir()+path.sep))
+      conversationStore.appendTurn({id:thread,userText:first,replyText:'香香一切安好，Louie。有乜吩咐？'})
+      t.after(() => conversationStore.remove(thread))
+      const requestId = crypto.randomUUID()
+      phases.length = 2
+      answer = bad.answer
+      followupVerifierOverride = bad.verdict
+      const result = await request(app,'/api/v1/demo/intake',{cookie,headers:{accept:'text/event-stream'},
+        body:{message:second,conversationId:thread,workflowRequestId:requestId,websiteRequestId:requestId,history:[]}})
+      const final = JSON.parse(result.raw.match(/data: (\{"type":"final".*\})/)[1]).body
+      assert.notEqual(final.reply,bad.answer)
+      assert.ok(!final.reply?.includes('記憶服務暫時無法讀取'))
+      assert.deepEqual(grant.status().attempts.map(a=>a.phase), ['answer','final_verification'])
+      grant.pause(trial)
+    }
+    assert.equal(memoryReads, 0)
+    return
+  }
 
   verifierDecision = {decision:'allow_final',question:null}
   for (answer of ['青梨 -47', '青梨-47，之前叫靛藍628']) {
