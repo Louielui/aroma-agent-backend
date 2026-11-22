@@ -75,8 +75,8 @@ test('authenticated manual SSE chat uses the independent cap across two saved tu
  assert.equal(grant.status().helper.dispatched,calls.length)
 })
 
-for (const greeting of [false, true]) test(
-  'manual ' + (greeting ? 'wellbeing greeting' : 'supplied identifier') + ' and saved follow-up each get a verified reply within four native calls', async t => {
+for (const [greeting,standing] of [[false,false],[true,false],[true,true]]) test(
+  'manual ' + (greeting ? 'wellbeing greeting' : 'supplied identifier') + ' and saved follow-up get verified replies using '+(standing?'standing authorization':'a capped grant'), async t => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'owner-identifier-chat-'))
   const profile = require('../../src/localBrain/deploymentProfile.json')
   const env = { AROMA_DATA_DIR: dir, AROMA_ARTIFACT_DIR: dir, CHAT_BACKEND: 'local', LOCAL_BRAIN_ONLY: '1',
@@ -148,7 +148,19 @@ for (const greeting of [false, true]) test(
   local.dailyDialogue = grant.run
   const app = require('../../src/app').createApp({ownerPassword:'fixture-only',serviceToken:'fixture-only',localBrain:local,memoryClient})
   const cookie = app.locals.ownerSessions.issue(), conversationId = crypto.randomUUID(), id = crypto.randomUUID()
-  grant.activate({id,commit:'b'.repeat(40),limit:4,windowMs:900000})
+  if(standing) {
+    grant.manageStanding('activate',id,'b'.repeat(40))
+    for(const [extra,session,expected] of [
+      [{origin:'http://example.invalid'},cookie,403],
+      [{authorization:'Bearer fixture-only'},null,403]
+    ]) {
+      const deniedId=crypto.randomUUID()
+      const denied=await request(app,'/api/v1/demo/intake',{headers:{accept:'text/event-stream',...extra},cookie:session,
+        body:{message:first,conversationId,workflowRequestId:deniedId,websiteRequestId:deniedId,history:[]}})
+      assert.equal(denied.status,expected)
+    }
+    assert.equal(phases.length,0)
+  } else grant.activate({id,commit:'b'.repeat(40),limit:4,windowMs:900000})
   for (const message of [first, second]) {
     if (greeting && message === second) answer = '你剛才問我「香香你好嗎？」。'
     const requestId = crypto.randomUUID()
@@ -167,6 +179,14 @@ for (const greeting of [false, true]) test(
   }
   assert.deepEqual(phases, ['answer','final_verification','answer','final_verification'])
   const spent = grant.status()
+  if(standing) {
+    assert.deepEqual([spent.helper.limit,spent.helper.available,spent.helper.succeeded,spent.helper.unresolved],[null,null,4,0])
+    grant.manageStanding('pause',id,'b'.repeat(40))
+    assert.equal(grant.status().state,'paused')
+    assert.equal(grant.status().helper.available,0)
+    assert.equal(memoryReads,0)
+    return
+  }
   assert.deepEqual(spent.attempts.map(a => [a.phase, a.state]), phases.map(phase => [phase, 'succeeded']))
   assert.equal(spent.helper.available, 0)
   assert.equal(spent.helper.unresolved, 0)
