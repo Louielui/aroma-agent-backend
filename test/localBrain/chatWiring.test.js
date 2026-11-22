@@ -213,8 +213,10 @@ for (const [greeting,standing] of [[false,false],[true,false],[true,true]]) test
     const corrected=await ask(actualShape,saved)
     assert.equal(corrected.reply,'我會以你現在的說法為準：「只供隔離驗收的甲」。')
     assert.ok(conversationStore.get(saved).messages.some(row=>row.role==='user'&&row.content===actualShape))
-    const prior=await ask(pasted('我頭先問咗咩？'),saved)
-    assert.ok(prior.reply.includes(actualShape))
+    const quotedQuestion = '「我上一句說了什麼？」。'
+    const prior=await ask(quotedQuestion,saved)
+    assert.equal(prior.reply,'你上一句是「'+actualShape+'」。')
+    assert.ok(conversationStore.get(saved).messages.some(row=>row.role==='user'&&row.content===quotedQuestion))
     const current=await ask(pasted('你仲記唔記得我做 Aroma 嘅理念'),saved)
     assert.match(current.reply,/「只供隔離驗收的甲」/)
     const quoted=await ask(pasted('請查舊對話「'+old+'」，我對 Aroma 的理念是什麼？'),saved)
