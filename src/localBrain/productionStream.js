@@ -1,6 +1,6 @@
 'use strict'
 const fs=require('node:fs'),path=require('node:path'),{performance}=require('node:perf_hooks'),{events}=require('../adapters/LocalAdapter')
-function measuredMemory(client){return new Proxy(client,{get(target,key){const value=target[key];if(typeof value!=='function'||!['preferences','recall','get','ownerPrinciples'].includes(key))return value;return async(...args)=>{const start=performance.now();let ok=false;try{const result=await value.apply(target,args);ok=true;return result}finally{events.getStore()?.({type:'memory_complete',phase:String(key),durationMs:performance.now()-start,code:ok?null:'memory_read_failed'})}}}})}
+function measuredMemory(client){return new Proxy(client,{get(target,key){const value=target[key];if(typeof value!=='function'||!['preferences','recall','get','ownerPrinciples','ownerHistory'].includes(key))return value;return async(...args)=>{const start=performance.now();let ok=false;try{const result=await value.apply(target,args);ok=true;return result}finally{events.getStore()?.({type:'memory_complete',phase:String(key),durationMs:performance.now()-start,code:ok?null:'memory_read_failed'})}}}})}
 function pipelineTiming(label,body){try{const timing=JSON.parse(body);events.getStore()?.({type:'pipeline_phase',phase:timing.phase,durationMs:timing.durationMs})}catch{}}
 function middleware({dataDir}){return(req,res,next)=>{
  if(req.method!=='POST')return next()

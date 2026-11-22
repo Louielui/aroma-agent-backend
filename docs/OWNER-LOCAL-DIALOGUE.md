@@ -93,6 +93,14 @@ To designate an older thread, send a bounded question such as
 a Winnipeg date on which the conversation started (YYYY-MM-DD), or its full
 conversation ID is accepted. An ambiguous title or date prompts for a tighter
 selection. Only Owner statements in that specific transcript can be quoted.
+Common Cantonese phrasing selects these same sources. A current identifier
+uses the latest explicit Owner wording in the authenticated current transcript.
+A historical question uses its explicit phrase or a short resolved topic from
+that transcript. Indefinite topics ask for clarification before a memory read.
+The canonical historical lookup returns directly attested Owner records with an
+exact phrase match. It includes earlier retained revisions for historical
+questions, labels excerpts, and does not invoke semantic search or inference.
+An explicit older-thread reference limits the search to that conversation.
 The Memory Gateway and historical conversation lookup remain behind read access.
 Unreadable sources and a completed search with no match have separate replies.
 The bounded source replies are rendered locally without model inference or

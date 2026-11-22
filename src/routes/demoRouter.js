@@ -1191,6 +1191,7 @@ function createDemoRouter ({ dailyDialogue = null, getAdapterFn = getAdapterForL
           }
           if (manual) {
             opts.manualLocalDialogue = true
+            opts.ownerRecallConversationId = req.body.conversationId
             opts.ownerConversationLookup = reference => require('../intake/ownerRecall').resolveConversationReference(conversationStore,reference)
           }
           result = manual ? await dailyDialogue(req.body.conversationId, foregroundId, intake, refusal => {

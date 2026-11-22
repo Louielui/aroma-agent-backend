@@ -526,6 +526,7 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
     const canRead = resolveFlag(process.env,'READ_ACCESS') === 'on'
     const recall=await require('./ownerRecall').answerOwnerRecall(message,opts.conversationEvidence,{
       readApproved:canRead && process.env.XIANGXIANG_MEMORY==='on' ? () => opts.memoryClient?.ownerPrinciples?.() : undefined,
+      readHistory:canRead && process.env.XIANGXIANG_MEMORY==='on' ? query => opts.memoryClient?.ownerHistory?.(query,opts.ownerRecallConversationId) : undefined,
       readConversation:canRead ? opts.ownerConversationLookup : undefined
     })
     if (recall) return {...recall,requestId}

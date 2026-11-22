@@ -18,4 +18,6 @@ function approvedPrinciple(row, now) {
     safeQuote(row.text) && row.approval.contentHash === require('node:crypto').createHash('sha256').update(row.text).digest('hex')
 }
 
-module.exports = {principle, topicOf, approvedPrinciple, safeQuote}
+const historyMatch = (text, query) => text.toLowerCase().includes(query.toLowerCase())
+
+module.exports = {principle, topicOf, approvedPrinciple, safeQuote, historyMatch}

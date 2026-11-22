@@ -150,6 +150,35 @@ function createGateway({ store, engine, readConversation, clock = () => new Date
       return {id,version,subject,text}
     }))
   }
+  async function ownerHistory(actor, query, currentConversationId) {
+    owner(actor)
+    const {historyMatch,safeQuote}=require('./ownerPrinciples')
+    if (!text(query,200) || !safeQuote(query)) throw Error('invalid_query')
+    const matches = row => !!row && ['active','superseded'].includes(row.status) && (!row.expiresAt || row.expiresAt > clock()) &&
+      (!currentConversationId || row.details?.conversationId !== currentConversationId) &&
+      row.source?.attribution === 'owner_statement' && safeQuote(row.text) && historyMatch(row.text,query) &&
+      ((row.approval?.kind === 'policy' && row.approval.id === 'owner_history' && row.approval.actor === 'owner' &&
+        row.scope === 'private:owner' && ['conversation','historical_import'].includes(row.source.kind)) ||
+       (row.approval?.kind === 'owner' && row.approval.actor === 'owner' && row.approval.contentHash === hash(row.text)))
+    const rows = (await list(actor)).filter(matches)
+      .sort((a,b) => String(b.source.at||'').localeCompare(String(a.source.at||'')) || a.id.localeCompare(b.id))
+    const seen = new Set()
+    const originals = rows.filter(row => {
+      if (seen.has(row.text)) return false
+      seen.add(row.text)
+      return true
+    }).slice(0,3)
+    return Promise.all(originals.map(async row => {
+      const canonical = await get(actor,row.id)
+      if (!matches(canonical) || evidenceHash(canonical)!==evidenceHash(row) ||
+          canonical.details?.conversationId!==row.details?.conversationId) throw Error('stale_evidence')
+      const index = canonical.text.toLowerCase().indexOf(query.toLowerCase())
+      const start = canonical.text.length > 800 ? Math.max(0,index-100) : 0
+      const excerpt = canonical.text.slice(start,start+800)
+      return {id:canonical.id,version:canonical.version,text:excerpt,
+        partial:start>0||excerpt.length<canonical.text.length||canonical.details?.truncated===true}
+    }))
+  }
   async function recall(actor, query, options = {}) {
     if (!text(query, 2000) || exclusionReason(query, false)) throw Error('invalid_query')
     const records = (await list(actor, options)).filter(current)
@@ -417,7 +446,7 @@ function createGateway({ store, engine, readConversation, clock = () => new Date
     }
   }
   return { engine: 'memory_gateway', authorize, get, list, propose: (actor, input) => create(actor, input, false),
-    observe: (actor, input) => create(actor, input, true), transition, getDecision, preferences, ownerPrinciples, recall, index, rebuildIndex, working, finishWork,
+    observe: (actor, input) => create(actor, input, true), transition, getDecision, preferences, ownerPrinciples, ownerHistory, recall, index, rebuildIndex, working, finishWork,
     grant, authenticate, reflect, consolidate, status, progress, audit: async (actor, id) => { const r = await get(actor, id); return r ? store.audit(id) : [] } }
 }
 module.exports = { createGateway, OWNER, TYPES, SCOPES, STATUSES, stableId }
