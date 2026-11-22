@@ -317,10 +317,13 @@
     if(local)return health&&health.inference&&health.inference.provider==='local'&&health.inference.state==='ready'&&health.inference.cloudFallback===false?(health.controlledDispatch&&health.controlledDispatch.state==='connected'?t('localBrain.controlledDispatchReady'):t('localBrain.chatReadyWorkerUnavailable')):t('localBrain.unavailable')
     return health&&health.state==='ready'?(health.supervisor&&health.supervisor.state==='starting'?t('actions.bridgeRecovering'):t('actions.bridgeReady')):t('actions.bridgeOffline')
   }
-  function readExecutionLabel(local,t){
+  function readExecutionLabel(local,t,onLoginRequired){
     return fetch('/api/v1/execution-health',{credentials:'same-origin',cache:'no-store',signal:AbortSignal.timeout(7000)})
-      .then(function(r){if(!r.ok)throw Error('unavailable');return r.json()})
-      .then(function(h){return executionLabel(h,local,t)})
+      .then(function(r){
+        if(local&&r.status===401&&onLoginRequired){onLoginRequired();return ''}
+        if(!r.ok)throw Error('unavailable')
+        return r.json().then(function(h){return executionLabel(h,local,t)})
+      })
       .catch(function(){return local?t('localBrain.unavailable'):t('actions.bridgeOffline')})
   }
   root.XiangxiangTopics = { mount: mount,readStream:readStream,startTiming:startTiming,markRendered:markRendered,localCompany:localCompany,localProviders:localProviders,executionLabel:executionLabel,readExecutionLabel:readExecutionLabel }

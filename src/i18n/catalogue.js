@@ -1891,6 +1891,8 @@ const CATALOGUE = Object.freeze({
   'localBrain.chatReadyWorkerUnavailable': { zh: '本機模型已就緒；派工尚未接入，不會轉用雲端。', en: 'Local model ready. Workers are not connected; cloud fallback is disabled.' },
   'localBrain.workerUnavailable': { zh: '這項派工尚未接入本機模式；沒有送出，也不會轉用雲端。', en: 'This worker is not connected in local mode. Nothing was sent and cloud fallback is disabled.' },
   'localBrain.limits': { zh: '本機推理，無雲端回退；外部資料仍需網路。', en: 'Local inference, no cloud fallback. External data still requires network access.' },
+  'localBrain.loginRequired': { zh: '登入已失效。請在新分頁重新登入，再返回此處。草稿會保留。', en: 'Your session expired. Sign in in a new tab, then return here. Your draft is kept.' },
+  'localBrain.loginAction': { zh: '重新登入', en: 'Sign in again' },
   'localBrain.unavailable': { zh: '本機模型尚未就緒；不會轉用雲端。', en: 'The local model is not ready. Cloud fallback is disabled.' },
   'localBrain.processing': { zh: '本機模型處理中…', en: 'Local model processing…' },
   'localBrain.memoryRead': { zh: '記憶檢索已完成，正在準備回覆…', en: 'Memory lookup complete; preparing the reply…' },
