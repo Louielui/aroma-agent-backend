@@ -40,3 +40,41 @@ A pre-admission refusal has no registered turn; inspect its correlation receipt.
 Daily ledger I/O failures retain their operation and bounded OS code in private
 store-failure evidence when storage permits. The original refusal and reservation
 remain authoritative. A missing diagnostic leaves the underlying cause unknown.
+
+## Standing authorization
+A standing grant is absent until the Owner confirms a new ID using the installed
+commit in the native terminal. The signed-in composer still admits only its
+same-origin manual chat requests. The grant uses the pinned local model and
+the existing phase, website, child, and provider fences. It has neither a grant
+expiration nor a lifetime call balance. Each admitted manual message reserves
+at most twelve calls in its own native receipt. A refused or failed reservation
+stays in that receipt. Request IDs are single-use across the standing store.
+
+From the installed repository, use the existing interactive script with:
+
+- `activate-standing <new-uuid> <boot-commit>` after any current short grant has
+  been paused through its original entry. The existing short ledger is preserved.
+- `pause-standing <id> <boot-commit>` to stop admission, new reservations and
+  unclaimed dispatches. An already committed dispatch may finish.
+- `resume-standing <id> <boot-commit>` to resume the same grant. A turn admitted
+  before the pause cannot use the resumed grant to resume dispatching.
+- `revoke-standing <id> <boot-commit>` to retire the grant and retain its history.
+- `status` for the active selection or `status-standing <id>` for a particular
+  standing grant, including a revoked one. Read at idle. Its `helper` counters
+  are lifetime totals, and `today` groups reservations by their Winnipeg date.
+  `available: null` indicates no aggregate limit. `after-turn` accepts the same
+  three arguments and returns the one message's receipts and balance.
+
+A normal restart preserves both policy and counters. A different installed
+source or model is refused and reports zero available until an Owner-approved
+grant for the new source is in effect. A stale terminal confirmation cannot
+change a newer grant state. A paused standing selection does not switch to the
+previous short grant.
+
+The host stores standing approvals, transition history, immutable request IDs,
+native receipts and transactional counters in the private operational database
+`owner-local-dialogue/standing.sqlite`. One indexed record per message keeps
+the active write independent of conversation age and lifetime usage. SQL
+failures refuse dispatch without refunding a prior reservation. The existing
+memory backup's fixed asset list remains separate from this operational
+database. Loss of the database cannot activate standing access.
