@@ -530,6 +530,8 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
       readConversation:canRead ? opts.ownerConversationLookup : undefined
     })
     if (recall) return {...recall,requestId}
+    const prep = require('./suppliedCalculation').suppliedPrep(message, opts.conversationEvidence)
+    if (prep) return require('./suppliedCalculationReply').calculationAnswer(prep.reply, requestId)
     if (opts.readLocalPublic && require('../context/flags').readAccessEnabled(process.env,'public_knowledge')) {
       const publicAnswer=await require('../localBrain/publicSearch').answer(message,adapter,opts.foregroundRequestId,opts.readLocalPublic)
       if (publicAnswer) {
@@ -2320,7 +2322,7 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
     ?require('./suppliedCalculation').calculate(distilled.suppliedCalculation,opts.conversationEvidence):null
   if(suppliedCalculation){
     await recordProviderUsage(llmResult)
-    return{blocked:false,mode:'chat',intent:'question',talkOnly:true,interactionMode:'chat',reply:suppliedCalculation.reply,replyForArchive:suppliedCalculation.reply,utility:'supplied_calculation',readClaimCorrected:false,decision:null,tasks:[],risks:[],next_step:'',requestId}
+    return require('./suppliedCalculationReply').calculationAnswer(suppliedCalculation.reply, requestId)
   }
 
   // ── B2 DETERMINISTIC INTERACTION-MODE GATE (opt-in). When opts.interactionMode is

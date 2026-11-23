@@ -10,4 +10,16 @@ function renderTransfer(result,locale){
  const balances=result.locations.map(r=>en?`${r.entity} has ${r.quantity} ${unit}`:`${r.entity}剩 ${r.quantity} ${unit}`).join(en?', ':'，')
  return en?`Under your supplied assumptions, ${moves}; this minimizes the total quantity moved. Afterwards, ${balances}.`:`按你個假設，${moves}，咁樣搬動最少。之後${balances}。`
 }
-module.exports={renderTransfer}
+
+function renderPrep ({locations,product,each,batch,total,batches,spare}) {
+ const needs = locations.map(({name,quantity}) => `${name} ${quantity} 份`).join('、')
+ const remainder = spare > 0 ? `如果按整${batch}做，會多 ${spare} 份。` : ''
+ return `按你個假設，${needs}，合共 ${total} 份${product}。每${batch} ${each} 份，中央做 ${batches} ${batch}。${remainder}`
+}
+
+function calculationAnswer (reply, requestId) {
+ return {blocked:false,mode:'chat',intent:'question',talkOnly:true,interactionMode:'chat',
+  reply,replyForArchive:reply,utility:'supplied_calculation',readClaimCorrected:false,
+  decision:null,tasks:[],risks:[],next_step:'',requestId}
+}
+module.exports={renderTransfer,renderPrep,calculationAnswer}
