@@ -88,6 +88,15 @@ function resolveConversationContract (env = process.env) {
  * so when you add one, say in the same breath whether anything checks it.
  * ══════════════════════════════════════════════════════════════════════════════
  */
+const READ_RESULT_PRESENTATION = [
+  '讀取結果:',
+  '- 當回覆中出現 <external_read_context> 的內容時,摘要與逐項清單由系統自動產生,你不要自己再寫一次,也不要重複列出項目、金額、單號、日期或狀態。',
+  '- 你只寫兩節,次序如下:',
+  '  「### 香香睇法」— 最多兩三句你自己的判斷:值得留意甚麼、有甚麼模式、有甚麼要小心。可以說「其中一張拖了成個月」這種觀察,但不要寫任何數字(金額、單號、日期、數量都由系統負責)。沒有真正值得說的就整節不要寫,不要為交差而寫。',
+  '  「### 下一步」— 恰好一個問題,不要並列兩三個選項。',
+  '- 「香香睇法」只可以講上面那些資料本身顯示到的事,不要加入資料以外的事實。',
+]
+
 const CONVERSATION_CONTRACT = [
   '【對話體驗約定】這一節規範你回覆中 reply 的表達與態度,不改變輸出格式,也不改變你的身分定義。',
   // ── OWNER LANGUAGE POLICY (permanent) ──────────────────────────────────────
@@ -179,16 +188,13 @@ const CONVERSATION_CONTRACT = [
   // 讀取結果的版面由伺服器產生 —— 這裡只需要交代模型該寫什麼、不該寫什麼。逐項的
   // 名稱、金額、日期、狀態全部由 readResultView.js 決定性地渲染,模型重抄一次只會引入
   // 轉錄錯誤;所以這節的重點是「不要重覆」。
-  '讀取結果:',
-  '- 當回覆中出現 <external_read_context> 的內容時,摘要與逐項清單由系統自動產生,你不要自己再寫一次,也不要重複列出項目、金額、單號、日期或狀態。',
-  '- 你只寫兩節,次序如下:',
-  '  「### 香香睇法」— 最多兩三句你自己的判斷:值得留意甚麼、有甚麼模式、有甚麼要小心。可以說「其中一張拖了成個月」這種觀察,但不要寫任何數字(金額、單號、日期、數量都由系統負責)。沒有真正值得說的就整節不要寫,不要為交差而寫。',
-  '  「### 下一步」— 恰好一個問題,不要並列兩三個選項。',
-  '- 「香香睇法」只可以講上面那些資料本身顯示到的事,不要加入資料以外的事實。',
+  ...READ_RESULT_PRESENTATION,
   '一致性:',
   '- 無論背後由哪個模型作答,以上表達與態度都不改變。',
   '- 多個 AI 參與時,最後仍由你以同一把聲音回答。',
   '核心規則:說得自然,想得仔細,語氣的確定程度不可超過證據所支持的程度。'
 ].join('\n')
 
-module.exports = { CONVERSATION_CONTRACT, resolveConversationContract }
+const CONVERSATION_DRAFT_CONTRACT = CONVERSATION_CONTRACT.replace(READ_RESULT_PRESENTATION.join('\n') + '\n', '')
+
+module.exports = { CONVERSATION_CONTRACT, CONVERSATION_DRAFT_CONTRACT, resolveConversationContract }

@@ -601,6 +601,14 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
     a4SemanticRoutingEnabled(process.env) && routeGoverns && routeDecision.route === 'CONVERSATION' &&
     !opts.contextCard && !opts.attachSection && !opts.sectionPreamble
   const evidence = require('./conversationEvidence')
+  const draftContract = require('./localChatDraft')
+  const ownerDraftMessages = evidence.ownerSources(opts.conversationEvidence)
+  const localDraft = demo && localMode && opts?.manualLocalDialogue === true && opts.interactionMode === 'chat' &&
+    !opts.contextCard && !opts.attachSection && !opts.sectionPreamble &&
+    draftContract.isDraftRequest(message, ownerDraftMessages)
+  const draftLineCount = localDraft ? draftContract.requestedLineCount(message) : null
+  const draftProjection = draftLineCount ? { lineCount: draftLineCount, audience: draftContract.requestedAudience(message, ownerDraftMessages) } : null
+  const draftNeedsStartTime = localDraft && draftContract.needsStartTime(message, Array.isArray(history) ? history.length : 0)
   const wellbeingExchange = manualConversation && evidence.isWellbeingExchange(message, history, opts.conversationEvidence)
   const previousGreeting = wellbeingExchange ? evidence.ownerSources(opts.conversationEvidence).at(-2) : null
   const greetingRecallReply = previousGreeting ? '你剛才問我「' + previousGreeting + '」。' : null
@@ -814,7 +822,7 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
   // ── STEP 2: LLM DISTILLATION ──────────────────────────────────────────────
   // ⛔ A4-1 is CHAT-ONLY: the lane is passed explicitly so the proposal and email_draft
   // system strings can never pick up read guidance for a lane that cannot read.
-  const { system, prompt } = buildDistillPrompt(message, history, { chatLane: (opts && opts.interactionMode === 'chat') === true, localOnly:localMode, conversationEvidence:opts&&opts.conversationEvidence })
+  const { system, prompt } = buildDistillPrompt(message, history, { chatLane: (opts && opts.interactionMode === 'chat') === true, localOnly:localMode, manualLocalDialogue:opts?.manualLocalDialogue, conversationEvidence:opts&&opts.conversationEvidence })
   // DEMO (flag ON): trusted persona identity via `system`; untrusted project
   // context via a sanitized prompt data block. Both cross the SAME LLMAdapter
   // boundary as plain strings — no provider SDK here. Context Card sanitization
@@ -825,7 +833,7 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
   // Memory. In hybrid mode a fail-closed PersonaSourceUnavailableError propagates
   // BEFORE any adapter/model call. Only the persona slot varies; guard, separators
   // and the classifier are unchanged. Non-demo path is untouched.
-  let effSystem
+  let effSystem, draftEffSystem
   if (demo) {
     const src = (opts && opts.personaSource) || getPersonaSource()
     const rp = src.runtimePersona() // hybrid: throws PersonaSourceUnavailableError before the model is called
@@ -853,6 +861,11 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
       if (ownerBlock) guards.push(ownerBlock)
     } catch (_) { /* settings must never be able to break a conversation */ }
     effSystem = buildPersonaSystemFromPersona(rp.personaText, system, { extraGuards: guards })
+    if (localDraft) {
+      const { CONVERSATION_DRAFT_CONTRACT } = require('../persona/conversationContract')
+      const draftGuards = guards.map(guard => guard === CONVERSATION_CONTRACT ? CONVERSATION_DRAFT_CONTRACT : guard)
+      draftEffSystem = buildPersonaSystemFromPersona(rp.personaText, draftContract.system, { extraGuards: draftGuards })
+    }
   } else {
     effSystem = system
   }
@@ -1300,12 +1313,25 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
    *    model_call(goal_decomposer). Those records carry `within: 'prompt_build'` so a reader
    *    summing durations can see the nesting instead of double-counting it.
    */
+  function canFocusDraftReply() {
+    return localDraft && !hindsightCache?.sources?.length && turnItems.size === 0 &&
+      turnOperations.size === 0 && turnEvidence.size === 0 && extraObservationBlocks.length === 0
+  }
+
   async function buildPromptFor (providerName, composeOnly = false) {
     const key = providerName + ':' + extraObservationBlocks.length + (composeOnly ? ':compose' : '')
     // Cache only assembled context. Writing guidance belongs at the end of each
     // answer request, never in the planner or in the cached context itself.
     const forAnswer = value => {
       const parts = typeof value === 'string' ? [{ name: 'base', text: value }] : value
+      if (!composeOnly && canFocusDraftReply()) {
+        // The ordinary assembler has already run. Remove only inferred planning
+        // prose and the long runtime catalogue from this source-free draft.
+        const planning = new Set(['goal', 'answer_frame', 'evidence_judge', 'runtime_identity'])
+        return parts.filter(part => !planning.has(part.name) &&
+          (part.name !== 'canonical_memory' || hindsightCache?.count > 0 || hindsightCache?.preferences?.items?.length)).map(part =>
+          part.name === 'base' && part.text === baseEffPrompt ? { ...part, text: prompt } : part)
+      }
       const guidance = require('./responseWriting').forAnswer('', opts?.interactionMode)
       return guidance ? [...parts, { name: 'writing_guidance', text: guidance }] : parts
     }
@@ -2048,6 +2074,9 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
             : {type:'string'}}
       }}
     }
+    if (canFocusDraftReply()) {
+      return draftContract.responseFormat(format, { lineCount: draftLineCount, startTimeMissing: draftNeedsStartTime })
+    }
     let selected=format
     if(hindsightCache?.sources?.length){
       const base = format || { type:'json_schema', name:'local_memory_answer', schema:withReadChoices(DISTILL_WITH_READ_DECISION_SCHEMA, [], 'No tool operations are available in this turn.') }
@@ -2200,7 +2229,7 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
         const gptPrompt = await buildPromptFor(OPENAI)
         if (!useSourceBoundDirectAnswer(gpt.providerName === 'claude' ? CLAUDE : OPENAI, gpt)) {
           const gptFormat = localAnswerFormat(answerPlanFormat())
-          const callOpts = { invocationPhase:'answer', system: effSystem, maxTokens, temperature: 0.3, ...(gptFormat ? { responseFormat: gptFormat } : {}) }
+          const callOpts = { invocationPhase:'answer', system: canFocusDraftReply() ? draftEffSystem : effSystem, maxTokens, temperature: canFocusDraftReply() ? 0.1 : 0.3, ...(gptFormat ? { responseFormat: gptFormat } : {}) }
           gptResult = await timePhase(
             { requestId, phase: PHASE.MODEL_CALL, role: ROLE.MAIN, provider: gpt.providerName === 'local' ? 'local' : gpt.providerName === 'claude' ? CLAUDE : OPENAI, attempt: 1 },
             () => gpt.complete(assembleAnswer(gptPrompt, gpt, callOpts), callOpts),
@@ -2222,7 +2251,7 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
         noteProvider(gpt.providerName || 'openai', gptResult)
         await recordProviderUsage(gptResult)
         try {
-          distilled = parseDistillResponse(gptResult.text, tel)
+          distilled = parseDistillResponse(gptResult.text, tel, canFocusDraftReply() ? draftProjection : null)
           if ((simpleFastPath || suppliedIdentifier || wellbeingExchange) && (distilled.mode !== 'chat' || distilled.nextRead || distilled.answerPlan ||
             (Array.isArray(distilled.tasks) && distilled.tasks.length))) throw new SubscriptionError('subscription_invalid_output')
           llmResult = gptResult
@@ -2256,9 +2285,9 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
           { requestId, phase: PHASE.MODEL_CALL, role: ROLE.MAIN, provider: CLAUDE, attempt: 1 },
           () => adapter.complete(claudePrompt.map(part => part.text).join(''), {
             invocationPhase:'answer',
-            system: effSystem,
+            system: canFocusDraftReply() ? draftEffSystem : effSystem,
             maxTokens,
-            temperature: 0.3,
+            temperature: canFocusDraftReply() ? 0.1 : 0.3,
             ...(claudeFormat ? { responseFormat: claudeFormat } : {})
           }),
           { clock: latencyClock, sink: latencySink })
@@ -2332,7 +2361,7 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
   // the TRUE output size. The model output itself, the prompts and the user's message
   // are never attached — the existing rawSample (capped at 200) remains the only text.
   try {
-    if (!distilled) distilled = parseDistillResponse(llmResult.text, tel)
+    if (!distilled) distilled = parseDistillResponse(llmResult.text, tel, canFocusDraftReply() ? draftProjection : null)
     tel.parseResult = 'ok'
     // THE CLASSIFIER LOGS ITS OWN VERDICT. The router has logged its decision since Step 1;
     // this one decided whether a work-order card could exist and left no trace at all.
@@ -2354,6 +2383,8 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
     }
     throw err
   }
+
+  if (draftNeedsStartTime && canFocusDraftReply()) distilled = draftContract.clarifyStartTime(distilled)
 
   // Like the existing UTILITY response: only a host-verified interpretation can
   // produce program-authored arithmetic. No model prose, source read, task or
