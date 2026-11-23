@@ -40,7 +40,7 @@ test('bilingual desktop and mobile investigation approves once, shows saved cita
         }
         if (p === '/api/v1/owner/results/appr_fixture') return json({ finished: true, status: retryFailed && !approvals ? 'failed' : 'done', headline: 'Saved source check', enquiry: { enquiryId: 'enq_fixture', saved: true, outcome: retryFailed && !approvals ? 'FAILED' : 'CONCLUDED' }, sections: [], lines: [] })
         if (p === '/api/v1/demo/enquiries/enq_fixture') return json({ enquiry: { outcome: 'CONCLUDED', payload: { answer: 'Source check answer.', citations: [{ path: 'settings.txt', startLine: 1, endLine: 1, quote: 'enabled = false' }] }, notEstablished: ['Billing records are not connected.'] } })
-        const fixture = { '/api/v1/demo/greeting': { line: 'Fixture' }, '/api/v1/demo/version': { build: 'investigation-fixture' }, '/api/v1/home/settings': { entries: [] }, '/api/v1/home/briefing': { sections: [] }, '/manifest.webmanifest': {} }
+        const fixture = { '/api/v1/demo/greeting': { line: 'Fixture' }, '/api/v1/demo/version': { build: 'investigation-fixture' }, '/api/v1/home/settings': { entries: [] }, '/api/v1/home/waiting': { waiting: { state: 'NOTHING_WAITING', cards: [] } }, '/manifest.webmanifest': {} }
         if (method === 'GET' && Object.hasOwn(fixture, p)) return json(fixture[p])
         unexpected.push(p); return route.abort()
       })

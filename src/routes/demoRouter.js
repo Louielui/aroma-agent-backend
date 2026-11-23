@@ -56,7 +56,6 @@ const { routeLane } = require('../intake/laneRouter') // Unified Conversation v1
 // anyone who does not gets a store that holds nothing and writes nothing.
 const { INERT_CONVERSATION_STORE, isValidId: isValidConversationId } = require('../store/conversationStore')
 const { greetingFor } = require('../demo/greeting') // the empty screen's line — the Owner's clock, not the browser's
-const { sentenceFor } = require('../context/invoiceBacklog') // the waiting-invoices line; null when there is nothing to say
 
 const INTERACTION_MODES = ['chat', 'email_draft', 'proposal']
 
@@ -105,8 +104,6 @@ function historyTextOf (history) {
   return parts.filter(Boolean).join('\n')
 }
 
-/** Sentinel for the greeting's backlog budget — distinguishable from any real result. */
-const TIMED_OUT = Symbol('backlog_timed_out')
 
 /**
  * ⛔ THE OWNER'S OWN LOGIN, NOT THE OUTER GATE.
@@ -220,7 +217,7 @@ function setMemoryReceipt(res,state) {
   res.locals ||= {};res.locals.memoryReceipt=state
   if(!res.headersSent)res.setHeader('X-Memory-Receipt',state)
 }
-function createDemoRouter ({ dailyDialogue = null, getAdapterFn = getAdapterForLane, processIntakeFn = processIntake, conversationStore = INERT_CONVERSATION_STORE, readBacklogFn = null, backlogTimeoutMs = 2500, errandStoreFn = null, operatingManager = null, memoryJournal = null, mailChat = null, liveContext = null, sevenShiftsReport = null, hrRechecks = null, developmentPlan = null, codeDiagnosis = null, codeRepair = null, chatWork = null, chatTasks = null, taskPlanner = null, taskDialogue = null, schedulerChat = null, procurementChat = null, capabilityGaps = null, publicCompletion = require('../topics/publicAnswerFollowups').createService(), imageAdapterFn = selection => {
+function createDemoRouter ({ dailyDialogue = null, getAdapterFn = getAdapterForLane, processIntakeFn = processIntake, conversationStore = INERT_CONVERSATION_STORE, errandStoreFn = null, operatingManager = null, memoryJournal = null, mailChat = null, liveContext = null, sevenShiftsReport = null, hrRechecks = null, developmentPlan = null, codeDiagnosis = null, codeRepair = null, chatWork = null, chatTasks = null, taskPlanner = null, taskDialogue = null, schedulerChat = null, procurementChat = null, capabilityGaps = null, publicCompletion = require('../topics/publicAnswerFollowups').createService(), imageAdapterFn = selection => {
   if (process.env.CHAT_BACKEND !== 'codex-subscription') throw Error('image_chat_unavailable')
   return new (require('../adapters/CodexSubscriptionAdapter').CodexSubscriptionAdapter)(selection)
 }, modelCenter = null, planningRevision = require('../governance/bootCommit').BOOT_COMMIT, modelsFn = async () => new (require('../adapters/CodexSubscriptionAdapter').CodexSubscriptionAdapter)().models() } = {}) {
@@ -292,48 +289,13 @@ function createDemoRouter ({ dailyDialogue = null, getAdapterFn = getAdapterForL
    *
    * It carries no data of any kind: a band word and a proper noun.
    */
-  /**
-   * ── THE BACKLOG LINE RIDES HERE, AND NEVER BREAKS THE GREETING ─────────────
-   * Owner's constraint, verbatim: 「greeting must render even when Drive does not answer」.
-   *
-   * The greeting is a pure function of the clock. Attaching a network read to it would
-   * trade a screen that always works for a feature that usually does — so the greeting is
-   * computed FIRST and returned regardless, and the line is attached only if the read
-   * resolves inside its budget. A Drive outage costs the line, never the greeting.
-   *
-   * It surfaces by itself because the failure mode is the Owner FORGETTING: an answer he
-   * has to ask for inherits the same defect, and would route through a classifier measured
-   * as non-deterministic (M-5).
-   *
-   * SILENCE IS ONLY FOR 「nothing waiting」. A read failure SPEAKS — see sentenceFor().
-   */
-  router.get('/api/v1/demo/greeting', demoGuard, async (req, res) => {
-    let payload
+  // Opening a blank conversation only needs the local clock and greeting.
+  router.get('/api/v1/demo/greeting', demoGuard, (_req, res) => {
     try {
-      payload = { ok: true, ...greetingFor(new Date()), backlog: null }
+      return res.json({ ok: true, ...greetingFor(new Date()), backlog: null })
     } catch (_) {
-      // Never load-bearing: the empty screen simply shows nothing rather than failing.
       return res.status(500).json({ ok: false, error: 'greeting_failed' })
     }
-
-    if (typeof readBacklogFn === 'function') {
-      try {
-        const budget = new Promise((resolve) => setTimeout(() => resolve(TIMED_OUT), backlogTimeoutMs))
-        const r = await Promise.race([Promise.resolve().then(readBacklogFn), budget])
-        payload.backlog = r === TIMED_OUT
-          // A TIMEOUT MUST NOT BE SILENT. It used to set null, which renders identically to
-          // 「nothing waiting」 — and that is exactly what happened: the read took 3.2-5.6s
-          // against a 2.5s budget, so every cold render showed nothing while 64 files sat
-          // in Drive. Silence is reserved for「the feature is off」and nothing else.
-          ? t('route.driveStillReading')
-          : sentenceFor(r)
-      } catch (_) {
-        // A thrown read still SAYS so. No sentence at all would be read as 「nothing
-        // waiting」, which is the one meaning it must never carry.
-        payload.backlog = t('route.driveError')
-      }
-    }
-    res.json(payload)
   })
 
   /**
