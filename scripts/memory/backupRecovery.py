@@ -198,13 +198,20 @@ def finish_recovery(staged, snapshot_path):
                 "canonical": {"file": "canonical.json", "sha256": hashlib.sha256(content).hexdigest(),
                               "tables": {k: len(v) for k, v in snapshot["tables"].items()}}}
     sealed = {"sha256": hashlib.sha256(encode(manifest).encode("utf-8")).hexdigest(), "manifest": manifest}
-    write_new(target / "manifest.json", encode(sealed).encode("utf-8"))
-    proof = verify_recovery(target)
-    return {"state": "saved", "path": str(target), "manifestHash": sealed["sha256"], **proof}
+    manifest_bytes = encode(sealed).encode("utf-8")
+    write_new(target / "manifest.json", manifest_bytes)
+    _, proof, file_hash = verified_bundle(target)
+    if file_hash != hashlib.sha256(manifest_bytes).hexdigest():
+        raise ValueError("recovery_manifest_invalid")
+    return {"state": "saved", "path": str(target), "manifestHash": sealed["sha256"],
+            "manifestFileSha256": file_hash, **proof}
 
 
-def verified_bundle(target):
+def verified_bundle(target, verified_manifest_hash=None):
     manifest_bytes = (target / "manifest.json").read_bytes()
+    file_hash = hashlib.sha256(manifest_bytes).hexdigest()
+    if verified_manifest_hash is not None and file_hash != verified_manifest_hash:
+        raise ValueError("recovery_manifest_invalid")
     sealed = json.loads(manifest_bytes.decode("utf-8"))
     manifest = sealed["manifest"]
     if manifest.get("format") != 1 or manifest.get("kind") != "xiangxiang-memory-recovery" or \
@@ -222,10 +229,11 @@ def verified_bundle(target):
             if item["path"] in seen or not re.fullmatch(r"[0-9a-f]{64}", item["sha256"]):
                 raise ValueError("invalid_recovery_path")
             seen.add(item["path"])
-            checks.verify(target / "objects" / item["sha256"], item["sha256"], item["bytes"])
+            if verified_manifest_hash is None:
+                checks.verify(target / "objects" / item["sha256"], item["sha256"], item["bytes"])
     proof = {"state": "verified", "files": len(manifest["files"]), "tables": manifest["canonical"]["tables"],
              "credentials": manifest["credentials"], "hindsight": manifest["hindsight"]}
-    return manifest, proof, hashlib.sha256(manifest_bytes).hexdigest()
+    return manifest, proof, file_hash
 
 
 def verify_recovery(source):
@@ -240,10 +248,12 @@ def restore_asset(source, target, digest, size):
     write_new(target, content)
 
 
-def restore_files(source, destination):
+def restore_files(source, destination, *, verified_manifest_hash=None):
     target = pathlib.Path(destination).resolve()
     bundle = pathlib.Path(source).resolve()
-    manifest, proof, manifest_digest = verified_bundle(bundle)
+    # The scheduled run pins its just-verified manifest. Each copy still
+    # verifies its own source bytes, followed by independent destination reads.
+    manifest, proof, manifest_digest = verified_bundle(bundle, verified_manifest_hash)
     private_directory(target)
     data = target / "data"
     if manifest["files"]:

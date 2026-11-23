@@ -71,6 +71,16 @@ async def backup(destination):
         await db.close()
 
 
+async def insert_restore_rows(db, table, columns, rows):
+    names = ",".join(columns)
+    placeholders = ",".join("$" + str(index + 1) for index in range(len(columns)))
+    statement = f"INSERT INTO memory.{table}({names}) VALUES({placeholders})"
+    batch_size = 256
+    for start in range(0, len(rows), batch_size):
+        batch = rows[start:start + batch_size]
+        await db.executemany(statement, [tuple(row[name] for name in columns) for row in batch])
+
+
 async def verify_restore(source):
     envelope = json.loads(pathlib.Path(source).read_text(encoding="utf-8"))
     snapshot = envelope["snapshot"]
@@ -106,9 +116,7 @@ async def verify_restore(source):
                     columns = {"records": ["sequence", "id", "version", "body"], "audit": ["sequence", "record_id", "body", "previous_hash", "hash"],
                                "principals": ["id", "body"], "access_audit": ["sequence", "body"]}
                     for table in TABLES:
-                        names = columns[table]
-                        for row in snapshot["tables"][table]:
-                            await db.execute("INSERT INTO memory." + table + "(" + ",".join(names) + ") VALUES(" + ",".join("$" + str(i+1) for i in range(len(names))) + ")", *[row[n] for n in names])
+                        await insert_restore_rows(db, table, columns[table], snapshot["tables"][table])
                         if table != "principals":
                             await db.execute("SELECT setval(pg_get_serial_sequence('memory." + table + "','sequence'),COALESCE(MAX(sequence),1),MAX(sequence) IS NOT NULL) FROM memory." + table)
             for table in TABLES:
@@ -152,7 +160,8 @@ async def backup_and_verify(destination):
         recovery = finish_recovery(staged, snapshot_path)
         complete(start)
         start = begin("restore_files")
-        files = restore_files(staged["directory"], str(pathlib.Path(staged["directory"])) + ".restore")
+        files = restore_files(staged["directory"], str(pathlib.Path(staged["directory"])) + ".restore",
+                              verified_manifest_hash=recovery["manifestFileSha256"])
         complete(start)
     except BaseException:
         print(encode({"event": "BACKUP_PHASE", "version": 1, "phase": phase, "state": "failed"}), file=sys.stderr, flush=True)
