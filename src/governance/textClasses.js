@@ -294,6 +294,7 @@ const FILE_CLASS = Object.freeze({
   // ── MODEL — she is told this. Translating it changes behaviour. ─────────────
   'persona/conversationContract.js': CLASS.MODEL,     //  46
   'intake/distillPrompt.js': CLASS.MODEL,             //  15
+  'intake/localChatDraft.js': CLASS.MODEL,            // Local drafting prompt and its output contract
   // The O-1 evaluation corpus: labelled Owner-style questions fed to the deterministic
   // matcher. MATCHING because translating a row silently changes what the router is measured
   // against — the phrases ARE the guard, not decoration around it.

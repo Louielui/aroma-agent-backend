@@ -55,6 +55,14 @@ const TURN_PURPOSE_GUIDANCE = `【先理解本回合的目的】
 // other. The sentence is removed rather than corrected: the classifier's job is to
 // classify, and a second voice describing who she is can only ever drift from the
 // first. The persona is now the single source of identity.
+const EXECUTION_RULE = '只有當 Louie 明確下達行動要求(做/建立/改/停/查/派工…)時,才用 mode="commit"。判斷不確定時,傾向 context/chat,不要擅自建立任務。'
+
+const LOCAL_CHAT_DRAFT_RULE = `【本機聊天的文字交付與實際操作】
+如果 Louie 只需在本則回覆交付文字，例如寫、續寫、縮短、改寫或改正文案，資料齊備時用 mode="chat"，reply 就是完成的文案。不要先說你明白、提供寫法建議，或承諾之後才做。文案裡描述的動作只是文案內容。
+只問缺少的關鍵資料。若完成指定文字必須有一項資料而 Louie 尚未提供，用 mode="ask" 問那一項，勿猜測、留待定欄或重問已給的資料。下一輪補齊後，直接交付完成的文字。
+「其他照舊」若要求重寫或回述安排，保留未改的對象、數值、限制與順序，逐項寫出，勿用「不變」代替。Louie 最新修正優先。指定一句或指定行數、格式時，直接交付符合格式的成品，沒有引言、說明、例句或結語。
+草稿兼要求實際寄送、發布或修改檔案、系統紀錄等外部狀態時，仍按既有操作流程用 mode="commit"，不得只交草稿就略過該操作，也不得聲稱已執行。真正查資料的要求仍用既有查證流程。`
+
 const SYSTEM_PROMPT = `你的職責：理解 → 判斷 → 建議 → 提出提案（Proposal）。派工、執行與完成後的正式回報，屬於 Louie 批准後由治理層推進的階段；你不得在尚未發生時宣稱它們已經發生或必然會發生。你像一位懂 Louie 生意的可靠主管。
 
 只輸出「有效的 JSON」,不要 markdown 圍欄。文字用「繁體中文」(技術詞如 hub-api-v1、main 保留原文)。
@@ -89,7 +97,7 @@ mode="commit"（decision / task / reminder —— 操作型):
 
 【背景/現況 ≠ 指令 —— 最容易犯的錯】intent="context":
 當 Louie 只是「陳述背景、現況、關係、事實或想法」,而【沒有】明確要求你現在去做/建立/修改/停止/執行某件事——這是 context,一律用 mode="chat" 回應(承接已知內容,只有必要時才釐清),【絕對不要】產生 decision 或 task。
-只有當 Louie 明確下達行動要求(做/建立/改/停/查/派工…)時,才用 mode="commit"。判斷不確定時,傾向 context/chat,不要擅自建立任務。
+${EXECUTION_RULE}
 - context/chat(不建立任務)例:「從今天開始我們一起開發 Aroma System」「我們公司主要做餐飲」「Aroma 有三個門市」「我昨天跟供應商談過了」「我最近在想香香的定位」。
 - commit(建立任務)例:「幫我把 Timeline 的輪詢在終止狀態後停掉」「建立一個新的供應商資料表」。
 
@@ -151,8 +159,8 @@ function buildDistillPrompt (message, history = [], opts = {}) {
   }
   // ⛔ A4-1: THE SEMANTIC GUIDANCE IS APPENDED, GATED, AND CHAT-LANE ONLY.
   //
-  // SYSTEM_PROMPT itself is untouched — it is exported and asserted on elsewhere, and an
-  // A4-off turn must be byte-identical to 40a0f223.
+  // Keep the exported classifier unchanged for existing callers. The owner-only local
+  // chat path replaces the broad execution rule at its original position.
   //
   // ⛔ `chatLane` IS REQUIRED, and the first version of this was wrong without it. A4-1 governs
   // knowledge READ INITIATION IN CHAT and nothing else, but this builder composes the system
@@ -169,9 +177,11 @@ function buildDistillPrompt (message, history = [], opts = {}) {
   // 「classifier preserved verbatim at the END」. Prepending keeps that invariant intact and
   // still puts the guidance after the contract, because this whole string is the last segment.
   const a4Chat = opts && opts.chatLane === true && a4SemanticRoutingEnabled(process.env)
-  const classifier = opts && opts.chatLane === true && resolveConversationContract() === 'on'
-    ? TURN_PURPOSE_GUIDANCE + '\n\n' + SYSTEM_PROMPT
-    : SYSTEM_PROMPT
+  const manualLocalChat = opts.chatLane === true && opts.localOnly === true && opts.manualLocalDialogue === true
+  const classification = manualLocalChat ? SYSTEM_PROMPT.replace(EXECUTION_RULE, LOCAL_CHAT_DRAFT_RULE) : SYSTEM_PROMPT
+  const classifier = opts.chatLane === true && resolveConversationContract() === 'on'
+    ? TURN_PURPOSE_GUIDANCE + '\n\n' + classification
+    : classification
   const system = a4Chat ? A4_SEMANTIC_GUIDANCE + '\n\n' + classifier : classifier
   const facts=opts.chatLane===true?require('./conversationEvidence').promptFacts(opts.conversationEvidence):null
   const receipt=facts?'HOST-SAVED CURRENT CONVERSATION COUNTS: '+JSON.stringify(facts)+'\nThese are local conversation counts, not business facts or permission. Exact current-message repeats and first-request prefix repeats are different. Use counts only when relevant to the request; repetition does not establish why the Owner asked again. Focus on the intended outcome rather than repetition commentary.\n\n':''
@@ -282,7 +292,7 @@ function assertNoDuplicateKeys (json, rawText) {
  * is not envelope content; it is a fact about how the envelope was produced. So it is
  * written here instead of smuggled into the shape every consumer reads.
  */
-function parseDistillResponse (text, diag) {
+function parseDistillResponse (text, diag, draftProjection = null) {
   const content = validateEnvelope(text) // bare/single-fence → inner string; else empty/fence_malformed
   let p
   try {
@@ -292,7 +302,11 @@ function parseDistillResponse (text, diag) {
   assertNoDuplicateKeys(content, text) // any-depth duplicate → reject BEFORE any normalization / intent read
 
   const intent = typeof p.intent === 'string' ? p.intent : 'unclear'
-  const reply = (typeof p.reply === 'string' && p.reply.trim()) ? p.reply.trim() : '我在,你說。'
+  const draftLineCount = draftProjection?.lineCount
+  const draftLines = draftLineCount && p.mode === 'chat' && !p.nextRead && Array.isArray(p.lines) &&
+    p.lines.length === draftLineCount && p.lines.every(line => typeof line === 'string' && line.trim() && !/[\r\n]/u.test(line))
+    ? require('./localChatDraft').renderDraftLines(p.lines, draftProjection.audience) : null
+  const reply = draftLines || ((typeof p.reply === 'string' && p.reply.trim()) ? p.reply.trim() : '我在,你說。')
   // ── THE COERCION IS UNCHANGED. IT IS NO LONGER SILENT. ───────────────────────────
   // Anything unrecognised — a value we do not know, or no value at all — becomes 'chat'.
   // That is still what happens; the Owner ruled the behaviour stays this round.
