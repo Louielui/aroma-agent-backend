@@ -53,17 +53,17 @@ test('local product capability context distinguishes blocked workers and offline
  assert.doesNotMatch(block,/已有批准後派工嘅開發流程/)
  const old=require('../governance/selfCapability').capabilityBlock();assert.match(old,/已有批准後派工嘅開發流程/)
 })
-async function post(app,body){
+async function post(app,body,manual=false){
  const {IncomingMessage,ServerResponse}=require('node:http'),{Duplex}=require('node:stream'),wire=[],socket=new Duplex({read(){},write(c,e,n){wire.push(c.toString());n()}}),req=new IncomingMessage(socket),text=JSON.stringify(body)
- req.method='POST';req.url='/api/v1/demo/intake';req.httpVersion='1.1';req.httpVersionMajor=1;req.httpVersionMinor=1;req.headers={host:'127.0.0.1:18099',origin:'http://127.0.0.1:18099','content-type':'application/json','content-length':String(Buffer.byteLength(text))};req.complete=true
+ req.method='POST';req.url='/api/v1/demo/intake';req.httpVersion='1.1';req.httpVersionMajor=1;req.httpVersionMinor=1;req.headers={host:'127.0.0.1:18099',origin:'http://127.0.0.1:18099','content-type':'application/json','content-length':String(Buffer.byteLength(text))};if(manual)Object.assign(req.headers,{accept:'text/event-stream',cookie:'aroma_owner_session=fixture-owner'});req.complete=true
  const res=new ServerResponse(req);res.assignSocket(socket);await new Promise((resolve,reject)=>{const timer=setTimeout(()=>reject(Error('fixture_timeout')),12000);res.once('finish',()=>{clearTimeout(timer);resolve()});app.handle(req,res,e=>{if(e){clearTimeout(timer);reject(e)}});req.push(text);req.push(null)});const raw=wire.join('');return{status:res.statusCode,body:JSON.parse(raw.slice(raw.indexOf('\r\n\r\n')+4))}
 }
-async function integrated(message,answer,prior){
+async function integrated(message,answer,prior,manual=false){
  const vars={LOCAL_BRAIN_ONLY:'1',LOCAL_APP_PORT:'18099',CHAT_BACKEND:'local',LOCAL_MODEL:'qwen3.5:9b',XIANGXIANG_MEMORY:'off',GOAL_DECOMPOSER:'off',READ_ACCESS:'off',TURN_ROUTER:'shadow'},saved=Object.fromEntries(Object.keys(vars).map(k=>[k,process.env[k]]));Object.assign(process.env,vars)
  try{
-  const calls=[],writes=[],adapter={providerName:'local',preflight:async()=>({ready:true}),complete:async(prompt,opts)=>{calls.push({prompt,opts});assert.ok(calls.length<=2,'fixture may not loop');return{text:JSON.stringify(answer),provider:'local',billing:'local',model:'qwen3.5:9b',usage:{inputTokens:1,outputTokens:1,totalTokens:2}}}},express=require('express'),app=express();let starts=0
-  app.locals.conversationDemo=true;app.use(express.json());app.use(require('../routes/demoRouter').createDemoRouter({getAdapterFn:()=>adapter,conversationStore:{get:()=>({messages:prior}),appendTurn:v=>writes.push(v)},codeDiagnosis:{start:()=>{starts++;throw Error('dispatch_forbidden')}},processIntakeFn:(m,a,h,o)=>require('./intakeService').processIntake(m,a,h,{...o,openaiAdapter:adapter,readContextDeps:{sources:[],connector:{read:()=>{throw Error('business_read_forbidden')}}}})}))
-  const response=await post(app,{message,history:[],interactionMode:'chat',conversationId:randomUUID(),workflowRequestId:randomUUID()});return{...response,calls,writes,starts}
+  const calls=[],writes=[],adapter={providerName:'local',preflight:async()=>({ready:true}),complete:async(prompt,opts)=>{calls.push({prompt,opts});assert.ok(calls.length<=2,'fixture may not loop');return{text:JSON.stringify(answer),provider:'local',billing:'local',model:'qwen3.5:9b',usage:{inputTokens:1,outputTokens:1,totalTokens:2}}}},express=require('express'),app=express();let starts=0,admitted=0
+  app.locals.conversationDemo=true;if(manual)app.locals.ownerSessions={valid:id=>id==='fixture-owner'};app.use(express.json());app.use(require('../routes/demoRouter').createDemoRouter({getAdapterFn:()=>adapter,dailyDialogue:manual?async(_conversation,_request,run)=>{admitted++;return run()}:null,conversationStore:{get:()=>({messages:prior}),appendTurn:v=>writes.push(v)},codeDiagnosis:{start:()=>{starts++;throw Error('dispatch_forbidden')}},processIntakeFn:(m,a,h,o)=>require('./intakeService').processIntake(m,a,h,{...o,openaiAdapter:adapter,readContextDeps:{sources:[],connector:{read:()=>{throw Error('business_read_forbidden')}}}})}))
+  const requestId=randomUUID();const response=await post(app,{message,history:[],interactionMode:'chat',conversationId:randomUUID(),workflowRequestId:requestId,...(manual?{websiteRequestId:requestId}:{})},manual);return{...response,calls,writes,starts,admitted}
  }finally{for(const [k,v]of Object.entries(saved))if(v===undefined)delete process.env[k];else process.env[k]=v}
 }
 test('actual HTTP intake computes from saved Owner premises before any repeat generation or operational answer guard',async()=>{
@@ -78,4 +78,83 @@ test('saved multi-question capability enquiry reaches ordinary local understandi
 })
 test('an explicit unsupported command in local mode reports the actual Worker restriction without proposing a cloud entrance',async()=>{
  const r=await integrated('請 Codex 唯讀調查 .env',{mode:'chat',intent:'question',reply:'SHOULD_NOT_RUN'},[]);assert.equal(r.status,200);assert.equal(r.starts,0);assert.equal(r.calls.length,0);assert.match(r.body.reply,/本機|未接入|不可用/);assert.doesNotMatch(r.body.reply,/可直接交代 Codex|SHOULD_NOT_RUN/)
+})
+
+const prep = '假設 The Forks 明天要 80 份雲吞，St Mary\u2019s 要 40 份。中央每盤做 30 份，幫我排明天的 prep。'
+const prepCorrection = '改一改，The Forks 只要 50 份，其他照舊。重新計。'
+const demoStub = {mode:'chat',intent:'question',reply:'Offline replay placeholder before the fix.',nextRead:null}
+const prepHistory = [{role:'user',content:prep},{role:'assistant',content:'助手猜 St Mary\u2019s 99 份，每盤 77 份。'}]
+
+test('saved prep request computes four trays through the normal manual chat route',async()=>{
+ const r=await integrated(prep,demoStub,[],true)
+ assert.equal(r.status,200);assert.equal(r.admitted,1);assert.equal(r.body.utility,'supplied_calculation')
+ assert.match(r.body.reply,/The Forks 80 份.*St Mary\u2019s 40 份/s)
+ assert.match(r.body.reply,/120 份.*每盤 30 份.*4 盤/s)
+ assert.equal(r.body.reply,r.body.replyForArchive);assert.deepEqual(r.body.tasks,[])
+ assert.equal(r.body.decision,null);assert.equal(r.calls.length,0);assert.equal(r.writes.length,1)
+})
+
+test('same-thread correction keeps the other demand and ignores assistant guesses',async()=>{
+ const r=await integrated(prepCorrection,demoStub,prepHistory,true)
+ assert.equal(r.status,200);assert.equal(r.admitted,1);assert.equal(r.body.utility,'supplied_calculation')
+ assert.match(r.body.reply,/The Forks 50 份.*St Mary\u2019s 40 份/s)
+ assert.match(r.body.reply,/90 份.*每盤 30 份.*3 盤/s)
+ assert.doesNotMatch(r.body.reply,/99|77|這一輪沒有查任何來源/)
+ assert.deepEqual(r.body.tasks,[]);assert.equal(r.calls.length,0)
+})
+
+test('prep calculation requires complete hypothetical premises from verified Owner turns',()=>{
+ const {suppliedPrep}=require('./suppliedCalculation')
+ const token=(message,messages=[])=>conversation.fromSavedConversation({messages},message)
+ const view=(message,messages)=>suppliedPrep(message,token(message,messages))
+ for(const invalid of [
+  prep.replace('假設 ',''),prep.replace('30 份','0 份'),prep.replace('中央每盤做 30 份，',''),
+  prep+' 順便查正式庫存。',prep+' 然後更新正式排程。',prep.replace('80 份','-80 份'),
+  prep.replace('40 份','40 份水餃'),prep.replace('St Mary\u2019s','The Forks')
+ ])assert.equal(view(invalid),null,invalid)
+ assert.equal(view(prepCorrection),null)
+ assert.equal(view(prepCorrection.replace('The Forks','未知店'),prepHistory),null)
+ const duplicateAlias = prep.replace('40 份。', '40 份，St Mary\'s 要 5 份。')
+ assert.equal(view(duplicateAlias),null)
+ const correctAlias = "更正，st mary's 改成 10 份，其他照舊。重新計。"
+ assert.match(view(correctAlias,prepHistory).reply,/St Mary’s 10 份.*90 份.*3 盤/s)
+ assert.equal(view(prepCorrection,[...prepHistory,{role:'user',content:'順便安排另一個班次。'},{role:'assistant',content:'好的。'}]),null)
+ assert.equal(suppliedPrep(prep,JSON.parse(JSON.stringify(token(prep)))),null)
+ assert.equal(suppliedPrep(prep,token(prepCorrection,prepHistory)),null)
+ assert.match(view(prep.replace('80 份','70 份')).reply,/110 份.*4 盤.*多 10 份/s)
+ const three = prep.replace('St Mary\u2019s 要 40 份。','St Mary\u2019s 要 40 份，第三店要 12 份。')
+ const again = '更正，第三店改為 0 份，其餘照舊。重新計算。'
+ const saved = content => [{role:'user',content},{role:'assistant',content:'Fixture reply.'}]
+ assert.match(view(again,[...saved(three),...saved(prepCorrection)]).reply,/The Forks 50 份.*St Mary\u2019s 40 份.*第三店 0 份.*90 份.*3 盤/s)
+})
+
+test('mixed operations and incomplete prep requests continue through the existing HTTP intake',async()=>{
+ const mixed = [
+  prep.replace('St Mary\u2019s','順便查正式庫存 St Mary\u2019s'),
+  prep.replace('80 份雲吞','80 份雲吞要查實際庫存'),
+  prep.replace('St Mary\u2019s','幫我落單 St Mary\u2019s'),
+  prep.replace('St Mary\u2019s','查庫存第三店'),
+  prep.replace('St Mary\u2019s','Check Live Inventory St Mary\u2019s'),
+  prep.replace('St Mary\u2019s','Place Order St Mary\u2019s'),
+  prep.replace('St Mary\u2019s','Send a confirmation to St Mary\u2019s'),
+  prep.replace('中央每盤做 30 份，',''),
+  prep.replace('80 份雲吞','80 份')
+ ]
+ for (const message of mixed) {
+  const r = await integrated(message,demoStub,[],true)
+  assert.equal(r.status,200,message)
+  assert.equal(r.admitted,1,message)
+  assert.notEqual(r.body.utility,'supplied_calculation',message)
+  assert.ok(r.calls.length > 0,'ordinary intake must receive '+message)
+  assert.equal(r.starts,0,message)
+  assert.deepEqual(r.body.tasks ?? [],[],message)
+  assert.doesNotMatch(r.body.reply,/合共 120 份.*4 盤/s,message)
+ }
+})
+
+test('a correction cannot revive a prep scenario containing an ignored operational clause',()=>{
+ const {suppliedPrep}=require('./suppliedCalculation')
+ const forgedScenario=prep.replace('St Mary\u2019s','幫我落單 St Mary\u2019s')
+ const saved=[{role:'user',content:forgedScenario},{role:'assistant',content:'Fixture response.'}]
+ assert.equal(suppliedPrep(prepCorrection,conversation.fromSavedConversation({messages:saved},prepCorrection)),null)
 })

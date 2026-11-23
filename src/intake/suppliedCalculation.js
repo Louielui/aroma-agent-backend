@@ -2,7 +2,7 @@
 // Typed interpretation inside the existing answer call. Quotes bind every input
 // to host-saved Owner text; the program alone computes and renders the result.
 // This is not an EvidenceSet, a business observation or an execution permission.
-const {renderTransfer}=require('./suppliedCalculationReply')
+const {renderTransfer,renderPrep}=require('./suppliedCalculationReply')
 const hypothetical=/虛構|虚构|假設|假设|假定|\bhypothetical\b|\bsuppose\b/i
 const calculation=/計算|计算|調貨|调货|調完|调完|盒數|盒数|搬|安排|\bcalculat\w*\b|\btransfer\b|\brebalanc\w*\b|\ballocat\w*\b/i
 function context(token){
@@ -62,4 +62,70 @@ function calculate(proposal,token){
  if(locations.some(r=>r.quantity<min.quantity)||locations.reduce((s,r)=>s+r.quantity,0)!==total||transfers.reduce((s,r)=>s+r.quantity,0)!==need)throw Error('supplied_calculation_invariant')
  return{feasible:true,moved:need,locations,transfers,reply:renderTransfer({feasible:true,locations,transfers,unit:min.unit},locale)}
 }
-module.exports={withFormat,calculate,context}
+
+const prepRow = /^([\p{L}][\p{L} \u2019'-]{0,31}?)\s*(?:明天|聽日)?\s*(?:需要|要)\s*(\d{1,7})\s*份(?:\s*(雲吞|云吞))?$/u
+// Only the supported bare shop labels can use the wonton shortcut. Free
+// text in a name position can contain a separate operational request.
+// Other labels go to ordinary intake and its evidence and action checks.
+const prepSiteLabel = /^(?:The Forks|St Mary['’]s|第[一二三四五六七八九十]{1,3}店)$/iu
+const prepSiteKey = name => name.trim().replaceAll('’', "'").toLowerCase()
+const prepCapacity = /^中央(?:工場|工场)?\s*每(?:一)?(盤|盘|批)\s*(?:可做|做|可出|出)\s*(\d{1,7})\s*份$/u
+const prepRequest = /^(?:幫我|帮我|請|请)\s*(?:安排|排)\s*(?:明天|聽日)(?:的|嘅)?\s*(?:prep|備料|备料)$/iu
+const prepCorrection = /^([\p{L}][\p{L} \u2019'-]{0,31}?)\s*(?:只要|改為|改成)\s*(\d{1,7})\s*份$/u
+
+function prepParts (message) {
+ return message.length <= 450 ? message.replace(/[。.!！]$/u,'').split(/[，,。；;]\s*/u).map(s=>s.trim()) : []
+}
+
+function prepScenario (text) {
+ const source = /^(?:假設|假设|假定)\s*(.+)$/u.exec(text)
+ if (!source) return null
+ const parts = prepParts(source[1])
+ const request = parts.pop()
+ const capacity = prepCapacity.exec(parts.pop() || '')
+ if (!prepRequest.test(request || '') || !capacity || parts.length < 1 || parts.length > 8) return null
+ const each = Number(capacity[2])
+ if (!validAmount(each) || each === 0) return null
+ const locations = new Map()
+ let product = null
+ for (const part of parts) {
+  const row = prepRow.exec(part)
+  if (!row || !validAmount(Number(row[2])) || (product && row[3] && product !== row[3])) return null
+  const name = row[1].trim()
+  if (!prepSiteLabel.test(name)) return null
+  const key = prepSiteKey(name)
+  if (locations.has(key)) return null
+  locations.set(key,{name, quantity:Number(row[2])})
+  if (row[3]) product = row[3]
+ }
+ return product ? {locations, product, each, batch:capacity[1] === '盘' ? '盤' : capacity[1]} : null
+}
+
+function suppliedPrep (message, token) {
+ const texts = require('./conversationEvidence').ownerSources(token)
+ if (typeof message !== 'string' || !texts || texts.at(-1) !== message.trim()) return null
+ let scenario = null
+ let index = texts.length - 1
+ for (; index >= 0; index--) {
+  scenario = prepScenario(texts[index])
+  if (scenario) break
+ }
+ if (!scenario) return null
+ for (const turn of texts.slice(index + 1)) {
+  const parts = prepParts(turn)
+  if (parts.length !== 4 || !/^(?:改一改|更正)$/u.test(parts[0]) ||
+      !/^(?:其他照舊|其他照旧|其餘照舊|其餘不變)$/u.test(parts[2]) ||
+      !/^(?:重新計算|重新計|再計)$/u.test(parts[3])) return null
+  const update = prepCorrection.exec(parts[1])
+  if (!update || !validAmount(Number(update[2]))) return null
+  const location = scenario.locations.get(prepSiteKey(update[1]))
+  if (!location) return null
+  location.quantity = Number(update[2])
+ }
+ const locations = [...scenario.locations.values()]
+ const total = locations.reduce((n, row) => n + row.quantity, 0)
+ const batches = Math.ceil(total / scenario.each)
+ const spare = batches * scenario.each - total
+ return {reply:renderPrep({locations, product:scenario.product, each:scenario.each, batch:scenario.batch, total, batches, spare})}
+}
+module.exports={withFormat,calculate,context,suppliedPrep}
