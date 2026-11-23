@@ -523,6 +523,8 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
   if (localMode && opts?.manualLocalDialogue === true && opts.interactionMode === 'chat' &&
       !opts.contextCard && !opts.attachSection && !opts.sectionPreamble &&
       !require('./conversationEvidence').isWellbeingExchange(message,history,opts.conversationEvidence)) {
+    const weather = require('../localBrain/publicSearch').weatherUnavailable(message)
+    if (weather) return {...weather, requestId}
     const canRead = resolveFlag(process.env,'READ_ACCESS') === 'on'
     const recall=await require('./ownerRecall').answerOwnerRecall(message,opts.conversationEvidence,{
       readApproved:canRead && process.env.XIANGXIANG_MEMORY==='on' ? () => opts.memoryClient?.ownerPrinciples?.() : undefined,
@@ -1302,7 +1304,11 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
     const key = providerName + ':' + extraObservationBlocks.length + (composeOnly ? ':compose' : '')
     // Cache only assembled context. Writing guidance belongs at the end of each
     // answer request, never in the planner or in the cached context itself.
-    const forAnswer = value => require('./responseWriting').forAnswer(value, opts?.interactionMode)
+    const forAnswer = value => {
+      const parts = typeof value === 'string' ? [{ name: 'base', text: value }] : value
+      const guidance = require('./responseWriting').forAnswer('', opts?.interactionMode)
+      return guidance ? [...parts, { name: 'writing_guidance', text: guidance }] : parts
+    }
     if (promptCache.has(key)) { await semanticRouteReady; return forAnswer(promptCache.get(key)) }
     return timePhase(
       { requestId, phase: PHASE.PROMPT_BUILD },
@@ -1363,7 +1369,8 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
     //    call the ordinary planning prompt and the directive below would never be seen.
     const cacheKey = providerName + ':' + extraObservationBlocks.length + (composeOnly ? ':compose' : '')
     if (promptCache.has(cacheKey)) return promptCache.get(cacheKey)
-    let effPrompt = baseEffPrompt
+    const parts = [{ name: 'base', text: baseEffPrompt }]
+    const prepend = (name, text, advisory = false) => parts.unshift({ name, text, advisory })
     const isChat = !!(opts && opts.interactionMode === 'chat')
     // DECISION RECALL v1 — chat-lane only, opt-in, FAIL-SOFT. Any read error or
     // NO_RECORDS injects nothing (chat proceeds exactly as today; never break/repair/write).
@@ -1379,7 +1386,7 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
           recallBlockCache = (recall && recall.block) ? recall.block : null
           if (recall?.status === 'SOURCE_UNAVAILABLE') opts.contextFailures.add('decision_memory_unavailable')
         }
-        if (recallBlockCache) effPrompt = recallBlockCache + '\n\n' + baseEffPrompt
+        if (recallBlockCache) prepend('decision_archive', recallBlockCache + '\n\n', true)
       } catch (err) {
         // Same rule as the read block below: fail soft, but never silently. A recall
         // failure used to be invisible, so 心燈 answering without past decisions looked
@@ -1411,7 +1418,7 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
           convRecallBlockCache = (cr && cr.block) ? cr.block : null
           if (cr?.status === 'SOURCE_UNAVAILABLE') opts.contextFailures.add('conversation_memory_unavailable')
         }
-        if (convRecallBlockCache) effPrompt = convRecallBlockCache + '\n\n' + effPrompt
+        if (convRecallBlockCache) prepend('conversation_archive', convRecallBlockCache + '\n\n', true)
       } catch (err) {
         // Fail soft, never silently — the same rule as the two blocks around it. Losing
         // memory must not look identical to having none.
@@ -1430,11 +1437,11 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
       }
       if (hindsightCache) {
         if (hindsightCache.state === 'unavailable' || hindsightCache.retrieval?.general === 'unavailable') opts.contextFailures.add('memory_unavailable')
-        effPrompt = hindsightCache.block + '\n\n' + effPrompt; hindsightUsed = hindsightCache.count > 0
+        prepend('canonical_memory', hindsightCache.block + '\n\n'); hindsightUsed = hindsightCache.count > 0
       }
     }
 
-    if (isChat) effPrompt = require('../governance/selfDescription').runtimeSelfBlock(opts.runtimeSelf,{message}) + '\n\n' + effPrompt
+    if (isChat) prepend('runtime_identity', require('../governance/selfDescription').runtimeSelfBlock(opts.runtimeSelf,{message}) + '\n\n')
 
     // READ CONTEXT v1 — chat-lane only, flag-gated, FAIL-SOFT. Injected ONLY when
     // READ_ACCESS==='on' AND at least one per-source flag is 'on' AND the lane is chat.
@@ -1715,7 +1722,7 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
           }
           const block = readBlockCache.get(key)
           if (block) {
-            effPrompt = block + '\n\n' + effPrompt
+            prepend('source_context', block + '\n\n')
             // The block is really in this provider's prompt. Source KINDS only — a closed
             // enum from ALL_SOURCES. No snippet, no subject, no name, no count.
             readContextUsedBy.set(providerName, sources.slice())
@@ -1730,7 +1737,7 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
          * reach the prompt, on precisely the turn it exists for. The gap has to travel when
          * there is nothing to read, or it does not travel at all.
          */
-        if (goalBlock) effPrompt = goalBlock + '\n\n' + effPrompt
+        if (goalBlock) prepend('goal', goalBlock + '\n\n')
         /**
          * ⛔ X1 — THE NORTH STAR SITS ABOVE THE SHOPPING LIST.
          *
@@ -1770,9 +1777,9 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
         const capabilityShape = isCapabilityOnlyQuestion(message)
           ? CAPABILITY_ANSWER_SHAPE + String.fromCharCode(10, 10)
           : ''
-        effPrompt = (localMode?'':capabilityBlock()+String.fromCharCode(10,10)) + capabilityShape + effPrompt
+        prepend('capabilities', (localMode?'':capabilityBlock()+String.fromCharCode(10,10)) + capabilityShape)
         const frameBlock = executiveFrameBlock(goalUnderstandingObserved)
-        if (frameBlock) effPrompt = frameBlock + String.fromCharCode(10, 10) + effPrompt
+        if (frameBlock) prepend('answer_frame', frameBlock + '\n\n')
         /**
          * ⛔ X3 — AND IT FAILS SOFT BY CONSTRUCTION. `judgmentDirective` returns null unless the
          * Executive Understanding survived AND says a decision is owed, so a refused frame, a
@@ -1784,7 +1791,7 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
          * decision can be asked for without a second round trip.
          */
         const judgeBlock = judgmentDirective(goalUnderstandingObserved)
-        if (judgeBlock) effPrompt = judgeBlock + String.fromCharCode(10, 10) + effPrompt
+        if (judgeBlock) prepend('evidence_judge', judgeBlock + '\n\n')
 
         /**
          * ⛔ SELF-DESCRIPTION, AND IT IS NOT A READ.
@@ -1803,7 +1810,7 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
          * pay for prompt it will not use.
          */
         if (namesInternalSystem(message)) {
-          effPrompt = '【關於你自己（呢啲係事實，唔係推測）】\n' + describeSelf() + '\n\n' + effPrompt
+          prepend('self_description', '【關於你自己（呢啲係事實，唔係推測）】\n' + describeSelf() + '\n\n')
         }
       } catch (err) {
         // FAIL-SOFT, BUT NEVER SILENT. This used to be `catch (_) {}`. A whole-block
@@ -1827,10 +1834,10 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
     // below nothing — they are read context and are framed by the same safety header the
     // one-shot read block carries, because they were produced by the same builder.
     for (const obs of extraObservationBlocks) {
-      if (obs) effPrompt = obs + '\n\n' + effPrompt
+      if (obs) prepend('verified_observations', obs + '\n\n')
     }
     const planningContext=require('../investigation/planningAdvice').promptContext({plan:goalPlanObserved,report:operationalInvestigation,ownerGoal:opts.ownerGoal,previous:opts.previousInvestigation})
-    if(planningContext){effPrompt=planningContext.prompt+'\n\n'+effPrompt;operationalInvestigation.planningContext=planningContext.receipt}
+    if(planningContext){prepend('planning_context', planningContext.prompt + '\n\n');operationalInvestigation.planningContext=planningContext.receipt}
     /**
      * ⛔ THE RESERVED CALL IS TOLD IT IS THE LAST ONE. IT USED TO BE TOLD NOTHING.
      *
@@ -1846,10 +1853,41 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
      * same breath (see answerPlanFormat), so this sentence and the contract cannot disagree.
      */
     if (composeOnly) {
-      effPrompt = effPrompt + '\n\n【最後一步：綜合作答】呢個係今回合最後一次呼叫，唔會再有下一次。你手上讀到嘅資料就係全部，唔可以再要求讀取（nextRead 必須係 null）。請就手上證據直接作答。'
+      parts.push({ name: 'compose_only', text: '\n\n【最後一步：綜合作答】呢個係今回合最後一次呼叫，唔會再有下一次。你手上讀到嘅資料就係全部，唔可以再要求讀取（nextRead 必須係 null）。請就手上證據直接作答。' })
     }
-    promptCache.set(cacheKey, effPrompt)
-    return effPrompt
+    promptCache.set(cacheKey, parts)
+    return parts
+  }
+
+  function assembleAnswer(parts, target, callOpts) {
+    const full = parts.map(part => part.text).join('')
+    if (!localMode || !opts.manualLocalDialogue || opts.interactionMode !== 'chat' ||
+        target.providerName !== 'local' || !Number.isInteger(target.context) || target.tokenizer) return full
+    const { localInput } = require('../adapters/LocalAdapter')
+    const input = localInput(full, callOpts)
+    const fullBound = input.inputBound + input.maxTokens
+    let kept = parts
+    let prompt = full
+    if (fullBound > target.context && parts.some(part => part.advisory)) {
+      const compact = parts.filter(part => !part.advisory)
+      compact.push({ name: 'omission_notice', text: '\n\nHistorical advisory context was omitted for capacity. Its absence is not evidence that any historical fact or record does not exist.' })
+      const compactPrompt = compact.map(part => part.text).join('')
+      const candidate = localInput(compactPrompt, callOpts)
+      if (candidate.inputBound + candidate.maxTokens <= target.context) {
+        kept = compact
+        prompt = compactPrompt
+      }
+    }
+    if (opts.telemetry) {
+      const selected = prompt === full ? input : localInput(prompt, callOpts)
+      opts.telemetry.localAnswerSizing = {
+        capacity: target.context, fullBound, inputBound: selected.inputBound, outputReserve: selected.maxTokens,
+        envelopeBytes: selected.sectionBytes,
+        promptBytes: [...parts, ...kept.filter(part => !parts.includes(part))]
+          .map(part => ({ name: part.name, bytes: Buffer.byteLength(part.text), included: kept.includes(part) }))
+      }
+    }
+    return prompt
   }
 
   // Output limit, selected PER LANE. The chat lane answers in prose inside the JSON
@@ -2162,9 +2200,10 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
         const gptPrompt = await buildPromptFor(OPENAI)
         if (!useSourceBoundDirectAnswer(gpt.providerName === 'claude' ? CLAUDE : OPENAI, gpt)) {
           const gptFormat = localAnswerFormat(answerPlanFormat())
+          const callOpts = { invocationPhase:'answer', system: effSystem, maxTokens, temperature: 0.3, ...(gptFormat ? { responseFormat: gptFormat } : {}) }
           gptResult = await timePhase(
             { requestId, phase: PHASE.MODEL_CALL, role: ROLE.MAIN, provider: gpt.providerName === 'local' ? 'local' : gpt.providerName === 'claude' ? CLAUDE : OPENAI, attempt: 1 },
-            () => gpt.complete(gptPrompt, { invocationPhase:'answer', system: effSystem, maxTokens, temperature: 0.3, ...(gptFormat ? { responseFormat: gptFormat } : {}) }),
+            () => gpt.complete(assembleAnswer(gptPrompt, gpt, callOpts), callOpts),
             { clock: latencyClock, sink: latencySink })
         }
       } catch (err) {
@@ -2215,7 +2254,7 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
         // L1: role-tagged so MODEL_CALL_COUNT is countable from telemetry, not inferred.
         llmResult = await timePhase(
           { requestId, phase: PHASE.MODEL_CALL, role: ROLE.MAIN, provider: CLAUDE, attempt: 1 },
-          () => adapter.complete(claudePrompt, {
+          () => adapter.complete(claudePrompt.map(part => part.text).join(''), {
             invocationPhase:'answer',
             system: effSystem,
             maxTokens,
@@ -3472,9 +3511,10 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
         const finalCall = composeOnly === true
         const prompt = await buildPromptFor(activeProvider, finalCall)
         const fmt = localAnswerFormat(answerPlanFormat(finalCall))
+        const callOpts = { invocationPhase:'answer', system: effSystem, maxTokens, ...(fmt ? { responseFormat: fmt } : {}) }
         const next = await timePhase(
           { requestId, phase: PHASE.MODEL_CALL, role: ROLE.REASONING_STEP, provider: activeProvider || null },
-          () => activeAdapter.complete(prompt, { invocationPhase:'answer', system: effSystem, maxTokens, ...(fmt ? { responseFormat: fmt } : {}) }),
+          () => activeAdapter.complete(assembleAnswer(prompt, activeAdapter, callOpts), callOpts),
           { clock: latencyClock, sink: latencySink })
         noteProvider(activeProvider === OPENAI ? 'openai' : 'claude', next) // provenance, per call
         await recordProviderUsage(next)                                     // ⛔ accounting, per call
