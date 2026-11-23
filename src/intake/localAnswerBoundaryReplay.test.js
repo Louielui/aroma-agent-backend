@@ -158,3 +158,83 @@ test('a correction cannot revive a prep scenario containing an ignored operation
  const saved=[{role:'user',content:forgedScenario},{role:'assistant',content:'Fixture response.'}]
  assert.equal(suppliedPrep(prepCorrection,conversation.fromSavedConversation({messages:saved},prepCorrection)),null)
 })
+
+test('hypothetical quantities keep the unchanged site and packaging rule across manual turns', async () => {
+ const turns = [
+  ['純虛構練習。東店需 23 個包，西店需 16 個，每盒裝 8 個。合併裝盒，只計整盒。總共要預幾盒？', /39\s*個.*5\s*盒/s],
+  ['東店少 7 個，西店其他照舊，依家要幾多盒？', /32\s*個.*4\s*盒/s],
+  ['剛才講少 7 個取消，東店最終要 7 個，西店仍照舊。請列兩店數量、總數同盒數。', /東店.*7\s*個.*西店.*16\s*個.*23\s*個.*3\s*盒/s]
+ ]
+ const saved = []
+ for (const [message, expected] of turns) {
+  const r = await integrated(message, demoStub, saved, true)
+  assert.equal(r.status, 200)
+  assert.equal(r.admitted, 1)
+  assert.equal(r.body.utility, 'supplied_calculation')
+  assert.match(r.body.reply, expected)
+  assert.deepEqual(r.body.tasks, [])
+  assert.equal(r.body.decision, null)
+  assert.equal(r.calls.length, 0)
+  assert.equal(r.starts, 0)
+  assert.equal(r.writes.length, 1)
+  saved.push({role:'user',content:message},{role:'assistant',content:r.body.reply})
+ }
+})
+
+test('a compound hypothetical conversion also answers full trays and remainder',async()=>{
+ const message='假設用 6.1 kg 麵糰。每盤用 400 g，做完一盤先開下一盤。可以做足幾多整盤，同埋剩幾多克？'
+ const r=await integrated(message,demoStub,[],true)
+ assert.equal(r.status,200)
+ assert.equal(r.body.utility,'supplied_calculation')
+ assert.match(r.body.reply,/6[,]?100\s*(?:g|克).*15\s*(?:個)?整?盤.*100\s*(?:g|克)/s)
+ assert.equal(r.calls.length,0)
+})
+
+test('hypothetical clarification asks for the missing divisor only, then uses the saved premises', async () => {
+ const initial = '虛構備料題，兩店要 21 份同 7 份蒸點。我想知要幾多盤。'
+ const first = await integrated(initial, demoStub, [], true)
+ assert.equal(first.body.utility, 'supplied_calculation')
+ assert.match(first.body.reply, /合共 28 份.*每盤幾多 份/s)
+ assert.doesNotMatch(first.body.reply, /\d+\s*盤/)
+ assert.equal(first.calls.length, 0)
+ const next = await integrated('每盤 9 份，只做整盤，補返答案。', demoStub,
+   [{role:'user',content:initial},{role:'assistant',content:first.body.reply}], true)
+ assert.match(next.body.reply, /28 份.*4 盤.*多 8 份/s)
+ assert.equal(next.calls.length, 0)
+})
+
+test('hypothetical route declines mixed requests, unverified history and incompatible subquestions', () => {
+ const {answer} = require('./suppliedScenario')
+ const scenario = '虛構備貨：紅店要 28 份，藍店要 8 份，每箱 12 份。兩店一定要分開裝，每箱可未裝滿。各用幾箱，合共幾箱？'
+ const token = (message, saved = []) => conversation.fromSavedConversation({messages:saved},message)
+ const saved = [{role:'user',content:scenario},{role:'assistant',content:'Fixture reply.'}]
+ assert.ok(answer(scenario,token(scenario)))
+ assert.equal(answer(scenario,JSON.parse(JSON.stringify(token(scenario)))),null)
+ for (const input of [
+   scenario + '順便查正式庫存。', scenario.replace('紅店','查庫存店'),
+   scenario.replace('藍店','打電話店'), scenario + '幫我落單。',
+   scenario + '最後一瓶裝幾多 mL？',
+   scenario.replace('各用幾箱，合共幾箱','合併裝幾箱'),
+   scenario.replace('兩店一定要分開裝','合併裝盒'),
+   scenario.replace('紅店要 28 份','紅店要 28 份雲吞').replace('藍店要 8 份','藍店要 8 份燒賣'),
+   '假設每盤用 300 mL，用 2.1 kg 麵糰。可以做足幾多整盤？'
+ ]) assert.equal(answer(input,token(input)),null,input)
+ const update='紅店改成 14 份，藍店照舊。重新計。'
+ assert.equal(answer(update,token(update)),null)
+ assert.equal(answer(update,token(update,[...saved,{role:'user',content:'查庫存。'},{role:'assistant',content:'Fixture reply.'}])),null)
+ const mixedUpdate=update+'順便落單。'
+ assert.equal(answer(mixedUpdate,token(mixedUpdate,saved)),null)
+})
+
+test('mixed operational requests retain the ordinary verification path after a hypothetical turn', async () => {
+ const first='假設紅店要 25 份、藍店要 11 份，每箱 12 份。合計要幾箱？'
+ const prior=[{role:'user',content:first},{role:'assistant',content:'Fixture reply.'}]
+ for (const input of ['紅店改成 17 份，其他照舊。順便查正式庫存。','紅店改成 17 份，其他照舊。幫我落單。']) {
+  const r=await integrated(input,demoStub,prior,true)
+  assert.equal(r.status,200)
+  assert.notEqual(r.body.utility,'supplied_calculation',input)
+  assert.ok(r.calls.length>0,input)
+  assert.equal(r.starts,0,input)
+  assert.deepEqual(r.body.tasks ?? [],[],input)
+ }
+})

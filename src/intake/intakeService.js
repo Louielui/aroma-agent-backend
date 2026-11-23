@@ -530,7 +530,8 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
       readConversation:canRead ? opts.ownerConversationLookup : undefined
     })
     if (recall) return {...recall,requestId}
-    const prep = require('./suppliedCalculation').suppliedPrep(message, opts.conversationEvidence)
+    const prep = require('./suppliedCalculation').suppliedPrep(message, opts.conversationEvidence) ||
+      require('./suppliedScenario').answer(message, opts.conversationEvidence)
     if (prep) return require('./suppliedCalculationReply').calculationAnswer(prep.reply, requestId)
     if (opts.readLocalPublic && require('../context/flags').readAccessEnabled(process.env,'public_knowledge')) {
       const publicAnswer=await require('../localBrain/publicSearch').answer(message,adapter,opts.foregroundRequestId,opts.readLocalPublic)
