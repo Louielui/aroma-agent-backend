@@ -1137,10 +1137,8 @@ function createApp (options = {}) {
   // inert, so production is the only place that gets a writer — a test driving this route
   // cannot reach the Owner's data directory even by forgetting to inject.
   // ── THE WAITING-INVOICES LINE ────────────────────────────────────────────
-  // Read-only, and gated by the SAME flag as every other Drive read: with READ_ACCESS off
-  // no reader is injected at all, so the greeting behaves exactly as it did before.
-  // Cached briefly — the number moves in hours, and the greeting is fetched per empty
-  // screen. The route timeboxes and swallows failures; nothing here can break the screen.
+  // Home reads the Drive invoice backlog when READ_ACCESS is on.
+  // Keep a short cache because invoice counts change slowly.
   let backlogCache = { at: 0, value: null }
   const refreshBacklog = async () => {
     const { readInvoiceBacklog } = require('./context/invoiceBacklog')
@@ -1171,7 +1169,7 @@ function createApp (options = {}) {
     profileDir: 'C:\\Aroma\\browser-profile',
     // DEFECT-011: this was missing, so the Drive section reported NOT_CHECKED — a calm,
     // grammatical, timestamped sentence produced by a wire that was never connected. The
-    // SAME reader the greeting already uses, gated the same way.
+    // Home owns this Drive read. Chat openings use the local greeting and waiting routes.
     //
     // ⚠ AND IT NEEDS AN ADAPTER, which the first fix omitted: `readBacklogFn` returns the raw
     // reading; the Owner-facing SENTENCE comes from `sentenceFor`, and the reading's
@@ -1346,7 +1344,6 @@ function createApp (options = {}) {
     operatingManager,
     memoryJournal: governedMemory,
     conversationStore: capturedConversationStore,
-    readBacklogFn: process.env.READ_ACCESS === 'on' ? readBacklogFn : null,
     // ⛔ Round B: the section attachment is RE-DERIVED server-side from this store. The browser
     // sends a section id and never the lines — see demoRouter's attachSection block.
     errandStoreFn: () => homeErrandStore

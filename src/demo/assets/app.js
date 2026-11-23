@@ -883,7 +883,7 @@
     }
     var old = document.getElementById('waiting-bar')
     if (old) old.parentNode.removeChild(old)
-    fetch('/api/v1/home/briefing', { headers: { Accept: 'application/json' } })
+    fetch('/api/v1/home/waiting', { headers: { Accept: 'application/json' } })
       .then(function (r) { return r.ok ? r.json() : null })
       .then(function (b) {
         if (!b || !b.waiting) return

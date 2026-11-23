@@ -3436,10 +3436,11 @@ GET .../attachment returns exactly what would travel
 GET /api/v1/context/health
 GET /api/v1/demo/enquiries — the mount that silently did not happen
 GET /api/v1/demo/enquiries/:id
-GET /api/v1/demo/greeting — the backlog line rides here
+GET /api/v1/demo/greeting — local chat greeting
 GET /api/v1/demo/version — the stale-tab guard
 GET /api/v1/home/briefing answers through the real app
 GET /api/v1/home/section/recall answers with a detail, not a 404
+GET /api/v1/home/waiting — local chat waiting projection
 GET /api/v1/runs/:id responds without a token
 GET /demo OFF → 403 demo_disabled; adapter/processIntake not called
 GET /health
@@ -4251,7 +4252,6 @@ X8. ⛔ the distro cannot be overridden by any option or argument
 X9. ⛔ the launcher executable cannot be overridden
 a 25-row clock-out reply becomes a semantic table without losing the last row or source note
 a BMP private-use glyph is removed from the name
-a CLEAR result speaks and proves it looked — silence cannot distinguish clear from broken
 a CORRUPT store reports UNREADABLE — never EMPTY
 a CRA origin is refused even when the order explicitly names it
 a Chinese-numeral count that IS wrong is dropped through the real validator
@@ -4513,7 +4513,6 @@ a pure deadline change on the identical transport has no new write verb; full di
 a question about a ruling plans a RECORD read, not a commit list
 a question or an offer is not a claim
 a quote that is NOT at those lines is a mismatch, not a pass
-a read FAILURE speaks — silence there would read as "nothing waiting"
 a read that DOES carry its own time keeps it, unchanged
 a real change instruction still gets the "say what to change" notice
 a real command (commit) still produces a Decision + Task
@@ -6939,6 +6938,7 @@ the carve-out is not a blanket pass — an UNMENTIONED row is still barred
 the catalogue is NOT — he must be able to reword without a work order
 the change noun beats the technical one — 「applied the change to the config」 is a claim
 the character budget cuts inside a group the same way the count budget does
+the chat greeting returns only local time and preserves the backlog field shape
 the chat lane cannot promote even when the envelope is a full commit
 the chat response reports the lane; other lanes stay byte-identical
 the checker itself is un-allowlistable
@@ -7054,8 +7054,6 @@ the goal is one argv entry; --max-budget-usd only when asked for
 the good UIA context adjudicates ACCEPTED — the control for the three cases below
 the good context adjudicates ACCEPTED — the control for every case below
 the grace period stops a run a few minutes late from reading as overdue
-the greeting still renders when the backlog read HANGS past its budget
-the greeting still renders when the backlog read THROWS
 the guard passes while running and refuses once stopped
 the harness requires from src/, because it runs as the Owner and is never staged
 the hash is stable against key order and array order, but not against content
@@ -7076,7 +7074,6 @@ the launcher body IS in the monthly backup sources
 the launcher is outside the repo and no rule here reaches it
 the limits are inside the hash, so they cannot be edited after approval
 the line carries exactly the allowlisted fields — nothing else survives
-the line is attached when there is something waiting
 the link works at ANY age — 過期嘅係主張，唔係 access
 the list is trimmed and blanks dropped, and the result is what gets stored
 the list stays short enough to stay inside the pacing budget
@@ -7499,7 +7496,6 @@ with NO rows surviving, the fallback still fires
 with READ_ACCESS off the guard is inert and the reply is byte-identical
 with a free profile it launches Chrome AT HER PROFILE and the recorded url
 with looseFirst, a large loose set starves the groups entirely
-with no backlog reader injected at all the route behaves exactly as before
 with no history nothing is suppressed — a fresh conversation loses nothing
 with no runContext the result shape is unchanged and nothing is appended
 with no stored nextRunAt it falls back to lastAt + cadence, and says which it used

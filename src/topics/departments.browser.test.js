@@ -50,7 +50,7 @@ test('bilingual HR entry prepares an explicit-date read without sending, preserv
           }
           return response({ lane: 'chat', mode: 'chat', reply: 'Fixture answer', servedBy: body.chatModel })
         }
-        const fixtures = { '/api/v1/demo/greeting': { line: 'Fixture' }, '/api/v1/demo/version': { build: 'department-fixture' }, '/api/v1/conversations': { ok: true, conversations: [] }, '/api/v1/home/briefing': { sections: [] }, '/api/v1/home/settings': { entries: [] }, '/api/v1/execution-health': { state: 'unavailable' }, '/manifest.webmanifest': {} }
+        const fixtures = { '/api/v1/demo/greeting': { line: 'Fixture' }, '/api/v1/demo/version': { build: 'department-fixture' }, '/api/v1/conversations': { ok: true, conversations: [] }, '/api/v1/home/waiting': { waiting: { state: 'NOTHING_WAITING', cards: [] } }, '/api/v1/home/settings': { entries: [] }, '/api/v1/execution-health': { state: 'unavailable' }, '/manifest.webmanifest': {} }
         if (method === 'GET' && Object.hasOwn(fixtures, p)) return response(fixtures[p])
         unexpected.push(p); return route.abort()
       })

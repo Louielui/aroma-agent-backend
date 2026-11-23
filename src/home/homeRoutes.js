@@ -1,9 +1,10 @@
 'use strict'
 
 /**
- * homeRoutes.js — 首頁's two endpoints.
+ * homeRoutes.js — Home briefing and local waiting cards.
  *
  *   GET  /api/v1/home/briefing              what she ran, what waits, the Drive line
+ *   GET  /api/v1/home/waiting               waiting cards from the local store
  *   POST /api/v1/home/errand/:id/open       open the page she stopped on, in HER profile
  *
  * ══════════════════════════════════════════════════════════════════════════════
@@ -96,6 +97,12 @@ function mountHomeRoutes (router, { store, backlogReader, profileDir, chromePath
       res.status(501).json({ ok: false, saying: t('route.schedNotWired') })
     })
   }
+
+  // The chat waiting bar only needs the on-disk waiting cards.
+  router.get('/api/v1/home/waiting', pass, (_req, res) => {
+    const { waiting } = buildBriefing({ store, now: Date.now() })
+    res.json({ waiting })
+  })
 
   router.get('/api/v1/home/briefing', pass, async (req, res) => {
     // ⛔ `undefined` means NO READER WAS WIRED — a defect. `null` means a reader exists and

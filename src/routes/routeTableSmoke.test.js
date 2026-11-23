@@ -103,9 +103,14 @@ describe('the real app serves the routes we think it does', () => {
     assertReachable(r, '/api/v1/demo/version')
   })
 
-  test('GET /api/v1/demo/greeting — the backlog line rides here', async () => {
+  test('GET /api/v1/demo/greeting — local chat greeting', async () => {
     const r = await hit('/api/v1/demo/greeting')
     assertReachable(r, '/api/v1/demo/greeting')
+  })
+
+  test('GET /api/v1/home/waiting — local chat waiting projection', async () => {
+    const r = await hit('/api/v1/home/waiting')
+    assertReachable(r, '/api/v1/home/waiting')
   })
 
   test('GET /api/v1/context/health', async () => {

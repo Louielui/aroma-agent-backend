@@ -44,3 +44,89 @@ test('formal rendering records a visible guarded-answer paint opportunity, never
  const node=page.locator('[data-local-answer-timing]'),timing=JSON.parse(await node.getAttribute('data-local-answer-timing'));assert.match(await node.innerText(),/Offline guarded answer fixture/);assert.ok(timing.answerPaintOpportunityMs>=timing.answerDomMs);assert.ok(timing.answerDomMs>=timing.firstGuardedResponseMs);assert.equal(Object.hasOwn(timing,'firstTokenMs'),false);assert.equal(intake,1);assert.deepEqual(errors,[])
  const dir=fs.mkdtempSync(path.join(process.env.AROMA_ARTIFACT_DIR||os.tmpdir(),'local-answer-timing-pixels-'));await page.screenshot({path:path.join(dir,'guarded-answer.png'),fullPage:true});fs.writeFileSync(path.join(dir,'evidence.json'),JSON.stringify({engine:'Edge routed fixture',formalAcceptance:false,inferenceSends:0,intake,errors,timing}))
 })
+
+test('opening saved and empty chats only loads local data while Home still refreshes Drive', {timeout:30000}, async t => {
+  const express = require('express')
+  const { createDemoRouter } = require('../../src/routes/demoRouter')
+  const { mountHomeRoutes } = require('../../src/home/homeRoutes')
+  const { OUTCOME } = require('../../src/home/errandStore')
+  const app = express()
+  app.locals.conversationDemo = true
+  const driveReads = []
+  app.use(createDemoRouter({
+    readBacklogFn: async () => { driveReads.push('greeting'); return null },
+    backlogTimeoutMs: 5
+  }))
+  mountHomeRoutes(app, {
+    guard: (req, res, next) => req.get('x-test-owner') === 'yes' ? next() : res.sendStatus(403),
+    store: {list: () => [{id:'local-fixture',title:'Local waiting fixture',outcome:OUTCOME.STOPPED_FOR_YOU,at:Date.now()}]},
+    backlogReader: async () => { driveReads.push('home'); return {line:'Mock Drive invoice backlog',checkedAt:Date.now()} }
+  })
+  const server = app.listen(0, '127.0.0.1')
+  t.after(() => new Promise(resolve => server.close(resolve)))
+  await require('node:events').once(server, 'listening')
+  const serverUrl = 'http://127.0.0.1:' + server.address().port
+  const prior = process.env.CHAT_BACKEND
+  let html
+  try {
+    process.env.CHAT_BACKEND = 'local'
+    html = require('../../src/demo/demoHtml').buildDemoHtml()
+  } finally {
+    if (prior === undefined) delete process.env.CHAT_BACKEND
+    else process.env.CHAT_BACKEND = prior
+  }
+  const browser = await require('playwright-core').chromium.launch({channel:'msedge',headless:true})
+  t.after(() => browser.close())
+  const context = await browser.newContext()
+  const page = await context.newPage()
+  const cid = '56f7bf52-e8e1-4b8a-84ea-74633c7abb07'
+  const origin = 'http://127.0.0.1:19099'
+  const disallowed = []
+  await context.route('**/*', async route => {
+    const req = route.request()
+    const url = new URL(req.url())
+    if (url.origin !== origin || req.method() !== 'GET') {
+      disallowed.push({origin:url.origin,method:req.method()})
+      return route.abort()
+    }
+    const p = url.pathname
+    const json = body => route.fulfill({contentType:'application/json',body:JSON.stringify(body)})
+    if (p === '/demo') return route.fulfill({contentType:'text/html',body:html})
+    if (['/api/v1/demo/greeting','/api/v1/home/waiting','/api/v1/home/briefing'].includes(p)) {
+      const res = await fetch(serverUrl + p, {headers:{'x-test-owner':'yes'}})
+      return route.fulfill({status:res.status,contentType:'application/json',body:await res.text()})
+    }
+    if (p === '/api/v1/conversations') return json({ok:true,conversations:[{id:cid,title:'Saved local fixture',messageCount:2}]})
+    if (p === '/api/v1/conversations/' + cid) return json({
+      ok:true,conversation:{id:cid,messages:[{role:'user',content:'Mock historical question'},{role:'assistant',content:'Mock historical answer'}]}
+    })
+    if (p === '/api/v1/demo/models') return json({
+      billing:'local',models:[{model:'local:qwen3.5:9b',name:'Local Qwen3.5 9B',available:true,supportsEffort:false,efforts:['auto']}],
+      selection:{scope:{kind:'conversation',id:req.headers()['x-xiangxiang-conversation']},mode:'central',revision:0,effective:{model:'local:qwen3.5:9b',effort:'auto'}}
+    })
+    return json(p === '/api/v1/home/settings' ? {entries:[]} : {})
+  })
+  const firstGreeting = page.waitForResponse(r => new URL(r.url()).pathname === '/api/v1/demo/greeting')
+  await page.goto(origin + '/demo')
+  assert.equal((await firstGreeting).status(),200)
+  assert.deepEqual(driveReads,[], 'opening the chat page must not read Drive')
+
+  const savedLoad = page.waitForResponse(r => ['/api/v1/home/waiting','/api/v1/home/briefing'].includes(new URL(r.url()).pathname))
+  await page.getByText('Saved local fixture', {exact:true}).first().click()
+  assert.equal((await savedLoad).status(),200)
+  await page.getByText('Mock historical answer', {exact:true}).waitFor()
+  await page.locator('#waiting-bar').waitFor()
+  assert.deepEqual(driveReads,[], 'opening saved history must not read Drive')
+
+  const newGreeting = page.waitForResponse(r => new URL(r.url()).pathname === '/api/v1/demo/greeting')
+  await page.locator('#new-chat').click()
+  assert.equal((await newGreeting).status(),200)
+  assert.deepEqual(driveReads,[], 'opening an empty conversation must not read Drive')
+  assert.equal(await page.locator('#waiting-bar').count(),0)
+  assert.equal((await fetch(serverUrl + '/api/v1/home/waiting')).status,403)
+
+  await page.locator('#open-home').click()
+  await page.getByText('Mock Drive invoice backlog', {exact:false}).waitFor()
+  assert.deepEqual(driveReads,['home'])
+  assert.deepEqual(disallowed,[])
+})
