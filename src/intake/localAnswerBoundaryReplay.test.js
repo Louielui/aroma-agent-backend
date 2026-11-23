@@ -58,12 +58,12 @@ async function post(app,body,manual=false){
  req.method='POST';req.url='/api/v1/demo/intake';req.httpVersion='1.1';req.httpVersionMajor=1;req.httpVersionMinor=1;req.headers={host:'127.0.0.1:18099',origin:'http://127.0.0.1:18099','content-type':'application/json','content-length':String(Buffer.byteLength(text))};if(manual)Object.assign(req.headers,{accept:'text/event-stream',cookie:'aroma_owner_session=fixture-owner'});req.complete=true
  const res=new ServerResponse(req);res.assignSocket(socket);await new Promise((resolve,reject)=>{const timer=setTimeout(()=>reject(Error('fixture_timeout')),12000);res.once('finish',()=>{clearTimeout(timer);resolve()});app.handle(req,res,e=>{if(e){clearTimeout(timer);reject(e)}});req.push(text);req.push(null)});const raw=wire.join('');return{status:res.statusCode,body:JSON.parse(raw.slice(raw.indexOf('\r\n\r\n')+4))}
 }
-async function integrated(message,answer,prior,manual=false){
- const vars={LOCAL_BRAIN_ONLY:'1',LOCAL_APP_PORT:'18099',CHAT_BACKEND:'local',LOCAL_MODEL:'qwen3.5:9b',XIANGXIANG_MEMORY:'off',GOAL_DECOMPOSER:'off',READ_ACCESS:'off',TURN_ROUTER:'shadow'},saved=Object.fromEntries(Object.keys(vars).map(k=>[k,process.env[k]]));Object.assign(process.env,vars)
+async function integrated(message,answer,prior,manual=false,controls={}){
+ const vars={LOCAL_BRAIN_ONLY:'1',LOCAL_APP_PORT:'18099',CHAT_BACKEND:'local',LOCAL_MODEL:'qwen3.5:9b',XIANGXIANG_MEMORY:'off',GOAL_DECOMPOSER:'off',READ_ACCESS:'off',TURN_ROUTER:'shadow',...controls.env},saved=Object.fromEntries(Object.keys(vars).map(k=>[k,process.env[k]]));Object.assign(process.env,vars)
  try{
-  const calls=[],writes=[],adapter={providerName:'local',preflight:async()=>({ready:true}),complete:async(prompt,opts)=>{calls.push({prompt,opts});assert.ok(calls.length<=2,'fixture may not loop');return{text:JSON.stringify(answer),provider:'local',billing:'local',model:'qwen3.5:9b',usage:{inputTokens:1,outputTokens:1,totalTokens:2}}}},express=require('express'),app=express();let starts=0,admitted=0
-  app.locals.conversationDemo=true;if(manual)app.locals.ownerSessions={valid:id=>id==='fixture-owner'};app.use(express.json());app.use(require('../routes/demoRouter').createDemoRouter({getAdapterFn:()=>adapter,dailyDialogue:manual?async(_conversation,_request,run)=>{admitted++;return run()}:null,conversationStore:{get:()=>({messages:prior}),appendTurn:v=>writes.push(v)},codeDiagnosis:{start:()=>{starts++;throw Error('dispatch_forbidden')}},processIntakeFn:(m,a,h,o)=>require('./intakeService').processIntake(m,a,h,{...o,openaiAdapter:adapter,readContextDeps:{sources:[],connector:{read:()=>{throw Error('business_read_forbidden')}}}})}))
-  const requestId=randomUUID();const response=await post(app,{message,history:[],interactionMode:'chat',conversationId:randomUUID(),workflowRequestId:requestId,...(manual?{websiteRequestId:requestId}:{})},manual);return{...response,calls,writes,starts,admitted}
+  const calls=[],writes=[],sizing={},adapter={providerName:'local',context:controls.context,preflight:async()=>({ready:true}),complete:async(prompt,opts)=>{calls.push({prompt,opts});controls.checkInput?.(prompt,opts);assert.ok(calls.length<=2,'fixture may not loop');return{text:JSON.stringify(answer),provider:'local',billing:'local',model:'qwen3.5:9b',usage:{inputTokens:1,outputTokens:1,totalTokens:2}}}},express=require('express'),app=express();let starts=0,admitted=0
+  app.locals.conversationDemo=true;if(manual)app.locals.ownerSessions={valid:id=>id==='fixture-owner'};app.use(express.json());app.use(require('../routes/demoRouter').createDemoRouter({getAdapterFn:()=>adapter,dailyDialogue:manual?async(_conversation,_request,run)=>{admitted++;return run()}:null,conversationStore:{get:()=>({messages:prior}),appendTurn:v=>writes.push(v)},codeDiagnosis:{start:()=>{starts++;throw Error('dispatch_forbidden')}},processIntakeFn:(m,a,h,o)=>require('./intakeService').processIntake(m,a,controls.savedHistory ? prior : h,{...o,telemetry:sizing,openaiAdapter:adapter,readContextDeps:{sources:[],connector:{read:()=>{throw Error('business_read_forbidden')}}},...controls.intake})}))
+  const requestId=randomUUID();const response=await post(app,{message,history:[],interactionMode:'chat',conversationId:randomUUID(),workflowRequestId:requestId,...(manual?{websiteRequestId:requestId}:{})},manual);return{...response,calls,writes,starts,admitted,sizing:sizing.localAnswerSizing}
  }finally{for(const [k,v]of Object.entries(saved))if(v===undefined)delete process.env[k];else process.env[k]=v}
 }
 test('actual HTTP intake computes from saved Owner premises before any repeat generation or operational answer guard',async()=>{
@@ -237,4 +237,91 @@ test('mixed operational requests retain the ordinary verification path after a h
   assert.equal(r.starts,0,input)
   assert.deepEqual(r.body.tasks ?? [],[],input)
  }
+})
+
+
+test('current weather outside the retailer pilot has an honest local reply in new and saved threads', async () => {
+  for (const history of [[], fixture.messages.slice(0, 4)]) {
+    for (const message of ['今天幾度?', '今日 Winnipeg 幾多度？', 'Winnipeg 今日氣溫幾多？', 'What is the temperature in Winnipeg today?']) {
+      const r = await integrated(message, {}, history, true, {
+        env: { READ_ACCESS: 'on' },
+        intake: { readLocalPublic: async () => { throw Error('public_read_forbidden') } }
+      })
+      assert.equal(r.status, 200)
+      assert.equal(r.body.utility, 'weather_unverified')
+      assert.match(r.body.reply, /未能查證即時氣溫|cannot verify the current temperature/)
+      assert.equal(r.calls.length, 0)
+      assert.equal(r.starts, 0)
+      assert.equal(r.admitted, 1)
+      assert.equal(r.writes.length, 1)
+    }
+  }
+})
+
+test('weather routing leaves mixed, non-current, cooking and nonmanual requests in ordinary intake', async () => {
+  for (const [message, manual] of [
+    ['今天幾度？順便查庫存', true],
+    ['昨天幾度？', true],
+    ['焗爐今天要校到幾度？', true],
+    ['今天幾度?', false]
+  ]) {
+    const r = await integrated(message, {mode:'chat',intent:'question',reply:'Sample answer',nextRead:null}, [], manual)
+    assert.equal(r.status, 200)
+    assert.notEqual(r.body.utility, 'weather_unverified')
+    assert.ok(r.calls.length > 0)
+  }
+})
+
+
+test('local answer fits by omitting advisory archives only and retains the original full answer when it fits', async () => {
+  const { localInput, LocalModelError } = require('../adapters/LocalAdapter')
+  const message = '請解釋兩種學習方法怎樣比較？'
+  const answer = {mode:'chat',intent:'question',reply:'可按目標比較。',nextRead:null}
+  const history = [{role:'user',content:'THIS_THREAD_QUESTION'},{role:'assistant',content:'THIS_THREAD_ANSWER'}]
+  const controls = {
+    context: 65536,
+    savedHistory: true,
+    env: { DECISION_RECALL: 'on', CONTEXT_DECISIONS_OPENAI: 'on', CONVERSATION_RECALL: 'on' },
+    intake: {
+      decisionRecallDeps: {listDecisionsFn: () => [{id:'fixture',statement:'DECISION_ONLY ' + '甲'.repeat(400)}],listTasksFn: () => []},
+      conversationRecallDeps: {readRecordsFn: () => [{conversationId:'elsewhere',at:'2026-11-22T00:00:00Z',role:'user',text:'ARCHIVE_ONLY ' + '乙'.repeat(400)}]}
+    }
+  }
+  const normal = await integrated(message, answer, history, true, controls)
+  assert.equal(normal.status, 200)
+  assert.equal(normal.calls.length, 1)
+  const call = normal.calls[0]
+  assert.match(call.prompt, /THIS_THREAD_QUESTION/)
+  assert.match(call.prompt, /DECISION_ONLY/)
+  assert.match(call.prompt, /ARCHIVE_ONLY/)
+  assert.ok(normal.sizing.fullBound > 4096)
+  const sum = Object.values(normal.sizing.envelopeBytes).reduce((a,b)=>a+b,0)
+  assert.equal(sum, normal.sizing.inputBound)
+  const bound = normal.sizing.fullBound - 1
+  const compact = await integrated(message, answer, history, true, {
+    ...controls, context: bound,
+    checkInput: (prompt, opts) => {
+      const size = localInput(prompt, opts)
+      if (size.inputBound + size.maxTokens > bound) throw new LocalModelError('local_context_capacity_exceeded')
+    }
+  })
+  assert.equal(compact.status, 200)
+  assert.equal(compact.calls.length, 1)
+  assert.equal(compact.calls[0].opts.system, call.opts.system)
+  assert.deepEqual(compact.calls[0].opts.responseFormat, call.opts.responseFormat)
+  assert.match(compact.calls[0].prompt, /THIS_THREAD_QUESTION/)
+  assert.match(compact.calls[0].prompt, /請解釋兩種學習方法怎樣比較/)
+  assert.match(compact.calls[0].prompt, /Historical advisory context was omitted/)
+  assert.doesNotMatch(compact.calls[0].prompt, /DECISION_ONLY|ARCHIVE_ONLY/)
+  assert.equal(compact.sizing.outputReserve, 4096)
+  assert.deepEqual(compact.sizing.promptBytes.filter(p => !p.included).map(p => p.name), ['conversation_archive','decision_archive'])
+  assert.ok(compact.sizing.inputBound + compact.sizing.outputReserve <= bound)
+  const stillOversized = await integrated(message, answer, history, true, {
+    ...controls, context: 2048,
+    checkInput: () => { throw new LocalModelError('local_context_capacity_exceeded') }
+  })
+  assert.equal(stillOversized.calls.length, 1)
+  assert.match(stillOversized.calls[0].prompt, /THIS_THREAD_QUESTION/)
+  assert.ok(stillOversized.sizing.fullBound > stillOversized.sizing.capacity)
+  assert.ok(stillOversized.sizing.promptBytes.every(part => part.included))
 })

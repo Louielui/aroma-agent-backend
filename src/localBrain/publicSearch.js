@@ -230,5 +230,16 @@ async function answer (message, adapter, requestId, reader) {
     ...(servedBy ? { model: servedBy } : {}) }
 }
 
-module.exports = { RPC, GRANT_HASH, DISCOVERY_MODEL, configured, readGrant, validDispatch, createGrant,
+// The scoped public retailer reader cannot verify current weather.
+function weatherUnavailable(message) {
+  const text = String(message).trim()
+  const chinese = /^(?:Winnipeg\s*|溫尼伯)?(?:今[天日]|而家|現在)(?:\s*Winnipeg\s*|溫尼伯)?\s*(?:氣溫\s*)?(?:幾(?:多)?度|氣溫幾多|溫度係幾多)[?？。]?$/iu
+  const english = /^what(?: is|'s) the (?:current )?temperature(?: in Winnipeg)?(?: today| right now)?[?]?$/iu
+  const reply = chinese.test(text) ? '我而家未能查證即時氣溫。'
+    : english.test(text) ? 'I cannot verify the current temperature.' : null
+  return reply && { blocked: false, mode: 'chat', intent: 'question', reply, replyForArchive: reply,
+    tasks: [], decision: null, utility: 'weather_unverified' }
+}
+
+module.exports = { weatherUnavailable, RPC, GRANT_HASH, DISCOVERY_MODEL, configured, readGrant, validDispatch, createGrant,
   parseRequest, publicQuery, createReader, answer, checkedPage }
