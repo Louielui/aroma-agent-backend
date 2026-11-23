@@ -21,6 +21,29 @@ function isStandaloneDraft(message) {
     (write.test(message) || format.test(message)) && (artifact.test(message) || format.test(message))
 }
 
+const inlineCardRequest = /^(?:(?:請|唔該|麻煩)\s*)?(?:幫我\s*)?(?:寫|草擬)\s*(?:一[張份個]\s*)?(?:虛構|虚构)(?:的|嘅)?[\p{Script=Han}]{0,12}(?:提示卡|展示卡|告示|通知)$/u
+const inlineCardDetails = [
+  /^(?:要)?(?:分|用|寫|排成)\s*[一二兩三四五六七八九十\d]+行$/u,
+  /^每行一[項句]$/u,
+  /^(?:底紙|底色|紙色|背景)\s*[：:]?\s*[\p{Script=Han}]{0,10}(?:色|黑|白)$/u,
+  /^標籤\s*(?:寫|係|是|[：:])\s*(?:「[^」]+」|『[^』]+』|[\p{Script=Han}]{1,12})$/u,
+  /^(?:只供|僅供|只畀|只俾)[\p{Script=Han}]{1,15}(?:同事|人員)(?:睇|看|閱讀)$/u
+]
+const inlineWritingLiteral = /^(?:標籤\s*寫|(?:要)?寫(?=\s*[一二兩三四五六七八九十\d]))|「[^」]*」|『[^』]*』/gu
+
+// The shortcut applies to fully specified fictional cards. Every unquoted
+// clause must be a drafting constraint; an extra operation stays with the
+// ordinary evidence and approval path.
+function isInlineDraftRequest(message) {
+  if (!isStandaloneDraft(message) || !requestedLineCount(message)) return false
+  const [request, ...details] = message.trim().replace(/^香香[，,]\s*/u, '')
+    .split(/[，,。；;\r\n]+/u).map(part => part.trim()).filter(Boolean)
+  if (!inlineCardRequest.test(request)) return false
+  const { CHANGE_VERB } = require('../agent/requestInference')
+  return details.every(detail => inlineCardDetails.some(pattern => pattern.test(detail)) &&
+    !CHANGE_VERB.test(detail.replace(inlineWritingLiteral, '')))
+}
+
 const system = `你在本機聊天中替用戶撰寫或改寫文字。用自然廣東話及繁體中文。根據這串對話提供的條件直接作答。假設和虛構資料就是這項文案的條件，照用，不需要查系統。
 資料齊備時，用 mode="chat"，reply 只放成品。用戶指定一句就只寫一句，指定幾行就只寫幾行。不要加前言、引語、稱呼、標題、解釋或承諾，除非用戶要求。
 更正時用用戶最新講法。若要完整回述或重寫，把所有照舊事項逐項照寫出來，跟回用戶指定的格式及順序。不要用「其他不變」代替，也不要把自己的舊推斷當作事實。
@@ -99,4 +122,4 @@ function clarifyStartTime(distilled) {
   return { ...distilled, mode: 'ask', intent: 'unclear', reply, understanding: reply }
 }
 
-module.exports = { isDraftRequest, system, responseFormat, requestedLineCount, requestedAudience, renderDraftLines, needsStartTime, clarifyStartTime }
+module.exports = { isDraftRequest, isInlineDraftRequest, system, responseFormat, requestedLineCount, requestedAudience, renderDraftLines, needsStartTime, clarifyStartTime }

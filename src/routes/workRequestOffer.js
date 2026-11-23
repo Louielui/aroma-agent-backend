@@ -146,6 +146,9 @@ function explainOffer (input = {}) {
   if (input.hasProposal === true) return { offer: null, reason: 'model_path_owns_turn', state: STATE.NOT_A_WORK_REQUEST }
 
   const message = typeof input.message === 'string' ? input.message : ''
+  if (require('../intake/localChatDraft').isInlineDraftRequest(message)) {
+    return { offer: null, reason: 'inline_draft', state: STATE.NOT_A_WORK_REQUEST }
+  }
   if (require('../intake/generalKnowledge').generalRequestKind(message)) return { offer: null, reason: 'general_knowledge', state: STATE.NOT_A_WORK_REQUEST }
 
   // 1. IS IT A REQUEST? The judgement the classifier used to make silently.

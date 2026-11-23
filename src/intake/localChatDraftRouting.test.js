@@ -139,3 +139,84 @@ test('draft format restores an exact exclusive audience without overriding a cha
   assert.match(render(edit, '對象：早班及晚班同事'), /對象：早班及晚班同事$/u)
   assert.equal(requestedAudience('改做白檯卡，其餘照舊，今次早班同事都可以睇', [initial, '改做白檯卡，其餘照舊，今次早班同事都可以睇']), null)
 })
+
+// First formal PR228 turn. Retain the original punctuation and three fields.
+const formalDraft = '幫我寫虛構活動提示卡，要分三行，每行一項。底紙淺黃色；標籤寫『排練』；只供幕後同事睇。'
+
+test('the saved PR228 chat/task reply cannot cause a file clarification for inline writing', () => {
+  const { explainOffer, WORK_REQUEST_STATE } = require('../routes/workRequestOffer')
+  const receipt = { mode: 'chat', intent: 'task', reply: '這是提案，等待 Louie 批准。' }
+  assert.equal(explainOffer({ message: formalDraft, response: receipt }).state, WORK_REQUEST_STATE.NOT_A_WORK_REQUEST)
+  assert.equal(explainOffer({ message: formalDraft }).state, WORK_REQUEST_STATE.NOT_A_WORK_REQUEST)
+  for (const message of [
+    '幫我改個訂貨頁',
+    '幫我改 docs/canary/agent-canary.md，第二行改成排練',
+    formalDraft + '再幫我改 docs/canary/agent-canary.md。',
+    formalDraft + '改埋嗰個檔。',
+    formalDraft + '改埋個訂貨頁。',
+    formalDraft + '個檔改埋佢。',
+    formalDraft + '修改首頁校色。'
+  ]) {
+    assert.notEqual(explainOffer({ message, response: receipt }).state, WORK_REQUEST_STATE.NOT_A_WORK_REQUEST, message)
+  }
+})
+
+test('only a complete inline drafting shape can skip historical and operational routing', () => {
+  const { isInlineDraftRequest } = require('./localChatDraft')
+  assert.equal(isInlineDraftRequest(formalDraft), true)
+  assert.equal(isInlineDraftRequest('唔該幫我寫一張虛構展示卡，用三行。底色淡綠色；標籤寫「彩排」；只供晚班同事看。'), true)
+  for (const tail of [
+    '睇下今朝有幾多牛肉。',
+    '排練完刪掉臨時檔。',
+    '由舊資料補埋上個版本嘅標籤。',
+    '標籤寫排練兼改首頁。',
+    '然後寄畀員工。'
+  ]) assert.equal(isInlineDraftRequest(formalDraft + tail), false, tail)
+})
+
+test('manual local production-shaped drafting keeps the three lines with memory enabled', async t => {
+  const { processIntake } = require('./intakeService')
+  const { fromSavedConversation } = require('./conversationEvidence')
+  const { explainOffer, WORK_REQUEST_STATE } = require('../routes/workRequestOffer')
+  const flags = { LOCAL_BRAIN_ONLY: '1', A4_KNOWLEDGE_ROUTING: 'on', TURN_ROUTER: 'on',
+    MULTI_AI_ROUTER: 'on', GOAL_DECOMPOSER: 'off', READ_ACCESS: 'on', XIANGXIANG_MEMORY: 'on' }
+  const previous = Object.fromEntries(Object.keys(flags).map(key => [key, process.env[key]]))
+  Object.assign(process.env, flags)
+  t.after(() => {
+    for (const [key, value] of Object.entries(previous)) {
+      if (value === undefined) delete process.env[key]
+      else process.env[key] = value
+    }
+  })
+  const historical = 'Unrelated archived staging notes'
+  let recallReads = 0
+  const memoryClient = {
+    preferences: async () => ({ state: 'ok', items: [], total: 0 }),
+    recall: async () => {
+      recallReads++
+      return [{ documentId: 'xx-6105a355-4c9b-4ad1-a173-956452dd1abb', text: historical }]
+    }
+  }
+  let answerSchema
+  const lines = ['底紙：淺黃色', '標籤：排練', '只供幕後同事睇']
+  const adapter = { providerName: 'local', preflight: async () => {}, complete: async (prompt, opts) => {
+    assert.equal(opts.invocationPhase, 'answer')
+    answerSchema = opts.responseFormat?.name
+    const focused = answerSchema === 'local_chat_draft'
+    if (focused) {
+      assert.ok(prompt.includes(formalDraft))
+      assert.ok(!prompt.includes(historical))
+    }
+    return { model: 'local:test', text: JSON.stringify({ mode: 'chat', intent: 'task', nextRead: null,
+      reply: focused ? lines.join('\n') : '這是提案，等待 Louie 批准。', ...(focused && { lines }) }) }
+  } }
+  const result = await processIntake(formalDraft, adapter, [], {
+    demo: true, manualLocalDialogue: true, interactionMode: 'chat',
+    conversationEvidence: fromSavedConversation({ messages: [] }, formalDraft),
+    memoryClient, readContextDeps: { sources: [] }, semanticCallModel: async () => '{"intent":"conversation"}'
+  })
+  assert.equal(answerSchema, 'local_chat_draft')
+  assert.equal(recallReads, 0)
+  assert.equal(result.reply, lines.join('\n'))
+  assert.equal(explainOffer({ message: formalDraft, response: result }).state, WORK_REQUEST_STATE.NOT_A_WORK_REQUEST)
+})
