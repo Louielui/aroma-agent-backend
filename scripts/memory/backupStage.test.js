@@ -19,5 +19,5 @@ test('complete source capture is bounded and parallel while each original object
 test('source mutation, parallel aggregate limit, invalid JSON and worker failures cannot yield a receipt',t=>{
  const root=fs.mkdtempSync(path.join(os.tmpdir(),'backup-stage-boundary-'));t.after(()=>fs.rmSync(root,{recursive:true,force:true}))
  const r=spawnSync(python,['-B','-X','utf8',path.join(__dirname,'backupStageBoundary.fixture.py'),root],{encoding:'utf8',windowsHide:true,timeout:30000})
- assert.equal(r.status,0,r.stderr||r.stdout);assert.deepEqual(JSON.parse(r.stdout),{sourceMutation:'rejected',aggregateLimit:'rejected',invalidJson:'rejected',dedupWrites:1,workerFailure:'propagated',activeAfterFailure:0,pendingBound:16,walSnapshot:'verified_source_unchanged'})
+ assert.equal(r.status,0,r.stderr||r.stdout);assert.deepEqual(JSON.parse(r.stdout),{sourceMutation:'rejected',aggregateLimit:'rejected',invalidJson:'rejected',dedupWrites:1,workerFailure:'propagated',activeAfterFailure:0,pendingBound:16,walSnapshot:'verified_source_unchanged',zeroFilledTrace:'restored_exact_bytes',otherMalformedFiles:'rejected',falseMarker:'rejected'})
 })

@@ -16,6 +16,8 @@ from concurrent.futures import ThreadPoolExecutor
 DIRECTORIES = ("memory-outbox", "memory-capture", "memory-consolidation", "conversations", "local-brain")
 FILES = ("company-access.json", "model-center-local.json", "memory-local-index/memory.sqlite")
 MAX_BYTES = 512 * 1024 * 1024
+ZERO_FILLED_TRACE = "zero_filled_trace"
+TRACE_PATH = re.compile(r"local-brain/[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\.json")
 
 
 class RecoveryIO:
@@ -62,6 +64,16 @@ def read_verified(target, digest, size, reason):
     if (size is not None and len(content) != size) or hashlib.sha256(content).hexdigest() != digest:
         raise ValueError(reason)
     return content
+
+
+def zero_filled_trace(relative, content):
+    return TRACE_PATH.fullmatch(relative) is not None and bool(content) and content.count(0) == len(content)
+
+
+def verify_zero_filled_trace(target, relative, digest, size):
+    content = read_verified(target, digest, size, "recovery_hash_mismatch")
+    if not zero_filled_trace(relative, content):
+        raise ValueError("recovery_trace_marker_invalid")
 
 
 def encode(value):
@@ -159,8 +171,16 @@ def stage_recovery(destination, data_root):
         after = file.stat()
         if not sqlite_asset and ((before.st_size, before.st_mtime_ns) != (after.st_size, after.st_mtime_ns) or len(content) != before.st_size):
             raise ValueError("recovery_source_changed_retry")
+        trace_marker = {}
         if not sqlite_asset:
-            json.loads(content.decode("utf-8"))
+            try:
+                json.loads(content.decode("utf-8"))
+            except json.JSONDecodeError:
+                # Preserve the bytes of an interrupted telemetry file as
+                # evidence. Its former JSON cannot be recovered from them.
+                if not zero_filled_trace(relative, content):
+                    raise
+                trace_marker = {"contentState": ZERO_FILLED_TRACE}
         digest = hashlib.sha256(content).hexdigest()
         with lock:
             if sqlite_asset:
@@ -171,7 +191,7 @@ def stage_recovery(destination, data_root):
             scheduled.add(digest)
         if unique:
             write_new(objects / digest, content)
-        return {"path": relative, "sha256": digest, "bytes": len(content)}
+        return {"path": relative, "sha256": digest, "bytes": len(content), **trace_marker}
 
     with RecoveryIO(on_result=manifest["files"].append) as captures:
         for name in DIRECTORIES + FILES:
@@ -216,15 +236,25 @@ def verified_bundle(target):
     if hashlib.sha256(canonical).hexdigest() != manifest["canonical"]["sha256"]:
         raise ValueError("recovery_hash_mismatch")
     seen = set()
+    zero_filled = 0
     with RecoveryIO() as checks:
         for item in manifest["files"]:
             asset_path(item["path"])
             if item["path"] in seen or not re.fullmatch(r"[0-9a-f]{64}", item["sha256"]):
                 raise ValueError("invalid_recovery_path")
             seen.add(item["path"])
-            checks.verify(target / "objects" / item["sha256"], item["sha256"], item["bytes"])
+            object_file = target / "objects" / item["sha256"]
+            if "contentState" in item:
+                if item["contentState"] != ZERO_FILLED_TRACE:
+                    raise ValueError("recovery_trace_marker_invalid")
+                checks.submit(verify_zero_filled_trace, object_file, item["path"], item["sha256"], item["bytes"])
+                zero_filled += 1
+            else:
+                checks.verify(object_file, item["sha256"], item["bytes"])
     proof = {"state": "verified", "files": len(manifest["files"]), "tables": manifest["canonical"]["tables"],
              "credentials": manifest["credentials"], "hindsight": manifest["hindsight"]}
+    if zero_filled:
+        proof["zeroFilledTraceFiles"] = zero_filled
     return manifest, proof, hashlib.sha256(manifest_bytes).hexdigest()
 
 
