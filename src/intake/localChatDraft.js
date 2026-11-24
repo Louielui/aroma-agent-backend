@@ -117,6 +117,130 @@ function replyToFictionalNotice(message, history, ownerMessages) {
     reply: prior.weekday + prior.period + clock[2] + '喺' + prior.room + '舉行' + prior.event + '，請憑' + prior.admission + '入場。' }
 }
 
+const sheetRequest = /^(?:純屬虛構|虛構練習)[，,]\s*(?:Aroma\s*)?要一份交收說明[。．]\s*(?:依次|按順序)寫四行[，,]每行一項[：:]([^。．]+)[。．]?$/u
+const sheetFields = [
+  /^(紙袋(?:用|採用))([\p{Script=Han}]{1,16})$/u,
+  /^(繩結(?:用|採用))([\p{Script=Han}]{1,16})$/u,
+  /^(交收位(?:係|喺|在|為))([\p{Script=Han}]{1,20})$/u,
+  /^((?:只畀|只俾|只供|僅供))([\p{Script=Han}]{1,16}(?:同事|人員))(睇|看|閱讀)$/u
+]
+const sheetRevision = /^([\p{Script=Han}]{1,16})(?:換成|改用|改做)([\p{Script=Han}]{1,16})$/u
+const sameOrder = /^(?:按同一順序寫四行|依返原次序寫四行)$/u
+const deliverSheet = /^(?:成份交收說明(?:畀|俾)我|交返完整交收說明)$/u
+const keepFields = /^(?:其他|其餘)照舊$/u
+
+function safeDraftLiteral(value) {
+  return !external.test(value) && !require('../agent/requestInference').CHANGE_VERB.test(value)
+}
+
+function fourFieldSheet(text) {
+  const clauses = sheetRequest.exec(text)?.[1].split(/[；;]/u).map(part => part.trim())
+  if (clauses?.length !== sheetFields.length) return null
+  const fields = clauses.map(clause => {
+    const kind = sheetFields.findIndex(pattern => pattern.test(clause))
+    if (kind < 0) return null
+    const [, prefix, value, suffix = ''] = sheetFields[kind].exec(clause)
+    return safeDraftLiteral(value) ? { kind, prefix, value, suffix, clause } : null
+  })
+  return fields.every(Boolean) && new Set(fields.map(field => field.kind)).size === sheetFields.length ? fields : null
+}
+
+function revisedSheet(text, fields) {
+  const [change, keep, format, deliver, ...extra] = cardClauses(text)
+  const revision = sheetRevision.exec(change)
+  if (!revision || !keepFields.test(keep) || !sameOrder.test(format) || !deliverSheet.test(deliver) || extra.length) return null
+  const [, before, after] = revision
+  const matching = fields.filter(field => !field.suffix && field.value === before)
+  if (matching.length !== 1 || !safeDraftLiteral(after)) return null
+  return fields.map(field => field === matching[0] ? field.prefix + after + field.suffix : field.clause).join('\n')
+}
+
+const handoffRequest = /^呢個係虛構(?:\s*Aroma)?\s*交更練習[。．]\s*([\p{Script=Han}]{1,12})嘅([\p{Script=Han}]{1,12}箱)擺喺([一二兩三四五六七八九十\d]{1,3}樓)([東南西北]門)入面[，,]交[俾畀]([\p{Script=Han}]{1,8}更)[。．]用一句講返完整安排[。．]?$/u
+const handoffCorrection = /^(?:頭先講錯|啱啱講錯)[，,]係([\p{Script=Han}]{1,12})嗰間[。．]嗰個箱由([東南西北]門)改去([東南西北]門)[，,]樓層、門內同交收對象照舊[。．]用一句講返完整安排[。．]?$/u
+
+function revisedHandoff(text, previous) {
+  const original = handoffRequest.exec(previous)
+  const change = handoffCorrection.exec(text)
+  if (!original || !change || change[2] !== original[4]) return null
+  const [, oldStore, item, floor, , recipient] = original
+  const [, store, , door] = change
+  if (![oldStore, item, recipient, store].every(safeDraftLiteral)) return null
+  return store + '嘅' + item + '擺喺' + floor + door + '入面，交俾' + recipient + '。'
+}
+
+const reminderRequest = /^用一句(?:草擬|寫)虛構(?:\s*Aroma)?\s*([\p{Script=Han}]{1,12})(?:提醒|通知)$/u
+const reminderRequirements = /^要齊星期幾、幾點、(?:枱號|桌號)同(?:交收憑證|取樣憑證|憑證)$/u
+const reminderDay = /^(星期[一二三四五六日天])(.+)?$/u
+const reminderTable = /^(?:係|喺|到)?([一二兩三四五六七八九十百\d]{1,4}號[枱桌])$/u
+const reminderProof = /^憑([\p{Script=Han}]{1,18})$/u
+const reminderCompletion = /^(?:依家|而家)(?:畀|俾)我完整(?:嗰)?一句([\p{Script=Han}]{1,12})(?:提醒|通知)$/u
+const reminderQuestions = { day: '星期幾？', clock: '幾點開始？', table: '幾號枱？', proof: '要憑乜嘢？' }
+
+function parseReminderFields(clauses, event) {
+  const fields = {}
+  for (const clause of clauses) {
+    const value = clause.replace(/^已定/u, '')
+    const day = reminderDay.exec(value)
+    const clock = noticeClock.test(day?.[2] ?? value) ? (day?.[2] ?? value) : null
+    const table = reminderTable.exec(value)?.[1]
+    const proof = value.endsWith(event) ? reminderProof.exec(value.slice(0, -event.length))?.[1] : null
+    if (day?.[2] && !clock) return null
+    const usable = Object.entries({ day: day?.[1], clock, table, proof }).filter(([, entry]) => entry)
+    if (!usable.length || usable.some(([key, entry]) => fields[key] || !safeDraftLiteral(entry))) return null
+    for (const [key, entry] of usable) fields[key] = entry
+  }
+  return fields
+}
+
+function suppliedReminder(text) {
+  const [request, requirements, ...details] = cardClauses(text)
+  const event = reminderRequest.exec(request)?.[1]
+  if (!event || !safeDraftLiteral(event) || !reminderRequirements.test(requirements)) return null
+  const fields = parseReminderFields(details, event)
+  return fields ? { event, fields } : null
+}
+
+function reminderReply(reminder, followup) {
+  const {event, fields} = reminder
+  const missing = Object.keys(reminderQuestions).filter(key => !fields[key])
+  if (missing.length > 1) return null
+  if (followup) {
+    const [value, keep, deliver, ...extra] = cardClauses(followup)
+    const completion = reminderCompletion.exec(deliver)
+    if (missing.length !== 1 || !keepFields.test(keep) || completion?.[1] !== event || extra.length) return null
+    const provided = parseReminderFields([value], event)
+    if (!provided || Object.keys(provided).length !== 1 || !provided[missing[0]]) return null
+    Object.assign(fields, provided)
+  } else if (missing.length) {
+    return {mode: 'ask', intent: 'unclear', reply: reminderQuestions[missing[0]]}
+  }
+  return {mode: 'chat', intent: 'context',
+    reply: fields.day + fields.clock + '，請憑' + fields.proof + '到' + fields.table + event + '。'}
+}
+
+// Only whole, supported fictional turns use the literal renderer. Follow-ups
+// bind to the authenticated, immediately preceding Owner request. Assistant
+// prose never supplies a field or expands the scope of the next request.
+function replyToSuppliedFiction(message, history, ownerMessages) {
+  if (typeof message !== 'string' || external.test(message) || !Array.isArray(history) ||
+      !Array.isArray(ownerMessages) || ownerMessages.at(-1) !== message.trim()) return null
+  if (ownerMessages.length === 1 && history.length === 0) {
+    const fields = fourFieldSheet(message.trim())
+    if (fields) return {mode: 'chat', intent: 'context', reply: fields.map(field => field.clause).join('\n')}
+    const reminder = suppliedReminder(message)
+    return reminder ? reminderReply(reminder) : null
+  }
+  const previous = ownerMessages.at(-2)
+  const priorTurn = history.at(-2)
+  if (!previous || external.test(previous) || priorTurn?.role !== 'user' || typeof priorTurn.text !== 'string' ||
+      priorTurn.text.trim() !== previous || history.at(-1)?.role !== 'assistant') return null
+  const fields = fourFieldSheet(previous)
+  const reply = fields ? revisedSheet(message, fields) : revisedHandoff(message, previous)
+  if (reply) return {mode: 'chat', intent: 'context', reply}
+  const reminder = suppliedReminder(previous)
+  return reminder ? reminderReply(reminder, message) : null
+}
+
 const system = `你在本機聊天中替用戶撰寫或改寫文字。用自然廣東話及繁體中文。根據這串對話提供的條件直接作答。假設和虛構資料就是這項文案的條件，照用，不需要查系統。
 資料齊備時，用 mode="chat"，reply 只放成品。用戶指定一句就只寫一句，指定幾行就只寫幾行。不要加前言、引語、稱呼、標題、解釋或承諾，除非用戶要求。
 更正時用用戶最新講法。若要完整回述或重寫，把所有照舊事項逐項照寫出來，跟回用戶指定的格式及順序。不要用「其他不變」代替，也不要把自己的舊推斷當作事實。
@@ -196,4 +320,4 @@ function clarifyStartTime(distilled) {
   return { ...distilled, mode: 'ask', intent: 'unclear', reply: noticeQuestion, understanding: noticeQuestion }
 }
 
-module.exports = { isDraftRequest, isInlineDraftRequest, reviseInlineCard, replyToFictionalNotice, system, responseFormat, requestedLineCount, requestedAudience, renderDraftLines, needsStartTime, clarifyStartTime }
+module.exports = { isDraftRequest, isInlineDraftRequest, reviseInlineCard, replyToFictionalNotice, replyToSuppliedFiction, system, responseFormat, requestedLineCount, requestedAudience, renderDraftLines, needsStartTime, clarifyStartTime }
