@@ -12,10 +12,23 @@ import sqlite3
 import threading
 from collections import deque
 from concurrent.futures import ThreadPoolExecutor
+from typing import NamedTuple
 
 DIRECTORIES = ("memory-outbox", "memory-capture", "memory-consolidation", "conversations", "local-brain")
 FILES = ("company-access.json", "model-center-local.json", "memory-local-index/memory.sqlite")
 MAX_BYTES = 512 * 1024 * 1024
+MAX_MANIFEST_BYTES = 16 * 1024 * 1024
+MAX_MANIFEST_FILES = 131072
+ZERO_FILLED_TRACE = "zero_filled_trace"
+TRACE_PATH = re.compile(r"local-brain/[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\.json")
+
+
+class RecoveryBundle(NamedTuple):
+    directory: pathlib.Path
+    manifest: dict
+    proof: dict
+    manifest_digest: str
+    manifest_hash: str
 
 
 class RecoveryIO:
@@ -64,8 +77,72 @@ def read_verified(target, digest, size, reason):
     return content
 
 
+def zero_filled_trace(relative, content):
+    return TRACE_PATH.fullmatch(relative) is not None and bool(content) and content.count(0) == len(content)
+
+
+def verify_zero_filled_trace(target, relative, digest, size):
+    content = read_verified(target, digest, size, "recovery_hash_mismatch")
+    if not zero_filled_trace(relative, content):
+        raise ValueError("recovery_trace_marker_invalid")
+
+
 def encode(value):
     return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+
+
+def encode_recovery_manifest(manifest):
+    if len(manifest["files"]) > MAX_MANIFEST_FILES:
+        raise ValueError("recovery_manifest_limit")
+
+    def seal(value):
+        encoded = encode(value).encode("utf-8")
+        digest = hashlib.sha256(encoded).hexdigest()
+        return b'{"manifest":' + encoded + b',"sha256":"' + digest.encode("ascii") + b'"}', digest
+
+    content, digest = seal(manifest)
+    if len(content) <= MAX_MANIFEST_BYTES:
+        return content, digest
+    # Format 2 keeps the same names, digests, byte sizes, and optional trace
+    # marker while omitting the repeated property names from every file row.
+    rows = []
+    for item in manifest["files"]:
+        row = [item["path"], item["sha256"], item["bytes"]]
+        if "contentState" in item:
+            row.append(item["contentState"])
+        rows.append(row)
+    content, digest = seal({**manifest, "format": 2, "files": rows})
+    if len(content) > MAX_MANIFEST_BYTES:
+        raise ValueError("recovery_manifest_limit")
+    return content, digest
+
+
+def manifest_file_entries(manifest):
+    version = manifest.get("format")
+    files = manifest.get("files")
+    if type(version) is not int or version not in (1, 2) or not isinstance(files, list):
+        raise ValueError("recovery_manifest_invalid")
+    if len(files) > MAX_MANIFEST_FILES:
+        raise ValueError("recovery_manifest_limit")
+    if version == 1:
+        return files
+    entries = []
+    for row in files:
+        if not isinstance(row, list) or len(row) not in (3, 4) or (len(row) == 4 and row[3] != ZERO_FILLED_TRACE):
+            raise ValueError("recovery_manifest_invalid")
+        item = {"path": row[0], "sha256": row[1], "bytes": row[2]}
+        if len(row) == 4:
+            item["contentState"] = row[3]
+        entries.append(item)
+    return entries
+
+
+def read_manifest_bytes(bundle):
+    with (bundle / "manifest.json").open("rb") as handle:
+        content = handle.read(MAX_MANIFEST_BYTES + 1)
+    if len(content) > MAX_MANIFEST_BYTES:
+        raise ValueError("recovery_manifest_limit")
+    return content
 
 
 def at():
@@ -159,8 +236,16 @@ def stage_recovery(destination, data_root):
         after = file.stat()
         if not sqlite_asset and ((before.st_size, before.st_mtime_ns) != (after.st_size, after.st_mtime_ns) or len(content) != before.st_size):
             raise ValueError("recovery_source_changed_retry")
+        trace_marker = {}
         if not sqlite_asset:
-            json.loads(content.decode("utf-8"))
+            try:
+                json.loads(content.decode("utf-8"))
+            except json.JSONDecodeError:
+                # Preserve the bytes of an interrupted telemetry file as
+                # evidence. Its former JSON cannot be recovered from them.
+                if not zero_filled_trace(relative, content):
+                    raise
+                trace_marker = {"contentState": ZERO_FILLED_TRACE}
         digest = hashlib.sha256(content).hexdigest()
         with lock:
             if sqlite_asset:
@@ -171,7 +256,7 @@ def stage_recovery(destination, data_root):
             scheduled.add(digest)
         if unique:
             write_new(objects / digest, content)
-        return {"path": relative, "sha256": digest, "bytes": len(content)}
+        return {"path": relative, "sha256": digest, "bytes": len(content), **trace_marker}
 
     with RecoveryIO(on_result=manifest["files"].append) as captures:
         for name in DIRECTORIES + FILES:
@@ -186,6 +271,17 @@ def stage_recovery(destination, data_root):
 
 
 def finish_recovery(staged, snapshot_path):
+    result, _ = finish_recovery_for_restore(staged, snapshot_path)
+    return result
+
+
+def finish_recovery_for_restore(staged, snapshot_path):
+    bundle = seal_recovery(staged, snapshot_path)
+    verify_archive_objects(bundle)
+    return _verified_archive_receipt(bundle), bundle
+
+
+def seal_recovery(staged, snapshot_path):
     target = pathlib.Path(staged["directory"])
     content = pathlib.Path(snapshot_path).read_bytes()
     envelope = json.loads(content.decode("utf-8"))
@@ -197,53 +293,103 @@ def finish_recovery(staged, snapshot_path):
     manifest = {**staged["manifest"], "completedAt": at(),
                 "canonical": {"file": "canonical.json", "sha256": hashlib.sha256(content).hexdigest(),
                               "tables": {k: len(v) for k, v in snapshot["tables"].items()}}}
-    sealed = {"sha256": hashlib.sha256(encode(manifest).encode("utf-8")).hexdigest(), "manifest": manifest}
-    write_new(target / "manifest.json", encode(sealed).encode("utf-8"))
-    proof = verify_recovery(target)
-    return {"state": "saved", "path": str(target), "manifestHash": sealed["sha256"], **proof}
+    sealed, manifest_hash = encode_recovery_manifest(manifest)
+    write_new(target / "manifest.json", sealed)
+    bundle = read_bundle_metadata(target)
+    if bundle.manifest_digest != hashlib.sha256(sealed).hexdigest() or bundle.manifest_hash != manifest_hash:
+        raise ValueError("recovery_manifest_invalid")
+    return bundle
 
 
-def verified_bundle(target):
-    manifest_bytes = (target / "manifest.json").read_bytes()
+def read_bundle_metadata(target):
+    manifest_bytes = read_manifest_bytes(target)
     sealed = json.loads(manifest_bytes.decode("utf-8"))
     manifest = sealed["manifest"]
-    if manifest.get("format") != 1 or manifest.get("kind") != "xiangxiang-memory-recovery" or \
+    if manifest.get("kind") != "xiangxiang-memory-recovery" or \
             hashlib.sha256(encode(manifest).encode("utf-8")).hexdigest() != sealed.get("sha256"):
         raise ValueError("recovery_manifest_invalid")
+    entries = manifest_file_entries(manifest)
     if manifest["canonical"]["file"] != "canonical.json":
         raise ValueError("invalid_recovery_path")
     canonical = (target / "canonical.json").read_bytes()
     if hashlib.sha256(canonical).hexdigest() != manifest["canonical"]["sha256"]:
         raise ValueError("recovery_hash_mismatch")
     seen = set()
-    with RecoveryIO() as checks:
-        for item in manifest["files"]:
-            asset_path(item["path"])
-            if item["path"] in seen or not re.fullmatch(r"[0-9a-f]{64}", item["sha256"]):
-                raise ValueError("invalid_recovery_path")
-            seen.add(item["path"])
-            checks.verify(target / "objects" / item["sha256"], item["sha256"], item["bytes"])
-    proof = {"state": "verified", "files": len(manifest["files"]), "tables": manifest["canonical"]["tables"],
+    zero_filled = 0
+    total = 0
+    for item in entries:
+        asset_path(item["path"])
+        if item["path"] in seen or not re.fullmatch(r"[0-9a-f]{64}", item["sha256"]):
+            raise ValueError("invalid_recovery_path")
+        if type(item["bytes"]) is not int or item["bytes"] < 0:
+            raise ValueError("recovery_manifest_invalid")
+        total += item["bytes"]
+        if total > MAX_BYTES:
+            raise ValueError("recovery_size_limit")
+        seen.add(item["path"])
+        if "contentState" in item:
+            if item["contentState"] != ZERO_FILLED_TRACE or not TRACE_PATH.fullmatch(item["path"]):
+                raise ValueError("recovery_trace_marker_invalid")
+            zero_filled += 1
+    proof = {"files": len(entries), "tables": manifest["canonical"]["tables"],
              "credentials": manifest["credentials"], "hindsight": manifest["hindsight"]}
-    return manifest, proof, hashlib.sha256(manifest_bytes).hexdigest()
+    if zero_filled:
+        proof["zeroFilledTraceFiles"] = zero_filled
+    return RecoveryBundle(target, {**manifest, "files": entries}, proof,
+                          hashlib.sha256(manifest_bytes).hexdigest(), sealed["sha256"])
+
+
+def verify_archive_objects(bundle):
+    with RecoveryIO() as checks:
+        for item in bundle.manifest["files"]:
+            object_file = bundle.directory / "objects" / item["sha256"]
+            if "contentState" in item:
+                checks.submit(verify_zero_filled_trace, object_file, item["path"], item["sha256"], item["bytes"])
+            else:
+                checks.verify(object_file, item["sha256"], item["bytes"])
+
+
+def verified_bundle(target):
+    bundle = read_bundle_metadata(target)
+    verify_archive_objects(bundle)
+    return bundle
+
+
+def _verified_archive_receipt(bundle):
+    return {**bundle.proof, "state": "verified", "path": str(bundle.directory), "manifestHash": bundle.manifest_hash}
 
 
 def verify_recovery(source):
-    _, proof, _ = verified_bundle(pathlib.Path(source).resolve())
-    return proof
+    return {**verified_bundle(pathlib.Path(source).resolve()).proof, "state": "verified"}
 
 
-def restore_asset(source, target, digest, size):
+def restore_asset(source, target, digest, size, trace_path=None):
     # Check the exact bytes used for the copy, even if an archive object
     # changed after the separate bundle verification.
     content = read_verified(source, digest, size, "recovery_hash_mismatch")
+    if trace_path is not None and not zero_filled_trace(trace_path, content):
+        raise ValueError("recovery_trace_marker_invalid")
     write_new(target, content)
 
 
 def restore_files(source, destination):
+    return restore_verified_files(verified_bundle(pathlib.Path(source).resolve()), destination)
+
+
+def restore_sealed_recovery(sealed, destination):
+    # In the combined worker, validate every archive object on its copy read.
+    # Publish archive evidence only after the isolated readback also passes.
+    restored = restore_verified_files(sealed, destination)
+    return _verified_archive_receipt(sealed), restored
+
+
+def restore_verified_files(verified, destination):
     target = pathlib.Path(destination).resolve()
-    bundle = pathlib.Path(source).resolve()
-    manifest, proof, manifest_digest = verified_bundle(bundle)
+    bundle, manifest, proof, manifest_digest, _ = verified
+    # Recheck the manifest before touching the destination and verify the
+    # exact bytes of each source object before writing its isolated copy.
+    if hashlib.sha256(read_manifest_bytes(bundle)).hexdigest() != manifest_digest:
+        raise ValueError("recovery_manifest_invalid")
     private_directory(target)
     data = target / "data"
     if manifest["files"]:
@@ -258,7 +404,8 @@ def restore_files(source, destination):
                 parent.mkdir(parents=True, exist_ok=True, mode=0o700)
                 parents.add(parent)
             digest, size = item["sha256"], item["bytes"]
-            copies.submit(restore_asset, bundle / "objects" / digest, file, digest, size)
+            trace_path = item["path"] if "contentState" in item else None
+            copies.submit(restore_asset, bundle / "objects" / digest, file, digest, size, trace_path)
             destinations.append((file, digest, size))
     write_new(target / "canonical.json", (bundle / "canonical.json").read_bytes())
     # Read each destination after every output, including canonical.json, is
@@ -267,5 +414,6 @@ def restore_files(source, destination):
         for file, digest, size in destinations:
             checks.verify(file, digest, size, "recovery_restore_unconfirmed")
     verify_file(target / "canonical.json", manifest["canonical"]["sha256"], None, "recovery_restore_unconfirmed")
-    verify_file(bundle / "manifest.json", manifest_digest, None, "recovery_manifest_invalid")
+    if hashlib.sha256(read_manifest_bytes(bundle)).hexdigest() != manifest_digest:
+        raise ValueError("recovery_manifest_invalid")
     return {**proof, "state": "isolated_files_restored", "path": str(target)}

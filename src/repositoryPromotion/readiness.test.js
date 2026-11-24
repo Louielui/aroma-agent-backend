@@ -36,6 +36,46 @@ function reseal(f,change){
  fs.writeFileSync(manifestFile,JSON.stringify(sealed));const bytes=JSON.stringify(worker);fs.writeFileSync(workerFile,bytes);f.request.backupReceiptHash=hash(bytes);fs.writeFileSync(path.join(f.directory,'request.json'),JSON.stringify(f.request))
 }
 
+function compactProof(manifest,worker){
+ manifest.format=2
+ manifest.files=manifest.files.map(({path,sha256,bytes})=>[path,sha256,bytes])
+ worker.expiresAt=new Date(Date.parse(worker.finishedAt)+86400000).toISOString()
+ worker.elapsedMs=220688
+ worker.deadlineMs=240000
+ worker.restored.tables=4
+ worker.recovery.files=worker.filesRestored.files
+ worker.recovery.tables={...worker.saved.counts}
+}
+
+test('compact restore manifests retain the full path, size and digest checks for every asset',async t=>{
+ const f=fixture(t)
+ const original=path.join(f.restore,'data','conversations','example.json')
+ const bytes=fs.readFileSync(original)
+ reseal(f,compactProof)
+ assert.equal((await validateReadiness(f.options,f.deps)).files,1)
+ fs.writeFileSync(original,Buffer.alloc(bytes.length,7))
+ await assert.rejects(validateReadiness(f.options,f.deps),/backup_restore_proof_unconfirmed/)
+ fs.writeFileSync(original,bytes)
+ reseal(f,(m,w)=>{m.files.push(m.files[0].slice());w.recovery.files=w.filesRestored.files=m.files.length})
+ await assert.rejects(validateReadiness(f.options,f.deps),/readiness_path_unconfirmed/)
+})
+
+test('compact manifests fail closed on invalid tags, lengths, digests, and format versions',async t=>{
+ for(const edit of [
+  m=>m.files[0].push('unrecognized'),
+  m=>m.files[0].push('zero_filled_trace','extra'),
+  m=>{m.files[0][1]='../canonical.json'},
+  m=>{m.files[0][2]=-1},
+  m=>{m.files[0]=m.files[0].slice(0,2)},
+  m=>{m.format=3},
+  m=>{m.files[0][0]='local-brain/../secret.json'}
+ ]){
+  const f=fixture(t)
+  reseal(f,(m,w)=>{compactProof(m,w);edit(m)})
+  await assert.rejects(validateReadiness(f.options,f.deps),/backup_restore_proof_unconfirmed|readiness_path_unconfirmed/)
+ }
+})
+
 test('an Owner-authorized current-size manifest verifies all 40349 assets including the last restored byte',async t=>{
  const f=fixture(t),bytes=Buffer.from('{}'),digest=hash(bytes),count=40349;fs.writeFileSync(path.join(f.bundle,'objects',digest),bytes)
  let last
@@ -88,5 +128,47 @@ test('sealed manifests cannot conceal malformed asset sizes, digests or aggregat
    else m.files[0].bytes={negative:-1,fraction:1.5,unsafe:Number.MAX_SAFE_INTEGER+1,over_asset:512*1024*1024+1}[kind]
   })
   await assert.rejects(validateReadiness(f.options,f.deps),/backup_restore_proof_unconfirmed/)
+ }
+})
+
+test('deployment readiness preserves the compact receipt deadline, original validity and all four table proofs',async t=>{
+ const f=fixture(t)
+ reseal(f,(m,w)=>{
+  compactProof(m,w)
+ })
+ assert.equal((await validateReadiness(f.options,f.deps)).files,1)
+ for(const kind of ['extended','expired','deadline','clock','table','row_count']){
+  const bad=fixture(t)
+  reseal(bad,(m,w)=>{
+   compactProof(m,w)
+   w.elapsedMs=kind==='deadline'?240001:220688
+   if(kind==='clock')w.finishedAt=new Date(Date.now()+60000).toISOString()
+   if(kind==='expired')w.finishedAt=new Date(Date.now()-86400001).toISOString()
+   w.expiresAt=new Date(Date.parse(w.finishedAt)+(kind==='extended'?86400001:86400000)).toISOString()
+   w.restored.tables=kind==='row_count'?3:4
+   if(kind==='table')w.recovery.tables.audit+=1
+  })
+  await assert.rejects(validateReadiness(bad.options,bad.deps),/backup_restore_proof_unconfirmed/,kind)
+ }
+})
+
+test('compact trace markers require the expected local trace path and exact zero bytes',async t=>{
+ for(const kind of ['valid','other_path','nonzero','unknown_tag','damaged_last']){
+  const f=fixture(t)
+  const markedPath=kind==='other_path'?'conversations/truncated.json':'local-brain/'+crypto.randomUUID()+'.json'
+  const bytes=Buffer.from(kind==='nonzero'?'nonzero':'\u0000\u0000\u0000')
+  fs.mkdirSync(path.dirname(path.join(f.restore,'data',markedPath)),{recursive:true})
+  fs.writeFileSync(path.join(f.bundle,'objects',hash(bytes)),bytes)
+  fs.writeFileSync(path.join(f.restore,'data',markedPath),bytes)
+  reseal(f,(m,w)=>{
+   compactProof(m,w)
+   m.files.push([markedPath,hash(bytes),bytes.length,kind==='unknown_tag'?'untrusted':'zero_filled_trace'])
+   w.recovery.files=2
+   w.filesRestored.files=2
+   w.recovery.zeroFilledTraceFiles=w.filesRestored.zeroFilledTraceFiles=1
+  })
+  if(kind==='damaged_last')fs.writeFileSync(path.join(f.restore,'data',markedPath),'bad')
+  if(kind==='valid')assert.equal((await validateReadiness(f.options,f.deps)).files,2)
+  else await assert.rejects(validateReadiness(f.options,f.deps),/backup_restore_proof_unconfirmed/,kind)
  }
 })
