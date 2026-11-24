@@ -606,6 +606,8 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
   const localDraft = demo && localMode && opts?.manualLocalDialogue === true && opts.interactionMode === 'chat' &&
     !opts.contextCard && !opts.attachSection && !opts.sectionPreamble &&
     draftContract.isDraftRequest(message, ownerDraftMessages)
+  const inlineDraft = localDraft && routeGoverns && routeDecision.route === 'CONVERSATION' &&
+    draftContract.isInlineDraftRequest(message)
   const draftLineCount = localDraft ? draftContract.requestedLineCount(message) : null
   const draftProjection = draftLineCount ? { lineCount: draftLineCount, audience: draftContract.requestedAudience(message, ownerDraftMessages) } : null
   const draftNeedsStartTime = localDraft && draftContract.needsStartTime(message, Array.isArray(history) ? history.length : 0)
@@ -662,7 +664,7 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
   // context but does not read business sources. They can run independently;
   // every source selection and answer must join the routing promise first.
   async function resolveSemanticRoute () {
-  if (!wellbeingExchange && !suppliedIdentifier && !socialFastPath && routeDecision?.reason !== 'general_knowledge' && semanticEgressOk && routeGoverns && routeDecision.route === 'CONVERSATION' && opts && opts.interactionMode === 'chat') {
+  if (!wellbeingExchange && !suppliedIdentifier && !socialFastPath && !inlineDraft && routeDecision?.reason !== 'general_knowledge' && semanticEgressOk && routeGoverns && routeDecision.route === 'CONVERSATION' && opts && opts.interactionMode === 'chat') {
     // This classifier is advisory and fail-closed. A failed provider call once
     // held an Owner investigation for 111 seconds before the unchanged Goal
     // Decomposer could continue. Bound only these two intent opinions; never
@@ -1372,7 +1374,8 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
     }
     // Fast answers retain approved communication preferences. Only the bounded
     // canonical preference read is needed; no topic/history recall or planner.
-    if (simpleFastPath) {
+    if (simpleFastPath || inlineDraft) {
+      const answerPrompt = inlineDraft ? prompt : baseEffPrompt
       if (canLoadPersonalMemory(providerName)) {
         if (hindsightCache === undefined) {
           const memory = opts.memoryClient || require('../memory/runtime').runtime().ownerClient
@@ -1383,9 +1386,9 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
         }
         if (hindsightCache.state === 'unavailable') opts.contextFailures.add('memory_unavailable')
         hindsightUsed = hindsightCache.count > 0
-        if (hindsightCache.block) return hindsightCache.block + '\n\n' + baseEffPrompt
+        if (hindsightCache.block) return hindsightCache.block + '\n\n' + answerPrompt
       }
-      return baseEffPrompt
+      return answerPrompt
     }
     // ⛔ THE CACHE KEY CARRIES THE OBSERVATION COUNT. Without it, step 2 would be handed
     // step 1's prompt and the loop would ask the same question forever — the read would

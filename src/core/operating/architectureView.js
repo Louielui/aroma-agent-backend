@@ -108,6 +108,7 @@ function buildArchitectureHtml () {
     localChat.current += ' Offline replay: standalone current-temperature questions in manual local chat report that the temperature cannot be verified, with zero model and public requests in new and existing threads.'
     localChat.next += ' Installed acceptance is pending. Local answer assembly can omit historical advisory context within the existing 65,536 capacity and 4,096 output reserve. Source checks and the public-search scope still apply.'
     localChat.current += ' Isolated browser checks confirm that reopening saved chat and opening a blank chat read local data without Drive requests. Home still refreshes the configured Drive invoice backlog.'
+    localChat.current += ' The isolated PR228 drafting replay checks that a formatted fictional draft stays in chat when unrelated archived context is available. File requests still use the existing approval path.'
     localChat.evidence += '; test/localBrain/chatPage.browser.test.js; src/intake/localAnswerBoundaryReplay.test.js; src/localBrain/publicSearch.js; src/adapters/LocalAdapter.js'
     rows.find(row => row.id === 'universal-assistant').current += ' ' + t('context.answerFlowCandidate')
     rows.find(row => row.id === 'universal-assistant').current += ' ' + t('assistant.enumerationCandidate')
