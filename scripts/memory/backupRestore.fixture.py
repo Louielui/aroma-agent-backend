@@ -158,6 +158,56 @@ else:
 finally:
     manifest_path.write_bytes(original_manifest)
 
+integrated = root / "integrated-bundle"
+integrated_dest = root / "integrated-destination"
+integrated_stage = recovery.stage_recovery(integrated, data)
+integrated_reads = Counter()
+integrated_dest_reads = Counter()
+
+def measured_integrated_read(file):
+    with mutex:
+        if file.parent == integrated / "objects":
+            integrated_reads[file.name] += 1
+        if file.is_relative_to(integrated_dest / "data"):
+            integrated_dest_reads[file.relative_to(integrated_dest / "data").as_posix()] += 1
+    return original_read(file)
+
+pathlib.Path.read_bytes = measured_integrated_read
+try:
+    prepared = recovery.seal_recovery(integrated_stage, snapshot_file)
+    assert "state" not in prepared.proof
+    saved, restored = recovery.restore_sealed_recovery(prepared, integrated_dest)
+finally:
+    pathlib.Path.read_bytes = original_read
+assert saved["state"] == "verified" and restored["state"] == "isolated_files_restored"
+assert integrated_reads == Counter(row["sha256"] for row in entries), ("repeated_archive_scan", sum(integrated_reads.values()))
+assert integrated_dest_reads == {row["path"]: 1 for row in entries}
+
+late = integrated / "objects" / entries[-1]["sha256"]
+late_content = late.read_bytes()
+late.write_bytes(bytes(len(late_content)))
+try:
+    recovery.restore_sealed_recovery(prepared, root / "integrated-object-drift")
+except ValueError as error:
+    assert str(error) == "recovery_hash_mismatch"
+else:
+    raise AssertionError("corrupt archive object accepted in combined worker")
+finally:
+    late.write_bytes(late_content)
+
+false_trace = root / "false-trace-source" / "local-brain" / "969d7ddd-4b06-40cd-85a9-cc4b66c06d02.json"
+false_trace.parent.mkdir(parents=True)
+false_trace.write_bytes(b'{"value":"valid JSON"}')
+false_stage = recovery.stage_recovery(root / "false-trace-bundle", false_trace.parents[1])
+false_stage["manifest"]["files"][0]["contentState"] = "zero_filled_trace"
+false_prepared = recovery.seal_recovery(false_stage, snapshot_file)
+try:
+    recovery.restore_sealed_recovery(false_prepared, root / "false-trace-destination")
+except ValueError as error:
+    assert str(error) == "recovery_trace_marker_invalid"
+else:
+    raise AssertionError("false trace marker accepted in combined worker")
+
 print(json.dumps({"files": result["files"], "sourceReadsParallel": True, "parentDirectoriesReused": True,
                   "everyDestinationReadBack": True, "objectDriftRejected": True, "manifestDriftRejected": True,
                   "lateDestinationDriftRejected": True}))
