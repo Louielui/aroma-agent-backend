@@ -534,9 +534,11 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
     if (recall) return {...recall,requestId}
     if (demo) {
       const ownerMessages = require('./conversationEvidence').ownerSources(opts.conversationEvidence)
-      const reply = require('./localChatDraft').reviseInlineCard(message, ownerMessages)
+      const draft = require('./localChatDraft')
+      const notice = draft.replyToFictionalNotice(message, history, ownerMessages)
+      const reply = notice?.reply ?? draft.reviseInlineCard(message, ownerMessages)
       if (reply) {
-        return { blocked: false, mode: 'chat', intent: 'context', talkOnly: true, interactionMode: 'chat',
+        return { blocked: false, mode: notice?.mode ?? 'chat', intent: notice?.intent ?? 'context', talkOnly: true, interactionMode: 'chat',
           reply, replyForArchive: reply, readClaimCorrected: false, decision: null, tasks: [], risks: [], next_step: '', requestId }
       }
     }

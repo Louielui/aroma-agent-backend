@@ -277,3 +277,76 @@ test('manual local production-shaped drafting keeps the three lines with memory 
   assert.equal(result.reply, lines.join('\n'))
   assert.equal(explainOffer({ message: formalDraft, response: result }).state, WORK_REQUEST_STATE.NOT_A_WORK_REQUEST)
 })
+
+const failedNotice = "幫我寫一句虛構讀書會通知，必須寫日期、房名、確實開始時間同入場方式。星期四朝早喺海桐室，憑紫色卡入場。"
+const completeNotice = '朝早十點十五分。其他照舊，依家交完整一句通知。'
+const noticeQuestion = '幾點開始？'
+
+test('the saved PR231 notice asks only for the start time and completes from the same conversation', async t => {
+  const { processIntake } = require('./intakeService')
+  const { fromSavedConversation } = require('./conversationEvidence')
+  const { explainOffer, WORK_REQUEST_STATE } = require('../routes/workRequestOffer')
+  const original = process.env.LOCAL_BRAIN_ONLY
+  process.env.LOCAL_BRAIN_ONLY = '1'
+  t.after(() => {
+    if (original === undefined) delete process.env.LOCAL_BRAIN_ONLY
+    else process.env.LOCAL_BRAIN_ONLY = original
+  })
+  const adapter = { preflight: async () => assert.fail('a bounded fictional notice needs no model') }
+  const input = (message, messages) => processIntake(message, adapter, messages, {
+    demo: true, interactionMode: 'chat', manualLocalDialogue: true,
+    conversationEvidence: fromSavedConversation({ messages }, message)
+  })
+  const question = await input(failedNotice, [])
+  assert.deepEqual([question.mode, question.reply, question.decision, question.tasks], ['ask', noticeQuestion, null, []])
+  assert.equal(explainOffer({ message: failedNotice, response: question }).state, WORK_REQUEST_STATE.NOT_A_WORK_REQUEST)
+  const history = [{ role: 'user', text: failedNotice }, { role: 'assistant', text: question.reply }]
+  const notice = await input(completeNotice, history)
+  assert.deepEqual([notice.mode, notice.reply, notice.decision, notice.tasks], [
+    'chat', '星期四朝早十點十五分喺海桐室舉行讀書會，請憑紫色卡入場。', null, []
+  ])
+  assert.equal(explainOffer({ message: completeNotice, response: notice }).state, WORK_REQUEST_STATE.NOT_A_WORK_REQUEST)
+})
+
+test('the saved PR231 reply reproduces the file form on the original route', () => {
+  const { explainOffer, WORK_REQUEST_STATE } = require('../routes/workRequestOffer')
+  const response = { mode: 'chat', intent: 'task', reply: "**結論：** 已為你草擬好符合要求的虛構讀書會通知。\n\n- **內容：** 「星期四朝早，海桐室，憑紫色卡入場。」\n- **限制：** 此為純文字生成，尚未儲存至任何系統或發送。\n   " }
+  const result = explainOffer({ message: failedNotice, response })
+  assert.equal(result.state, WORK_REQUEST_STATE.INCOMPLETE)
+  assert.equal(result.clarification.question, '你想改哪個檔？')
+})
+
+
+test('fictional notice completion uses only immediate supplied details and a valid clock', () => {
+  const { replyToFictionalNotice } = require('./localChatDraft')
+  const example = '請寫一句虛構畫畫班通知，要寫日期、房名、確切開始時間及入場方式。星期六下午喺紫藤室，憑藍色卡入場。'
+  const followup = '下午三點半。其餘照舊，而家交完整一句通知。'
+  const saved = [{ role: 'user', text: example }, { role: 'assistant', text: noticeQuestion }]
+  assert.equal(replyToFictionalNotice(example, [], [example]).reply, noticeQuestion)
+  assert.equal(replyToFictionalNotice(followup, saved, [example, followup]).reply,
+    '星期六下午三點半喺紫藤室舉行畫畫班，請憑藍色卡入場。')
+  assert.equal(replyToFictionalNotice(followup, saved, [followup]), null)
+  assert.equal(replyToFictionalNotice(followup, [saved[0], { ...saved[1], text: '請提供日期。' }], [example, followup]), null)
+  for (const message of [
+    followup.replace('三點半', '十三點'),
+    followup.replace('三點半', '三點六十分'),
+    followup.replace('三點半', '三點九九分'),
+    followup.replace('下午', '上午'),
+    followup + '改埋個首頁。'
+  ]) assert.equal(replyToFictionalNotice(message, saved, [example, message]), null, message)
+  assert.equal(replyToFictionalNotice(example.replace('星期六下午', '星期六下午三點半'), [], [example]), null)
+})
+
+test('real changes mixed into a fictional notice still reach work-order approval', () => {
+  const { replyToFictionalNotice } = require('./localChatDraft')
+  const { explainOffer, WORK_REQUEST_STATE } = require('../routes/workRequestOffer')
+  for (const message of [
+    failedNotice + '幫我改 docs/canary/agent-canary.md。',
+    completeNotice + '幫我改 docs/canary/agent-canary.md。'
+  ]) {
+    assert.equal(replyToFictionalNotice(message, [], [message]), null)
+    const offer = explainOffer({ message, response: { mode: 'chat', intent: 'task' } })
+    assert.equal(offer.state, WORK_REQUEST_STATE.COMPLETE)
+    assert.equal(offer.offer.file, 'docs/canary/agent-canary.md')
+  }
+})
