@@ -143,6 +143,63 @@ test('draft format restores an exact exclusive audience without overriding a cha
 // First formal PR228 turn. Retain the original punctuation and three fields.
 const formalDraft = '幫我寫虛構活動提示卡，要分三行，每行一項。底紙淺黃色；標籤寫『排練』；只供幕後同事睇。'
 
+test('same-thread colour correction delivers the three card lines from saved Owner text', async t => {
+  const { processIntake } = require('./intakeService')
+  const { fromSavedConversation } = require('./conversationEvidence')
+  const { explainOffer, WORK_REQUEST_STATE } = require('../routes/workRequestOffer')
+  const previous = process.env.LOCAL_BRAIN_ONLY
+  process.env.LOCAL_BRAIN_ONLY = '1'
+  t.after(() => {
+    if (previous === undefined) delete process.env.LOCAL_BRAIN_ONLY
+    else process.env.LOCAL_BRAIN_ONLY = previous
+  })
+  const message = '換做淺灰色底紙，其餘照舊。照頭先三行格式再寫。'
+  const saved = { messages: [
+    { role: 'user', content: formalDraft },
+    { role: 'assistant', content: '底紙採用淺黃色設計。\n標籤寫上『排練』字樣。\n內容僅供幕後同事參考。' }
+  ] }
+  const adapter = { preflight: async () => assert.fail('a supplied card correction needs no model') }
+  const result = await processIntake(message, adapter, [], {
+    demo: true, interactionMode: 'chat', manualLocalDialogue: true,
+    conversationEvidence: fromSavedConversation(saved, message)
+  })
+  assert.equal(result.reply, '底紙淺灰色\n標籤寫『排練』\n只供幕後同事睇')
+  assert.equal(result.mode, 'chat')
+  assert.equal(result.decision, null)
+  assert.deepEqual(result.tasks, [])
+  assert.equal(explainOffer({ message, response: result }).state, WORK_REQUEST_STATE.NOT_A_WORK_REQUEST)
+})
+
+test('a fictional card revision requires a complete immediate draft and a colour-only request', () => {
+  const { reviseInlineCard } = require('./localChatDraft')
+  const { explainOffer, WORK_REQUEST_STATE } = require('../routes/workRequestOffer')
+  const change = '改成淡綠色底紙，其他照舊。照返原本3行格式再寫。'
+  const prior = '寫一張虛構展示卡，用三行。標籤寫「彩排」；底紙白色；只供夜班同事看。'
+  assert.equal(reviseInlineCard(change, [prior, change]), '標籤寫「彩排」\n底紙淡綠色\n只供夜班同事看')
+  for (const ownerMessages of [
+    [change],
+    [prior, '第二個話題', change],
+    [prior.replace('；只供夜班同事看', ''), change],
+    [prior.replace('底紙白色', '底紙白色；底紙黑色'), change],
+    [prior.replace('用三行', '用四行，用三行'), change],
+    [prior.replace('虛構', '正式'), change]
+  ]) assert.equal(reviseInlineCard(change, ownerMessages), null, ownerMessages.join(' / '))
+  for (const operation of [
+    '幫我改 docs/canary/agent-canary.md。',
+    '個檔改埋佢。',
+    '修改首頁顏色。',
+    '再查今日庫存。',
+    '發送這張卡。'
+  ]) {
+    const mixed = change + operation
+    assert.equal(reviseInlineCard(mixed, [prior, mixed]), null, mixed)
+  }
+  const mixedFile = change + ' 幫我改 docs/canary/agent-canary.md。'
+  const offer = explainOffer({ message: mixedFile, response: { mode: 'chat', intent: 'task' } })
+  assert.equal(offer.state, WORK_REQUEST_STATE.COMPLETE)
+  assert.equal(offer.offer.file, 'docs/canary/agent-canary.md')
+})
+
 test('the saved PR228 chat/task reply cannot cause a file clarification for inline writing', () => {
   const { explainOffer, WORK_REQUEST_STATE } = require('../routes/workRequestOffer')
   const receipt = { mode: 'chat', intent: 'task', reply: '這是提案，等待 Louie 批准。' }
