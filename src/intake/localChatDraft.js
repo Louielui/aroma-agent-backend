@@ -74,6 +74,49 @@ function reviseInlineCard(message, ownerMessages) {
   return fields.map(part => part.replace(paperDetail, (_, field) => field + colour)).join('\n')
 }
 
+
+const noticeRequest = /^(?:(?:請|唔該|麻煩)\s*)?(?:幫我\s*)?(?:寫|草擬)(?:一|1)句虛構(?:的|嘅)?([\p{Script=Han}]{1,12})通知$/u
+const noticeFields = /^(?:必須|一定要|要)(?:寫|包含)日期、房名、(?:確實|確切|精確)開始時間(?:同|及|和)入場方式$/u
+const noticeLocation = /^(星期[一二三四五六日天]|週[一二三四五六日])(朝早|上午|下晝|下午|晚上|夜晚)(?:喺|在|於)([\p{L}\p{N}]{1,18}(?:室|廳|房))$/u
+const noticeAdmission = /^憑([\p{Script=Han}]{1,10}卡)入場$/u
+const noticeClock = /^(朝早|上午|下晝|下午|晚上|夜晚)((?:[一二兩三四五六七八九十]|十[一二])點(?:半|(?:[零〇一二三四五六七八九]|(?:[二三四五]?十)[一二三四五六七八九]?)分)?)$/u
+const noticeCompletion = /^(?:依家|而家|現在)?(?:交|重寫)完整(?:一|1)句通知$/u
+
+function suppliedNotice(message) {
+  if (typeof message !== 'string' || external.test(message)) return null
+  const [request, fields, location, admission, ...extra] = cardClauses(message)
+  if (extra.length || !noticeFields.test(fields)) return null
+  const event = noticeRequest.exec(request)
+  const venue = noticeLocation.exec(location)
+  const entry = noticeAdmission.exec(admission)
+  if (!event || !venue || !entry) return null
+  const [weekday, period, room] = venue.slice(1)
+  // Permit the writing verb in the fixed request only. Captured values must
+  // remain literal notice fields and cannot introduce another change.
+  const { CHANGE_VERB } = require('../agent/requestInference')
+  if ([event[1], room, entry[1]].some(value => CHANGE_VERB.test(value))) return null
+  return { event: event[1], weekday, period, room, admission: entry[1] }
+}
+
+function replyToFictionalNotice(message, history, ownerMessages) {
+  if (typeof message !== 'string' || !Array.isArray(history) || !Array.isArray(ownerMessages) ||
+      ownerMessages.at(-1) !== message.trim()) return null
+  if (ownerMessages.length === 1 && history.length === 0 && suppliedNotice(message)) {
+    return { mode: 'ask', intent: 'unclear', reply: noticeQuestion }
+  }
+  if (ownerMessages.length !== 2 || history.length !== 2 || history[0]?.role !== 'user' ||
+      history[0].text !== ownerMessages[0] || history[1]?.role !== 'assistant' ||
+      history[1].text !== noticeQuestion) return null
+  const prior = suppliedNotice(ownerMessages[0])
+  if (!prior || external.test(message)) return null
+  const [time, retain, deliver, ...extra] = cardClauses(message)
+  if (extra.length || !/^(?:其他|其餘)照舊$/u.test(retain) || !noticeCompletion.test(deliver)) return null
+  const clock = noticeClock.exec(time)
+  if (!clock || clock[1] !== prior.period) return null
+  return { mode: 'chat', intent: 'context',
+    reply: prior.weekday + prior.period + clock[2] + '喺' + prior.room + '舉行' + prior.event + '，請憑' + prior.admission + '入場。' }
+}
+
 const system = `你在本機聊天中替用戶撰寫或改寫文字。用自然廣東話及繁體中文。根據這串對話提供的條件直接作答。假設和虛構資料就是這項文案的條件，照用，不需要查系統。
 資料齊備時，用 mode="chat"，reply 只放成品。用戶指定一句就只寫一句，指定幾行就只寫幾行。不要加前言、引語、稱呼、標題、解釋或承諾，除非用戶要求。
 更正時用用戶最新講法。若要完整回述或重寫，把所有照舊事項逐項照寫出來，跟回用戶指定的格式及順序。不要用「其他不變」代替，也不要把自己的舊推斷當作事實。
@@ -146,10 +189,11 @@ function responseFormat(format, { lineCount, startTimeMissing }) {
 // A required, absent time in an explicit reply-only fictional draft is a
 // clarification, even when the model proposed a placeholder or a broad ask.
 // Preserve model-declared operations and the original commit guard.
+const noticeQuestion = '幾點開始？'
+
 function clarifyStartTime(distilled) {
   if (distilled.nextRead || !['chat', 'ask'].includes(distilled.mode)) return distilled
-  const reply = '幾點開始？'
-  return { ...distilled, mode: 'ask', intent: 'unclear', reply, understanding: reply }
+  return { ...distilled, mode: 'ask', intent: 'unclear', reply: noticeQuestion, understanding: noticeQuestion }
 }
 
-module.exports = { isDraftRequest, isInlineDraftRequest, reviseInlineCard, system, responseFormat, requestedLineCount, requestedAudience, renderDraftLines, needsStartTime, clarifyStartTime }
+module.exports = { isDraftRequest, isInlineDraftRequest, reviseInlineCard, replyToFictionalNotice, system, responseFormat, requestedLineCount, requestedAudience, renderDraftLines, needsStartTime, clarifyStartTime }
