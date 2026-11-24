@@ -17,6 +17,8 @@ from typing import NamedTuple
 DIRECTORIES = ("memory-outbox", "memory-capture", "memory-consolidation", "conversations", "local-brain")
 FILES = ("company-access.json", "model-center-local.json", "memory-local-index/memory.sqlite")
 MAX_BYTES = 512 * 1024 * 1024
+MAX_MANIFEST_BYTES = 16 * 1024 * 1024
+MAX_MANIFEST_FILES = 131072
 ZERO_FILLED_TRACE = "zero_filled_trace"
 TRACE_PATH = re.compile(r"local-brain/[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\.json")
 
@@ -86,6 +88,60 @@ def verify_zero_filled_trace(target, relative, digest, size):
 
 def encode(value):
     return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+
+
+def encode_recovery_manifest(manifest):
+    if len(manifest["files"]) > MAX_MANIFEST_FILES:
+        raise ValueError("recovery_manifest_limit")
+
+    def seal(value):
+        encoded = encode(value).encode("utf-8")
+        digest = hashlib.sha256(encoded).hexdigest()
+        return b'{"manifest":' + encoded + b',"sha256":"' + digest.encode("ascii") + b'"}', digest
+
+    content, digest = seal(manifest)
+    if len(content) <= MAX_MANIFEST_BYTES:
+        return content, digest
+    # Format 2 keeps the same names, digests, byte sizes, and optional trace
+    # marker while omitting the repeated property names from every file row.
+    rows = []
+    for item in manifest["files"]:
+        row = [item["path"], item["sha256"], item["bytes"]]
+        if "contentState" in item:
+            row.append(item["contentState"])
+        rows.append(row)
+    content, digest = seal({**manifest, "format": 2, "files": rows})
+    if len(content) > MAX_MANIFEST_BYTES:
+        raise ValueError("recovery_manifest_limit")
+    return content, digest
+
+
+def manifest_file_entries(manifest):
+    version = manifest.get("format")
+    files = manifest.get("files")
+    if type(version) is not int or version not in (1, 2) or not isinstance(files, list):
+        raise ValueError("recovery_manifest_invalid")
+    if len(files) > MAX_MANIFEST_FILES:
+        raise ValueError("recovery_manifest_limit")
+    if version == 1:
+        return files
+    entries = []
+    for row in files:
+        if not isinstance(row, list) or len(row) not in (3, 4) or (len(row) == 4 and row[3] != ZERO_FILLED_TRACE):
+            raise ValueError("recovery_manifest_invalid")
+        item = {"path": row[0], "sha256": row[1], "bytes": row[2]}
+        if len(row) == 4:
+            item["contentState"] = row[3]
+        entries.append(item)
+    return entries
+
+
+def read_manifest_bytes(bundle):
+    with (bundle / "manifest.json").open("rb") as handle:
+        content = handle.read(MAX_MANIFEST_BYTES + 1)
+    if len(content) > MAX_MANIFEST_BYTES:
+        raise ValueError("recovery_manifest_limit")
+    return content
 
 
 def at():
@@ -230,20 +286,21 @@ def finish_recovery_for_restore(staged, snapshot_path):
     manifest = {**staged["manifest"], "completedAt": at(),
                 "canonical": {"file": "canonical.json", "sha256": hashlib.sha256(content).hexdigest(),
                               "tables": {k: len(v) for k, v in snapshot["tables"].items()}}}
-    sealed = {"sha256": hashlib.sha256(encode(manifest).encode("utf-8")).hexdigest(), "manifest": manifest}
-    write_new(target / "manifest.json", encode(sealed).encode("utf-8"))
+    sealed, manifest_hash = encode_recovery_manifest(manifest)
+    write_new(target / "manifest.json", sealed)
     verified = verified_bundle(target)
-    result = {"state": "saved", "path": str(target), "manifestHash": sealed["sha256"], **verified.proof}
+    result = {"state": "saved", "path": str(target), "manifestHash": manifest_hash, **verified.proof}
     return result, verified
 
 
 def verified_bundle(target):
-    manifest_bytes = (target / "manifest.json").read_bytes()
+    manifest_bytes = read_manifest_bytes(target)
     sealed = json.loads(manifest_bytes.decode("utf-8"))
     manifest = sealed["manifest"]
-    if manifest.get("format") != 1 or manifest.get("kind") != "xiangxiang-memory-recovery" or \
+    if manifest.get("kind") != "xiangxiang-memory-recovery" or \
             hashlib.sha256(encode(manifest).encode("utf-8")).hexdigest() != sealed.get("sha256"):
         raise ValueError("recovery_manifest_invalid")
+    entries = manifest_file_entries(manifest)
     if manifest["canonical"]["file"] != "canonical.json":
         raise ValueError("invalid_recovery_path")
     canonical = (target / "canonical.json").read_bytes()
@@ -251,11 +308,17 @@ def verified_bundle(target):
         raise ValueError("recovery_hash_mismatch")
     seen = set()
     zero_filled = 0
+    total = 0
     with RecoveryIO() as checks:
-        for item in manifest["files"]:
+        for item in entries:
             asset_path(item["path"])
             if item["path"] in seen or not re.fullmatch(r"[0-9a-f]{64}", item["sha256"]):
                 raise ValueError("invalid_recovery_path")
+            if type(item["bytes"]) is not int or item["bytes"] < 0:
+                raise ValueError("recovery_manifest_invalid")
+            total += item["bytes"]
+            if total > MAX_BYTES:
+                raise ValueError("recovery_size_limit")
             seen.add(item["path"])
             object_file = target / "objects" / item["sha256"]
             if "contentState" in item:
@@ -265,11 +328,11 @@ def verified_bundle(target):
                 zero_filled += 1
             else:
                 checks.verify(object_file, item["sha256"], item["bytes"])
-    proof = {"state": "verified", "files": len(manifest["files"]), "tables": manifest["canonical"]["tables"],
+    proof = {"state": "verified", "files": len(entries), "tables": manifest["canonical"]["tables"],
              "credentials": manifest["credentials"], "hindsight": manifest["hindsight"]}
     if zero_filled:
         proof["zeroFilledTraceFiles"] = zero_filled
-    return VerifiedBundle(target, manifest, proof, hashlib.sha256(manifest_bytes).hexdigest())
+    return VerifiedBundle(target, {**manifest, "files": entries}, proof, hashlib.sha256(manifest_bytes).hexdigest())
 
 
 def verify_recovery(source):
@@ -292,7 +355,8 @@ def restore_verified_files(verified, destination):
     bundle, manifest, proof, manifest_digest = verified
     # The complete source scan was done at sealing. Recheck the manifest
     # before touching the destination and every object's bytes as we copy it.
-    verify_file(bundle / "manifest.json", manifest_digest, None, "recovery_manifest_invalid")
+    if hashlib.sha256(read_manifest_bytes(bundle)).hexdigest() != manifest_digest:
+        raise ValueError("recovery_manifest_invalid")
     private_directory(target)
     data = target / "data"
     if manifest["files"]:
@@ -316,5 +380,6 @@ def restore_verified_files(verified, destination):
         for file, digest, size in destinations:
             checks.verify(file, digest, size, "recovery_restore_unconfirmed")
     verify_file(target / "canonical.json", manifest["canonical"]["sha256"], None, "recovery_restore_unconfirmed")
-    verify_file(bundle / "manifest.json", manifest_digest, None, "recovery_manifest_invalid")
+    if hashlib.sha256(read_manifest_bytes(bundle)).hexdigest() != manifest_digest:
+        raise ValueError("recovery_manifest_invalid")
     return {**proof, "state": "isolated_files_restored", "path": str(target)}

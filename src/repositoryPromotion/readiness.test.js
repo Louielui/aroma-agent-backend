@@ -36,6 +36,35 @@ function reseal(f,change){
  fs.writeFileSync(manifestFile,JSON.stringify(sealed));const bytes=JSON.stringify(worker);fs.writeFileSync(workerFile,bytes);f.request.backupReceiptHash=hash(bytes);fs.writeFileSync(path.join(f.directory,'request.json'),JSON.stringify(f.request))
 }
 
+test('compact restore manifests retain the full path, size and digest checks for every asset',async t=>{
+ const f=fixture(t)
+ const original=path.join(f.restore,'data','conversations','example.json')
+ const bytes=fs.readFileSync(original)
+ reseal(f,m=>{m.format=2;m.files=m.files.map(({path,sha256,bytes})=>[path,sha256,bytes])})
+ assert.equal((await validateReadiness(f.options,f.deps)).files,1)
+ fs.writeFileSync(original,Buffer.alloc(bytes.length,7))
+ await assert.rejects(validateReadiness(f.options,f.deps),/backup_restore_proof_unconfirmed/)
+ fs.writeFileSync(original,bytes)
+ reseal(f,(m,w)=>{m.files.push(m.files[0].slice());w.filesRestored.files=m.files.length})
+ await assert.rejects(validateReadiness(f.options,f.deps),/readiness_path_unconfirmed/)
+})
+
+test('compact manifests fail closed on invalid tags, lengths, digests, and format versions',async t=>{
+ for(const edit of [
+  m=>m.files[0].push('unrecognized'),
+  m=>m.files[0].push('zero_filled_trace','extra'),
+  m=>{m.files[0][1]='../canonical.json'},
+  m=>{m.files[0][2]=-1},
+  m=>{m.files[0]=m.files[0].slice(0,2)},
+  m=>{m.format=3},
+  m=>{m.files[0][0]='local-brain/../secret.json'}
+ ]){
+  const f=fixture(t)
+  reseal(f,m=>{m.format=2;m.files=m.files.map(({path,sha256,bytes})=>[path,sha256,bytes]);edit(m)})
+  await assert.rejects(validateReadiness(f.options,f.deps),/backup_restore_proof_unconfirmed|readiness_path_unconfirmed/)
+ }
+})
+
 test('an Owner-authorized current-size manifest verifies all 40349 assets including the last restored byte',async t=>{
  const f=fixture(t),bytes=Buffer.from('{}'),digest=hash(bytes),count=40349;fs.writeFileSync(path.join(f.bundle,'objects',digest),bytes)
  let last

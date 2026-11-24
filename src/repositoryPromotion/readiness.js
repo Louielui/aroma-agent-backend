@@ -22,6 +22,17 @@ function json(file,max=2000000,limitReason='readiness_evidence_unavailable'){
  }finally{fs.closeSync(fd)}
 }
 async function fileHash(file){const digest=crypto.createHash('sha256');for await(const part of fs.createReadStream(file))digest.update(part);return digest.digest('hex')}
+function manifestFileEntries(manifest){
+ if(!manifest||typeof manifest!=='object'||!Array.isArray(manifest.files))throw Error('backup_restore_proof_unconfirmed')
+ if(manifest.files.length>MANIFEST_FILES)throw Error('readiness_manifest_limit')
+ if(manifest.format===undefined||manifest.format===1)return manifest.files
+ if(manifest.format!==2)throw Error('backup_restore_proof_unconfirmed')
+ return manifest.files.map(row=>{
+  if(!Array.isArray(row)||(row.length!==3&&row.length!==4)||(row.length===4&&row[3]!=='zero_filled_trace'))throw Error('backup_restore_proof_unconfirmed')
+  const [path,sha256,bytes,contentState]=row
+  return contentState===undefined?{path,sha256,bytes}:{path,sha256,bytes,contentState}
+ })
+}
 async function validateReadiness({artifacts,readinessId,commit,tree},dependencies={}){
  if(!SHA.test(commit||'')||!SHA.test(tree||'')||!/^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/.test(readinessId||''))throw Error('invalid_readiness_identity')
  const directory=path.join(artifacts,'readiness',readinessId),requestFile=path.join(directory,'request.json');inside(path.join(artifacts,'readiness'),requestFile)
@@ -32,10 +43,9 @@ async function validateReadiness({artifacts,readinessId,commit,tree},dependencie
  const worker=json(workerFile),baselines=json(baselineFile),backupRoot=dependencies.backupRoot||'C:/Aroma/hindsight-runtime/backups'
  const bundle=path.dirname(worker.path),manifestFile=path.join(bundle,'manifest.json');inside(backupRoot,manifestFile);inside(backupRoot,worker.path)
  const sealed=json(manifestFile,MANIFEST_BYTES,'readiness_manifest_limit'),manifest=sealed?.manifest
- if(!manifest||typeof manifest!=='object'||!Array.isArray(manifest.files))throw Error('backup_restore_proof_unconfirmed')
- if(manifest.files.length>MANIFEST_FILES)throw Error('readiness_manifest_limit')
+ const entries=manifestFileEntries(manifest)
  let recoveryBytes=0
- for(const entry of manifest.files){
+ for(const entry of entries){
   if(!entry||typeof entry!=='object'||!Number.isSafeInteger(entry.bytes)||entry.bytes<0||entry.bytes>RECOVERY_BYTES||!/^[a-f0-9]{64}$/.test(entry.sha256||''))throw Error('backup_restore_proof_unconfirmed')
   recoveryBytes+=entry.bytes;if(recoveryBytes>RECOVERY_BYTES)throw Error('backup_restore_proof_unconfirmed')
  }
@@ -45,7 +55,7 @@ async function validateReadiness({artifacts,readinessId,commit,tree},dependencie
  const restore=worker.filesRestored.path;inside(backupRoot,path.join(restore,'canonical.json'))
  if(await fileHash(path.join(restore,'canonical.json'))!==manifest.canonical.sha256)throw Error('backup_restore_proof_unconfirmed')
  const seen=new Set()
- for(const entry of manifest.files){
+ for(const entry of entries){
   if(typeof entry.path!=='string'||entry.path.includes('\\')||entry.path.split('/').includes('..')||path.isAbsolute(entry.path)||seen.has(entry.path)||!(/^(?:memory-outbox|memory-capture|memory-consolidation|conversations)\/.+\.json$/.test(entry.path)||['company-access.json','model-center-local.json','memory-local-index/memory.sqlite'].includes(entry.path)||/^local-brain\/[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}\.json$/.test(entry.path)))throw Error('readiness_path_unconfirmed')
   seen.add(entry.path);const restoredFile=path.join(restore,'data',entry.path);inside(restore,restoredFile)
   const objectFile=path.join(bundle,'objects',entry.sha256);inside(bundle,objectFile)
@@ -59,4 +69,4 @@ async function validateReadiness({artifacts,readinessId,commit,tree},dependencie
  }
  return{readinessId,hash:hash(canonical(request)),backupSnapshot:worker.saved.sha256,backupManifest:sealed.sha256,files:manifest.files.length,baselineHashes:baselines.baselines.map(b=>({id:b.record.id,version:b.record.version,hash:b.record.textSha256}))}
 }
-module.exports={validateReadiness,canonical,fileHash}
+module.exports={validateReadiness,canonical,fileHash,manifestFileEntries}

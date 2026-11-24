@@ -1,6 +1,12 @@
 'use strict'
 const test=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),os=require('node:os'),path=require('node:path'),{spawnSync}=require('node:child_process')
 const python='C:/Aroma/hindsight-runtime/Scripts/python.exe'
+test('bounded compact recovery keeps every file and accepts legacy manifests',t=>{
+ const root=fs.mkdtempSync(path.join(os.tmpdir(),'backup-manifest-'));t.after(()=>fs.rmSync(root,{recursive:true,force:true}))
+ const r=spawnSync(python,['-B','-X','utf8',path.join(__dirname,'backupManifest.fixture.py'),root],{encoding:'utf8',windowsHide:true,timeout:30000})
+ assert.equal(r.status,0,r.stderr||r.stdout)
+ assert.deepEqual(JSON.parse(r.stdout),{legacyRead:true,compactFiles:41,tagPreserved:true,invalidRowRejected:true,hardByteLimitHeld:true})
+})
 test('restore pipelines verified source reads and durable output without skipping any destination readback',t=>{
  const root=fs.mkdtempSync(path.join(os.tmpdir(),'backup-restore-'));t.after(()=>{
   assert.ok(path.resolve(root).startsWith(path.resolve(os.tmpdir())+path.sep));fs.rmSync(root,{recursive:true,force:true})
