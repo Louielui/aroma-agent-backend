@@ -158,14 +158,24 @@ function revisedSheet(text, fields) {
 const handoffRequest = /^呢個係虛構(?:\s*Aroma)?\s*交更練習[。．]\s*([\p{Script=Han}]{1,12})嘅([\p{Script=Han}]{1,12}箱)擺喺([一二兩三四五六七八九十\d]{1,3}樓)([東南西北]門)入面[，,]交[俾畀]([\p{Script=Han}]{1,8}更)[。．]用一句講返完整安排[。．]?$/u
 const handoffCorrection = /^(?:頭先講錯|啱啱講錯)[，,]係([\p{Script=Han}]{1,12})嗰間[。．]嗰個箱由([東南西北]門)改去([東南西北]門)[，,]樓層、門內同交收對象照舊[。．]用一句講返完整安排[。．]?$/u
 
-function revisedHandoff(text, previous) {
-  const original = handoffRequest.exec(previous)
-  const change = handoffCorrection.exec(text)
-  if (!original || !change || change[2] !== original[4]) return null
-  const [, oldStore, item, floor, , recipient] = original
-  const [, store, , door] = change
-  if (![oldStore, item, recipient, store].every(safeDraftLiteral)) return null
+function suppliedHandoff(text) {
+  const matched = handoffRequest.exec(text)
+  if (!matched) return null
+  const [, store, item, floor, door, recipient] = matched
+  return [store, item, recipient].every(safeDraftLiteral) ? { store, item, floor, door, recipient } : null
+}
+
+function handoffReply({ store, item, floor, door, recipient }) {
   return store + '嘅' + item + '擺喺' + floor + door + '入面，交俾' + recipient + '。'
+}
+
+function revisedHandoff(text, previous) {
+  const original = suppliedHandoff(previous)
+  const change = handoffCorrection.exec(text)
+  if (!original || !change) return null
+  const [, store, previousDoor, door] = change
+  if (previousDoor !== original.door || !safeDraftLiteral(store)) return null
+  return handoffReply({ ...original, store, door })
 }
 
 const reminderRequest = /^用一句(?:草擬|寫)虛構(?:\s*Aroma)?\s*([\p{Script=Han}]{1,12})(?:提醒|通知)$/u
@@ -227,6 +237,8 @@ function replyToSuppliedFiction(message, history, ownerMessages) {
   if (ownerMessages.length === 1 && history.length === 0) {
     const fields = fourFieldSheet(message.trim())
     if (fields) return {mode: 'chat', intent: 'context', reply: fields.map(field => field.clause).join('\n')}
+    const handoff = suppliedHandoff(message.trim())
+    if (handoff) return {mode: 'chat', intent: 'context', reply: handoffReply(handoff)}
     const reminder = suppliedReminder(message)
     return reminder ? reminderReply(reminder) : null
   }

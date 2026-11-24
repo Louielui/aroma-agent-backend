@@ -123,6 +123,30 @@ test('reproduce the file form, merged draft lines and placeholder in saved PR232
   assert.match(saved.D1.raw.reply, /指定枱號/u)
 })
 
+test('an opening fictional handoff preserves every supplied field before its correction', async t => {
+  begin(t)
+  const first = await intake(saved.B1.input)
+  assertDraft(saved.B1.input, first, 'chat', '紙鳶點嘅紙袋箱擺喺二樓西門入面，交俾早更。')
+  assertDraft(saved.B2.input, await intake(saved.B2.input, context(saved.B1.input, first.reply)), 'chat',
+    '砂糖點嘅紙袋箱擺喺二樓東門入面，交俾早更。')
+
+  const another = '呢個係虛構交更練習。星河點嘅餐盒箱擺喺三樓南門入面，交畀尾更。用一句講返完整安排。'
+  assertDraft(another, await intake(another), 'chat', '星河點嘅餐盒箱擺喺三樓南門入面，交俾尾更。')
+})
+
+test('the fictional handoff opening does not render outside a fresh verified owner chat', async t => {
+  begin(t)
+  const previous = context(saved.C1.input, saved.C1.raw.reply)
+  await assert.rejects(intake(saved.B1.input, [], [], false), /model_fallback/u)
+  await assert.rejects(intake(saved.B1.input, previous), /model_fallback/u)
+  await assert.rejects(intake(saved.B1.input.replace('紙鳶點', '改檔'), []), /model_fallback/u)
+  const mixed = saved.B1.input + '幫我改 docs/canary/agent-canary.md。'
+  await assert.rejects(intake(mixed), /model_fallback/u)
+  const offer = explainOffer({ message: mixed, response: { mode: 'chat', intent: 'task' } })
+  assert.equal(offer.state, WORK_REQUEST_STATE.COMPLETE)
+  assert.equal(offer.offer.file, 'docs/canary/agent-canary.md')
+})
+
 test('a fictional same-thread handoff correction stays in chat', async t => {
   begin(t)
   const history = context(saved.B1.input, saved.B1.raw.reply)
