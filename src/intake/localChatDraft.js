@@ -22,26 +22,56 @@ function isStandaloneDraft(message) {
 }
 
 const inlineCardRequest = /^(?:(?:請|唔該|麻煩)\s*)?(?:幫我\s*)?(?:寫|草擬)\s*(?:一[張份個]\s*)?(?:虛構|虚构)(?:的|嘅)?[\p{Script=Han}]{0,12}(?:提示卡|展示卡|告示|通知)$/u
-const inlineCardDetails = [
-  /^(?:要)?(?:分|用|寫|排成)\s*[一二兩三四五六七八九十\d]+行$/u,
-  /^每行一[項句]$/u,
-  /^(?:底紙|底色|紙色|背景)\s*[：:]?\s*[\p{Script=Han}]{0,10}(?:色|黑|白)$/u,
+const lineDetail = /^(?:要)?(?:分|用|寫|排成)\s*[一二兩三四五六七八九十\d]+行$/u
+const paperDetail = /^(底紙|底色|紙色|背景)\s*[：:]?\s*[\p{Script=Han}]{0,10}(?:色|黑|白)$/u
+const fieldDetails = [
+  paperDetail,
   /^標籤\s*(?:寫|係|是|[：:])\s*(?:「[^」]+」|『[^』]+』|[\p{Script=Han}]{1,12})$/u,
   /^(?:只供|僅供|只畀|只俾)[\p{Script=Han}]{1,15}(?:同事|人員)(?:睇|看|閱讀)$/u
 ]
+const inlineCardDetails = [
+  lineDetail,
+  /^每行一[項句]$/u,
+  ...fieldDetails
+]
 const inlineWritingLiteral = /^(?:標籤\s*寫|(?:要)?寫(?=\s*[一二兩三四五六七八九十\d]))|「[^」]*」|『[^』]*』/gu
+const revisedPaper = /^(?:換做|換成|改做|改成|改為)\s*((?:淺|淡|深|純|粉|米)?(?:灰|黃|紅|橙|綠|藍|紫|啡|棕|黑|白)色|白|黑)\s*底紙$/u
+
+function cardClauses(message) {
+  return message.trim().replace(/^香香[，,]\s*/u, '')
+    .split(/[，,。；;\r\n]+/u).map(part => part.trim()).filter(Boolean)
+}
 
 // The shortcut applies to fully specified fictional cards. Every unquoted
 // clause must be a drafting constraint; an extra operation stays with the
 // ordinary evidence and approval path.
 function isInlineDraftRequest(message) {
   if (!isStandaloneDraft(message) || !requestedLineCount(message)) return false
-  const [request, ...details] = message.trim().replace(/^香香[，,]\s*/u, '')
-    .split(/[，,。；;\r\n]+/u).map(part => part.trim()).filter(Boolean)
+  const [request, ...details] = cardClauses(message)
   if (!inlineCardRequest.test(request)) return false
   const { CHANGE_VERB } = require('../agent/requestInference')
   return details.every(detail => inlineCardDetails.some(pattern => pattern.test(detail)) &&
     !CHANGE_VERB.test(detail.replace(inlineWritingLiteral, '')))
+}
+
+// An immediate revision of a complete fictional card can be rendered from
+// saved Owner clauses alone. A missing field or extra instruction uses the
+// ordinary chat and approval path.
+function reviseInlineCard(message, ownerMessages) {
+  if (typeof message !== 'string' || !Array.isArray(ownerMessages) ||
+      ownerMessages.at(-1) !== message.trim() || external.test(message)) return null
+  const [change, keep, format, ...extra] = cardClauses(message)
+  const colour = revisedPaper.exec(change)?.[1]
+  if (!colour || !/^(?:其餘|其他)照舊$/u.test(keep) ||
+      !/^照(?:返)?(?:頭先|原本|原|剛才)(?:三|3)行格式再寫$/u.test(format) || extra.length) return null
+
+  const prior = ownerMessages.at(-2)
+  if (!isInlineDraftRequest(prior) || requestedLineCount(prior) !== 3) return null
+  const [, ...details] = cardClauses(prior)
+  if (details.filter(part => lineDetail.test(part)).length !== 1 ||
+      fieldDetails.some(pattern => details.filter(part => pattern.test(part)).length !== 1)) return null
+  const fields = details.filter(part => fieldDetails.some(pattern => pattern.test(part)))
+  return fields.map(part => part.replace(paperDetail, (_, field) => field + colour)).join('\n')
 }
 
 const system = `你在本機聊天中替用戶撰寫或改寫文字。用自然廣東話及繁體中文。根據這串對話提供的條件直接作答。假設和虛構資料就是這項文案的條件，照用，不需要查系統。
@@ -122,4 +152,4 @@ function clarifyStartTime(distilled) {
   return { ...distilled, mode: 'ask', intent: 'unclear', reply, understanding: reply }
 }
 
-module.exports = { isDraftRequest, isInlineDraftRequest, system, responseFormat, requestedLineCount, requestedAudience, renderDraftLines, needsStartTime, clarifyStartTime }
+module.exports = { isDraftRequest, isInlineDraftRequest, reviseInlineCard, system, responseFormat, requestedLineCount, requestedAudience, renderDraftLines, needsStartTime, clarifyStartTime }

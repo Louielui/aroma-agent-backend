@@ -77,4 +77,63 @@ with b.RecoveryIO() as pool:
     for i in range(100):
         pool.submit(lambda:time.sleep(.001));peak_pending=max(peak_pending,len(pool.pending))
 assert peak_pending<=16 and not pool.pending
-print(json.dumps({'sourceMutation':'rejected','aggregateLimit':'rejected','invalidJson':'rejected','dedupWrites':1,'workerFailure':'propagated','activeAfterFailure':active,'pendingBound':peak_pending,'walSnapshot':'verified_source_unchanged'}))
+
+# A zero-filled telemetry file still has recoverable bytes, even though its
+# former JSON cannot be recovered. No other malformed input is admitted.
+import copy
+trace_name = '06974bbc-6f4f-4aff-8468-693191485b8f.json'
+trace_path = 'local-brain/' + trace_name
+zeros = bytes(96)
+data = dataset('zero-trace', 1)
+source_file = data / trace_path
+source_file.write_bytes(zeros)
+bundle = root / 'zero-trace' / 'bundle'
+staged = b.stage_recovery(bundle, data)
+normal, broken = staged['manifest']['files']
+assert 'contentState' not in normal
+assert broken == {'path': trace_path, 'sha256': hashlib.sha256(zeros).hexdigest(),
+                  'bytes': 96, 'contentState': 'zero_filled_trace'}
+tables = {name: [{'synthetic': name}] for name in ('access_audit', 'audit', 'principals', 'records')}
+snapshot = {'format': 1, 'database': 'xiangxiang_memory_core', 'tables': tables}
+canonical = bundle / 'snapshot.json'
+canonical.write_text(b.encode({'snapshot': snapshot, 'sha256': hashlib.sha256(b.encode(snapshot).encode()).hexdigest()}), encoding='utf-8')
+proof = b.finish_recovery(staged, canonical)
+target = root / 'zero-trace' / 'isolated'
+restored = b.restore_files(bundle, target)
+assert proof['files'] == restored['files'] == 2
+assert proof['zeroFilledTraceFiles'] == restored['zeroFilledTraceFiles'] == 1
+assert proof['tables'] == restored['tables'] == dict.fromkeys(tables, 1)
+assert (target / 'data' / trace_path).read_bytes() == source_file.read_bytes() == zeros
+assert (target / 'data' / normal['path']).read_bytes() == (data / normal['path']).read_bytes()
+assert (target / 'canonical.json').read_bytes() == canonical.read_bytes()
+
+manifest_file = bundle / 'manifest.json'
+seal = json.loads(manifest_file.read_bytes())
+false_mark = copy.deepcopy(seal['manifest'])
+assert false_mark['files'][0]['path'] == normal['path']
+false_mark['files'][0]['contentState'] = 'zero_filled_trace'
+manifest_file.write_text(b.encode({'manifest': false_mark, 'sha256': hashlib.sha256(b.encode(false_mark).encode()).hexdigest()}), encoding='utf-8')
+try:
+    b.verify_recovery(bundle)
+except ValueError as error:
+    assert str(error) == 'recovery_trace_marker_invalid'
+else:
+    raise AssertionError('false_trace_marker_accepted')
+
+for case, relative, content in (
+        ('zero-memory', 'memory-capture/' + trace_name, zeros),
+        ('zero-other-name', 'local-brain/arbitrary.json', zeros),
+        ('zero-nested', 'local-brain/nested/' + trace_name, zeros),
+        ('empty-trace', trace_path, b''),
+        ('mixed-bytes-trace', trace_path, b'\x00x')):
+    data = dataset(case, 0)
+    source_file = data / relative
+    source_file.parent.mkdir(parents=True, exist_ok=True)
+    source_file.write_bytes(content)
+    try:
+        b.stage_recovery(root / case / 'bundle', data)
+    except json.JSONDecodeError:
+        pass
+    else:
+        raise AssertionError('malformed_asset_accepted:' + case)
+print(json.dumps({'sourceMutation':'rejected','aggregateLimit':'rejected','invalidJson':'rejected','dedupWrites':1,'workerFailure':'propagated','activeAfterFailure':active,'pendingBound':peak_pending,'walSnapshot':'verified_source_unchanged','zeroFilledTrace':'restored_exact_bytes','otherMalformedFiles':'rejected','falseMarker':'rejected'}))

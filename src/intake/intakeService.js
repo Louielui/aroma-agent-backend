@@ -532,6 +532,14 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
       readConversation:canRead ? opts.ownerConversationLookup : undefined
     })
     if (recall) return {...recall,requestId}
+    if (demo) {
+      const ownerMessages = require('./conversationEvidence').ownerSources(opts.conversationEvidence)
+      const reply = require('./localChatDraft').reviseInlineCard(message, ownerMessages)
+      if (reply) {
+        return { blocked: false, mode: 'chat', intent: 'context', talkOnly: true, interactionMode: 'chat',
+          reply, replyForArchive: reply, readClaimCorrected: false, decision: null, tasks: [], risks: [], next_step: '', requestId }
+      }
+    }
     const prep = require('./suppliedCalculation').suppliedPrep(message, opts.conversationEvidence) ||
       require('./suppliedScenario').answer(message, opts.conversationEvidence)
     if (prep) return require('./suppliedCalculationReply').calculationAnswer(prep.reply, requestId)
