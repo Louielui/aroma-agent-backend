@@ -12,12 +12,20 @@ import sqlite3
 import threading
 from collections import deque
 from concurrent.futures import ThreadPoolExecutor
+from typing import NamedTuple
 
 DIRECTORIES = ("memory-outbox", "memory-capture", "memory-consolidation", "conversations", "local-brain")
 FILES = ("company-access.json", "model-center-local.json", "memory-local-index/memory.sqlite")
 MAX_BYTES = 512 * 1024 * 1024
 ZERO_FILLED_TRACE = "zero_filled_trace"
 TRACE_PATH = re.compile(r"local-brain/[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\.json")
+
+
+class VerifiedBundle(NamedTuple):
+    directory: pathlib.Path
+    manifest: dict
+    proof: dict
+    manifest_digest: str
 
 
 class RecoveryIO:
@@ -206,6 +214,11 @@ def stage_recovery(destination, data_root):
 
 
 def finish_recovery(staged, snapshot_path):
+    result, _ = finish_recovery_for_restore(staged, snapshot_path)
+    return result
+
+
+def finish_recovery_for_restore(staged, snapshot_path):
     target = pathlib.Path(staged["directory"])
     content = pathlib.Path(snapshot_path).read_bytes()
     envelope = json.loads(content.decode("utf-8"))
@@ -219,8 +232,9 @@ def finish_recovery(staged, snapshot_path):
                               "tables": {k: len(v) for k, v in snapshot["tables"].items()}}}
     sealed = {"sha256": hashlib.sha256(encode(manifest).encode("utf-8")).hexdigest(), "manifest": manifest}
     write_new(target / "manifest.json", encode(sealed).encode("utf-8"))
-    proof = verify_recovery(target)
-    return {"state": "saved", "path": str(target), "manifestHash": sealed["sha256"], **proof}
+    verified = verified_bundle(target)
+    result = {"state": "saved", "path": str(target), "manifestHash": sealed["sha256"], **verified.proof}
+    return result, verified
 
 
 def verified_bundle(target):
@@ -255,12 +269,11 @@ def verified_bundle(target):
              "credentials": manifest["credentials"], "hindsight": manifest["hindsight"]}
     if zero_filled:
         proof["zeroFilledTraceFiles"] = zero_filled
-    return manifest, proof, hashlib.sha256(manifest_bytes).hexdigest()
+    return VerifiedBundle(target, manifest, proof, hashlib.sha256(manifest_bytes).hexdigest())
 
 
 def verify_recovery(source):
-    _, proof, _ = verified_bundle(pathlib.Path(source).resolve())
-    return proof
+    return verified_bundle(pathlib.Path(source).resolve()).proof
 
 
 def restore_asset(source, target, digest, size):
@@ -271,9 +284,15 @@ def restore_asset(source, target, digest, size):
 
 
 def restore_files(source, destination):
+    return restore_verified_files(verified_bundle(pathlib.Path(source).resolve()), destination)
+
+
+def restore_verified_files(verified, destination):
     target = pathlib.Path(destination).resolve()
-    bundle = pathlib.Path(source).resolve()
-    manifest, proof, manifest_digest = verified_bundle(bundle)
+    bundle, manifest, proof, manifest_digest = verified
+    # The complete source scan was done at sealing. Recheck the manifest
+    # before touching the destination and every object's bytes as we copy it.
+    verify_file(bundle / "manifest.json", manifest_digest, None, "recovery_manifest_invalid")
     private_directory(target)
     data = target / "data"
     if manifest["files"]:

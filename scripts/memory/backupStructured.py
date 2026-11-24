@@ -123,7 +123,7 @@ async def verify_restore(source):
 
 
 async def backup_and_verify(destination):
-    from backupRecovery import stage_recovery, finish_recovery, restore_files
+    from backupRecovery import stage_recovery, finish_recovery_for_restore, restore_verified_files
     # Copy the durable queue first. Receipts drained before the database snapshot can
     # then be replayed idempotently; a post-snapshot queue copy could silently omit them.
     data_root = os.environ.get("AROMA_DATA_DIR") or pathlib.Path(__file__).resolve().parents[2] / "data"
@@ -149,10 +149,10 @@ async def backup_and_verify(destination):
         proof = await verify_restore(snapshot_path)
         complete(start)
         start = begin("seal_bundle")
-        recovery = finish_recovery(staged, snapshot_path)
+        recovery, verified = finish_recovery_for_restore(staged, snapshot_path)
         complete(start)
         start = begin("restore_files")
-        files = restore_files(staged["directory"], str(pathlib.Path(staged["directory"])) + ".restore")
+        files = restore_verified_files(verified, str(pathlib.Path(staged["directory"])) + ".restore")
         complete(start)
     except BaseException:
         print(encode({"event": "BACKUP_PHASE", "version": 1, "phase": phase, "state": "failed"}), file=sys.stderr, flush=True)

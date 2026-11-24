@@ -22,7 +22,7 @@ snapshot_file.write_text(recovery.encode({"snapshot": snapshot, "sha256": hashli
     recovery.encode(snapshot).encode()).hexdigest()}), encoding="utf-8")
 bundle = root / "bundle"
 staged = recovery.stage_recovery(bundle, data)
-recovery.finish_recovery(staged, snapshot_file)
+_, verified = recovery.finish_recovery_for_restore(staged, snapshot_file)
 manifest_path = bundle / "manifest.json"
 original_manifest = manifest_path.read_bytes()
 entries = staged["manifest"]["files"]
@@ -34,6 +34,7 @@ original_private = recovery.private_directory
 original_write = recovery.write_new
 dest = root / "restored"
 copies = 0
+archive_reads = 0
 active = 0
 peak = 0
 readback = Counter()
@@ -42,11 +43,15 @@ mutex = threading.Lock()
 
 
 def measured_read(file):
-    global active, peak, copies
+    global active, peak, copies, archive_reads
     if file.is_relative_to(dest / "data"):
         with mutex:
             readback[file.relative_to(dest / "data").as_posix()] += 1
-    if file.parent != bundle / "objects" or not dest.exists():
+    if file.parent != bundle / "objects":
+        return original_read(file)
+    with mutex:
+        archive_reads += 1
+    if not dest.exists():
         return original_read(file)
     with mutex:
         active += 1
@@ -69,12 +74,13 @@ def measured_mkdir(file, *args, **kwargs):
 pathlib.Path.read_bytes = measured_read
 pathlib.Path.mkdir = measured_mkdir
 try:
-    result = recovery.restore_files(bundle, dest)
+    result = recovery.restore_verified_files(verified, dest)
 finally:
     pathlib.Path.read_bytes = original_read
     pathlib.Path.mkdir = original_mkdir
 assert 1 < peak <= 8 and active == 0, ("serialized_source_reads", peak)
 assert copies == len(entries)
+assert archive_reads == len(entries), ("redundant_source_pass", archive_reads, len(entries))
 assert readback == {row["path"]: 1 for row in entries}
 assert parents == {"data": 1, "data/local-brain": 1, "data/conversations": 1}
 assert result["state"] == "isolated_files_restored" and result["files"] == len(entries)
@@ -96,7 +102,7 @@ def change_object(directory):
 
 recovery.private_directory = change_object
 try:
-    recovery.restore_files(bundle, root / "object-drift")
+    recovery.restore_verified_files(verified, root / "object-drift")
 except ValueError as error:
     assert str(error) == "recovery_hash_mismatch"
 else:
@@ -113,7 +119,7 @@ def change_manifest(directory):
 
 recovery.private_directory = change_manifest
 try:
-    recovery.restore_files(bundle, root / "manifest-drift")
+    recovery.restore_verified_files(verified, root / "manifest-drift")
 except ValueError as error:
     assert str(error) == "recovery_manifest_invalid"
 else:
@@ -133,13 +139,24 @@ def damage_after_copy(file, content):
 
 recovery.write_new = damage_after_copy
 try:
-    recovery.restore_files(bundle, late_dest)
+    recovery.restore_verified_files(verified, late_dest)
 except ValueError as error:
     assert str(error) == "recovery_restore_unconfirmed"
 else:
     raise AssertionError("late destination change received a successful receipt")
 finally:
     recovery.write_new = original_write
+
+before_copy = root / "pre-copy-manifest-drift"
+manifest_path.write_bytes(original_manifest + b" ")
+try:
+    recovery.restore_verified_files(verified, before_copy)
+except ValueError as error:
+    assert str(error) == "recovery_manifest_invalid" and not before_copy.exists()
+else:
+    raise AssertionError("changed manifest accepted before copying")
+finally:
+    manifest_path.write_bytes(original_manifest)
 
 print(json.dumps({"files": result["files"], "sourceReadsParallel": True, "parentDirectoriesReused": True,
                   "everyDestinationReadBack": True, "objectDriftRejected": True, "manifestDriftRejected": True,
