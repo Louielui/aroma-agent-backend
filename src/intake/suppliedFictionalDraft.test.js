@@ -204,3 +204,104 @@ test('duplicate, malformed and ambiguous supplied fields never produce a partial
   const mismatched = [{ role: 'user', text: {} }, { role: 'assistant', text: 'old answer' }]
   await assert.rejects(intake(saved.C2.input, mismatched, attested), /model_fallback/u)
 })
+
+const currentDialogueCases = [
+  {
+    "name": "saved-B",
+    "cases": [
+      {
+        "input": "做個虛構 Aroma 排練。用一句口語交代銅鑼站嘅擺位安排：三架折疊展示架擺喺後門右邊，畀下晝更用。四項都要講。",
+        "expected": {
+          "mode": "chat",
+          "reply": "銅鑼站嘅三架折疊展示架擺喺後門右邊，畀下晝更用。"
+        }
+      },
+      {
+        "input": "頭先個數唔啱，其實得兩架，畀夜更用。分站同擺位唔變，成句講多次。",
+        "expected": {
+          "mode": "chat",
+          "reply": "銅鑼站嘅兩架折疊展示架擺喺後門右邊，畀夜更用。"
+        }
+      },
+      {
+        "input": "再改一樣，擺喺前門左邊，其他照舊。講晒而家嗰個安排一句。",
+        "expected": {
+          "mode": "chat",
+          "reply": "銅鑼站嘅兩架折疊展示架擺喺前門左邊，畀夜更用。"
+        }
+      }
+    ]
+  },
+  {
+    "name": "saved-C",
+    "cases": [
+      {
+        "input": "幫我用兩行寫虛構 Aroma「霧松」試飲小卡。第一行寫杯套墨綠色同入場貼紙銀色，第二行寫只限室內試飲。",
+        "expected": {
+          "mode": "chat",
+          "reply": "杯套墨綠色，入場貼紙銀色\n只限室內試飲"
+        }
+      },
+      {
+        "input": "入場貼紙轉做奶白色，其他照舊。跟頭先嘅兩行格式，畀我成張小卡。",
+        "expected": {
+          "mode": "chat",
+          "reply": "杯套墨綠色，入場貼紙奶白色\n只限室內試飲"
+        }
+      }
+    ]
+  },
+  {
+    "name": "saved-D",
+    "cases": [
+      {
+        "input": "虛構 Aroma 味道盲測，寫一句畀試飲員嘅提示。要講杯號、指定香味同點樣記錄。用五號杯，試完喺米白卡畫一個圈。",
+        "expected": {
+          "mode": "ask",
+          "reply": "指定香味係乜嘢？"
+        }
+      },
+      {
+        "input": "指定係柚皮香。用返頭先啲資料，畀我完整嗰一句提示。",
+        "expected": {
+          "mode": "chat",
+          "reply": "請用五號杯試飲，留意柚皮香，試完喺米白卡畫一個圈。"
+        }
+      }
+    ]
+  }
+]
+
+test('saved PR234 fictional drafts deliver each complete reply without entering model or file routing', async t => {
+  begin(t)
+  for (const { cases } of currentDialogueCases) {
+    const history = []
+    for (const { input, expected } of cases) {
+      const result = await intake(input, history)
+      assertDraft(input, result, expected.mode, expected.reply)
+      history.push(...context(input, result.reply))
+    }
+  }
+})
+
+test('no stale, foreign or mixed operational request enters the supplied fictional shortcut', async t => {
+  begin(t)
+  const [placement, card, tasting] = currentDialogueCases.map(group => group.cases)
+  const start = context(placement[0].input, placement[0].expected.reply)
+  const correction = context(placement[1].input, placement[1].expected.reply)
+  await assert.rejects(intake(placement[2].input, start), /model_fallback/u)
+  await assert.rejects(intake(placement[2].input, [...start, ...correction], [...correction, ...start]), /model_fallback/u)
+  const unrelated = context('我哋傾其他嘢。', '好。')
+  await assert.rejects(intake(placement[2].input, [...start, ...correction, ...unrelated]), /model_fallback/u)
+  await assert.rejects(intake(card[0].input, [], [], false), /model_fallback/u)
+  await assert.rejects(intake(card[1].input, context(card[0].input, '舊稿'), []), /model_fallback/u)
+  await assert.rejects(intake(tasting[1].input, context(tasting[0].input, '請試飲。')), /model_fallback/u)
+  await assert.rejects(intake(tasting[0].input.replace('用五號杯，', '')), /model_fallback/u)
+  for (const input of [placement[0].input, card[0].input, tasting[0].input]) {
+    const mixed = input + '幫我改 docs/canary/agent-canary.md。'
+    await assert.rejects(intake(mixed), /model_fallback/u)
+    const offer = explainOffer({ message: mixed, response: { mode: 'chat', intent: 'task' } })
+    assert.equal(offer.state, WORK_REQUEST_STATE.COMPLETE)
+    assert.equal(offer.offer.file, 'docs/canary/agent-canary.md')
+  }
+})

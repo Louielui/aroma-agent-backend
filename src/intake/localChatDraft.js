@@ -228,12 +228,142 @@ function reminderReply(reminder, followup) {
     reply: fields.day + fields.clock + '，請憑' + fields.proof + '到' + fields.table + event + '。'}
 }
 
+const placementRequest = /^(?:試)?做個虛構(?:\s*Aroma)?\s*(?:排練|練習)$/u
+const placementDetails = /^用一句口語交代([\p{Script=Han}]{1,14}(?:站|點|店))嘅擺位安排[：:]([一二兩三四五六七八九十\d]{1,3})(架|張|個|套|部)([\p{Script=Han}]{1,14})擺喺([前後側](?:門|閘)(?:左邊|右邊|旁邊))$/u
+const placementShift = /^[畀俾](早更|午更|下晝更|夜更|尾更|晚更)用$/u
+const placementQuantity = /^其實(?:得|係)([一二兩三四五六七八九十\d]{1,3})(架|張|個|套|部)$/u
+const placementPosition = /^擺喺([前後側](?:門|閘)(?:左邊|右邊|旁邊))$/u
+
+function suppliedPlacement(message) {
+  const [request, details, recipient, delivery, ...extra] = cardClauses(message)
+  const placement = placementDetails.exec(details)
+  const shift = placementShift.exec(recipient)?.[1]
+  if (!placementRequest.test(request) || !placement || !shift || delivery !== '四項都要講' || extra.length) return null
+  const [, station, quantity, unit, item, position] = placement
+  return [station, item].every(safeDraftLiteral) ? { station, quantity, unit, item, position, shift } : null
+}
+
+function revisedPlacement(placement, message) {
+  if (external.test(message)) return null
+  const clauses = cardClauses(message)
+  if (clauses.length !== 5) return null
+  const [change, amount, recipient, keep, delivery] = clauses
+  const quantity = placementQuantity.exec(amount)
+  const shift = placementShift.exec(recipient)?.[1]
+  if (!/^頭先個數(?:唔啱|錯咗)$/u.test(change) || !quantity || quantity[2] !== placement.unit || !shift ||
+      !/^分站同擺位(?:唔變|照舊)$/u.test(keep) || delivery !== '成句講多次') return null
+  return { ...placement, quantity: quantity[1], shift }
+}
+
+function movedPlacement(placement, message) {
+  const [change, location, keep, delivery, ...extra] = cardClauses(message)
+  const position = placementPosition.exec(location)?.[1]
+  if (change !== '再改一樣' || !position || !keepFields.test(keep) || delivery !== '講晒而家嗰個安排一句' || extra.length) return null
+  return { ...placement, position }
+}
+
+function placementReply({ station, quantity, unit, item, position, shift }) {
+  return station + '嘅' + quantity + unit + item + '擺喺' + position + '，畀' + shift + '用。'
+}
+
+const tastingCardRequest = /^(?:幫我|請)用(?:兩|二|2)行寫虛構(?:\s*Aroma)?\s*「([\p{Script=Han}]{1,12})」試飲小卡$/u
+const tastingCardFields = /^第一行寫杯套([\p{Script=Han}]{1,9}色|黑|白)同入場貼紙([\p{Script=Han}]{1,9}色|黑|白)$/u
+const tastingCardRestriction = /^第二行寫(只限(?:室內|示範區|指定試飲區)試飲)$/u
+const tastingCardRevision = /^(入場貼紙|杯套)(?:轉做|改做|換成)([\p{Script=Han}]{1,9}色|黑|白)$/u
+
+function suppliedTastingCard(message) {
+  const [request, firstLine, secondLine, ...extra] = cardClauses(message)
+  const name = tastingCardRequest.exec(request)?.[1]
+  const colours = tastingCardFields.exec(firstLine)
+  const restriction = tastingCardRestriction.exec(secondLine)?.[1]
+  if (!name || !colours || !restriction || extra.length) return null
+  const [, sleeve, sticker] = colours
+  return [name, sleeve, sticker].every(safeDraftLiteral) ? { sleeve, sticker, restriction } : null
+}
+
+function revisedTastingCard(card, message) {
+  const [change, keep, format, deliver, ...extra] = cardClauses(message)
+  const value = tastingCardRevision.exec(change)
+  if (!value || !safeDraftLiteral(value[2]) || !keepFields.test(keep) ||
+      !/^(?:跟|照)頭先嘅(?:兩|二|2)行格式$/u.test(format) || !/^[畀俾]我成張小卡$/u.test(deliver) || extra.length) return null
+  return { ...card, [value[1] === '入場貼紙' ? 'sticker' : 'sleeve']: value[2] }
+}
+
+function tastingCardReply({ sleeve, sticker, restriction }) {
+  return '杯套' + sleeve + '，入場貼紙' + sticker + '\n' + restriction
+}
+
+const tastingFieldPatterns = {
+  cup: /^用([一二兩三四五六七八九十\d]{1,3}號杯)$/u,
+  aroma: /^指定(?:香味)?係([\p{Script=Han}]{1,12}(?:香|香味))$/u,
+  record: /^(試完喺[\p{Script=Han}]{1,8}卡(?:畫一個圈|打個剔|畫一個三角形))$/u
+}
+const tastingQuestions = { cup: '用幾號杯？', aroma: '指定香味係乜嘢？', record: '試完點樣記錄？' }
+
+function suppliedTasting(message) {
+  const [request, draft, requirements, ...details] = cardClauses(message)
+  if (!/^虛構(?:\s*Aroma)?\s*(?:味道|香味)盲測$/u.test(request) || draft !== '寫一句畀試飲員嘅提示' ||
+      requirements !== '要講杯號、指定香味同點樣記錄' || details.length < 2 || details.length > 3) return null
+  const fields = {}
+  for (const detail of details) {
+    const field = Object.keys(tastingFieldPatterns).find(key => tastingFieldPatterns[key].test(detail))
+    const value = field && tastingFieldPatterns[field].exec(detail)[1]
+    if (!value || fields[field] || !safeDraftLiteral(value)) return null
+    fields[field] = value
+  }
+  return fields
+}
+
+function tastingReply({ cup, aroma, record }) {
+  return '請用' + cup + '試飲，留意' + aroma + '，' + record + '。'
+}
+
+function replyToSuppliedCopy(message, history, ownerMessages) {
+  const length = ownerMessages.length
+  if (length < 1 || length > 3 || history.length !== (length - 1) * 2 ||
+      !history.every((turn, i) => i % 2 ? turn?.role === 'assistant' :
+        turn?.role === 'user' && typeof turn.text === 'string' && turn.text.trim() === ownerMessages[i / 2])) return null
+
+  const first = ownerMessages[0]
+  if (external.test(first)) return null
+  const placement = suppliedPlacement(first)
+  if (placement) {
+    const updated = length === 1 ? placement : revisedPlacement(placement, ownerMessages[1])
+    if (!updated) return null
+    const result = length === 3 ? movedPlacement(updated, message) : updated
+    return result ? { mode: 'chat', intent: 'context', reply: placementReply(result) } : null
+  }
+  if (length > 2) return null
+
+  const card = suppliedTastingCard(first)
+  if (card) {
+    const result = length === 2 ? revisedTastingCard(card, message) : card
+    return result ? { mode: 'chat', intent: 'context', reply: tastingCardReply(result) } : null
+  }
+
+  const tasting = suppliedTasting(first)
+  if (!tasting) return null
+  const missing = Object.keys(tastingQuestions).find(field => !tasting[field])
+  if (length === 1) {
+    return missing ? { mode: 'ask', intent: 'unclear', reply: tastingQuestions[missing] } :
+      { mode: 'chat', intent: 'context', reply: tastingReply(tasting) }
+  }
+  if (!missing || history[1].text !== tastingQuestions[missing]) return null
+  const [field, usePrior, deliver, ...extra] = cardClauses(message)
+  const value = tastingFieldPatterns[missing].exec(field)?.[1]
+  if (!value || !safeDraftLiteral(value) || usePrior !== '用返頭先啲資料' ||
+      !/^[畀俾]我完整嗰一句提示$/u.test(deliver) || extra.length) return null
+  return { mode: 'chat', intent: 'context', reply: tastingReply({ ...tasting, [missing]:value }) }
+}
+
 // Only whole, supported fictional turns use the literal renderer. Follow-ups
-// bind to the authenticated, immediately preceding Owner request. Assistant
+// bind to adjacent authenticated Owner turns in the same thread. Assistant
 // prose never supplies a field or expands the scope of the next request.
 function replyToSuppliedFiction(message, history, ownerMessages) {
   if (typeof message !== 'string' || external.test(message) || !Array.isArray(history) ||
       !Array.isArray(ownerMessages) || ownerMessages.at(-1) !== message.trim()) return null
+  const copy = replyToSuppliedCopy(message, history, ownerMessages)
+  if (copy) return copy
   if (ownerMessages.length === 1 && history.length === 0) {
     const fields = fourFieldSheet(message.trim())
     if (fields) return {mode: 'chat', intent: 'context', reply: fields.map(field => field.clause).join('\n')}
