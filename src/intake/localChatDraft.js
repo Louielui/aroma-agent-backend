@@ -7,6 +7,8 @@ const write = /(?:寫|草擬|擬|排版|潤色|覆述|回述|重述|講(?:返|�
 const artifact = /(?:文案|(?:通|告)知|提示|標籤|展示卡|告示|訊息|信件|電郵|宣傳語|標語|稿|notice|copy|label|announcement)/iu
 const format = /(?:[一二兩三四五六七八九十\d]+(?:行|句|項)|(?:原|相同|頭先|剛才|之前|同一)\S{0,6}格式|逐行|same format)/iu
 
+function containsExternalRequest(text) { return external.test(text) }
+
 function isDraftRequest(message, ownerMessages) {
   if (typeof message !== 'string' || external.test(message)) return false
   if (write.test(message) && (artifact.test(message) || format.test(message))) return true
@@ -558,4 +560,4 @@ function clarifyStartTime(distilled) {
   return { ...distilled, mode: 'ask', intent: 'unclear', reply: noticeQuestion, understanding: noticeQuestion }
 }
 
-module.exports = { isDraftRequest, isInlineDraftRequest, exerciseDraftLayout, reviseInlineCard, replyToFictionalNotice, replyToSuppliedFiction, system, responseFormat, requestedLineCount, requestedAudience, renderDraftLines, needsStartTime, clarifyStartTime }
+module.exports = { containsExternalRequest, isDraftRequest, isInlineDraftRequest, exerciseDraftLayout, reviseInlineCard, replyToFictionalNotice, replyToSuppliedFiction, system, responseFormat, requestedLineCount, requestedAudience, renderDraftLines, needsStartTime, clarifyStartTime }
