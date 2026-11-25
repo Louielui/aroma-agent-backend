@@ -42,6 +42,65 @@ function cardClauses(message) {
     .split(/[，,。；;\r\n]+/u).map(part => part.trim()).filter(Boolean)
 }
 
+const exerciseOpening = /^虛構(?:\s+Aroma)?\s*(?:練習|演練|排練)[：:]\s*/u
+const exerciseDelivery = /^(?:將(?:件事|個安排|呢件事)|把(?:這件事|安排))講成一句[畀俾][\p{Script=Han}]{1,10}聽(?:[，,]交代[\p{Script=Han}、]{1,35})?$/u
+const exerciseRestatement = /^成句(?:講多次|講返最新嗰個安排)[畀俾][\p{Script=Han}]{1,10}聽$/u
+const exerciseReplacement = /^([\p{Script=Han}]{1,16})(?:改做|改成|換做|換成)([\p{Script=Han}]{1,16})$/u
+const exerciseSideEffect = /(?:檔|首頁|頁面|程式|系統|班表|查|讀|傳|寄|貼到|開啟|關閉|匯款|轉帳|實際|正式)/u
+
+function exerciseLiteral(text) {
+  return typeof text === 'string' && /^[\p{Script=Han}、，\d ]{1,96}$/u.test(text) &&
+    !exerciseSideEffect.test(text) && safeDraftLiteral(text)
+}
+
+function exerciseSentences(text) {
+  return text.trim().replace(/[。．]$/u, '').split(/[。．]/u).map(s => s.trim())
+}
+
+function exerciseOpeningLayout(text) {
+  if (external.test(text) || !exerciseOpening.test(text)) return null
+  const [first, second, third, ...extra] = exerciseSentences(text.replace(exerciseOpening, ''))
+  if (!third && !extra.length && exerciseLiteral(first) && exerciseDelivery.test(second) && !exerciseSideEffect.test(second)) return 1
+  if (extra.length || !/^只[畀俾]我(?:嗰|呢)?兩行$/u.test(third)) return null
+  const firstLine = /^第一行用「([^」]+)」起頭[，,]\s*(.+)$/u.exec(first)
+  const secondLine = /^第二行用「([^」]+)」起頭[，,]\s*(.+)$/u.exec(second)
+  if (!firstLine || !secondLine || firstLine[1] === secondLine[1]) return null
+  return [firstLine[1], firstLine[2], secondLine[1], secondLine[2]].every(exerciseLiteral) ? 2 : null
+}
+
+function exerciseTimingCorrection(text) {
+  if (external.test(text) || exerciseSideEffect.test(text)) return false
+  const [correction, detail, delivery, ...extra] = exerciseSentences(text)
+  if (extra.length || !exerciseRestatement.test(delivery)) return false
+  const time = /^(?:時間|早到時間)講錯[，,]係早([\p{Script=Han}\d]{1,5})分鐘$/u.exec(correction)
+  const equipment = /^試嘅係([\p{Script=Han}]{1,18})[，,]頭先講嗰兩位照舊$/u.exec(detail)
+  return Boolean(time && equipment && [time[1], equipment[1]].every(exerciseLiteral))
+}
+
+// This is a reply-only layout backed by the saved Owner thread. The unquoted
+// change and delivery clauses must all fit, so a second live request cannot
+// inherit the draft's routing even if it comes immediately after a draft.
+function exerciseDraftLayout(message, ownerMessages) {
+  if (!Array.isArray(ownerMessages) || typeof message !== 'string' ||
+      ownerMessages.at(-1) !== message.trim() || external.test(message) ||
+      exerciseSideEffect.test(message)) return null
+  const layout = exerciseOpeningLayout(ownerMessages[0])
+  if (!layout || ownerMessages.length === 1) return layout
+  if (layout === 1 && ownerMessages.length === 2) return exerciseTimingCorrection(message) ? 1 : null
+  const [correction, delivery, restatement, ...extra] = exerciseSentences(message)
+  if (extra.length || restatement) return null
+  const [change, retain, ...tail] = correction.split(/[，,]/u).map(s => s.trim())
+  const replacement = exerciseReplacement.exec(change)
+  if (!replacement || !replacement.slice(1).every(exerciseLiteral) ||
+      !ownerMessages[0].includes(replacement[1]) || tail.length) return null
+  if (layout === 1) {
+    return ownerMessages.length === 3 && exerciseTimingCorrection(ownerMessages[1]) &&
+      /^(?:其他|其餘)照舊$/u.test(retain) && exerciseRestatement.test(delivery) ? 1 : null
+  }
+  return ownerMessages.length === 2 && /^(?:兩個動作嘅先後同原本原因都|其他|其餘)照舊$/u.test(retain) &&
+    /^(?:依返|照返|跟返)頭先(?:嘅)?兩行[，,]\s*寫晒[畀俾]我$/u.test(delivery) ? 2 : null
+}
+
 // The shortcut applies to fully specified fictional cards. Every unquoted
 // clause must be a drafting constraint; an extra operation stays with the
 // ordinary evidence and approval path.
@@ -431,7 +490,7 @@ function needsStartTime(message, priorOwnerTurns) {
     !/(?:[零〇一二三四五六七八九十兩\d]+\s*[點点時时]|[0-9]{1,2}[:：][0-9]{2}|[0-9]{1,2}\s*(?:a\.?m\.?|p\.?m\.?)|正午|午夜|另行通知|留空|待定|然後|順便|並且)/iu.test(message)
 }
 
-function responseFormat(format, { lineCount, startTimeMissing }) {
+function responseFormat(format, { lineCount, startTimeMissing, replyOnly }) {
   const properties = {
     intent: { type: 'string', enum: ['context', 'question', 'unclear', 'task'] },
     mode: { type: 'string', enum: ['chat', 'ask', 'commit'] },
@@ -446,6 +505,12 @@ function responseFormat(format, { lineCount, startTimeMissing }) {
   if (original?.nextRead) {
     properties.nextRead = original.nextRead
     if (original.mode) properties.mode = original.mode
+  }
+  if (replyOnly) {
+    properties.intent.enum = ['context', 'unclear']
+    properties.mode = { type: 'string', enum: ['chat', 'ask'] }
+    delete properties.nextRead
+    properties.lines.anyOf[1].maxItems = lineCount
   }
   return { type: 'json_schema', name: 'local_chat_draft', strict: true, schema: {
     type: 'object', additionalProperties: false, required: Object.keys(properties), properties
@@ -462,4 +527,4 @@ function clarifyStartTime(distilled) {
   return { ...distilled, mode: 'ask', intent: 'unclear', reply: noticeQuestion, understanding: noticeQuestion }
 }
 
-module.exports = { isDraftRequest, isInlineDraftRequest, reviseInlineCard, replyToFictionalNotice, replyToSuppliedFiction, system, responseFormat, requestedLineCount, requestedAudience, renderDraftLines, needsStartTime, clarifyStartTime }
+module.exports = { isDraftRequest, isInlineDraftRequest, exerciseDraftLayout, reviseInlineCard, replyToFictionalNotice, replyToSuppliedFiction, system, responseFormat, requestedLineCount, requestedAudience, renderDraftLines, needsStartTime, clarifyStartTime }

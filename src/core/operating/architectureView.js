@@ -110,6 +110,7 @@ function buildArchitectureHtml () {
     localChat.current += ' Isolated browser checks confirm that reopening saved chat and opening a blank chat read local data without Drive requests. Home still refreshes the configured Drive invoice backlog.'
     localChat.current += ' The isolated PR228 drafting replay checks that a formatted fictional draft stays in chat when unrelated archived context is available. File requests still use the existing approval path.'
     localChat.current += ' An immediate paper-colour correction to a complete three-line fictional card can reuse the saved Owner wording with no model call. A missing field or an additional instruction uses ordinary routing. This revision is verified in isolation.'
+    localChat.current += ' Isolated Qwen3.5 9B checks cover direct one-sentence fictional rehearsal drafts and two-line revisions. The draft format uses the current Owner thread, while an explicit file edit still requires approval.'
     localChat.evidence += '; test/localBrain/chatPage.browser.test.js; src/intake/localAnswerBoundaryReplay.test.js; src/localBrain/publicSearch.js; src/adapters/LocalAdapter.js'
     rows.find(row => row.id === 'universal-assistant').current += ' ' + t('context.answerFlowCandidate')
     rows.find(row => row.id === 'universal-assistant').current += ' ' + t('assistant.enumerationCandidate')
