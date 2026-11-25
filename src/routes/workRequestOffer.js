@@ -138,6 +138,10 @@ function explainOffer (input = {}) {
   // answer as a file operation. A currently named file still permits the existing
   // deterministic offer when the model missed that explicit development request.
   const response = input.response
+  if (response?.replyOnlyDraft === true &&
+      require('../agent/workOrderProducer').mentionedFilesFrom(input.message || '').length === 0) {
+    return { offer: null, reason: 'reply_only_draft', state: STATE.NOT_A_WORK_REQUEST }
+  }
   if (response && (response.website || response.investigation || response.error)) return { offer: null, reason: 'response_owns_turn', state: STATE.NOT_A_WORK_REQUEST }
   if (response && ['chat', 'ask', 'recommend'].includes(response.mode) &&
       ['question', 'unclear', 'context', 'chit_chat', 'greeting', 'advisory', 'brainstorm'].includes(response.intent) &&

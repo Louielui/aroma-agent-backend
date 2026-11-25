@@ -605,21 +605,27 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
     ? null
     : routeTurn(message, { previousLane: (opts && opts.previousLane) || null })
   const routeGoverns = routerMode === 'on' && routeDecision !== null
+  const evidence = require('./conversationEvidence')
+  const draftContract = require('./localChatDraft')
+  const ownerDraftMessages = evidence.ownerSources(opts.conversationEvidence)
+  const canDraftLocally = demo && localMode && opts?.manualLocalDialogue === true && opts.interactionMode === 'chat' &&
+    !opts.contextCard && !opts.attachSection && !opts.sectionPreamble
+  const exerciseLayout = canDraftLocally && routeGoverns && ['CONVERSATION', 'BUSINESS_QUERY'].includes(routeDecision.route)
+    ? draftContract.exerciseDraftLayout(message, ownerDraftMessages) : null
+  if (exerciseLayout !== null) {
+    routeDecision = { route: 'CONVERSATION', reason: 'reply_only_draft', confidence: 'high', sources: [] }
+  }
   const socialFastPath = (subscriptionMode || localMode) && routeGoverns && canUseSocialFastPath(message, routeDecision, history, opts)
   const simpleFastPath = socialFastPath || ((subscriptionMode || localMode) && routeGoverns && canUseGeneralFastPath(message,routeDecision,history,opts))
   const manualConversation = localMode && opts?.manualLocalDialogue === true && opts.interactionMode === 'chat' &&
     a4SemanticRoutingEnabled(process.env) && routeGoverns && routeDecision.route === 'CONVERSATION' &&
     !opts.contextCard && !opts.attachSection && !opts.sectionPreamble
-  const evidence = require('./conversationEvidence')
-  const draftContract = require('./localChatDraft')
-  const ownerDraftMessages = evidence.ownerSources(opts.conversationEvidence)
-  const localDraft = demo && localMode && opts?.manualLocalDialogue === true && opts.interactionMode === 'chat' &&
-    !opts.contextCard && !opts.attachSection && !opts.sectionPreamble &&
-    draftContract.isDraftRequest(message, ownerDraftMessages)
+  const localDraft = canDraftLocally && (exerciseLayout !== null || draftContract.isDraftRequest(message, ownerDraftMessages))
   const inlineDraft = localDraft && routeGoverns && routeDecision.route === 'CONVERSATION' &&
-    draftContract.isInlineDraftRequest(message)
-  const draftLineCount = localDraft ? draftContract.requestedLineCount(message) : null
-  const draftProjection = draftLineCount ? { lineCount: draftLineCount, audience: draftContract.requestedAudience(message, ownerDraftMessages) } : null
+    (exerciseLayout !== null || draftContract.isInlineDraftRequest(message))
+  const draftLineCount = localDraft ? exerciseLayout ?? draftContract.requestedLineCount(message) : null
+  const draftProjection = draftLineCount ? { lineCount: draftLineCount, audience: draftContract.requestedAudience(message, ownerDraftMessages),
+    replyOnly: exerciseLayout !== null } : null
   const draftNeedsStartTime = localDraft && draftContract.needsStartTime(message, Array.isArray(history) ? history.length : 0)
   const wellbeingExchange = manualConversation && evidence.isWellbeingExchange(message, history, opts.conversationEvidence)
   const previousGreeting = wellbeingExchange ? evidence.ownerSources(opts.conversationEvidence).at(-2) : null
@@ -1386,7 +1392,7 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
     // canonical preference read is needed; no topic/history recall or planner.
     if (simpleFastPath || inlineDraft) {
       const answerPrompt = inlineDraft ? prompt : baseEffPrompt
-      if (canLoadPersonalMemory(providerName)) {
+      if (exerciseLayout === null && canLoadPersonalMemory(providerName)) {
         if (hindsightCache === undefined) {
           const memory = opts.memoryClient || require('../memory/runtime').runtime().ownerClient
           hindsightCache = await require('../memory/context').preferencesContext({ memory,
@@ -2088,7 +2094,8 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
       }}
     }
     if (canFocusDraftReply()) {
-      return draftContract.responseFormat(format, { lineCount: draftLineCount, startTimeMissing: draftNeedsStartTime })
+      return draftContract.responseFormat(format, { lineCount: draftLineCount, startTimeMissing: draftNeedsStartTime,
+        replyOnly: exerciseLayout !== null })
     }
     let selected=format
     if(hindsightCache?.sources?.length){
@@ -4160,6 +4167,7 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
         answerPresentation:{kind:'validated_capability_explanation',validation:view.capabilityValidation,modelProseUsed:view.capabilityValidation?.kind!=='delegation_source_projection',dispatchVerified:false,
           ...(directCapabilityAnswer && {answerCallSkipped:true,skipReason:directCapabilityAnswer.skipReason})}} : null
     return { blocked: false, mode: distilled.mode, intent: distilled.intent,
+      ...(exerciseLayout !== null && canFocusDraftReply() && !distilled.nextRead && { replyOnlyDraft: true }),
       ...(gapForTurn() && { capabilityGap: gapForTurn() }),
       ...((operationalInvestigation||capabilityPresentation) && { investigation: operationalInvestigation||capabilityPresentation }),
       ...(view.capabilityCoverage ? {capabilityCoverage:view.capabilityCoverage} : {}),

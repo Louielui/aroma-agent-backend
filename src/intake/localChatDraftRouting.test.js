@@ -350,3 +350,91 @@ test('real changes mixed into a fictional notice still reach work-order approval
     assert.equal(offer.offer.file, 'docs/canary/agent-canary.md')
   }
 })
+
+test('PR235 reply-only structural drafting is bound to the authenticated current thread', () => {
+  const { exerciseDraftLayout } = require('./localChatDraft')
+  const first = '虛構 Aroma 練習：小禾提早十分鐘返嚟，因為要同新同事試咪。將件事講成一句畀帶班聽，交代邊個、早幾耐同原因。'
+  const next = '時間講錯，係早廿分鐘。試嘅係投影機，頭先講嗰兩位照舊。成句講多次畀帶班聽。'
+  const rename = '新同事改做阿芷，其他照舊。成句講返最新嗰個安排畀帶班聽。'
+  const card = '虛構 Aroma 演練：第一行用「做法」起頭，叫人先揭起白布，再拎走空碟。第二行用「原因」起頭，解釋係怕空碟勾住布。只畀我嗰兩行。'
+  const edit = '白布改做藍布，兩個動作嘅先後同原本原因都照舊。依返頭先兩行，寫晒畀我。'
+  for (const [msg, history, count] of [[first, [], 1], [next, [first], 1], [rename, [first, next], 1], [card, [], 2], [edit, [card], 2]]) {
+    assert.equal(exerciseDraftLayout(msg, [...history, msg]), count, msg)
+    assert.equal(exerciseDraftLayout(msg, null), null)
+  }
+  for (const [msg, history] of [
+    [next, []], [rename, [first, '轉個話題']], [edit, [first]], [edit, [card, '轉個話題']],
+    [edit + '改埋 docs/canary/agent-canary.md。', [card]],
+    [edit + '寄畀帶班。', [card]],
+    [edit.replace('白布', '首頁'), [card]],
+    [first.replace('同新同事試咪', '讀今日倉存'), []],
+    [card.replace('再拎走空碟', '改埋首頁'), []]
+  ]) assert.equal(exerciseDraftLayout(msg, [...history, msg]), null, msg)
+})
+
+test('PR235 focused drafts cannot turn a model commit or a colour change into file work', async t => {
+  const { processIntake } = require('./intakeService')
+  const { fromSavedConversation } = require('./conversationEvidence')
+  const { explainOffer, WORK_REQUEST_STATE } = require('../routes/workRequestOffer')
+  const flags = { LOCAL_BRAIN_ONLY: '1', A4_KNOWLEDGE_ROUTING: 'on', TURN_ROUTER: 'on',
+    MULTI_AI_ROUTER: 'on', GOAL_DECOMPOSER: 'off', READ_ACCESS: 'on', XIANGXIANG_MEMORY: 'on' }
+  const previous = Object.fromEntries(Object.keys(flags).map(key => [key, process.env[key]]))
+  Object.assign(process.env, flags)
+  t.after(() => {
+    for (const [key, value] of Object.entries(previous)) {
+      if (value === undefined) delete process.env[key]
+      else process.env[key] = value
+    }
+  })
+  const card = '虛構 Aroma 排練：第一行用「手勢」起頭，先揭起紅布，再拎走空盒。第二行用「用意」起頭，避免空盒勾住布。只俾我呢兩行。'
+  const edit = '紅布換成紫布，其他照舊。照返頭先兩行，寫晒俾我。'
+  const expected = ['手勢：先揭起紫布，再拎走空盒。', '用意：避免空盒勾住布。']
+  const history = [{ role: 'user', text: card }, { role: 'assistant', text: '手勢：先揭起紅布。\n用意：避免空盒勾住布。' }]
+  const options = {
+    demo: true, manualLocalDialogue: true, interactionMode: 'chat',
+    conversationEvidence: fromSavedConversation({ messages: history }, edit),
+    memoryClient: {
+      preferences: async () => assert.fail('a proved exercise needs no stored preferences'),
+      recall: async () => assert.fail('a proved exercise needs no recall')
+    },
+    readContextDeps: { sources: [], finalVerifier: async () => ({ decision: 'allow_final', question: null }) },
+    semanticCallModel: async () => assert.fail('a proved exercise is not a source question'),
+    promoteToProposal: async () => assert.fail('a proved exercise cannot promote')
+  }
+  const adapter = (answer) => ({ providerName: 'local', preflight: async () => {}, complete: async (prompt, opts) => {
+    const response = opts.invocationPhase === 'final_verification' ? { decision: 'allow_final', question: null } : answer
+    if (opts.invocationPhase === 'answer') {
+      assert.ok(prompt.includes(card) && prompt.includes(edit))
+      assert.equal(opts.responseFormat?.name, 'local_chat_draft')
+      assert.deepEqual(opts.responseFormat.schema.properties.mode.enum, ['chat', 'ask'])
+      assert.equal(opts.responseFormat.schema.properties.lines.anyOf[1].maxItems, 2)
+    }
+    return { model: 'local:test', text: JSON.stringify(response) }
+  } })
+  for (const [response, reply] of [
+    [{ mode: 'chat', intent: 'task', reply: expected.join('\n') }, expected.join('\n')],
+    [{ mode: 'chat', intent: 'context', reply: '這是草稿', lines: expected }, expected.join('\n')],
+    [{ mode: 'commit', intent: 'task', reply: '等待你批准後執行。', tasks: [{ title: '派工' }] }, '呢段文案未能按你指定格式完成。']
+  ]) {
+    const result = await processIntake(edit, adapter(response), history, { ...options })
+    assert.equal(result.reply, reply)
+    assert.equal(result.replyOnlyDraft, true)
+    assert.equal(result.decision, null)
+    assert.deepEqual(result.tasks, [])
+    assert.equal(explainOffer({ message: edit, response: result }).state, WORK_REQUEST_STATE.NOT_A_WORK_REQUEST)
+  }
+  const schedule = '虛構 Aroma 排練：阿彤提早八分鐘返嚟，因為要同阿榮試咪。將個安排講成一句俾小隊長聽，交代邊個、早幾耐同原因。'
+  const notify = '阿彤會提早八分鐘返嚟，因為要同阿榮試咪。'
+  const scheduleResult = await processIntake(schedule, {
+    providerName: 'local', preflight: async () => {}, complete: async (_, opts) => {
+      if (opts.invocationPhase === 'final_verification') return { model: 'local:test', text: '{"decision":"allow_final","question":null}' }
+      assert.equal(opts.responseFormat?.name, 'local_chat_draft')
+      return { model: 'local:test', text: JSON.stringify({ mode: 'chat', intent: 'context', reply: notify, lines: [notify] }) }
+    }
+  }, [], { ...options, conversationEvidence: fromSavedConversation({ messages: [] }, schedule) })
+  assert.equal(scheduleResult.replyOnlyDraft, true)
+  assert.equal(scheduleResult.reply, notify)
+  const real = edit + '幫我改 docs/canary/agent-canary.md。'
+  const offer = explainOffer({ message: real, response: { replyOnlyDraft: true, mode: 'chat', intent: 'context' } })
+  assert.equal(offer.offer?.file, 'docs/canary/agent-canary.md')
+})
