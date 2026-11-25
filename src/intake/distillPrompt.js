@@ -303,9 +303,11 @@ function parseDistillResponse (text, diag, draftProjection = null) {
 
   const intent = typeof p.intent === 'string' ? p.intent : 'unclear'
   const draftLineCount = draftProjection?.lineCount
-  const draftLines = draftLineCount && p.mode === 'chat' && !p.nextRead && Array.isArray(p.lines) &&
-    p.lines.length === draftLineCount && p.lines.every(line => typeof line === 'string' && line.trim() && !/[\r\n]/u.test(line))
-    ? require('./localChatDraft').renderDraftLines(p.lines, draftProjection.audience) : null
+  const lines = draftProjection?.replyOnly && p.lines == null && typeof p.reply === 'string'
+    ? p.reply.trim().split(/\r?\n/u) : p.lines
+  const draftLines = draftLineCount && p.mode === 'chat' && !p.nextRead && Array.isArray(lines) &&
+    lines.length === draftLineCount && lines.every(line => typeof line === 'string' && line.trim() && !/[\r\n]/u.test(line))
+    ? require('./localChatDraft').renderDraftLines(lines, draftProjection.audience) : null
   const reply = draftLines || ((typeof p.reply === 'string' && p.reply.trim()) ? p.reply.trim() : '我在,你說。')
   // ── THE COERCION IS UNCHANGED. IT IS NO LONGER SILENT. ───────────────────────────
   // Anything unrecognised — a value we do not know, or no value at all — becomes 'chat'.
@@ -343,6 +345,16 @@ function parseDistillResponse (text, diag, draftProjection = null) {
     : undefined
 
   const base = { intent, mode, reply, understanding: reply, judgment: '', decision: null, tasks: [], risks: [], next_step: '', reasons: [], offer: '' }
+  // The host has already bound this exercise to a reply-only Owner request.
+  // A malformed or action-shaped model reply cannot become its draft.
+  if (draftProjection?.replyOnly) {
+    const canAsk = p.mode === 'ask' && typeof p.reply === 'string' && p.reply.trim() && p.lines == null
+    if (p.nextRead || answerPlan || p.decision || p.tasks?.length || (!draftLines && !canAsk)) {
+      const failedDraft = '呢段文案未能按你指定格式完成。'
+      return { ...base, mode: 'ask', intent: 'unclear', reply: failedDraft, understanding: failedDraft }
+    }
+    return { ...base, intent: canAsk ? 'unclear' : 'context' }
+  }
   if (answerPlan !== undefined) base.answerPlan = answerPlan
   if(p.suppliedCalculation&&typeof p.suppliedCalculation==='object'&&!Array.isArray(p.suppliedCalculation))base.suppliedCalculation=p.suppliedCalculation
 
