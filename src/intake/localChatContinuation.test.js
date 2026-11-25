@@ -86,3 +86,50 @@ test('reply-only generation rejects an execution-shaped model response', async (
   }) }
   await assert.rejects(answerContinuation('好', evidence, adapter), { code: 'local_invalid_output' })
 })
+
+test('saved parenthesized replies still accept a local acknowledgement without changing model history', async () => {
+  const { answerContinuation } = require('./localChatContinuation')
+  const cases = [
+    [
+      '虛構排練用兩塊牌，米白牌放窗邊，青牌放門口。請只答括號入面一句，連標點照跟：（要唔要我將呢兩個擺位寫成一句畀領班嘅交帶？）',
+      '（要唔要我將呢兩個擺位寫成一句畀領班嘅交帶？）',
+      '米白牌放窗邊，青牌放門口。', 'chat', undefined
+    ],
+    ['虛構排練喺下晝三點海桐室集合。', '( 收到，排練係下晝三點喺海桐室集合。 )',
+      '得嘅。', 'chat', undefined],
+    ['虛構展覽用藍牌或黃牌。', '（你想我幫你揀一款，定係想我將兩款照原樣列出？）',
+      '你想我揀一款，定係列出兩款？', 'ask', ['你想我幫你揀一款', '想我將兩款照原樣列出']]
+  ]
+  for (const [earlier, preceding, reply, mode, alternatives] of cases) {
+    const messages = [{ role: 'user', content: earlier }, { role: 'assistant', content: preceding }]
+    const calls = []
+    const result = await answerContinuation('好', fromSavedConversation({ messages }, '好'), {
+      providerName: 'local',
+      async complete (prompt, options) {
+        calls.push({ prompt: JSON.parse(prompt), options })
+        return { model: 'local:qwen3.5:9b', text: JSON.stringify({ reply }) }
+      }
+    })
+    assert.deepEqual(result, { reply, mode, model: 'local:qwen3.5:9b' })
+    assert.equal(calls.length, 1)
+    assert.equal(calls[0].options.invocationPhase, 'answer')
+    assert.deepEqual(calls[0].prompt.messages, [...messages, { role: 'user', content: '好' }])
+    assert.deepEqual(calls[0].prompt.alternatives, alternatives)
+    if (preceding.includes('寫成')) assert.match(calls[0].prompt.instruction, /只適用於嗰一則。今次直接交付/)
+  }
+})
+
+test('parentheses do not make malformed, mixed or operational replies eligible', async () => {
+  const { answerContinuation } = require('./localChatContinuation')
+  const adapter = { providerName: 'local', complete: async () => assert.fail('reply-only answer not eligible') }
+  for (const [earlier, preceding] of [
+    ['虛構排練用兩塊牌。', '(要唔要我寫成一句交帶？）'],
+    ['虛構排練用兩塊牌。', '（要唔要我寫成一句交帶？）（補充背景）'],
+    ['虛構排練用兩塊牌。', '（要唔要我寫成一句交帶？）額外內容'],
+    ['虛構文案。', '（要唔要我將內容寫成一封信，再寄出去？）'],
+    ['等我批准再部署。', '（收到，等你批准先部署。）']
+  ]) {
+    const messages = [{ role: 'user', content: earlier }, { role: 'assistant', content: preceding }]
+    assert.equal(await answerContinuation('好', fromSavedConversation({ messages }, '好'), adapter), null)
+  }
+})

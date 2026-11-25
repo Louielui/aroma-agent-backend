@@ -25,11 +25,15 @@ const responseFormat = {
 const instructions = {
   guess: '對方答應畀你估。以「我估」開頭，只講一個最平常、最符合線索嘅猜測，唔好列出幾種可能。估下一步時講一個日常合理嘅動作，唔虛構奇怪做法、新物件或新情節。無線索就輕鬆猜一次，唔問對方再提供。',
   choice: '對方未選擇。只問一條短問題，逐項講出「alternatives」入面嗰兩個選項，等對方揀。要保留每個選項嘅動作或交付格式。若選項係揀一款同列出兩款，就問揀一款定列出兩款，唔好變成問對方揀邊款。唔自行揀、唔重問已知資料。',
-  draft: '對方答應你寫文字。直接交付上一句所提出嘅完整成稿，保留已提供嘅資料同格式。唔加引言、唔承諾稍後先寫。',
+  draft: '對方答應你寫文字。前文逐字覆述或照跟標點嘅要求如果係用嚟形成上一則助手邀請，只適用於嗰一則。今次直接交付邀請所提出嘅完整成稿，保留已給資料同成稿格式。唔重複邀請、唔再問要唔要寫、唔加引言或承諾稍後先寫。',
   close: '上一則已交代完，對方表示收到。用一句簡短自然嘅廣東話收尾。唔使再講安排、追問或提出下一步。'
 }
 
-function continuationFor(preceding) {
+function continuationFor(savedReply) {
+  // Treat one enclosing pair as presentation. The guards and model history
+  // still use the exact saved reply, including its punctuation.
+  const wrapped = /^(?:（([^（）()]+)）|\(([^（）()]+)\))$/u.exec(savedReply)
+  const preceding = wrapped ? (wrapped[1] ?? wrapped[2]).trim() : savedReply
   if (/[？?]$/u.test(preceding)) {
     const parts = preceding.slice(0, -1).split(choiceSeparator).map(part => part.replace(/^[，,\s]+|[，,\s]+$/gu, ''))
     if (parts.length === 2 && parts.every(part => part && !/[？?]/u.test(part)) && invitation.test(parts[0])) {
