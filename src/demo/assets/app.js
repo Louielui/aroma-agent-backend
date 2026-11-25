@@ -172,6 +172,7 @@
   var previousLane = null
 
   var pending = false
+  var preparingSubmission = false
   var convs = []      // [{ id, title, history: [{role,text}], thread: HTMLElement }]
   var active = null
   var clientUpdates = window.XiangxiangClientUpdates && window.XiangxiangClientUpdates.mount(document, t, { state: function () { return { pending: pending || brainSaving, convs: convs, active: active, attachedKind: attachedKind } }, refresh: function () { autoGrow(); refreshImages() }, find: findConv, load: loadConversation, select: selectConversation, home: showHome })
@@ -2166,7 +2167,7 @@
   function priorHistoryForRequest (history) { return history.slice() }
 
   async function submit () {
-    if (pending || brainSaving || (clientUpdates && clientUpdates.blocked())) return
+    if (pending || preparingSubmission || brainSaving || (clientUpdates && clientUpdates.blocked())) return
     // HR-42: Capture the one-turn attachment before opening an ordinary
     // conversation from a section. Conversation selection clears attachments.
     // Keep the no-destination guard after both operations.
@@ -2179,18 +2180,22 @@
     var inputDraft = msg.value
     var text = inputDraft.trim() || (pictures.length ? t('imageChat.defaultRequest') : '')
     if (!text) return
-    if (topicController) {
-      var topicConversation = active
-      setPending(true)
-      var linked = await topicController.link(topicConversation.cid)
-      setPending(false)
-      if (!linked || active !== topicConversation) return
-    }
-    if (SUBSCRIPTION_CHAT && CENTRAL_MODELS) {
-      var modelConversation = active
-      await loadChatModels()
-      if (!brainReady || active !== modelConversation) return
-    }
+    var conv = active
+    // Claim the draft before awaiting checks. The ordinary pending guard starts at dispatch.
+    preparingSubmission = true
+    try {
+      if (topicController) {
+        setPending(true)
+        var linked
+        try { linked = await topicController.link(conv.cid) }
+        finally { setPending(false) }
+        if (!linked || active !== conv) return
+      }
+      if (SUBSCRIPTION_CHAT && CENTRAL_MODELS) {
+        await loadChatModels()
+        if (!brainReady || active !== conv) return
+      }
+    } finally { preparingSubmission = false }
     clearErrors()
     var titleBefore = active.title
     if (active.history.length === 0) {
@@ -2198,7 +2203,6 @@
       titleEl.textContent = active.title
       renderConvList()
     }
-    var conv = active
     clearEmptyScreen(conv)   // captured BEFORE anything renders: a click must not steal this turn
     var unsavedBefore = conv.unsaved === true; conv.unsaved = true
     var userTurn = addUser(text, conv)
@@ -3407,7 +3411,7 @@
   })
   send.addEventListener('click', submit)
   msg.addEventListener('keydown', function (e) {
-    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submit() }
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); if (!e.repeat) submit() }
   })
   document.getElementById('new-chat').addEventListener('click', function () { document.getElementById('conversation-search').value = ''; newConversation(true) })
   document.getElementById('conversation-search').addEventListener('input', renderConvList)
