@@ -424,16 +424,14 @@ test('PR235 focused drafts cannot turn a model commit or a colour change into fi
     assert.equal(explainOffer({ message: edit, response: result }).state, WORK_REQUEST_STATE.NOT_A_WORK_REQUEST)
   }
   const schedule = '虛構 Aroma 排練：阿彤提早八分鐘返嚟，因為要同阿榮試咪。將個安排講成一句俾小隊長聽，交代邊個、早幾耐同原因。'
-  const notify = '阿彤會提早八分鐘返嚟，因為要同阿榮試咪。'
+  const notify = '阿彤提早八分鐘返嚟，因為要同阿榮試咪。'
   const scheduleResult = await processIntake(schedule, {
-    providerName: 'local', preflight: async () => {}, complete: async (_, opts) => {
-      if (opts.invocationPhase === 'final_verification') return { model: 'local:test', text: '{"decision":"allow_final","question":null}' }
-      assert.equal(opts.responseFormat?.name, 'local_chat_draft')
-      return { model: 'local:test', text: JSON.stringify({ mode: 'chat', intent: 'context', reply: notify, lines: [notify] }) }
-    }
+    preflight: async () => assert.fail('a supplied opening needs no model'),
+    complete: async () => assert.fail('a supplied opening needs no model')
   }, [], { ...options, conversationEvidence: fromSavedConversation({ messages: [] }, schedule) })
-  assert.equal(scheduleResult.replyOnlyDraft, true)
+  assert.equal(scheduleResult.talkOnly, true)
   assert.equal(scheduleResult.reply, notify)
+  assert.equal(explainOffer({ message: schedule, response: scheduleResult }).state, WORK_REQUEST_STATE.NOT_A_WORK_REQUEST)
   const real = edit + '幫我改 docs/canary/agent-canary.md。'
   const offer = explainOffer({ message: real, response: { replyOnlyDraft: true, mode: 'chat', intent: 'context' } })
   assert.equal(offer.offer?.file, 'docs/canary/agent-canary.md')
@@ -500,6 +498,17 @@ test('same-thread timing correction replaces only the supplied fields and retain
   const { replyToSuppliedFiction } = require('./localChatDraft')
   const first = '虛構 Aroma 練習：小榆提早九分鐘返嚟，因為要同阿葵試音響。用一句向領班交代人物、時間同原因。'
   const second = '時間講錯，係早十四分鐘。試嘅係燈掣，頭先講嗰兩位照舊。成句講多次畀領班聽。'
+  assert.deepEqual(replyToSuppliedFiction(first, [], [first]), {
+    mode: 'chat', intent: 'context', reply: '小榆提早九分鐘返嚟，因為要同阿葵試音響。'
+  })
+  for (const input of [
+    first + '再寄畀同事。',
+    first + '順便核對正式更表。',
+    first.replace('阿葵試音響', '阿葵查倉存'),
+    first.replace('阿葵試音響', '試音響'),
+    first.replace('人物、時間同原因', '人物、時間同地址'),
+    first.replace('早九分鐘', '早幾分鐘')
+  ]) assert.equal(replyToSuppliedFiction(input, [], [input]), null, input)
   const history = [{ role: 'user', text: first }, { role: 'assistant', text: '上一次可能寫錯咗人物。' }]
   const result = replyToSuppliedFiction(second, history, [first, second])
   assert.equal(result?.reply, '小榆提早十四分鐘返嚟，因為要同阿葵試燈掣。')

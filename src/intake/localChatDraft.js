@@ -43,7 +43,7 @@ function cardClauses(message) {
 }
 
 const exerciseOpening = /^虛構(?:\s+Aroma)?\s*(?:練習|演練|排練)[：:]\s*/u
-const exerciseDelivery = /^(?:將(?:件事|個安排|呢件事)|把(?:這件事|安排))講成一句[畀俾]([\p{Script=Han}]{1,10})聽(?:[，,]交代[\p{Script=Han}、]{1,35})?$/u
+const exerciseDelivery = /^(?:將(?:件事|個安排|呢件事)|把(?:這件事|安排))講成一句[畀俾]([\p{Script=Han}]{1,10})聽(?:[，,]交代([\p{Script=Han}、]{1,35}))?$/u
 const exerciseDirectedDelivery = /^用一句向([\p{Script=Han}]{1,10})交代人物、時間同原因$/u
 const exerciseRestatement = /^成句(?:講多次|講返最新嗰個安排)[畀俾]([\p{Script=Han}]{1,10})聽$/u
 const exerciseReplacement = /^([\p{Script=Han}]{1,16})(?:改做|改成|換做|換成)([\p{Script=Han}]{1,16})$/u
@@ -82,15 +82,25 @@ function exerciseTimingCorrection(text) {
 
 const timingScenario = /^([\p{Script=Han}]{1,10})提早([零〇一二兩三四五六七八九十廿百\d]{1,5})分鐘返嚟[，,]因為要同([\p{Script=Han}]{1,12})試([\p{Script=Han}]{1,18})$/u
 
+function suppliedTimingExercise(message) {
+  if (!exerciseOpening.test(message) || exerciseOpeningLayout(message) !== 1) return null
+  const [story, delivery] = exerciseSentences(message.replace(exerciseOpening, ''))
+  const match = timingScenario.exec(story)
+  const request = exerciseDelivery.exec(delivery) ?? exerciseDirectedDelivery.exec(delivery)
+  if (!match || !request || !match.slice(1).every(exerciseLiteral)) return null
+  const [, person, time, partner, equipment] = match
+  return { person, time, partner, equipment, recipient: request[1], details: request[2] ?? null }
+}
+
+function timingExerciseReply({person, time, partner, equipment}) {
+  return person + '提早' + time + '分鐘返嚟，因為要同' + partner + '試' + equipment + '。'
+}
+
 function revisedTimingExercise(message, previous) {
-  if (!exerciseOpening.test(previous) || exerciseOpeningLayout(previous) !== 1) return null
-  const [story, delivery] = exerciseSentences(previous.replace(exerciseOpening, ''))
-  const original = timingScenario.exec(story)
+  const original = suppliedTimingExercise(previous)
   const correction = exerciseTimingCorrection(message)
-  const recipient = (exerciseDelivery.exec(delivery) ?? exerciseDirectedDelivery.exec(delivery))?.[1]
-  if (!original || !correction || recipient !== correction.recipient || !original.slice(1).every(exerciseLiteral)) return null
-  const [, person, , partner] = original
-  return person + '提早' + correction.time + '分鐘返嚟，因為要同' + partner + '試' + correction.equipment + '。'
+  if (!original || !correction || original.recipient !== correction.recipient) return null
+  return timingExerciseReply({ ...original, time: correction.time, equipment: correction.equipment })
 }
 
 // This is a reply-only layout backed by the saved Owner thread. The unquoted
@@ -440,6 +450,10 @@ function replyToSuppliedFiction(message, history, ownerMessages) {
   const copy = replyToSuppliedCopy(message, history, ownerMessages)
   if (copy) return copy
   if (ownerMessages.length === 1 && history.length === 0) {
+    const timing = suppliedTimingExercise(message.trim())
+    if (timing && (timing.details === null || timing.details === '邊個、早幾耐同原因')) {
+      return {mode: 'chat', intent: 'context', reply: timingExerciseReply(timing)}
+    }
     const fields = fourFieldSheet(message.trim())
     if (fields) return {mode: 'chat', intent: 'context', reply: fields.map(field => field.clause).join('\n')}
     const handoff = suppliedHandoff(message.trim())
