@@ -80,4 +80,13 @@ function isWellbeingExchange(message, history, token) {
     /^(?:我剛才問了?你什麼|我剛剛問了?你什麼)[？?]?$/u.test(message)
 }
 
-module.exports = {fromSavedConversation, checkConversationClaim, promptFacts, ownerSources, suppliedIdentifierValue, isWellbeingExchange}
+
+// This whole-turn question asks about the Owner's unspoken thoughts.
+// Any appended request or reference to prior records stays on the normal route.
+function localSocialReply(message) {
+  if (typeof message !== 'string') return null
+  const question = /^(?:香香[，, ]*)?你(?:知唔知|知道|知不知道)我(?:(?:而家|依家)?諗緊(?:咩|乜嘢)|(?:現在|而家)?在想(?:什麼|甚麼)嗎)[？?]?$/u
+  return question.test(message.trim()) ? '我唔知你而家諗緊咩，不過你想我估吓嗎？' : null
+}
+
+module.exports = {fromSavedConversation, checkConversationClaim, promptFacts, ownerSources, suppliedIdentifierValue, isWellbeingExchange, localSocialReply}

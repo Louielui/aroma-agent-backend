@@ -43,8 +43,9 @@ function cardClauses(message) {
 }
 
 const exerciseOpening = /^虛構(?:\s+Aroma)?\s*(?:練習|演練|排練)[：:]\s*/u
-const exerciseDelivery = /^(?:將(?:件事|個安排|呢件事)|把(?:這件事|安排))講成一句[畀俾][\p{Script=Han}]{1,10}聽(?:[，,]交代[\p{Script=Han}、]{1,35})?$/u
-const exerciseRestatement = /^成句(?:講多次|講返最新嗰個安排)[畀俾][\p{Script=Han}]{1,10}聽$/u
+const exerciseDelivery = /^(?:將(?:件事|個安排|呢件事)|把(?:這件事|安排))講成一句[畀俾]([\p{Script=Han}]{1,10})聽(?:[，,]交代[\p{Script=Han}、]{1,35})?$/u
+const exerciseDirectedDelivery = /^用一句向([\p{Script=Han}]{1,10})交代人物、時間同原因$/u
+const exerciseRestatement = /^成句(?:講多次|講返最新嗰個安排)[畀俾]([\p{Script=Han}]{1,10})聽$/u
 const exerciseReplacement = /^([\p{Script=Han}]{1,16})(?:改做|改成|換做|換成)([\p{Script=Han}]{1,16})$/u
 const exerciseSideEffect = /(?:檔|首頁|頁面|程式|系統|班表|查|讀|傳|寄|貼到|開啟|關閉|匯款|轉帳|實際|正式)/u
 
@@ -60,7 +61,7 @@ function exerciseSentences(text) {
 function exerciseOpeningLayout(text) {
   if (external.test(text) || !exerciseOpening.test(text)) return null
   const [first, second, third, ...extra] = exerciseSentences(text.replace(exerciseOpening, ''))
-  if (!third && !extra.length && exerciseLiteral(first) && exerciseDelivery.test(second) && !exerciseSideEffect.test(second)) return 1
+  if (!third && !extra.length && exerciseLiteral(first) && (exerciseDelivery.test(second) || exerciseDirectedDelivery.test(second)) && !exerciseSideEffect.test(second)) return 1
   if (extra.length || !/^只[畀俾]我(?:嗰|呢)?兩行$/u.test(third)) return null
   const firstLine = /^第一行用「([^」]+)」起頭[，,]\s*(.+)$/u.exec(first)
   const secondLine = /^第二行用「([^」]+)」起頭[，,]\s*(.+)$/u.exec(second)
@@ -69,12 +70,27 @@ function exerciseOpeningLayout(text) {
 }
 
 function exerciseTimingCorrection(text) {
-  if (external.test(text) || exerciseSideEffect.test(text)) return false
+  if (external.test(text) || exerciseSideEffect.test(text)) return null
   const [correction, detail, delivery, ...extra] = exerciseSentences(text)
-  if (extra.length || !exerciseRestatement.test(delivery)) return false
-  const time = /^(?:時間|早到時間)講錯[，,]係早([\p{Script=Han}\d]{1,5})分鐘$/u.exec(correction)
+  const audience = exerciseRestatement.exec(delivery)
+  if (extra.length || !audience) return null
+  const time = /^(?:時間|早到時間)講錯[，,]係早([零〇一二兩三四五六七八九十廿百\d]{1,5})分鐘$/u.exec(correction)
   const equipment = /^試嘅係([\p{Script=Han}]{1,18})[，,]頭先講嗰兩位照舊$/u.exec(detail)
-  return Boolean(time && equipment && [time[1], equipment[1]].every(exerciseLiteral))
+  if (!time || !equipment || ![time[1], equipment[1]].every(exerciseLiteral)) return null
+  return { time: time[1], equipment: equipment[1], recipient: audience[1] }
+}
+
+const timingScenario = /^([\p{Script=Han}]{1,10})提早([零〇一二兩三四五六七八九十廿百\d]{1,5})分鐘返嚟[，,]因為要同([\p{Script=Han}]{1,12})試([\p{Script=Han}]{1,18})$/u
+
+function revisedTimingExercise(message, previous) {
+  if (!exerciseOpening.test(previous) || exerciseOpeningLayout(previous) !== 1) return null
+  const [story, delivery] = exerciseSentences(previous.replace(exerciseOpening, ''))
+  const original = timingScenario.exec(story)
+  const correction = exerciseTimingCorrection(message)
+  const recipient = (exerciseDelivery.exec(delivery) ?? exerciseDirectedDelivery.exec(delivery))?.[1]
+  if (!original || !correction || recipient !== correction.recipient || !original.slice(1).every(exerciseLiteral)) return null
+  const [, person, , partner] = original
+  return person + '提早' + correction.time + '分鐘返嚟，因為要同' + partner + '試' + correction.equipment + '。'
 }
 
 // This is a reply-only layout backed by the saved Owner thread. The unquoted
@@ -436,7 +452,8 @@ function replyToSuppliedFiction(message, history, ownerMessages) {
   if (!previous || external.test(previous) || priorTurn?.role !== 'user' || typeof priorTurn.text !== 'string' ||
       priorTurn.text.trim() !== previous || history.at(-1)?.role !== 'assistant') return null
   const fields = fourFieldSheet(previous)
-  const reply = fields ? revisedSheet(message, fields) : revisedHandoff(message, previous)
+  const reply = fields ? revisedSheet(message, fields) :
+    revisedHandoff(message, previous) ?? revisedTimingExercise(message, previous)
   if (reply) return {mode: 'chat', intent: 'context', reply}
   const reminder = suppliedReminder(previous)
   return reminder ? reminderReply(reminder, message) : null

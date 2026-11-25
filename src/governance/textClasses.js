@@ -75,6 +75,7 @@ const CLASS = Object.freeze({
  * the test checks COVERAGE (is every such file listed), never the number.
  */
 const FILE_CLASS = Object.freeze({
+  'intake/conversationEvidence.js': CLASS.MATCHING, // Saved conversation claims and whole-turn social question patterns.
   'intake/ownerRecall.js': CLASS.MATCHING, // Owner recall scope guards and original-source replies; never translate input patterns.
   'intake/suppliedCalculation.js': CLASS.MATCHING, // Owner quotation/constraint grammar; never translated.
   'intake/suppliedScenario.js': CLASS.MATCHING, // Hypothetical intake grammar and deterministic chat replies.
