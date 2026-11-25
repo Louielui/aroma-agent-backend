@@ -438,3 +438,76 @@ test('PR235 focused drafts cannot turn a model commit or a colour change into fi
   const offer = explainOffer({ message: real, response: { replyOnlyDraft: true, mode: 'chat', intent: 'context' } })
   assert.equal(offer.offer?.file, 'docs/canary/agent-canary.md')
 })
+
+test('saved social evidence-conflict shape returns a direct local answer', async t => {
+  const { processIntake } = require('./intakeService')
+  const { fromSavedConversation } = require('./conversationEvidence')
+  t.mock.method(console, 'log', () => {})
+  const keys = ['LOCAL_BRAIN_ONLY', 'A4_KNOWLEDGE_ROUTING', 'TURN_ROUTER', 'READ_ACCESS', 'CONTEXT_AROMA_SYSTEM', 'XIANGXIANG_MEMORY']
+  const savedEnv = Object.fromEntries(keys.map(key => [key, process.env[key]]))
+  Object.assign(process.env, { LOCAL_BRAIN_ONLY: '1', A4_KNOWLEDGE_ROUTING: 'on', TURN_ROUTER: 'on',
+    READ_ACCESS: 'on', CONTEXT_AROMA_SYSTEM: 'on', XIANGXIANG_MEMORY: 'off' })
+  t.after(() => {
+    for (const key of keys) {
+      if (savedEnv[key] === undefined) delete process.env[key]
+      else process.env[key] = savedEnv[key]
+    }
+  })
+
+  const history = [{ role: 'user', text: '??' }, { role: 'assistant', text: '你想問咩？' }]
+  const prior = { messages: history }
+  // The saved receipt records the phase sequence. These synthetic verdicts
+  // drive the matching throw site without claiming the original JSON was saved.
+  const phases = []
+  const adapter = {
+    providerName: 'local',
+    preflight: async () => {},
+    complete: async (_, opts) => {
+      phases.push(opts.invocationPhase)
+      return { model: 'local:test', text: JSON.stringify({ mode: 'chat', intent: 'context', reply: '我唔知道。' }) }
+    }
+  }
+  const run = message => processIntake(message, adapter, history, {
+    requestId: require('node:crypto').randomUUID(),
+    demo: true, interactionMode: 'chat', manualLocalDialogue: true,
+    conversationEvidence: fromSavedConversation(prior, message),
+    readContextDeps: {
+      sources: ['aroma_system'],
+      connector: { read: async () => assert.fail('no authorized external read in the fixture') },
+      finalVerifier: async () => { phases.push('final_verification'); return { decision: 'require_internal', question: null } },
+      sourceIntentResolver: async () => { phases.push('source_intent'); return { intent: 'not_applicable' } }
+    }
+  })
+  const result = await run('你知道我在想什麼嗎?')
+  assert.equal(result.reply, '我唔知你而家諗緊咩，不過你想我估吓嗎？')
+  assert.equal(result.talkOnly, true)
+  assert.deepEqual(result.tasks, [])
+  assert.deepEqual(phases, [])
+  const { localSocialReply } = require('./conversationEvidence')
+  assert.equal(localSocialReply('香香，你知唔知我而家諗緊乜嘢？'), result.reply)
+  for (const message of [
+    '你知道我在想什麼嗎？順便查正式庫存。',
+    '你知道我之前在想什麼嗎？',
+    '如果同事問「你知道我在想什麼嗎？」應該點答？'
+  ]) assert.equal(localSocialReply(message), null)
+  await assert.rejects(run('你知道我在想什麼嗎？請查證今日正式庫存。'),
+    { code: 'local_evidence_decision_conflict' })
+  assert.ok(phases.includes('final_verification'))
+  assert.ok(phases.includes('source_intent'))
+})
+
+test('same-thread timing correction replaces only the supplied fields and retains both people', () => {
+  const { replyToSuppliedFiction } = require('./localChatDraft')
+  const first = '虛構 Aroma 練習：小榆提早九分鐘返嚟，因為要同阿葵試音響。用一句向領班交代人物、時間同原因。'
+  const second = '時間講錯，係早十四分鐘。試嘅係燈掣，頭先講嗰兩位照舊。成句講多次畀領班聽。'
+  const history = [{ role: 'user', text: first }, { role: 'assistant', text: '上一次可能寫錯咗人物。' }]
+  const result = replyToSuppliedFiction(second, history, [first, second])
+  assert.equal(result?.reply, '小榆提早十四分鐘返嚟，因為要同阿葵試燈掣。')
+  assert.equal(result.mode, 'chat')
+  assert.equal(replyToSuppliedFiction(second, [], [second]), null)
+  assert.equal(replyToSuppliedFiction(second, [{ role: 'user', text: '其他主題' }, history[1]], [first, second]), null)
+  const mixed = second + '順便更新正式更表。'
+  assert.equal(replyToSuppliedFiction(mixed, history, [first, mixed]), null)
+  const changedAudience = second.replace('畀領班聽', '畀後更聽')
+  assert.equal(replyToSuppliedFiction(changedAudience, history, [first, changedAudience]), null)
+})

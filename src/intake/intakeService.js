@@ -525,6 +525,12 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
       !require('./conversationEvidence').isWellbeingExchange(message,history,opts.conversationEvidence)) {
     const weather = require('../localBrain/publicSearch').weatherUnavailable(message)
     if (weather) return {...weather, requestId}
+    const socialReply = require('./conversationEvidence').localSocialReply(message)
+    if (socialReply) {
+      return { blocked: false, mode: 'chat', intent: 'context', talkOnly: true, interactionMode: 'chat',
+        reply: socialReply, replyForArchive: socialReply, readClaimCorrected: false,
+        decision: null, tasks: [], risks: [], next_step: '', requestId }
+    }
     const canRead = resolveFlag(process.env,'READ_ACCESS') === 'on'
     const recall=await require('./ownerRecall').answerOwnerRecall(message,opts.conversationEvidence,{
       readApproved:canRead && process.env.XIANGXIANG_MEMORY==='on' ? () => opts.memoryClient?.ownerPrinciples?.() : undefined,
