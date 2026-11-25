@@ -531,6 +531,16 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
         reply: socialReply, replyForArchive: socialReply, readClaimCorrected: false,
         decision: null, tasks: [], risks: [], next_step: '', requestId }
     }
+    if (demo && !opts.ownerGoal) {
+      const continuation = await require('./localChatContinuation').answerContinuation(message, opts.conversationEvidence, adapter)
+      if (continuation) {
+        const { reply, mode, model } = continuation
+        if (opts.telemetry) Object.assign(opts.telemetry, { provider: 'local', model, mode })
+        return { blocked: false, mode, intent: mode === 'ask' ? 'unclear' : 'context', talkOnly: true, interactionMode: 'chat',
+          reply, replyForArchive: reply, servedBy: model, readClaimCorrected: false,
+          decision: null, tasks: [], risks: [], next_step: '', requestId }
+      }
+    }
     const canRead = resolveFlag(process.env,'READ_ACCESS') === 'on'
     const recall=await require('./ownerRecall').answerOwnerRecall(message,opts.conversationEvidence,{
       readApproved:canRead && process.env.XIANGXIANG_MEMORY==='on' ? () => opts.memoryClient?.ownerPrinciples?.() : undefined,
