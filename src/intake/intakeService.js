@@ -520,6 +520,10 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
 
   // Check subscription availability before auxiliary model calls or source reads.
   const localMode = process.env.LOCAL_BRAIN_ONLY === '1'
+  const periodAnalysis = demo && localMode && opts?.manualLocalDialogue === true && opts.interactionMode === 'chat' &&
+    !opts.ownerGoal && !opts.contextCard && !opts.attachSection && !opts.sectionPreamble
+    ? require('./suppliedPeriodAnalysis').analyze(message, opts.conversationEvidence)
+    : null
   if (localMode && opts?.manualLocalDialogue === true && opts.interactionMode === 'chat' &&
       !opts.contextCard && !opts.attachSection && !opts.sectionPreamble &&
       !require('./conversationEvidence').isWellbeingExchange(message,history,opts.conversationEvidence)) {
@@ -1367,7 +1371,10 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
           part.name === 'base' && part.text === baseEffPrompt ? { ...part, text: prompt } : part)
       }
       const guidance = require('./responseWriting').forAnswer('', opts?.interactionMode)
-      return guidance ? [...parts, { name: 'writing_guidance', text: guidance }] : parts
+      const framed = guidance ? [...parts, { name: 'writing_guidance', text: guidance }] : parts
+      return !composeOnly && periodAnalysis
+        ? [...framed, { name: 'supplied_period_analysis', text: 'HOST-CALCULATED FIGURES FROM THE OWNER\'S FICTIONAL PREMISES. Deliver these calculations, distinguish recorded purchases from consumption, and mark causes as unverified.\n' + periodAnalysis }]
+        : framed
     }
     if (promptCache.has(key)) { await semanticRouteReady; return forAnswer(promptCache.get(key)) }
     return timePhase(
@@ -2479,6 +2486,7 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
   // ══════════════════════════════════════════════════════════════════════════
   let initialObligation = null
   let terminalReadGap = null
+  let periodAnalysisAllowed = false
   const gapForTurn = () => require('../capabilities/gapContract').detectGap({ reason: terminalReadGap, plan: goalPlanObserved, state: investigationObserved })
   /**
    * ⛔ X4.4 — A SECOND, SEPARATE REASON A TURN MAY NOT STOP YET. NOT A4'S.
@@ -2615,6 +2623,7 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
       previousGreeting,
       availableWorlds: { internal: w.includes('internal'), public: w.includes('public') }
     })
+    periodAnalysisAllowed = verdict.ok && verdict.decision === 'allow_final'
     logFinalRequirement({ requestId, outcome: verdict.outcome, requiredWorlds: verdict.requiredWorlds, ownerMessageCount: finalOwnerAuthoredContext(message, history).length, durationMs: Date.now() - startedAt })
 
     /**
@@ -3911,6 +3920,12 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
   // ── CHAT or ASK: talk only — do NOT persist any Decision/Task ─────────────
   if (distilled.mode !== 'commit') {
     await recordProviderUsage(llmResult) // idempotent: already recorded pre-parse
+    // Release the verified arithmetic only after the ordinary source decision.
+    if (periodAnalysis && periodAnalysisAllowed && distilled.mode === 'chat' && !initialObligation &&
+        !terminalReadGap && !gateAuthoredAsk && !semanticClarifyTerminal && !distilled.nextRead &&
+        !operationalInvestigation && turnOperations.size === 0 && turnEvidence.size === 0) {
+      return require('./suppliedCalculationReply').calculationAnswer(periodAnalysis, requestId)
+    }
     // Reuse the existing semantic-review adapter and usage boundary only for
     // uncertain, no-read recommendations. Retrieval and action gates keep their
     // original inputs. Corrections still traverse every ordinary answer guard.

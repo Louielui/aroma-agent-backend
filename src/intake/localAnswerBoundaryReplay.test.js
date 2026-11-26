@@ -459,3 +459,60 @@ test('the local analysis guidance leaves the non-manual classifier and read evid
  const state = buildInvestigationState({ plan:{ facts:[{ need:'本月正式發票', operation:null }] } })
  assert.match(investigationBlock(state), /只可以嚟自上面嘅讀取結果/)
 })
+
+const suppliedPeriods = '同一間虛構門市兩個相鄰四星期嘅比較。兩段營業日數相同，金額用加元。前期營業額 80,000、訂單 1,600、食材開支 16,000。今期營業額 72,000、訂單 1,200、食材開支 18,000。食材開支係採購入帳金額，未調整期初同期末庫存。冇提供採購單價、用量、盤點或報廢明細。點解營業額跌咗，但食材開支升咗？請根據上面資料，分開講已知、可能原因同你會先核對咩。'
+
+test('a supplied two-period analysis completes the missing calculations after the source verifier', async () => {
+ const message = suppliedPeriods
+ const raw = '營業額下跌，食材開支上升，可能係採購單價升。'
+ let verified = 0
+ const r = await integrated(message, { mode: 'chat', intent: 'question', reply: raw, nextRead: null }, [], true, {
+  env: { READ_ACCESS: 'on', A4_KNOWLEDGE_ROUTING: 'on' },
+  intake: { readContextDeps: {
+   sources: [],
+   connector: { read: () => assert.fail('supplied analysis cannot read business records') },
+   finalVerifier: async () => { verified++; return { decision: 'allow_final' } }
+  } }
+ })
+ assert.equal(r.status, 200)
+ assert.equal(r.calls.length, 1)
+ assert.equal(verified, 1)
+ assert.ok(r.calls[0].prompt.includes(message))
+ assert.match(r.calls[0].prompt, /HOST-CALCULATED FIGURES/)
+ assert.match(r.body.reply, /訂單跌 25%/)
+ assert.match(r.body.reply, /每單收入由 50 加元升到 60 加元/)
+ assert.match(r.body.reply, /20%.*25%.*5 個百分點/)
+ assert.match(r.body.reply, /採購入帳額唔等於實際食材耗用/)
+ assert.deepEqual(r.body.tasks, [])
+ assert.equal(r.body.decision, null)
+ assert.equal(r.starts, 0)
+})
+
+test('period math refuses mixed actions, ambiguous measurements and unattested operands', () => {
+ const { analyze } = require('./suppliedPeriodAnalysis')
+ assert.equal(analyze(suppliedPeriods, {kind:'saved_conversation'}), null)
+ for (const message of [
+  suppliedPeriods + '順便修改正式採購單。',
+  suppliedPeriods.replace('金額用加元', '兩期用唔同貨幣'),
+  suppliedPeriods.replace('兩段營業日數相同', '今期多開一日'),
+  suppliedPeriods.replace('未調整期初同期末庫存', '已調整期初同期末庫存'),
+  suppliedPeriods.replace('訂單 1,600', '訂單 0'),
+  suppliedPeriods.replace('80,000', '80,00'),
+  suppliedPeriods.replace('72,000', '82,000')
+ ]) assert.equal(analyze(message, receipt(message, [])), null)
+})
+
+test('period computation cannot replace an existing clarification decision', async () => {
+ const r = await integrated(suppliedPeriods, {mode:'chat',intent:'question',reply:'Draft only',nextRead:null}, [], true, {
+  env: { READ_ACCESS:'on', A4_KNOWLEDGE_ROUTING:'on' },
+  intake: { readContextDeps: {
+   sources: [],
+   connector: {read:() => assert.fail('no read available')},
+   finalVerifier: async () => ({decision:'clarify',question:'請問你指邊間門市？'})
+  } }
+ })
+ assert.equal(r.status, 200)
+ assert.equal(r.body.mode, 'ask')
+ assert.equal(r.body.reply, '請問你指邊間門市？')
+ assert.equal(r.starts, 0)
+})
