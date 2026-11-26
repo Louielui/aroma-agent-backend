@@ -109,6 +109,30 @@ test('an explanation only uses a safe saved reply and does not absorb a new requ
   }
 })
 
+test('an explanation retries once when it repeats the antecedent or turns readiness into execution', async () => {
+  const { answerContinuation } = require('./localChatContinuation')
+  const message = '什麼意思?'
+  const preceding = 'Louie，我一切都好，正準備著幫你處理 Aroma 嘅營運事務。'
+  const messages = [{role:'user',content:'how are you'}, {role:'assistant',content:preceding}]
+  const evidence = fromSavedConversation({messages}, message)
+  for (const first of ['我係話，我一切都好，正準備著幫你處理 Aroma 嘅營運事務。', '我幾好，會即刻開始幫你打理 Aroma。']) {
+    const calls = []
+    const reply = '我而家幾好，亦準備好可以幫你跟進 Aroma 嘅日常工作。'
+    const adapter = {providerName:'local',async complete(prompt, options) {
+      calls.push(JSON.parse(prompt))
+      assert.match(options.system, /將最後一則助手說話翻成更貼近日常口語/)
+      return {text:JSON.stringify({reply:calls.length === 1 ? first : reply}),model:'qwen3.5:9b'}
+    }}
+    assert.equal((await answerContinuation(message, evidence, adapter)).reply, reply)
+    assert.equal(calls.length, 2)
+    assert.deepEqual(calls[0].messages, calls[1].messages)
+  }
+  let calls = 0
+  const parrot = {providerName:'local',async complete() { calls++; return {text:JSON.stringify({reply:preceding})} }}
+  await assert.rejects(answerContinuation(message, evidence, parrot), {code:'local_invalid_output'})
+  assert.equal(calls, 2)
+})
+
 test('saved parenthesized replies still accept a local acknowledgement without changing model history', async () => {
   const { answerContinuation } = require('./localChatContinuation')
   const cases = [
