@@ -744,3 +744,18 @@ test('LAYER 2: a result is write-once and the route is loopback + same-origin bo
     assert.equal(r.json.reason, 'bad_sec_fetch_site')
   })
 })
+
+
+test('a Cantonese chat acknowledgement cannot satisfy typed file approval', async () => {
+  await withApp(async ctx => {
+    const { res: sealed, cookie } = await seal(ctx)
+    const refusal = await req(ctx, {
+      url:'/api/v1/owner/approve',
+      headers:Object.assign({cookie},GOOD_HEADERS),
+      body:approveBody(sealed.json,{typedConfirmation:'好'})
+    })
+    assert.equal(refusal.status,400)
+    assert.equal(refusal.json.reason,'typed_confirmation_mismatch')
+    assert.equal(ctx.runs.length,0)
+  })
+})
