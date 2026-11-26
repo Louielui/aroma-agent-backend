@@ -1701,7 +1701,9 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
           })
           // Falls back to the pre-X4 block when there is no state to describe, so a turn X4
           // cannot help is byte-identical to before it existed.
-          goalBlock = investigationBlock(invState) || requirementBlock(plan)
+          goalBlock = investigationBlock(invState, {
+            conversationPremises: localMode && opts.manualLocalDialogue === true && isChat
+          }) || requirementBlock(plan)
           investigationObserved = invState
         }
         // PER-SOURCE, PER-PROVIDER. Claude gets everything READ_ACCESS allows; OpenAI

@@ -141,7 +141,7 @@ const LABEL = {
  * best serves the decision is a judgement about the question, and the model is the only thing
  * here entitled to make it. The server narrows the choices; it does not choose among them.
  */
-function investigationBlock (state) {
+function investigationBlock (state, { conversationPremises = false } = {}) {
   if (!state) return null
   const lines = ['【調查狀態 — CONTROL STATE，唔係證據，亦唔係權限】']
   if (state.goal) lines.push('目標：' + state.goal)
@@ -156,13 +156,16 @@ function investigationBlock (state) {
   // ⛔ THE ONE SENTENCE X4 EXISTS FOR.
   lines.push('· 標住「未查（你有權自己查）」嘅，你自己去讀，唔好叫 Louie 幫你攞返嚟。')
   lines.push('· 標住「今次查過但讀唔到」嘅，照直講今次讀唔到 —— 唔好講成係冇呢個功能，亦唔好再試一次。')
-  lines.push('· 標住「系統冇任何讀取操作」嘅，照直講攞唔到。唔好就近搵一個似樣嘅來源頂替，' +
-    '亦唔好用其他讀到嘅嘢當作答案。呢樣可以問 Louie。')
+  lines.push(conversationPremises
+    ? '· 「系統冇任何讀取操作」只係講系統來源。Louie 已提供嘅數字可以用於本題；欠資料先指出未能確認嘅部分，唔好用無關來源頂替。'
+    : '· 標住「系統冇任何讀取操作」嘅，照直講攞唔到。唔好就近搵一個似樣嘅來源頂替，亦唔好用其他讀到嘅嘢當作答案。呢樣可以問 Louie。')
   lines.push('· 標住「今個 turn 唔用得」嘅，唔好講成呢個功能唔存在。')
   // ⛔ NEITHER DEFECT IS ACCEPTABLE, SO BOTH ARE NAMED IN THE SAME BREATH.
   lines.push('· 唔使因為計劃入面列咗就逐個讀晒。夠料落一個負責任嘅判斷就可以停。')
   lines.push('· 但係仲有關鍵嘅事實未查、而你又查得到嘅時候，唔好當已經夠。')
-  lines.push('· 呢一段唔係生意資料嘅證據，亦唔會批准任何來源。真正嘅數字同內容，只可以嚟自上面嘅讀取結果。')
+  lines.push(conversationPremises
+    ? '· 呢段係查詢狀態。真實營運狀態仍須有讀取證據；假設同計算由 Louie 提供嘅前提出發，唔會批准任何來源或操作。'
+    : '· 呢一段唔係生意資料嘅證據，亦唔會批准任何來源。真正嘅數字同內容，只可以嚟自上面嘅讀取結果。')
   // ⛔ NAMED HERE ONLY AS A GENERAL RULE. X3_UNGROUNDED_PRECISION_GAP stays OPEN — one prompt
   // sentence is not a proof, and this tranche does not claim to have closed it.
   lines.push('· 唔好自己作一個冇人畀過、亦冇證據支持嘅具體數字、日期或者百分比。')

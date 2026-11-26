@@ -57,6 +57,18 @@ const TURN_PURPOSE_GUIDANCE = `【先理解本回合的目的】
 // first. The persona is now the single source of identity.
 const EXECUTION_RULE = '只有當 Louie 明確下達行動要求(做/建立/改/停/查/派工…)時,才用 mode="commit"。判斷不確定時,傾向 context/chat,不要擅自建立任務。'
 
+const RECOMMENDATION_FORMAT = `mode="recommend"（advisory / brainstorm —— Louie 在徵詢意見或二選一）:
+不要只反問!你是 COO,要先給出「建議 + 理由」,再邀請他同意。
+{ "intent":"advisory", "mode":"recommend",
+  "reply":"<一句明確的建議,例如「我建議先接 POS。」>",
+  "reasons":["<理由1>","<理由2>","<理由3>"],
+  "offer":"<若他同意你會做什麼,例如「若你同意,我就建立專案並拆成任務。」>" }`
+
+const LOCAL_RECOMMENDATION_FORMAT = `【本機聊天的分析與建議】
+在本則解釋、計算、比較或判斷：用 mode="chat"，直接在 reply 完成分析。Louie 已提供的資料可用來作答及計算，假設資料仍標作假設。分清可算出的事實、待驗證的原因及建議先核對的項目；問「會先核對甚麼」是要核對建議。
+徵詢立場或取捨可用 mode="recommend"，reply 直接給立場和足以支持它的理由。只有 reasons 或 offer 有內容並不算交付；單純分析或建議不用請求批准。
+明確要求同時交付分析兼實際操作時，照既有 Proposal 和批准流程處理操作，分析仍可當場寫在 reply。正式狀態、資料讀取與執行權限以既有治理為準。`
+
 const LOCAL_CHAT_DRAFT_RULE = `【本機聊天的文字交付與實際操作】
 如果 Louie 只需在本則回覆交付文字，例如寫、續寫、縮短、改寫或改正文案，資料齊備時用 mode="chat"，reply 就是完成的文案。不要先說你明白、提供寫法建議，或承諾之後才做。文案裡描述的動作只是文案內容。
 只問缺少的關鍵資料。若完成指定文字必須有一項資料而 Louie 尚未提供，用 mode="ask" 問那一項，勿猜測、留待定欄或重問已給的資料。下一輪補齊後，直接交付完成的文字。
@@ -74,12 +86,7 @@ const SYSTEM_PROMPT = `你的職責：理解 → 判斷 → 建議 → 提出提
 mode="chat"（greeting / question / chit_chat / context）:
 { "intent":"...", "mode":"chat", "reply":"<自然口語的回應。提問就直接回答;背景/現況就承接已知內容。只有缺失會改變結果時才問必要問題,不例行要求確認。>" }
 
-mode="recommend"（advisory / brainstorm —— Louie 在徵詢意見或二選一）:
-不要只反問!你是 COO,要先給出「建議 + 理由」,再邀請他同意。
-{ "intent":"advisory", "mode":"recommend",
-  "reply":"<一句明確的建議,例如「我建議先接 POS。」>",
-  "reasons":["<理由1>","<理由2>","<理由3>"],
-  "offer":"<若他同意你會做什麼,例如「若你同意,我就建立專案並拆成任務。」>" }
+${RECOMMENDATION_FORMAT}
 
 mode="ask"（unclear —— 真的缺關鍵資訊才用）:
 { "intent":"unclear", "mode":"ask", "reply":"<一句最關鍵的釐清問題>" }
@@ -159,8 +166,8 @@ function buildDistillPrompt (message, history = [], opts = {}) {
   }
   // ⛔ A4-1: THE SEMANTIC GUIDANCE IS APPENDED, GATED, AND CHAT-LANE ONLY.
   //
-  // Keep the exported classifier unchanged for existing callers. The owner-only local
-  // chat path replaces the broad execution rule at its original position.
+  // Keep the exported classifier unchanged for existing callers. Manual local
+  // chat uses its own delivery guidance at the original positions.
   //
   // ⛔ `chatLane` IS REQUIRED, and the first version of this was wrong without it. A4-1 governs
   // knowledge READ INITIATION IN CHAT and nothing else, but this builder composes the system
@@ -178,7 +185,9 @@ function buildDistillPrompt (message, history = [], opts = {}) {
   // still puts the guidance after the contract, because this whole string is the last segment.
   const a4Chat = opts && opts.chatLane === true && a4SemanticRoutingEnabled(process.env)
   const manualLocalChat = opts.chatLane === true && opts.localOnly === true && opts.manualLocalDialogue === true
-  const classification = manualLocalChat ? SYSTEM_PROMPT.replace(EXECUTION_RULE, LOCAL_CHAT_DRAFT_RULE) : SYSTEM_PROMPT
+  const classification = manualLocalChat
+    ? SYSTEM_PROMPT.replace(RECOMMENDATION_FORMAT, LOCAL_RECOMMENDATION_FORMAT).replace(EXECUTION_RULE, LOCAL_CHAT_DRAFT_RULE)
+    : SYSTEM_PROMPT
   const classifier = opts.chatLane === true && resolveConversationContract() === 'on'
     ? TURN_PURPOSE_GUIDANCE + '\n\n' + classification
     : classification
