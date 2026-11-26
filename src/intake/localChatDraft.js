@@ -105,6 +105,19 @@ function revisedTimingExercise(message, previous) {
   return timingExerciseReply({ ...original, time: correction.time, equipment: correction.equipment })
 }
 
+// A complete fictional notice can be stated as premises before a format is requested.
+function suppliedFictionalNotice(message) {
+  const opening = /^虛構[\p{Script=Han}]{0,12}(?:提示|通知|告示)有([二兩三四五六2-6])項[：:]\s*(.+?)[。．]?$/u.exec(message)
+  if (!opening) return null
+  const count = Number(opening[1]) || '零一二三四五六'.indexOf(opening[1].replace('兩', '二'))
+  const clauses = opening[2].split(/[，,；;]/u).map(clause => clause.trim())
+  const field = /^[\p{Script=Han}]{1,20}(?:係|是|為)[\p{Script=Han}\d ]{1,40}$/u
+  const audience = /^只[畀俾供][\p{Script=Han}]{1,15}(?:睇|看)$/u
+  if (clauses.length !== count || !clauses.every(clause =>
+    exerciseLiteral(clause) && (field.test(clause) || audience.test(clause)))) return null
+  return clauses.join('，') + '。'
+}
+
 function fictionalTwoLineFollowup(message, ownerMessages) {
   if (ownerMessages.length !== 2) return false
   const prior = /^虛構([\p{Script=Han}]{1,24})[：:]\s*(.+?)[。．]?$/u.exec(ownerMessages[0])
@@ -465,6 +478,8 @@ function replyToSuppliedFiction(message, history, ownerMessages) {
   const copy = replyToSuppliedCopy(message, history, ownerMessages)
   if (copy) return copy
   if (ownerMessages.length === 1 && history.length === 0) {
+    const notice = suppliedFictionalNotice(message.trim())
+    if (notice) return {mode: 'chat', intent: 'context', reply: notice}
     const timing = suppliedTimingExercise(message.trim())
     if (timing && (timing.details === null || timing.details === '邊個、早幾耐同原因')) {
       return {mode: 'chat', intent: 'context', reply: timingExerciseReply(timing)}

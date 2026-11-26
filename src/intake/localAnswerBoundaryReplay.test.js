@@ -372,3 +372,36 @@ test('saved fictional layout-only follow-up sends the full thread within 32768 a
     message.replace('只輸出兩行','只輸出三行')
   ]) assert.equal(exerciseDraftLayout(mixed,[history[0].content,mixed]),null)
 })
+
+test('complete fictional notice premises are rendered from the first saved Owner turn', async () => {
+  const message = '虛構入場提示有三項：手帶係粉藍色，核對枱係白鷺室門口，只畀場務睇。'
+  const r = await integrated(message, demoStub, [], true, {context:65536, env:{TURN_ROUTER:'on'}})
+  assert.equal(r.status,200)
+  assert.equal(r.admitted,1)
+  assert.equal(r.starts,0)
+  assert.equal(r.calls.length,0)
+  assert.equal(r.body.talkOnly,true)
+  assert.equal(r.body.reply,'手帶係粉藍色，核對枱係白鷺室門口，只畀場務睇。')
+  assert.equal(Boolean(r.body.workRequestOffer),false)
+  assert.equal(r.writes.length,1)
+})
+
+test('fictional notice opener requires complete literal clauses from the first authenticated turn', () => {
+  const {replyToSuppliedFiction} = require('./localChatDraft')
+  const notice = '虛構試飲告示有三項：杯套係深紫色，領杯點係木屏風旁，只俾夜更睇。'
+  assert.equal(replyToSuppliedFiction(notice,[],[notice])?.reply,'杯套係深紫色，領杯點係木屏風旁，只俾夜更睇。')
+  for (const message of [
+    notice.replace('虛構','正式'),
+    notice.replace('三項','四項'),
+    notice.replace('，只俾夜更睇',''),
+    notice.replace('深紫色',''),
+    notice.replace('深紫色','點查'),
+    notice.replace('木屏風旁','登入後改權限'),
+    notice.replace('只俾夜更睇','幫我改檔'),
+    notice+' 幫我查實際庫存。',
+    notice.replace('木屏風旁','https://localhost')
+  ]) assert.equal(replyToSuppliedFiction(message,[],[message]),null,message)
+  const previous = [{role:'user',text:'上面係正式安排'},{role:'assistant',text:'收到。'}]
+  assert.equal(replyToSuppliedFiction(notice,previous,['上面係正式安排',notice]),null)
+  assert.equal(replyToSuppliedFiction(notice,[],[]),null)
+})
