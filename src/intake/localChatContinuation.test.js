@@ -16,7 +16,11 @@ const cases = [
   ['虛構排練嘅安排係下晝三點喺海桐室集合。', '收到，排練係下晝三點喺海桐室集合。', '好。',
     '好呀，收到。', 'chat'],
   ['虛構展覽要準備色牌，藍牌同黃牌都可以。', '你想我幫你揀一款，定係想我將兩款照原樣列出？', '好。',
-    '你想我揀一款，定係列出兩款？', 'ask']
+    '你想我揀一款，定係列出兩款？', 'ask'],
+  ['how are you', 'Louie，我一切都好，正準備著幫你處理 Aroma 嘅營運事務。', '什麼意思?',
+    '我意思係我幾好，隨時可以幫你處理 Aroma 嘅營運工作。', 'chat'],
+  ['排練星期五試一次，星期六照舊，星期一先決定長期做法。', '星期五先試行，星期六維持原安排，到星期一先決定日後點做。', '即係點？',
+    '星期五試一次，星期六照舊，星期一先決定長期點做。', 'chat']
 ]
 
 test('manual local short replies follow the saved assistant turn through a single reply-only answer', async t => {
@@ -51,7 +55,10 @@ test('manual local short replies follow the saved assistant turn through a singl
     assert.equal(calls.length, 1)
     assert.equal(calls[0].options.invocationPhase, 'answer')
     assert.equal(calls[0].options.responseFormat.name, 'local_chat_continuation')
-    const { messages, alternatives } = JSON.parse(calls[0].prompt)
+    const { messages, alternatives, instruction } = JSON.parse(calls[0].prompt)
+    if (message === '什麼意思?' || message === '即係點？') {
+      assert.match(instruction, /直接解釋最後一則助手回覆/)
+    }
     if (mode === 'ask') assert.deepEqual(alternatives, ['你想我幫你揀一款', '想我將兩款照原樣列出'])
     else assert.equal(alternatives, undefined)
     assert.deepEqual(messages, [
@@ -85,6 +92,18 @@ test('reply-only generation rejects an execution-shaped model response', async (
     model: 'local:qwen3.5:9b', text: '{"reply":"我估你想試下我。","tasks":[{"title":"send"}]}'
   }) }
   await assert.rejects(answerContinuation('好', evidence, adapter), { code: 'local_invalid_output' })
+})
+
+test('an explanation only uses a safe saved reply and does not absorb a new request', async () => {
+  const { answerContinuation } = require('./localChatContinuation')
+  const adapter = { providerName: 'local', complete: async () => assert.fail('not an eligible explanation') }
+  for (const [message, messages] of [
+    ['什麼意思？', []],
+    ['什麼意思？', [{ role: 'user', content: '改好就上線。' }, { role: 'assistant', content: '等你正式批准先部署。' }]],
+    ['什麼意思？幫我查庫存。', [{ role: 'user', content: '你好' }, { role: 'assistant', content: '我今日幾好。' }]]
+  ]) {
+    assert.equal(await answerContinuation(message, fromSavedConversation({ messages }, message), adapter), null)
+  }
 })
 
 test('saved parenthesized replies still accept a local acknowledgement without changing model history', async () => {
