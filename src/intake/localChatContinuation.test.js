@@ -133,3 +133,136 @@ test('parentheses do not make malformed, mixed or operational replies eligible',
     assert.equal(await answerContinuation('好', fromSavedConversation({ messages }, '好'), adapter), null)
   }
 })
+
+
+test('short follow-ups send saved facts from earlier safe turns, regardless of the latest wording', async () => {
+  const { answerContinuation } = require('./localChatContinuation')
+  const history = [
+    {role:'user',content:'虛構練習，銀牌放喺麻布袋入面，紫燈放松木枱底。'},
+    {role:'assistant',content:'收到，銀牌喺麻布袋入面，紫燈喺松木枱底。'},
+    {role:'user',content:'跟返頭先嘅擺位講畀領班聽。'},
+    {role:'assistant',content:'要唔要我用一句寫成畀領班嘅交帶？'}
+  ]
+  for (const message of ['好','得','照頭先咁。']) {
+    const calls = []
+    const answer = await answerContinuation(message, fromSavedConversation({messages:history}, message), {
+      providerName:'local',
+      complete:async prompt=>{
+        calls.push(JSON.parse(prompt))
+        return {model:'local:qwen3.5:9b',text:JSON.stringify({reply:'銀牌喺麻布袋入面，紫燈喺松木枱底。'})}
+      }
+    })
+    assert.equal(answer?.mode,'chat')
+    assert.equal(calls.length,1)
+    assert.deepEqual(calls[0].messages,[...history,{role:'user',content:message}])
+  }
+})
+
+test('short follow-ups only use the contiguous bounded safe saved transcript', async () => {
+  const { answerContinuation } = require('./localChatContinuation')
+  const pair = [
+    {role:'user',content:'依家你估我講緊邊件道具？'},
+    {role:'assistant',content:'你想我估吓係邊件道具嗎？'}
+  ]
+  const safePair = i => [{role:'user',content:'道具甲' + i},{role:'assistant',content:'收到第' + i + '個擺位。'}]
+  const unsafeWhileOlder = [{role:'user',content:'幫我改檔。'},{role:'assistant',content:'等你正式批准先改檔。'}]
+  for (const [messages, expected] of [
+    [[...safePair(0),...unsafeWhileOlder,...safePair(2),...pair],[...safePair(2),...pair]],
+    [[...safePair(0),...safePair(1),...safePair(2),...safePair(3),...pair],[...safePair(1),...safePair(2),...safePair(3),...pair]]
+  ]) {
+    let observed
+    const result = await answerContinuation('得', fromSavedConversation({messages}, '得'), {
+      providerName:'local',
+      complete:async prompt=>{
+        observed=JSON.parse(prompt).messages
+        return {model:'local:qwen3.5:9b',text:'{"reply":"我估係張卡。"}'}
+      }
+    })
+    assert.equal(result?.mode,'chat')
+    assert.deepEqual(observed,[...expected,{role:'user',content:'得'}])
+  }
+  const adapter={providerName:'local',complete:async()=>assert.fail('an operational acknowledgement is not a reply-only task')}
+  for (const message of ['好','得','照頭先咁']){
+    assert.equal(await answerContinuation(message,fromSavedConversation({messages:unsafeWhileOlder},message),adapter),null)
+  }
+  const closed=[{role:'user',content:'就咁收尾。'},{role:'assistant',content:'收到。'}]
+  assert.equal(await answerContinuation('照頭先咁',fromSavedConversation({messages:closed},'照頭先咁'),adapter),null)
+})
+
+
+test('a reply listing several guesses is replaced only by one bounded regeneration', async () => {
+  const { answerContinuation } = require('./localChatContinuation')
+  const history = [{role:'user',content:'你估我諗緊乜？'},{role:'assistant',content:'你想我估吓嗎？'}]
+  const token=fromSavedConversation({messages:history},'好')
+  const outputs=['我估你想飲茶，或者去散步。','我估你想飲茶。']
+  const calls=[]
+  const adapter={providerName:'local',complete:async prompt=>{
+    calls.push(JSON.parse(prompt))
+    return {text:JSON.stringify({reply:outputs[calls.length-1]}),model:'local:qwen3.5:9b'}
+  }}
+  const result=await answerContinuation('好',token,adapter)
+  assert.equal(result.reply,'我估你想飲茶。')
+  assert.equal(calls.length,2)
+  assert.deepEqual(calls[1].messages,calls[0].messages)
+  calls.length=0
+  outputs[1]=outputs[0]
+  await assert.rejects(()=>answerContinuation('好',token,adapter),{code:'local_invalid_output'})
+  assert.equal(calls.length,2)
+})
+
+
+test('object guesses preserve an explicit Owner surface relation and attached detail verbatim', async () => {
+  const { answerContinuation } = require('./localChatContinuation')
+  const examples = [
+    ['虛構道具，小白鯨畫喺一個扁竹盒嘅蓋面，盒口用麻繩綁實。',
+      '我估係一個放咗小白鯨畫入面嘅扁竹盒。',
+      '小白鯨畫喺一個扁竹盒嘅蓋面，盒口用麻繩綁實。'],
+    ['虛構舞台道具，紅狐狸圖案印喺一個圓錫罐嘅蓋面，罐口用藍絲帶綁實。',
+      '我估係有紅狐狸圖案嘅圓錫罐，藍絲帶喺罐入面。',
+      '紅狐狸圖案印喺一個圓錫罐嘅蓋面，罐口用藍絲帶綁實。']
+  ]
+  for (const [premise, wrongReply, expectedClue] of examples) {
+    const messages = [
+      {role:'user',content:premise},
+      {role:'assistant',content:'收到。'},
+      {role:'user',content:'你覺得我講緊邊件道具？'},
+      {role:'assistant',content:'你想我估吓係邊件道具嗎？'}
+    ]
+    const calls = []
+    const result = await answerContinuation('得', fromSavedConversation({messages}, '得'), {
+      providerName:'local',
+      async complete(prompt) {
+        calls.push(JSON.parse(prompt))
+        return {model:'local:qwen3.5:9b',text:JSON.stringify({reply:wrongReply})}
+      }
+    })
+    assert.equal(result.reply, '我估係你頭先講嗰件道具，' + expectedClue)
+    assert.equal(calls.length, 1)
+    assert.equal(calls[0].requiredReply, result.reply)
+    assert.deepEqual(calls[0].messages, [...messages, {role:'user',content:'得'}])
+  }
+})
+
+test('object guess projection requires a unique recent user-authored clue and a direct object question', async () => {
+  const { answerContinuation } = require('./localChatContinuation')
+  const recent = [
+    {role:'user',content:'你覺得我講緊邊件道具？'},
+    {role:'assistant',content:'你想我估吓係邊件道具嗎？'}
+  ]
+  const lookalike = '虛構道具，小白鯨畫喺一個扁竹盒嘅蓋面，盒口用麻繩綁實。'
+  const modelReply = '我估係個竹盒。'
+  for (const messages of [
+    [{role:'user',content:'虛構道具，我諗緊一件物件。'},{role:'assistant',content:lookalike},...recent],
+    [{role:'user',content:lookalike},{role:'assistant',content:'收到。'},
+      {role:'user',content:'我而家諗緊另一件。'},{role:'assistant',content:'收到。'},...recent],
+    [{role:'user',content:lookalike},{role:'assistant',content:'收到。'},
+      {role:'user',content:'你覺得我下一步會點做？'},{role:'assistant',content:'你想我估吓你打算點做嗎？'}],
+    [{role:'user',content:'虛構道具，小白鯨畫喺竹盒蓋面，仲有一個鐵罐。'},
+      {role:'assistant',content:'收到。'},...recent]
+  ]) {
+    const result = await answerContinuation('好', fromSavedConversation({messages},'好'), {
+      providerName:'local',complete:async()=>({model:'local:qwen3.5:9b',text:JSON.stringify({reply:modelReply})})
+    })
+    assert.equal(result?.reply,modelReply,JSON.stringify(messages))
+  }
+})

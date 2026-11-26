@@ -6,21 +6,23 @@
 // serialize an attestation. No transcript text is exposed in the issued token.
 const issued = new WeakMap()
 const ownerTranscripts = new WeakMap()
-const latestPairs = new WeakMap()
+const replyContexts = new WeakMap()
+const MAX_REPLY_CONTEXT_PAIRS = 4
 const {cjkToNumber} = require('./answerPlan')
 
 function fromSavedConversation(saved, message) {
   const messages = saved?.messages
   if (!Array.isArray(messages) || messages.length % 2 !== 0 || typeof message !== 'string') return null
   const owners = []
-  const lastPair = []
+  const replyContext = []
+  const contextStart = Math.max(0, messages.length - 2 * MAX_REPLY_CONTEXT_PAIRS)
   for (let i = 0; i < messages.length; i++) {
     const entry = messages[i]
     if (entry?.role !== (i % 2 === 0 ? 'user' : 'assistant')) return null
     const text = typeof entry.text === 'string' ? entry.text : entry.content
     if (typeof text !== 'string' || !text.trim()) return null
     if (entry.role === 'user') owners.push(text.trim())
-    if (i >= messages.length - 2) lastPair.push(Object.freeze({ role: entry.role, content: text.trim() }))
+    if (i >= contextStart) replyContext.push(Object.freeze({ role: entry.role, content: text.trim() }))
   }
   owners.push(message.trim()) // Current input is not in the saved prior transcript.
   const first = owners[0]
@@ -32,7 +34,7 @@ function fromSavedConversation(saved, message) {
     currentMessageOccurrences:owners.filter(text=>text===message.trim()).length,
     firstRequestPrefixOccurrences:repeated?owners.length:null}))
   ownerTranscripts.set(token, Object.freeze(owners.slice()))
-  if (lastPair.length === 2) latestPairs.set(token, Object.freeze(lastPair))
+  if (replyContext.length) replyContexts.set(token, Object.freeze(replyContext))
   return token
 }
 
@@ -57,7 +59,7 @@ function promptFacts(token){return token&&typeof token==='object'?issued.get(tok
 function ownerSources(token){return token&&typeof token==='object'?ownerTranscripts.get(token)||null:null}
 
 function savedReplyContext(token, message) {
-  return ownerSources(token)?.at(-1) === message ? latestPairs.get(token) || null : null
+  return ownerSources(token)?.at(-1) === message ? replyContexts.get(token) || null : null
 }
 
 // Only a complete literal restatement, or its immediate same-subject follow-up,
