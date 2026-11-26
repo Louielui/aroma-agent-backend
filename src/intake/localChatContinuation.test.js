@@ -59,7 +59,8 @@ test('manual local short replies follow the saved assistant turn through a singl
     if (message === '什麼意思?' || message === '即係點？') {
       assert.match(instruction, /直接解釋最後一則助手回覆/)
       assert.match(instruction, /將可能令人唔明嘅詞換成日常講法/)
-      assert.match(instruction, /唔好加個「我係話」就照抄原句/)
+      assert.match(instruction, /reply 只放改寫之後嗰一句/)
+      assert.match(instruction, /「準備／可以幫手」唔等於即刻開始/)
     }
     if (mode === 'ask') assert.deepEqual(alternatives, ['你想我幫你揀一款', '想我將兩款照原樣列出'])
     else assert.equal(alternatives, undefined)
