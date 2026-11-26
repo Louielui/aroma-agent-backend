@@ -105,6 +105,18 @@ function revisedTimingExercise(message, previous) {
   return timingExerciseReply({ ...original, time: correction.time, equipment: correction.equipment })
 }
 
+function fictionalTwoLineFollowup(message, ownerMessages) {
+  if (ownerMessages.length !== 2) return false
+  const prior = /^虛構([\p{Script=Han}]{1,24})[：:]\s*(.+?)[。．]?$/u.exec(ownerMessages[0])
+  if (!prior || !prior.slice(1).every(exerciseLiteral)) return false
+
+  const [request, layout, limit, ...extra] = exerciseSentences(message)
+  if (extra.length || (limit !== undefined && !/^唔加其他字、引號或標題$/u.test(limit))) return false
+  if (!/^用(?:返|回)頭先(?:嘅)?資料[，,]\s*照(?:呢個|以下)格式只輸出(?:兩|二|2)行$/u.test(request)) return false
+  const lines = /^第一行(?:係|是)「([^」]+)」[，,]\s*第二行(?:係|是)「([^」]+)」$/u.exec(layout)
+  return !!lines && lines.slice(1).every(line => line.split(/[：:]/u).every(exerciseLiteral))
+}
+
 // This is a reply-only layout backed by the saved Owner thread. The unquoted
 // change and delivery clauses must all fit, so a second live request cannot
 // inherit the draft's routing even if it comes immediately after a draft.
@@ -112,6 +124,7 @@ function exerciseDraftLayout(message, ownerMessages) {
   if (!Array.isArray(ownerMessages) || typeof message !== 'string' ||
       ownerMessages.at(-1) !== message.trim() || external.test(message) ||
       exerciseSideEffect.test(message)) return null
+  if (fictionalTwoLineFollowup(message, ownerMessages)) return 2
   const layout = exerciseOpeningLayout(ownerMessages[0])
   if (!layout || ownerMessages.length === 1) return layout
   if (layout === 1 && ownerMessages.length === 2) return exerciseTimingCorrection(message) ? 1 : null

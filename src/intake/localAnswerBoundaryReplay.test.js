@@ -325,3 +325,50 @@ test('local answer fits by omitting advisory archives only and retains the origi
   assert.ok(stillOversized.sizing.fullBound > stillOversized.sizing.capacity)
   assert.ok(stillOversized.sizing.promptBytes.every(part => part.included))
 })
+
+
+test('saved fictional layout-only follow-up sends the full thread within 32768 and renders two lines', async () => {
+  const history = [
+    {role:'user', content:'虛構入場提示有三項：手帶係粉藍色，核對枱係白鷺室門口，只畀場務睇。'},
+    {role:'assistant', content:'手帶粉藍色，核對枱喺白鷺室門口，提示只畀場務睇。'}
+  ]
+  const message = '用返頭先資料，照呢個格式只輸出兩行。第一行係「手帶：顏色，核對枱：位置」，第二行係「只畀場務睇」。唔加其他字、引號或標題。'
+  const lines = ['手帶：粉藍色，核對枱：白鷺室門口','只畀場務睇']
+  const { localInput } = require('../adapters/LocalAdapter')
+  const r = await integrated(message, {mode:'chat',intent:'context',reply:'標題\n' + lines.join('\n'),lines,
+    suppliedDetails:['手帶粉藍色','白鷺室門口','只畀場務睇']}, history, true, {
+    context:32768, env:{TURN_ROUTER:'on'}
+  })
+  assert.equal(r.status,200)
+  assert.equal(r.admitted,1)
+  assert.equal(r.starts,0)
+  assert.equal(r.calls.length,1)
+  const {prompt,opts} = r.calls[0]
+  assert.equal(opts.responseFormat.name,'local_chat_draft')
+  assert.deepEqual(opts.responseFormat.schema.properties.mode.enum,['chat','ask'])
+  assert.equal(opts.responseFormat.schema.properties.nextRead,undefined)
+  const list = opts.responseFormat.schema.properties.lines.anyOf[1]
+  assert.deepEqual([list.minItems,list.maxItems],[2,2])
+  for (const text of [...history.map(turn=>turn.content),message]) assert.ok(prompt.includes(text))
+  const sizing = localInput(prompt,opts)
+  assert.ok(sizing.inputBound+sizing.maxTokens<=32768)
+  assert.equal(r.body.reply,lines.join('\n'))
+  assert.equal(r.body.replyOnlyDraft,true)
+  assert.equal(Boolean(r.body.workRequestOffer),false)
+  assert.equal(r.writes.length,1)
+
+  const {exerciseDraftLayout} = require('./localChatDraft')
+  assert.equal(exerciseDraftLayout(message,[history[0].content,message]),2)
+  for (const wrongHistory of [
+    [message],
+    [history[0].content.replace('虛構','正式'),message],
+    [history[0].content+' 順便查庫存。',message],
+    [history[0].content,'啱啱講嘅係正式安排。',message]
+  ]) assert.equal(exerciseDraftLayout(message,wrongHistory),null)
+  for (const mixed of [
+    message+'幫我改檔。',
+    message+'列埋實際銷售額。',
+    message.replace('只畀場務睇','更新班表'),
+    message.replace('只輸出兩行','只輸出三行')
+  ]) assert.equal(exerciseDraftLayout(mixed,[history[0].content,mixed]),null)
+})
