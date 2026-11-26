@@ -1920,10 +1920,10 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
     return parts
   }
 
-  function assembleAnswer(parts, target, callOpts) {
+  function completeAnswer(parts, target, callOpts) {
     const full = parts.map(part => part.text).join('')
     if (!localMode || !opts.manualLocalDialogue || opts.interactionMode !== 'chat' ||
-        target.providerName !== 'local' || !Number.isInteger(target.context) || target.tokenizer) return full
+        target.providerName !== 'local' || !Number.isInteger(target.context) || target.tokenizer) return target.complete(full, callOpts)
     const { localInput } = require('../adapters/LocalAdapter')
     const input = localInput(full, callOpts)
     const fullBound = input.inputBound + input.maxTokens
@@ -1939,16 +1939,22 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
         prompt = compactPrompt
       }
     }
+    const selected = prompt === full ? input : localInput(prompt, callOpts)
+    const availableOutput = target.context - selected.inputBound
+    // Goal guidance can expand the prompt after the owner's turn is assembled.
+    // Preserve both and keep enough output budget for a complete answer envelope.
+    const answerOpts = availableOutput < selected.maxTokens && availableOutput >= DEFAULT_MAX_TOKENS &&
+      kept.some(part => part.name === 'goal') ? { ...callOpts, maxTokens: availableOutput } : callOpts
     if (opts.telemetry) {
-      const selected = prompt === full ? input : localInput(prompt, callOpts)
       opts.telemetry.localAnswerSizing = {
-        capacity: target.context, fullBound, inputBound: selected.inputBound, outputReserve: selected.maxTokens,
+        capacity: target.context, fullBound, inputBound: selected.inputBound,
+        outputReserve: answerOpts === callOpts ? selected.maxTokens : availableOutput,
         envelopeBytes: selected.sectionBytes,
         promptBytes: [...parts, ...kept.filter(part => !parts.includes(part))]
           .map(part => ({ name: part.name, bytes: Buffer.byteLength(part.text), included: kept.includes(part) }))
       }
     }
-    return prompt
+    return target.complete(prompt, answerOpts)
   }
 
   // Output limit, selected PER LANE. The chat lane answers in prose inside the JSON
@@ -2268,7 +2274,7 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
           const callOpts = { invocationPhase:'answer', system: canFocusDraftReply() ? draftEffSystem : effSystem, maxTokens, temperature: canFocusDraftReply() ? 0.1 : 0.3, ...(gptFormat ? { responseFormat: gptFormat } : {}) }
           gptResult = await timePhase(
             { requestId, phase: PHASE.MODEL_CALL, role: ROLE.MAIN, provider: gpt.providerName === 'local' ? 'local' : gpt.providerName === 'claude' ? CLAUDE : OPENAI, attempt: 1 },
-            () => gpt.complete(assembleAnswer(gptPrompt, gpt, callOpts), callOpts),
+            () => completeAnswer(gptPrompt, gpt, callOpts),
             { clock: latencyClock, sink: latencySink })
         }
       } catch (err) {
@@ -3581,7 +3587,7 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
         const callOpts = { invocationPhase:'answer', system: effSystem, maxTokens, ...(fmt ? { responseFormat: fmt } : {}) }
         const next = await timePhase(
           { requestId, phase: PHASE.MODEL_CALL, role: ROLE.REASONING_STEP, provider: activeProvider || null },
-          () => activeAdapter.complete(assembleAnswer(prompt, activeAdapter, callOpts), callOpts),
+          () => completeAnswer(prompt, activeAdapter, callOpts),
           { clock: latencyClock, sink: latencySink })
         noteProvider(activeProvider === OPENAI ? 'openai' : 'claude', next) // provenance, per call
         await recordProviderUsage(next)                                     // ⛔ accounting, per call

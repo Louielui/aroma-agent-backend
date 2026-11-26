@@ -61,7 +61,7 @@ async function post(app,body,manual=false){
 async function integrated(message,answer,prior,manual=false,controls={}){
  const vars={LOCAL_BRAIN_ONLY:'1',LOCAL_APP_PORT:'18099',CHAT_BACKEND:'local',LOCAL_MODEL:'qwen3.5:9b',XIANGXIANG_MEMORY:'off',GOAL_DECOMPOSER:'off',READ_ACCESS:'off',TURN_ROUTER:'shadow',...controls.env},saved=Object.fromEntries(Object.keys(vars).map(k=>[k,process.env[k]]));Object.assign(process.env,vars)
  try{
-  const calls=[],writes=[],sizing={},adapter={providerName:'local',context:controls.context,preflight:async()=>({ready:true}),complete:async(prompt,opts)=>{calls.push({prompt,opts});controls.checkInput?.(prompt,opts);assert.ok(calls.length<=2,'fixture may not loop');return{text:JSON.stringify(answer),provider:'local',billing:'local',model:'qwen3.5:9b',usage:{inputTokens:1,outputTokens:1,totalTokens:2}}}},express=require('express'),app=express();let starts=0,admitted=0
+  const calls=[],writes=[],sizing={},adapter={providerName:'local',context:controls.context,preflight:async()=>({ready:true}),complete:async(prompt,opts)=>{calls.push({prompt,opts});controls.checkInput?.(prompt,opts);assert.ok(calls.length<=2,'fixture may not loop');return{text:JSON.stringify(typeof answer==='function' ? answer(prompt,opts) : answer),provider:'local',billing:'local',model:'qwen3.5:9b',usage:{inputTokens:1,outputTokens:1,totalTokens:2}}}},express=require('express'),app=express();let starts=0,admitted=0
   app.locals.conversationDemo=true;if(manual)app.locals.ownerSessions={valid:id=>id==='fixture-owner'};app.use(express.json());app.use(require('../routes/demoRouter').createDemoRouter({getAdapterFn:()=>adapter,dailyDialogue:manual?async(_conversation,_request,run)=>{admitted++;return run()}:null,conversationStore:{get:()=>({messages:prior}),appendTurn:v=>writes.push(v)},codeDiagnosis:{start:()=>{starts++;throw Error('dispatch_forbidden')}},processIntakeFn:(m,a,h,o)=>require('./intakeService').processIntake(m,a,controls.savedHistory ? prior : h,{...o,telemetry:sizing,openaiAdapter:adapter,readContextDeps:{sources:[],connector:{read:()=>{throw Error('business_read_forbidden')}}},...controls.intake})}))
   const requestId=randomUUID();const response=await post(app,{message,history:[],interactionMode:'chat',conversationId:randomUUID(),workflowRequestId:requestId,...(manual?{websiteRequestId:requestId}:{})},manual);return{...response,calls,writes,starts,admitted,sizing:sizing.localAnswerSizing}
  }finally{for(const [k,v]of Object.entries(saved))if(v===undefined)delete process.env[k];else process.env[k]=v}
@@ -404,4 +404,43 @@ test('fictional notice opener requires complete literal clauses from the first a
   const previous = [{role:'user',text:'上面係正式安排'},{role:'assistant',text:'收到。'}]
   assert.equal(replyToSuppliedFiction(notice,previous,['上面係正式安排',notice]),null)
   assert.equal(replyToSuppliedFiction(notice,[],[]),null)
+})
+
+test('oversized local investigation guidance keeps the full supplied turn and uses the remaining answer budget', async () => {
+ const {localInput,LocalModelError}=require('../adapters/LocalAdapter')
+ const message='虛構門市收入由 100 跌到 90，採購額由 30 升到 33。就呢啲數字解釋可能原因。'
+ const reply='收入下跌而採購金額上升，單價同採購量仍要分開核對。'
+ const plan={
+  question_restated:'解釋所給收入及採購金額。',executive_frame:{taskType:'diagnose',decisionNeeded:false,
+   successDefinition:'分開講數字變化及待核對原因。',answerPosture:'provisional'},
+  answer_kind:null,requested_capability:null,investigation_focus:null,investigation_reference:null,
+  investigation_evidence:[],owner_outcomes:[],joins:[],
+  facts:[{id:'given',need:'所給營業額及採購金額',operation:null,entity:null,fields:[],necessity:'required'}]
+ }
+ const run=context=>integrated(message,(_prompt,opts)=>opts.invocationPhase==='goal_understanding'
+  ? plan : {mode:'chat',intent:'context',reply,nextRead:null},[],true,{
+  context,env:{READ_ACCESS:'on',GOAL_DECOMPOSER:'on'},
+  checkInput:(prompt,opts)=>{
+   if(opts.invocationPhase!=='answer')return
+   const size=localInput(prompt,opts)
+   if(size.inputBound+size.maxTokens>context)throw new LocalModelError('local_context_capacity_exceeded')
+  }
+ })
+ const normal=await run(65536)
+ const original=normal.calls.find(c=>c.opts.invocationPhase==='answer')
+ assert.ok(normal.sizing)
+ assert.match(original.prompt,/調查狀態/)
+ assert.ok(original.prompt.includes(message))
+ const reduced=await run(normal.sizing.fullBound-1000)
+ const answer=reduced.calls.find(c=>c.opts.invocationPhase==='answer')
+ assert.equal(answer.prompt,original.prompt)
+ assert.deepEqual(answer.opts.responseFormat,original.opts.responseFormat)
+ assert.equal(answer.opts.maxTokens,3096)
+ assert.equal(reduced.sizing.outputReserve,3096)
+ assert.equal(reduced.sizing.inputBound+reduced.sizing.outputReserve,reduced.sizing.capacity)
+ assert.equal(reduced.body.reply,normal.body.reply)
+ const fail=await run(normal.sizing.inputBound+1023)
+ assert.equal(fail.sizing.outputReserve,4096)
+ assert.ok(fail.sizing.inputBound+fail.sizing.outputReserve>fail.sizing.capacity)
+ assert.notEqual(fail.body.reply,normal.body.reply)
 })
