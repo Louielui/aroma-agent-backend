@@ -70,7 +70,13 @@ const LOCAL_TRANSPORT_BLOBS=Object.freeze({
  'scripts/localBrain/accept.cjs':'d37c28dce41fc55065d3806187ff6d90e441b96c',
  'scripts/localBrain/probe.cjs':'aa37f02ecad684177a6b8e07fce448b312d3f4a9',
  'src/adapters/LocalAdapter.js':'d7d840cee7352dded95fafb1d37245a4486e2a3b',
- 'src/localBrain/view.html':'f0c360d1ab6f7c4a2bd758b6b34ad57ce3de7453'
+ 'src/localBrain/view.html':'f0c360d1ab6f7c4a2bd758b6b34ad57ce3de7453',
+ // Phase 1: fixed Owner routes (selection/chat/release), loopback inference
+ // (/v1/chat/completions or /api/chat), and the loopback standalone lab's
+ // authorize/chat/approve/release fixtures. All three reject redirects.
+ 'src/demo/assets/phase1.js':'05514682b57458a80eaf7da91a707b0b83ad714f',
+ 'src/localBrain/next/adapter.js':'ca2d3848831f0dc6c0d7939071e645d1c926a4d5',
+ 'src/localBrain/next/view.js':'7a7ade777b152daaa2271a032ffd06c813bb9495'
 })
 function initialAdditionBytes(lines){
  const hunks=lines.filter(l=>l.startsWith('@@'))

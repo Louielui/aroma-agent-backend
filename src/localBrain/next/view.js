@@ -20,10 +20,13 @@ function show(text,kind='assistant'){
   $('transcript').append(element);element.scrollIntoView({block:'nearest'})
   return element
 }
+function isLoopback(){return location.protocol==='http:'&&location.hostname==='127.0.0.1'}
 function request(url,body){
-  return fetch(url,{method:'POST',headers:{'content-type':'application/json',authorization:'Bearer '+(sessionStorage.getItem('xxnext')||'')},body:JSON.stringify(body)})
+  if(!isLoopback()||!['/authorize','/chat','/approve','/release'].includes(url))return Promise.reject(Error('local_transport_refused'))
+  return fetch(url,{method:'POST',redirect:'error',headers:{'content-type':'application/json',authorization:'Bearer '+(sessionStorage.getItem('xxnext')||'')},body:JSON.stringify(body)})
 }
 async function prepare(){
+  if(!isLoopback())throw Error('local_transport_refused')
   const key=decodeURIComponent(location.hash.slice(1))
   if(key){
     const auth=await request('/authorize',{key})

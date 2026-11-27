@@ -5,14 +5,16 @@
   var valid = function (id) { return keys.indexOf(id) >= 0 }
   var fresh = function () { return { draft: '', turns: [] } }
   function mount (doc, labels, handoff) {
+    if (root.location.protocol !== 'http:' || root.location.hostname !== '127.0.0.1') return
     var prefix = '/api/v1/demo/experimental/'
     function get () {
-      return root.fetch(prefix + 'status', { credentials: 'same-origin', cache: 'no-store' })
+      return root.fetch(prefix + 'status', { credentials: 'same-origin', cache: 'no-store', redirect: 'error' })
         .then(function (res) { return res.ok ? res.json() : null })
     }
     function request (route, body) {
+      if (!['selection', 'chat', 'release'].includes(route)) return Promise.reject(Error('experiment_input_invalid'))
       return root.fetch(prefix + route, {
-        method: 'POST', credentials: 'same-origin',
+        method: 'POST', credentials: 'same-origin', redirect: 'error',
         headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body)
       }).then(async function (res) {
         var value = await res.json().catch(function () { return {} })
