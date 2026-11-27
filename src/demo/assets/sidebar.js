@@ -206,8 +206,35 @@
     var button=doc.getElementById('client-update'),notice=doc.getElementById('client-update-status'),msg=doc.getElementById('msg'),log=doc.getElementById('log')
     var updating=false,restoring=false,blocked=false,resume=null,initial=null
     var scope=function(){return root.location.pathname+root.location.search}
-    function clear(){if(!root.history||!root.history.state||!Object.hasOwn(root.history.state,'imagineClientUpdate'))return;var state=Object.assign({},root.history.state);delete state.imagineClientUpdate;root.history.replaceState(state,'')}
-    function take(){try{var v=root.history&&root.history.state&&root.history.state.imagineClientUpdate;if(!v)return null;if(Object.keys(v).sort().join(',')!=='cid,draft,expiresAt,scope,stored,view'||!['home','conversation'].includes(v.view)||(v.view==='home'?v.cid!==null||v.stored!==false||v.draft!=='':!/^[a-z0-9][a-z0-9-]{7,63}$/.test(v.cid||''))||typeof v.draft!=='string'||v.draft.length>20000||typeof v.stored!=='boolean'||v.scope!==scope()||!Number.isFinite(v.expiresAt)||v.expiresAt<=Date.now()||v.expiresAt>Date.now()+60000){clear();return null}return v}catch(_){return null}}
+
+    var formalKey='imagineClientUpdate',experimentKey='imaginePhase1Handoff'
+    function put(key, value){
+      if(!root.history||(root.history.state!==null&&(typeof root.history.state!=='object'||Array.isArray(root.history.state))))throw Error('handoff_unavailable')
+      root.history.replaceState(Object.assign({},root.history.state,{[key]:value}),'')
+      if(JSON.stringify(root.history.state[key])!==JSON.stringify(value))throw Error('handoff_unavailable')
+    }
+    function clear(key=formalKey){
+      if(!root.history?.state||!Object.hasOwn(root.history.state,key))return
+      var state=Object.assign({},root.history.state);delete state[key];root.history.replaceState(state,'')
+    }
+    function take(){
+      try{
+        var v=root.history?.state?.[formalKey]
+        if(!v)return null
+        if(Object.keys(v).sort().join(',')!=='cid,draft,expiresAt,scope,stored,view'||!['home','conversation'].includes(v.view)||
+          (v.view==='home'?v.cid!==null||v.stored!==false||v.draft!=='':!/^[a-z0-9][a-z0-9-]{7,63}$/.test(v.cid||''))||
+          typeof v.draft!=='string'||v.draft.length>20000||typeof v.stored!=='boolean'||!live(v)){clear();return null}
+        return v
+      }catch(_){return null}
+    }
+    function live(v){return v.scope===scope()&&Number.isFinite(v.expiresAt)&&v.expiresAt>Date.now()&&v.expiresAt<=Date.now()+60000}
+    function preserveFormal(conversation){
+      if(conversation&&!/^[a-z0-9][a-z0-9-]{7,63}$/.test(conversation.cid))throw Error('handoff_unavailable')
+      var saved={cid:conversation?conversation.cid:null,stored:!!(conversation&&conversation.stored===true),
+        draft:conversation?msg.value:'',view:conversation?'conversation':'home',scope:scope(),expiresAt:Date.now()+60000}
+      put(formalKey,saved)
+      return saved
+    }
     function busy(){var s=callbacks.state();return s.pending||restoring||blocked||s.attachedKind||s.convs.some(function(c){return c.unsaved||c.working||c.imagePreparing||(c.pendingImages||[]).length||(c.history.length&&!c.stored)})||(log.querySelector&&log.querySelector('input,textarea,select'))||(doc.querySelector&&doc.querySelector('.overlay:not(.hidden),[aria-busy="true"],.work-activity.is-working,.topic-tools[open],.department-tools[open],.topic-tracking[open]'))}
     function failed(){if(!resume)return;blocked=true;restoring=false;msg.disabled=false;button.disabled=false;notice.textContent=t('client.restoreUnavailable');callbacks.refresh()}
     async function restore(){if(!resume)return;try{if(callbacks.state().active!==initial)throw Error('view_changed');var target=resume.stored?callbacks.find(resume.cid):initial;if(!target)throw Error('conversation_unavailable');if(resume.stored){await callbacks.load(target);if(!target.loaded||callbacks.state().active!==initial)throw Error('conversation_unavailable')}clear();if(resume.view==='home')callbacks.home();else{if(!resume.stored)target.cid=resume.cid;callbacks.select(target)}msg.value=resume.draft;resume=null;notice.textContent=t('client.updated')}catch(_){failed()}finally{restoring=false;msg.disabled=false;button.disabled=false;callbacks.refresh()}}
@@ -216,8 +243,45 @@
       var conversation=callbacks.state().active
       if(busy()||(!conversation&&msg.value.trim())||msg.value.length>20000){notice.textContent=callbacks.state().convs.some(function(c){return c.unsaved})?t('client.updateUnsaved'):t('client.updateBusy');return}
       updating=true;button.disabled=true;notice.textContent=t('client.updating');callbacks.refresh()
-      try{var response=await root.fetch('/api/v1/demo/version',{credentials:'same-origin',cache:'no-store',signal:AbortSignal.timeout(7000)});if(!response.ok)throw Error('version_unavailable');var version=await response.json();if(version.ok!==true||!/^[a-f0-9]{12}$/.test(version.build||'')||busy()||callbacks.state().active!==conversation||msg.value.length>20000)throw Error('update_unavailable');if((conversation&&!/^[a-z0-9][a-z0-9-]{7,63}$/.test(conversation.cid))||!root.history||(root.history.state!==null&&(typeof root.history.state!=='object'||Array.isArray(root.history.state))))throw Error('handoff_unavailable');var saved={cid:conversation?conversation.cid:null,stored:!!(conversation&&conversation.stored===true),draft:conversation?msg.value:'',view:conversation?'conversation':'home',scope:scope(),expiresAt:Date.now()+60000};root.history.replaceState(Object.assign({},root.history.state,{imagineClientUpdate:saved}),'');if(JSON.stringify(root.history.state.imagineClientUpdate)!==JSON.stringify(saved))throw Error('handoff_unavailable');root.location.reload()}catch(_){notice.textContent=t('client.updateUnavailable');updating=false;button.disabled=false;callbacks.refresh()}
+      try{var response=await root.fetch('/api/v1/demo/version',{credentials:'same-origin',cache:'no-store',signal:AbortSignal.timeout(7000)});if(!response.ok)throw Error('version_unavailable');var version=await response.json();if(version.ok!==true||!/^[a-f0-9]{12}$/.test(version.build||'')||busy()||callbacks.state().active!==conversation||msg.value.length>20000)throw Error('update_unavailable');preserveFormal(conversation);root.location.reload()}catch(_){notice.textContent=t('client.updateUnavailable');updating=false;button.disabled=false;callbacks.refresh()}
     })
+
+    var experimentalFormalSnapshot=null
+    if(root.XiangxiangPhase1)root.XiangxiangPhase1.mount(doc,{
+      original:t('phase1.original'),flash:t('phase1.flash'),alternate:t('phase1.alternate'),
+      picker:t('phase1.picker'),panel:t('phase1.panel'),messages:t('phase1.messages'),input:t('phase1.input'),
+      send:t('phase1.send'),release:t('phase1.release'),reset:t('phase1.reset'),offline:t('phase1.offline'),
+      capacity:t('phase1.capacity'),released:t('phase1.released'),
+      identity:function(value){return t('phase1.identity',value)},
+      selectionFailed:function(reason){return t('phase1.selectionFailed',{reason:reason})},
+      wait:function(model){return t('phase1.wait',{model:model})},
+      chatFailed:function(reason){return t('phase1.chatFailed',{reason:reason})},
+      releaseFailed:function(reason){return t('phase1.releaseFailed',{reason:reason})}
+    },{
+      busy:function(){return updating||busy()},
+      preserveFormal:function(){
+        if(!busy()&&!updating&&msg.value.length<=20000)try{experimentalFormalSnapshot=preserveFormal(callbacks.state().active)}catch(_){}
+      },
+      forgetFormal:function(){
+        try{
+          if(experimentalFormalSnapshot&&JSON.stringify(root.history?.state?.[formalKey])===JSON.stringify(experimentalFormalSnapshot))clear()
+        }catch(_){}
+        experimentalFormalSnapshot=null
+      },
+      save:function(threads){
+        try{
+          if(JSON.stringify(threads).length<=240000)put(experimentKey,{threads:threads,scope:scope(),expiresAt:Date.now()+60000})
+        }catch(_){}
+      },
+      take:function(){
+        try{
+          var saved=root.history?.state?.[experimentKey]
+          if(!saved)return null
+          clear(experimentKey)
+          return live(saved)&&saved.threads&&JSON.stringify(saved.threads).length<=240000?saved.threads:null
+        }catch(_){return null}
+      }
+    });
     return {blocked:function(){return updating||restoring||blocked},recovering:function(){return !!resume},recover:function(c){resume=take();if(resume){restoring=true;initial=c;msg.value=resume.draft;msg.disabled=true;button.disabled=true;callbacks.refresh()}},restore:restore,failed:failed,choose:function(){if(blocked){blocked=false;resume=null;try{clear()}catch(_){}}}}
   } }
 })(typeof window==='object'?window:null)

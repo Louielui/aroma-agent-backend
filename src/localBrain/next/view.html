@@ -1,0 +1,8 @@
+<!doctype html>
+<html lang="zh-Hant"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>香香 · 本機對話實驗室</title><link rel="stylesheet" href="/style.css"></head>
+<body><div class="shell"><header><div class="brand"><span class="mark">香</span><div><h1>香香</h1><p>本機對話實驗室</p></div></div><button type="button" id="new">開新對話</button></header>
+<main><aside><label for="arm">對話架構</label><select id="arm"><option value="H">H · 混合試驗｜Flash-Next</option><option value="B">B · 輕量香香｜Flash-Next</option><option value="A">A · 原生｜Flash-Next</option><option value="C">C · PR246 流程｜Flash-Next</option><option value="D">D · 原生｜Qwen3.8 27B</option><option value="P" hidden>Qwen3.8 27B · 輕量對話</option></select><button type="button" id="release" hidden>卸載模型</button><p id="engine" role="status" hidden></p><p id="status" role="status">正在驗證本機工作階段</p></aside>
+<section aria-label="對話"><div id="transcript" role="log" aria-live="polite"><p class="empty">可以用平常嘅方式同香香傾偈。</p></div>
+<div id="proposal" hidden></div><form id="composer"><label for="message">訊息</label><textarea id="message" required rows="3" maxlength="16000" placeholder="同香香講嘢…"></textarea><div class="toolbar"><label class="check" for="mode">用途 <select id="mode"><option value="chat">聊天</option><option value="analysis">分析（較長回覆）</option><option value="tools">讀取隔離記錄</option><option value="proposal">準備測試變更提議</option></select></label><button id="send" disabled>送出</button></div></form></section></main></div>
+<script src="/view.js"></script></body></html>

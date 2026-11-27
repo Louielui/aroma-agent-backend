@@ -1,0 +1,22 @@
+*{box-sizing:border-box} [hidden]{display:none!important}
+:root{color-scheme:light;--ink:#242a24;--muted:#566052;--line:#d9dfd3;--accent:#325b43;--surface:#ffffff}
+body{margin:0;background:#f3f5ef;color:var(--ink);font:16px/1.65 "Microsoft JhengHei UI",system-ui,sans-serif}
+.shell{max-width:1080px;margin:0 auto;padding:32px 24px 48px}
+header{display:flex;align-items:center;justify-content:space-between;padding-bottom:24px;border-bottom:1px solid var(--line)}
+.brand{display:flex;align-items:center;gap:14px}.mark{display:grid;place-items:center;border-radius:16px;background:#dbe8d7;color:#2e5d41;font-size:25px;width:52px;height:52px}
+h1{font-size:22px;line-height:1.25;margin:0}p{margin:4px 0;color:var(--muted)}
+button,select,textarea{font:inherit;color:inherit}button{background:var(--accent);color:white;border:0;border-radius:9px;padding:8px 17px;cursor:pointer}button:disabled{opacity:.55;cursor:default}
+#new{background:transparent;color:var(--accent);border:1px solid var(--line)}
+main{display:grid;grid-template-columns:255px minmax(0,1fr);gap:28px;padding-top:24px}
+aside label,#composer>label{display:block;font-weight:600;margin-bottom:6px}
+select{width:100%;border-radius:9px;background:var(--surface);padding:9px;border:1px solid var(--line)}
+#status{padding-top:12px;font-size:.93em}
+section{min-width:0;border:1px solid var(--line);border-radius:16px;overflow:hidden;background:var(--surface)}
+#transcript{min-height:280px;max-height:56vh;overflow:auto;padding:20px;display:flex;flex-direction:column;gap:14px}
+.empty{margin:auto}article{border-radius:14px;padding:10px 14px;white-space:pre-wrap;overflow-wrap:anywhere;max-width:92%;align-self:flex-start;background:#f3f5ef}
+article.user{align-self:flex-end;background:#e3eee3}article.error{color:#7b2c26;background:#ffede6}
+#composer,#proposal{padding:14px 20px;border-top:1px solid var(--line)}#proposal{background:#fff7e2}
+textarea{display:block;width:100%;border:1px solid var(--line);border-radius:9px;padding:10px;resize:vertical}
+.toolbar{display:flex;justify-content:space-between;align-items:center;margin-top:10px;gap:15px}.check{font-size:.9em;color:var(--muted)}
+:focus-visible{outline:2px solid #376749;outline-offset:2px}
+@media(max-width:680px){.shell{padding:20px 15px}main{grid-template-columns:1fr;gap:14px}#transcript{min-height:240px}header{padding-bottom:14px}}

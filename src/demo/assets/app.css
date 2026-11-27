@@ -1101,3 +1101,19 @@ button[disabled] { opacity: .45; cursor: default; }
 @keyframes browser-work-spin { to { transform:rotate(360deg); } }
 @media (max-width:600px) { .browser-work-columns { grid-template-columns:minmax(0,1fr); } #browser-work-list { max-height:155px; overflow:auto; } .browser-work-toolbar { padding:10px 12px; } }
 @media (prefers-reduced-motion:reduce) { .browser-work-progress.is-working::before { animation:none; } }
+
+
+/* Phase 1 experimental chat in the existing local shell. */
+.phase1-model-picker { margin-inline: auto .5rem; max-width: min(45vw, 22rem); padding: .4rem; }
+.phase1-active > #log, .phase1-active > #composer, .phase1-active #conv-title { display: none; }
+.phase1-panel[hidden] { display: none; }
+.phase1-panel { flex: 1; min-height: 0; display: flex; flex-direction: column; width: min(100% - 2rem, 58rem); align-self: center; }
+.phase1-log { flex: 1 1 auto; overflow-y: auto; padding: .75rem; }
+.phase1-user, .phase1-assistant { white-space: pre-wrap; overflow-wrap: anywhere; margin: 0 0 1rem; padding: .7rem 1rem; border: 1px solid currentColor; border-radius: .65rem; }
+.phase1-user { margin-inline-start: auto; width: fit-content; max-width: 85%; }
+.phase1-attribution { display: block; margin-top: .5rem; opacity: .75; }
+.phase1-form { display: grid; gap: .5rem; padding: .75rem 0; }
+.phase1-form textarea { color: inherit; background: transparent; padding: .65rem; border: 1px solid currentColor; border-radius: .55rem; }
+.phase1-actions { display: flex; flex-wrap: wrap; gap: .45rem; }
+.phase1-actions button { padding: .4rem .6rem; }
+.phase1-status { margin: 0; }

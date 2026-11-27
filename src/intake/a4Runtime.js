@@ -176,7 +176,7 @@ function createA4RuntimeDependencies (options = {}) {
   // Subscription chat stays on the Owner's selected billing route. Role prompts and
   // validators remain separate; the factory is server-owned, never request input.
   const subscriptionFactory = env.LOCAL_BRAIN_ONLY === '1'
-    ? (() => new (require('../adapters/LocalAdapter').LocalAdapter)({env}))
+    ? (options.localAdapterFactory || (() => new (require('../adapters/LocalAdapter').LocalAdapter)({env})))
     : env.CHAT_BACKEND === 'codex-subscription' ? options.subscriptionAdapterFactory : null
   const roles = env.LOCAL_BRAIN_ONLY === '1'
     ? Object.fromEntries(Object.keys(A4_ROLES).map(role => [role, { provider:'local', model:env.LOCAL_MODEL || 'qwen3:8b', effort:'non_thinking' }]))

@@ -89,7 +89,7 @@ function computeBuildStamp (overrides = {}) {
   const h = crypto.createHash('sha256')
   // Exactly the assets that can go stale in a browser. index.html is included because the
   // placeholders and structure live there too.
-  for (const name of ['app.js', 'app.css', 'index.html', 'sidebar.js', 'sidebar.css', 'topics.js']) {
+  for (const name of ['app.js', 'app.css', 'index.html', 'sidebar.js', 'sidebar.css', 'topics.js', 'phase1.js']) {
     h.update(name)
     h.update(Object.prototype.hasOwnProperty.call(overrides, name) ? overrides[name] : readAsset(name))
   }
@@ -132,7 +132,7 @@ function readSourceLabelsJson () {
  */
 function buildDemoHtml () {
   return assemblePage({ template: readAsset('index.html'), i18n: require('../i18n/browserResolver').browserI18nSource(),
-    css: readAsset('app.css'), sidebarCss: readAsset('sidebar.css'), sidebar: readAsset('sidebar.js'), topics: readAsset('topics.js'), app: readAsset('app.js'),
+    css: readAsset('app.css'), sidebarCss: readAsset('sidebar.css'), sidebar: readAsset('sidebar.js'), topics: readAsset('topics.js'), phase1: process.env.CHAT_BACKEND==='local' ? readAsset('phase1.js') : '', app: readAsset('app.js'),
     dot: inlineSvg('dot.svg'), favicon: iconDataUri(), sourceLabels: JSON.parse(readSourceLabelsJson()), buildStamp: BUILD_STAMP,
     subscription: ['codex-subscription','local'].includes(process.env.CHAT_BACKEND), modelCenter: true,localBrain:process.env.CHAT_BACKEND==='local' })
 }

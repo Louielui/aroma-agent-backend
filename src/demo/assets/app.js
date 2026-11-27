@@ -2488,6 +2488,7 @@
   // invented fact on the screen, which is the whole defect being fixed.
   var LEGACY_PROVIDERS = { claude: 1, openai: 1 }
   function servedByName (servedBy) {
+    if (servedBy === 'local:qwen3.5:9b') return t('phase1.original')
     if (LEGACY_PROVIDERS[servedBy]) {
       return servedBy === 'openai' ? t('provider.gpt') : t('provider.claude')
     }
