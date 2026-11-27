@@ -148,3 +148,16 @@ test('actual intake route binds one new-root turn and captures output without re
  assert.ok(evidence.some(e=>e.kind==='turn_input'&&e.value.message==='offline AI capability question'));assert.ok(evidence.some(e=>e.kind==='turn_output'&&JSON.stringify(e.value).includes('offline candidate reply')))
  assert.throws(()=>backend.handle(OWNER,{op:'usage_extension_prepare',workId:randomUUID(),commit:'a'.repeat(40),attemptsHash:'b'.repeat(64)}),/usage_extension_unavailable/);f.unchanged()
 })
+test('one validated read per ledger for a single lock-retest status snapshot',t=>{
+ const f=fixture(t)
+ f.entry.handle(OWNER,f.activate)
+ const budget=usage.createUsageBudget({store:f.store,profile:usage.LOCK_RETEST_PROFILE})
+ const reads=new Map(),get=f.store.get
+ f.store.get=id=>{reads.set(id,(reads.get(id)||0)+1);return get(id)}
+ assert.equal(budget.readStatus().state,'active')
+ assert.deepEqual(Object.fromEntries(reads),Object.fromEntries([PROFILE.id,...f.parents.map(p=>p.rootId)].map(id=>[id,1])))
+ // A new snapshot must read and validate the current predecessor bytes again.
+ const id=f.parents.at(-1).rootId,row=get(id)
+ row.timeline.push({event:'offline_drift'});f.store.save(row)
+ assert.throws(()=>budget.readStatus(),/usage_binding_conflict/)
+})
