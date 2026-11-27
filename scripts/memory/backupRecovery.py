@@ -12,6 +12,7 @@ import sqlite3
 import threading
 from collections import deque
 from concurrent.futures import ThreadPoolExecutor
+from itertools import islice
 from typing import NamedTuple
 
 DIRECTORIES = ("memory-outbox", "memory-capture", "memory-consolidation", "conversations", "local-brain")
@@ -33,8 +34,9 @@ class RecoveryBundle(NamedTuple):
 
 class RecoveryIO:
     """Bound I/O concurrency; every file still completes its original checks."""
-    def __init__(self, on_result=None):
+    def __init__(self, on_result=None, *, max_workers=8):
         self.on_result = on_result
+        self.max_workers = max_workers
 
     def complete_one(self):
         result = self.pending.popleft().result()
@@ -42,7 +44,7 @@ class RecoveryIO:
             self.on_result(result)
 
     def __enter__(self):
-        self.pool = ThreadPoolExecutor(max_workers=8)
+        self.pool = ThreadPoolExecutor(max_workers=self.max_workers)
         self.pending = deque()
         return self
 
@@ -50,6 +52,21 @@ class RecoveryIO:
         if len(self.pending) >= 16:
             self.complete_one()
         self.pending.append(self.pool.submit(function, *args))
+
+    def submit_all(self, function, arguments, batch_size):
+        """Group result-free work while retaining the regular bounded queue."""
+        if batch_size == 1:
+            for args in arguments:
+                self.submit(function, *args)
+            return
+        batches = iter(arguments)
+        while batch := tuple(islice(batches, batch_size)):
+            self.submit(self.run_batch, function, batch)
+
+    @staticmethod
+    def run_batch(function, batch):
+        for args in batch:
+            function(*args)
 
     def write(self, target, content):
         self.submit(write_new, target, content)
@@ -379,11 +396,11 @@ def restore_files(source, destination):
 def restore_sealed_recovery(sealed, destination):
     # In the combined worker, validate every archive object on its copy read.
     # Publish archive evidence only after the isolated readback also passes.
-    restored = restore_verified_files(sealed, destination)
+    restored = restore_verified_files(sealed, destination, batched=True)
     return _verified_archive_receipt(sealed), restored
 
 
-def restore_verified_files(verified, destination):
+def restore_verified_files(verified, destination, *, batched=False):
     target = pathlib.Path(destination).resolve()
     bundle, manifest, proof, manifest_digest, _ = verified
     # Recheck the manifest before touching the destination and verify the
@@ -394,9 +411,11 @@ def restore_verified_files(verified, destination):
     data = target / "data"
     if manifest["files"]:
         data.mkdir(mode=0o700)
-    parents = {data}
     destinations = []
-    with RecoveryIO() as copies:
+    workers, batch_size = (16, 32) if batched else (8, 1)
+
+    def copies_to_write():
+        parents = {data}
         for item in manifest["files"]:
             file = data / pathlib.Path(*asset_path(item["path"]).parts)
             parent = file.parent
@@ -405,14 +424,17 @@ def restore_verified_files(verified, destination):
                 parents.add(parent)
             digest, size = item["sha256"], item["bytes"]
             trace_path = item["path"] if "contentState" in item else None
-            copies.submit(restore_asset, bundle / "objects" / digest, file, digest, size, trace_path)
             destinations.append((file, digest, size))
+            yield bundle / "objects" / digest, file, digest, size, trace_path
+
+    with RecoveryIO(max_workers=workers) as copies:
+        copies.submit_all(restore_asset, copies_to_write(), batch_size)
     write_new(target / "canonical.json", (bundle / "canonical.json").read_bytes())
     # Read each destination after every output, including canonical.json, is
     # durable. A file damaged late in the copy phase must still fail restore.
-    with RecoveryIO() as checks:
-        for file, digest, size in destinations:
-            checks.verify(file, digest, size, "recovery_restore_unconfirmed")
+    with RecoveryIO(max_workers=workers) as checks:
+        checks.submit_all(verify_file, ((file, digest, size, "recovery_restore_unconfirmed")
+                                        for file, digest, size in destinations), batch_size)
     verify_file(target / "canonical.json", manifest["canonical"]["sha256"], None, "recovery_restore_unconfirmed")
     if hashlib.sha256(read_manifest_bytes(bundle)).hexdigest() != manifest_digest:
         raise ValueError("recovery_manifest_invalid")

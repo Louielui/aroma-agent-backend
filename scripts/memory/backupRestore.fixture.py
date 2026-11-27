@@ -172,16 +172,35 @@ def measured_integrated_read(file):
             integrated_dest_reads[file.relative_to(integrated_dest / "data").as_posix()] += 1
     return original_read(file)
 
+original_pool = recovery.ThreadPoolExecutor
+restore_submissions = []
+restore_workers = []
+
+
+class MeasuringPool(original_pool):
+    def __init__(self, max_workers):
+        restore_workers.append(max_workers)
+        super().__init__(max_workers=max_workers)
+
+    def submit(self, fn, *args, **kwargs):
+        restore_submissions.append(fn)
+        return super().submit(fn, *args, **kwargs)
+
+
 pathlib.Path.read_bytes = measured_integrated_read
+recovery.ThreadPoolExecutor = MeasuringPool
 try:
     prepared = recovery.seal_recovery(integrated_stage, snapshot_file)
     assert "state" not in prepared.proof
     saved, restored = recovery.restore_sealed_recovery(prepared, integrated_dest)
 finally:
     pathlib.Path.read_bytes = original_read
+    recovery.ThreadPoolExecutor = original_pool
 assert saved["state"] == "verified" and restored["state"] == "isolated_files_restored"
 assert integrated_reads == Counter(row["sha256"] for row in entries), ("repeated_archive_scan", sum(integrated_reads.values()))
 assert integrated_dest_reads == {row["path"]: 1 for row in entries}
+assert restore_workers == [16, 16], ("combined_restore_worker_bounds", restore_workers)
+assert len(restore_submissions) == 4, ("combined_restore_dispatches_one_future_per_file", len(restore_submissions))
 
 late = integrated / "objects" / entries[-1]["sha256"]
 late_content = late.read_bytes()
