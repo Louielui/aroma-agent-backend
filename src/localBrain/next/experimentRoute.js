@@ -7,7 +7,7 @@ function register(router,demoGuard,ownerSession,relay){
   const prefix='/api/v1/demo/experimental'
   const authorize=(req,res,next)=>{
     res.set('Cache-Control','no-store')
-    if(!relay)return res.status(404).json({error:'experiment_disabled'})
+    if(!relay||relay.active?.()===false)return res.status(404).json({error:'experiment_disabled'})
     if(!ownerSession(req))return res.status(401).json({error:'owner_auth_required'})
     if(req.method==='POST'&&(!sameOrigin(req)||!req.is('application/json')))return res.status(403).json({error:'same_origin_required'})
     next()

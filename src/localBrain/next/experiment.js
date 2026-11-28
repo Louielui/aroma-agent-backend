@@ -59,8 +59,27 @@ function makeSpool(root,key){
   return {input,output,key}
 }
 function configured(){
+  const {PILOT,formalSource}=require('./experimentControl')
+  if(formalSource(path.resolve(__dirname,'../../..'))){
+    return controlled(PILOT,require('../../governance/bootCommit').BOOT_COMMIT)
+  }
   const root=process.env.XIANGXIANG_PHASE1_SPOOL
   if(!root||process.env.CHAT_BACKEND!=='local')return null
+  return configureRoot(root)
+}
+function controlled(pilot,commit){
+  let relay
+  const marker=require('./experimentControl').control(pilot)
+  const active=()=>{try{return Boolean(commit)&&marker.current()===commit}catch{return false}}
+  function get(){
+    if(!active())throw fault('experiment_disabled')
+    if(!relay)relay=configureRoot(path.join(pilot,'spool'))
+    return relay
+  }
+  return {active,ready:()=>get().ready(),call:(...args)=>get().call(...args),
+    preference:{read:()=>get().preference.read(),save:body=>get().preference.save(body)}}
+}
+function configureRoot(root){
   const key=fs.readFileSync(path.join(root,'key.hex'),'utf8').trim()
   return {...transport(makeSpool(root,key)),preference:require('./experimentPreference').preference(root)}
 }
@@ -111,4 +130,4 @@ function transport(spool,{timeoutMs=MAX_REQUEST_MS,pollMs=150}={}){
   return {ready:()=>Boolean(lease()),call}
 }
 
-module.exports={EXPERIMENTS,ID,EPOCH,MAX_REQUEST_MS,validChat,makeSpool,configured,signed,readSigned,publish,transport}
+module.exports={EXPERIMENTS,ID,EPOCH,MAX_REQUEST_MS,validChat,makeSpool,configured,controlled,signed,readSigned,publish,transport}
