@@ -92,7 +92,8 @@ const scopeKeys='childId,conversationId,requestId,rootId,turnId'
 function validScope(s){return !!s&&Object.keys(s).sort().join(',')===scopeKeys&&[s.rootId,s.turnId,s.conversationId,s.requestId].every(v=>ID.test(v||''))&&(s.childId===null||ID.test(s.childId||''))}
 function developmentProfile(id){if(!ID.test(id||'')||isAcceptanceRoot(id))throw error('usage_profile_not_allowed');return{id,identity:'owner-repository-repair:'+id,turns:1,helper:8,website:0,models:[{model:'gpt-6.1-sol',effort:'high'},{model:'claude-sonnet-5-5',effort:'medium'}]}}
 function localDevelopmentProfile(id){if(!ID.test(id||'')||isAcceptanceRoot(id))throw error('usage_profile_not_allowed');return localAcceptance.registeredProfile(id)}
-function createUsageBudget({store,evidenceDir,now=Date.now,runtimeCommit=()=>require('../governance/bootCommit').BOOT_COMMIT,activationReady=null,profile=PROFILE,extensionWitness=null,lockWaitMs=1000,approvals=require('../agent/ownerApprovalStore').createOwnerApprovalStore({now}),processAlive=pid=>{try{process.kill(pid,0);return true}catch(e){return e.code!=='ESRCH'}}}={}){
+function createUsageBudget(options){return buildUsageBudget(options).api}
+function buildUsageBudget({store,evidenceDir,now=Date.now,runtimeCommit=()=>require('../governance/bootCommit').BOOT_COMMIT,activationReady=null,profile=PROFILE,extensionWitness=null,lockWaitMs=1000,approvals=require('../agent/ownerApprovalStore').createOwnerApprovalStore({now}),processAlive=pid=>{try{process.kill(pid,0);return true}catch(e){return e.code!=='ESRCH'}}}={}){
  if(!store?.lockRun)throw error('usage_store_required')
  if(!Number.isInteger(lockWaitMs)||lockWaitMs<0||lockWaitMs>1000)throw error('invalid_request')
  profile=structuredClone(profile)
@@ -102,13 +103,18 @@ function createUsageBudget({store,evidenceDir,now=Date.now,runtimeCommit=()=>req
  const isRegisteredLocal=profile.identity==='owner-local-repository-repair:'+profile.id,localPolicy=dailyPolicy||localAcceptance.forProfile(profile.id)||(isRegisteredLocal?localAcceptance.registeredPolicy(profile):null),isLocal=localPolicy!==null
  const predecessors=isLocal&&!dailyPolicy&&!isRegisteredLocal&&profile.id!==LOCAL_CODING_PROFILE.id?[LATENCY_PROFILE,MEMORY_ARBITRATION_PROFILE,DELEGATION_LIST_PROFILE,DELEGATION_RETEST_PROFILE,SPEED_PROFILE,FOREGROUND_PROFILE,LEAN_PROFILE,LOCK_RETEST_PROFILE,ROSTER_EVIDENCE_PROFILE]:profile.id===ROSTER_EVIDENCE_PROFILE.id?[LATENCY_PROFILE,MEMORY_ARBITRATION_PROFILE,DELEGATION_LIST_PROFILE,DELEGATION_RETEST_PROFILE,SPEED_PROFILE,FOREGROUND_PROFILE,LEAN_PROFILE,LOCK_RETEST_PROFILE]:profile.id===LOCK_RETEST_PROFILE.id?[LATENCY_PROFILE,MEMORY_ARBITRATION_PROFILE,DELEGATION_LIST_PROFILE,DELEGATION_RETEST_PROFILE,SPEED_PROFILE,FOREGROUND_PROFILE,LEAN_PROFILE]:profile.id===LEAN_PROFILE.id?[LATENCY_PROFILE,MEMORY_ARBITRATION_PROFILE,DELEGATION_LIST_PROFILE,DELEGATION_RETEST_PROFILE,SPEED_PROFILE,FOREGROUND_PROFILE]:profile.id===FOREGROUND_PROFILE.id?[LATENCY_PROFILE,MEMORY_ARBITRATION_PROFILE,DELEGATION_LIST_PROFILE,DELEGATION_RETEST_PROFILE,SPEED_PROFILE]:profile.id===SPEED_PROFILE.id?[LATENCY_PROFILE,MEMORY_ARBITRATION_PROFILE,DELEGATION_LIST_PROFILE,DELEGATION_RETEST_PROFILE]:profile.id===DELEGATION_RETEST_PROFILE.id?[LATENCY_PROFILE,MEMORY_ARBITRATION_PROFILE,DELEGATION_LIST_PROFILE]:profile.id===DELEGATION_LIST_PROFILE.id?[LATENCY_PROFILE,MEMORY_ARBITRATION_PROFILE]:profile.id===MEMORY_ARBITRATION_PROFILE.id?[LATENCY_PROFILE]:[],independent=!!dailyPolicy||predecessors.length>0||profile.id===LOCAL_CODING_PROFILE.id||isRegisteredLocal
  let verifiedLocalParents=null
- function predecessorHash(){
+ function predecessorHash(validatedParents=new Map()){
   const currentLocal=isLocal?hash(predecessors.map(p=>({rootId:p.id,hash:hash(store.get(p.id))}))):null
   if(isLocal&&currentLocal===verifiedLocalParents)return currentLocal
   const bindings=predecessors.map(p=>{
-   const previous=createUsageBudget({store,profile:p}).readStatus(),row=store.get(p.id)
-   if(previous.state!=='paused'||previous.helper.unresolved||previous.website.unresolved||previous.turns.some(t=>t.entered&&!t.finished)||row.children.some(c=>!c.finished))throw error('usage_unresolved_work')
-   return{rootId:p.id,hash:hash(row)}
+   // The predecessor chains overlap. Validate and hash the same snapshot once
+   // per read, and discard it before the next read or mutation.
+   if(!validatedParents.has(p.id)){
+    const row=buildUsageBudget({store,profile:p}).readLedger(validatedParents)
+    if(!row||row.state!=='paused'||row.attempts.some(a=>a.state==='reserved'||a.state==='dispatched')||row.turns.some(t=>t.entered&&!t.finished)||row.children.some(c=>!c.finished))throw error('usage_unresolved_work')
+    validatedParents.set(p.id,hash(row))
+   }
+   return{rootId:p.id,hash:validatedParents.get(p.id)}
   })
   if(isLocal)verifiedLocalParents=hash(bindings)
   return bindings.length===1?bindings[0].hash:hash(bindings)
@@ -132,12 +138,12 @@ function createUsageBudget({store,evidenceDir,now=Date.now,runtimeCommit=()=>req
   }catch{ /* The refusal still applies when diagnostic storage is unavailable. */ }
   return failure
  }
- function load(locked=false){if(!locked){try{if(store.exists?.(profile.id)===false)return null}catch{throw error('usage_audit_unavailable')};return change(r=>r)}let r;try{r=store.get(profile.id)}catch(e){throw ledgerFailure(e,'load')};if(!r)return null
+ function load(locked=false,validatedParents){if(!locked){try{if(store.exists?.(profile.id)===false)return null}catch{throw error('usage_audit_unavailable')};return change(r=>r)}let r;try{r=store.get(profile.id)}catch(e){throw ledgerFailure(e,'load')};if(!r)return null
   if(r.profileHash!==profileHash||r.identity!==profile.identity||JSON.stringify(r.limits)!==JSON.stringify(limits)||!['active','paused','closed'].includes(r.state)||!Array.isArray(r.turns)||r.turns.length>limits.turns||!Array.isArray(r.attempts)||!Array.isArray(r.children)||r.children.length>128||new Set(r.turns.map(t=>t.id)).size!==r.turns.length||new Set(r.attempts.map(t=>t.id)).size!==r.attempts.length||r.attempts.filter(a=>a.kind==='helper').length>limits.helper+(r.extension&&isDevelopment?2:0)||r.attempts.filter(a=>a.kind==='website').length>limits.website||r.attempts.some(a=>!ID.test(a.id||'')||!['helper','website'].includes(a.kind)||!['reserved','dispatched','succeeded','failed'].includes(a.state)||!r.turns.some(t=>t.id===a.turnId)||a.kind==='helper'&&!acceptsModel(a)))throw error('usage_audit_unavailable')
   try{if(r.extension&&(!isDevelopment||!extension.validGrant(r,profileHash))||!r.extension&&r.attempts.some(a=>a.extensionId||a.allocation))throw error('usage_audit_unavailable')}catch{throw error('usage_audit_unavailable')}
   if(r.turns.some(t=>!ID.test(t.id||'')||!ID.test(t.conversationId||'')||typeof t.entered!=='boolean'||typeof t.finished!=='boolean'||t.entered&&(!ID.test(t.requestId||'')||!Number.isSafeInteger(t.hostPid)))||r.children.some(c=>!ID.test(c.id||'')||typeof c.finished!=='boolean'||!r.turns.some(t=>t.id===c.turnId))||r.attempts.some(a=>!Number.isSafeInteger(a.hostPid)||a.dispatchedAt&&!['cli_process_started','provider_turn_start',...(isLocal?['local_http_send']:[])].includes(a.dispatchBasis)))throw error('usage_audit_unavailable')
   if(isLocal)localPolicy.validate(r)
-  if(independent&&r.predecessorHash!==predecessorHash())throw error('usage_binding_conflict')
+  if(independent&&r.predecessorHash!==predecessorHash(validatedParents))throw error('usage_binding_conflict')
   return r
  }
  function lockFailure(code,cause,phase,failedRoot,attempts,elapsedMs,evidence=null){
@@ -281,7 +287,8 @@ function createUsageBudget({store,evidenceDir,now=Date.now,runtimeCommit=()=>req
    save(row,'owner_pause_requested')
   })
  }
- const api={pauseDaily,enterDailyTurn,stopOnFailure,acceptsModel,handle,status,readStatus,enterTurn,finishTurn,withScope,withAllocation,childScope,finishChild,capture,reserve,encode,withHeader,rejection,nativeRejection,turnFailure,setActivationWitness:fn=>{activationReady=fn},isActive:()=>load()?.state==='active'};return api
+ const api={pauseDaily,enterDailyTurn,stopOnFailure,acceptsModel,handle,status,readStatus,enterTurn,finishTurn,withScope,withAllocation,childScope,finishChild,capture,reserve,encode,withHeader,rejection,nativeRejection,turnFailure,setActivationWitness:fn=>{activationReady=fn},isActive:()=>load()?.state==='active'}
+ return{api,readLedger:validatedParents=>load(true,validatedParents)}
 }
 // A long-lived Bridge and backend resolve the same durable selection on every
 // call, not only at boot. No selection file or second accounting store exists.

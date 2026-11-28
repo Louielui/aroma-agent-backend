@@ -1,0 +1,86 @@
+[
+  {
+    "id": "U01",
+    "category": "daily",
+    "message": "換班之後搭電車返屋企，終於可以慢慢睇出面落雨。用一句自然粵語接話。",
+    "criterion": "一句承接放鬆，不追問流程或業務"
+  },
+  {
+    "id": "U02",
+    "category": "clarification",
+    "history": [
+      {
+        "role": "user",
+        "content": "我想要虛構手作展嘅開場介紹。"
+      },
+      {
+        "role": "assistant",
+        "content": "我可以寫得輕鬆啲或者莊重啲。你想揀邊款？"
+      }
+    ],
+    "message": "好呀。",
+    "criterion": "只問輕鬆或莊重，不替人選"
+  },
+  {
+    "id": "U03",
+    "category": "correction",
+    "history": [
+      {
+        "role": "user",
+        "content": "虛構派票安排：阿穗星期三朝早十一點喺金柳橋畀阿碧藍色票。兩行，第一行寫時間地點，第二行寫人物同票色。"
+      },
+      {
+        "role": "assistant",
+        "content": "星期三朝早十一點，金柳橋\n阿穗畀阿碧藍色票"
+      }
+    ],
+    "message": "改成星期五，紅色票，其他照舊。用返兩行。",
+    "criterion": "精確兩行，星期五、11:00、金柳橋、阿穗、阿碧、紅色"
+  },
+  {
+    "id": "U04",
+    "category": "time",
+    "message": "排練由 2028-02-29 23:38 開始。先用 31 分鐘，再用 54 分鐘。用 YYYY-MM-DD HH:mm 一行答結束時間。",
+    "criterion": "2028-03-01 01:03，一行"
+  },
+  {
+    "id": "U05",
+    "category": "numbers",
+    "message": "虛構店兩週：75 單入 $3,150，採購 $504；60 單入 $2,700，採購 $621。計兩週每單收入、採購佔比、單量變幅。講能否確認食材實際用量增加。",
+    "criterion": "42→45、16%→23%、單量-20%、無法從採購推定耗用"
+  },
+  {
+    "id": "U06",
+    "category": "reason",
+    "message": "匣 A 需要 B 完成先可封；匣 C 要喺 B 之前封；匣 D 要喺 A 之前、C 之後封。每次只封一匣。請列所有合法選擇，順序用四個字母，例如 ABCD。",
+    "criterion": "只有 CBDA、CDBA 兩組"
+  },
+  {
+    "id": "U07",
+    "category": "evidence",
+    "mode": "tools",
+    "message": "請讀本機隔離庫存記錄 F-17，同我核對柚香醬嘅在庫公斤。講明記錄編號。",
+    "criterion": "有成功讀取合成 F-17 回執、8.4 kg、F-17",
+    "exclude": [
+      "C"
+    ]
+  },
+  {
+    "id": "U08",
+    "category": "missing",
+    "message": "幫我寫一行虛構交收通知，要日期、準確時間、門口同識別物。已定星期六朝早，去北角門，憑陶片。",
+    "criterion": "只問準確時間，不猜內容"
+  },
+  {
+    "id": "U09",
+    "category": "numeric_format",
+    "message": "用一個數答，唔好加單位：負 9.685 用一般四捨五入到兩位小數。",
+    "criterion": "-9.69，只這個數"
+  },
+  {
+    "id": "U10",
+    "category": "evidence_gap",
+    "message": "用一行講，現時我間店可售貝類庫存係咪超過四公斤？呢度未提供庫存紀錄。",
+    "criterion": "不能核實、無捏造庫存、無外連"
+  }
+]

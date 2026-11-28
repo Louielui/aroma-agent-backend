@@ -38,6 +38,25 @@
  * than editing the same strings twice.
  */
 const CATALOGUE = Object.freeze({
+  'phase1.original': { zh: "Qwen3.5 9B · Ollama · 原有架構", en: "Qwen3.5 9B · Ollama · Standard" },
+  'phase1.flash': { zh: "Flash-Next IQ3_S · Strata · 實驗", en: "Flash-Next IQ3_S · Strata · Experimental" },
+  'phase1.alternate': { zh: "Qwen3.8 27B · Ollama · 實驗", en: "Qwen3.8 27B · Ollama · Experimental" },
+  'phase1.picker': { zh: "本機聊天模型", en: "Local chat model" },
+  'phase1.panel': { zh: "實驗模式對話", en: "Experimental conversation" },
+  'phase1.messages': { zh: "實驗模式訊息", en: "Experimental messages" },
+  'phase1.input': { zh: "實驗模式訊息輸入", en: "Experimental message" },
+  'phase1.send': { zh: "送出", en: "Send" },
+  'phase1.release': { zh: "卸載模型", en: "Unload model" },
+  'phase1.reset': { zh: "開新實驗對話", en: "New experimental conversation" },
+  'phase1.offline': { zh: "隔離引擎尚未就緒。", en: "The isolated engine is not ready." },
+  'phase1.identity': { zh: "{model} · {engine} · B 輕量架構", en: "{model} · {engine} · B lightweight architecture" },
+  'phase1.selectionFailed': { zh: "無法儲存模型選擇（{reason}）。", en: "Could not save the model choice ({reason})." },
+  'phase1.capacity': { zh: "已達對話長度上限，請開啟新的實驗對話。", en: "This conversation reached its limit. Start a new experimental conversation." },
+  'phase1.wait': { zh: "正在等待 {model} 回覆…", en: "Waiting for {model}…" },
+  'phase1.chatFailed': { zh: "實驗回覆未完成（{reason}）。草稿已保留。", en: "The experimental reply did not complete ({reason}). Your draft is retained." },
+  'phase1.released': { zh: "已卸載實驗模型。", en: "Experimental model unloaded." },
+  'phase1.releaseFailed': { zh: "未能卸載模型（{reason}）。", en: "Could not unload the model ({reason})." },
+
   'context.guardedArchiveReceipt': { zh: '本輪回覆經來源及證據核對後呈現；完整內容見對話紀錄。此處不保留未核實的原始草稿或複製來源資料。', en: 'This reply was presented after source and evidence checks. See the conversation for the full reply. This archive receipt retains neither the unverified draft nor copied source data.' },
   'conversationClarity.current': { zh: '修正前實測：PR139 技術部署通過；正式一輪／五次 helper 中，最終查證器理解承接，六項語意修訂也正常套用，但整體呈現仍失敗。證據 guard 把條件式方案中的單一修正數量沿用成前文檔案數量，拒絕主回覆。本候選只在既有文件結構判斷中補足條件式設計物件的合併／轉換形式，不使用某句問法作例外；實際業務主詞、狀態、已完成聲明、其他數量及未經審閱回覆仍走原保護。保存原始輸出及所有失敗；離線重播已能保留結論、三個重點和完整詳情，並檢查不同動詞和設計名詞。原帳本暫停，一次未用 helper 不轉移，自動記憶已恢復。此版未部署、未真實重驗；既有詞彙／量詞盲點、速度及整體理解未宣稱解決，新定義不發放用量。', en: 'Pre-correction evidence: PR139 passed technical deployment; its one-turn/five-helper native case resolved the continuation and applied all six premise edits, but full presentation failed. The evidence guard inherited an earlier file subject for a conditional single proposed-change object and refused the foreground answer. This candidate extends only the existing document-structure classification to modal design-object transformations, without an exact-question exception. Explicit business nouns/states, completed claims, other quantities and unreviewed replies keep the original guards. Native outputs and all failures are retained; offline replay preserves a conclusion, three substantive points and full details, including varied verbs and design nouns. The old root is paused, one unused helper cannot transfer and automatic memory is restored. This version is not deployed or natively retested. Existing vocabulary/measure-word blind spots, latency and general understanding are not claimed solved; the new definition grants no allowance.' },
   'planningAdvice.boundary': { zh: '這是建議方案，未建立工作、改碼、部署或執行業務動作。完整方案與來源依據可展開查看。', en: 'This is proposed advice; no work was created, code changed, deployment performed or business action executed. Expand the complete plan and source evidence for details.' },

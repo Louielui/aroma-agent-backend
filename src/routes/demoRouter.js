@@ -443,6 +443,10 @@ function createDemoRouter ({ dailyDialogue = null, getAdapterFn = getAdapterForL
   })
 
   // GET /demo — serve the single-file UI (guarded).
+  let experiment=null
+  try { experiment=require('../localBrain/next/experiment').configured() }
+  catch (_) { /* A missing experiment spool must leave the original chat available. */ }
+  require('../localBrain/next/experimentRoute').register(router,demoGuard,ownerSessionIdOf,experiment)
   router.get('/demo', demoGuard, (req, res) => {
     res.type('html').send(DEMO_HTML)
   })

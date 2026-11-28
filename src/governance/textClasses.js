@@ -84,6 +84,9 @@ const FILE_CLASS = Object.freeze({
   'localBrain/fixtures.js': CLASS.MODEL, // Synthetic source evidence and adversarial acceptance text, never translated.
   'localBrain/server.js': CLASS.INTERFACE, // Isolated host status and model catalogue labels.
   'localBrain/view.html': CLASS.INTERFACE, // Local acceptance interface, no prompt or permission text parsing.
+  'localBrain/next/dialogue.js': CLASS.MODEL, // Lightweight prompt and synthetic evidence, including replies retained in context.
+  'localBrain/next/view.html': CLASS.INTERFACE, // Standalone trial labels.
+  'localBrain/next/view.js': CLASS.INTERFACE, // Standalone trial feedback.
   'actions/procurementContract.js': CLASS.MATCHING, // Fixed Owner intent guards; never translated.
   'core/codeDiagnosis/chat.js': CLASS.MATCHING, // Bounded command and constraint admission, never display copy.
   'actions/procurementChat.js': CLASS.INTERFACE, // Owner result/proposal presentation; exact intent guards stay in the contract.
