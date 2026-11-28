@@ -5,7 +5,7 @@ const assert = require('node:assert/strict')
 const fs = require('node:fs'), os = require('node:os'), path = require('node:path')
 const { control } = require('./experimentControl')
 const { controlled, publish } = require('./experiment')
-const { argumentsOf, verifyDeployment } = require('../../../scripts/repository/phase1Owner.cjs')
+const { argumentsOf, verifyDeployment, shutdownState } = require('../../../scripts/repository/phase1Owner.cjs')
 
 const candidate = 'a'.repeat(40), boot = 'b'.repeat(40), tree = 'c'.repeat(40)
 const deployment = '00000000-0000-4000-8000-000000000001'
@@ -69,4 +69,17 @@ test('native command accepts only a fixed operation and a completed exact deploy
   assert.doesNotThrow(() => verifyDeployment(record, scope))
   assert.throws(() => verifyDeployment({ ...record, state: 'reviewed_hold' }, scope), /deployment_unconfirmed/)
   assert.throws(() => verifyDeployment(record, { ...scope, tree: 'd'.repeat(40) }), /deployment_unconfirmed/)
+})
+
+test('disable and recovery use the marker’s verified deployment even when there is no healthy live boot', () => {
+  const record = {
+    id: deployment, state: 'complete', authorizationId: 'fixture',
+    approvalMaterial: { commit: candidate, tree }, committed: { commit: candidate, tree },
+    merge: { commit: boot }, runtime: { verified: true, bootCommit: boot }
+  }
+  const scope = { candidate, deployment }
+  assert.deepEqual(shutdownState(record, { ...scope, operation: 'disable' }, boot), { boot, tree, before: boot })
+  assert.deepEqual(shutdownState(record, { ...scope, operation: 'recover' }, null), { boot, tree, before: null })
+  assert.throws(() => shutdownState(record, { ...scope, operation: 'recover' }, candidate), /marker_owner_mismatch/)
+  assert.throws(() => shutdownState(record, { ...scope, operation: 'disable' }, null), /disable_state/)
 })

@@ -39,11 +39,17 @@ function control(root = PILOT) {
     if (expected === next) return
     if (next === null) { fs.unlinkSync(marker); return }
     const staging = path.join(root, 'enabled-' + randomUUID() + '.tmp')
-    fs.writeFileSync(staging, next + '\n', { flag: 'wx' })
+    const fd = fs.openSync(staging, 'wx')
+    let published = false
     try {
-      // An exclusive link publishes complete bytes without replacing other state.
-      fs.linkSync(staging, marker)
-    } finally { fs.unlinkSync(staging) }
+      try { fs.writeFileSync(fd, next + '\n'); fs.fsyncSync(fd) }
+      finally { fs.closeSync(fd) }
+      // All writers use the same promotion lock. A completed rename produces
+      // one ordinary file even if the Owner process exits immediately after it.
+      if (current() !== null) throw Error('phase1_marker_drift')
+      fs.renameSync(staging, marker)
+      published = true
+    } finally { if (!published) fs.unlinkSync(staging) }
   }
   return { current, set }
 }

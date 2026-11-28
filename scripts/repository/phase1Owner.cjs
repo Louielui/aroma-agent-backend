@@ -28,12 +28,20 @@ function readEvidence(file) {
 }
 
 function verifyDeployment(row, { candidate, deployment, boot, tree }) {
-  if (row.id !== deployment || row.state !== 'complete' || !row.authorizationId ||
+  if (!SHA.test(boot) || !SHA.test(tree) || row.id !== deployment || row.state !== 'complete' || !row.authorizationId ||
       row.approvalMaterial?.commit !== candidate || row.committed?.commit !== candidate ||
       row.committed?.tree !== tree || row.approvalMaterial?.tree !== tree ||
       row.merge?.commit !== boot || row.runtime?.verified !== true || row.runtime.bootCommit !== boot) {
     throw Error('phase1_deployment_unconfirmed')
   }
+}
+
+function shutdownState(row, scope, before) {
+  const boot = row.merge?.commit, tree = row.committed?.tree
+  verifyDeployment(row, { ...scope, boot, tree })
+  if (before === null && scope.operation === 'disable') throw Error('phase1_disable_state')
+  if (before !== null && before !== boot) throw Error('phase1_marker_owner_mismatch')
+  return { boot, tree, before }
 }
 
 function relay() {
@@ -55,6 +63,15 @@ async function main() {
 
   async function inspect({ operation, deployment, candidate }) {
     const row = readEvidence(path.join(artifacts, 'runs', deployment + '.json'))
+    const before = marker.current()
+    if (operation !== 'enable') {
+      // The original, verified deployment owns the marker even after a
+      // subsequent boot or a service outage. Clearing it needs no live health.
+      const state = shutdownState(row.data, { operation, deployment, candidate }, before)
+      if (command(root, ['rev-parse', 'HEAD^{tree}']) !== state.tree ||
+          command(root, ['status', '--porcelain=v1'])) throw Error('phase1_control_source_drift')
+      return { ...state, deploymentHash: row.digest }
+    }
     const boot = command(PRODUCTION, ['rev-parse', 'HEAD'])
     const tree = command(PRODUCTION, ['rev-parse', 'HEAD^{tree}'])
     verifyDeployment(row.data, { candidate, deployment, boot, tree })
@@ -62,27 +79,21 @@ async function main() {
     if (command(root, ['rev-parse', 'HEAD^{tree}']) !== tree ||
         command(root, ['status', '--porcelain=v1']) || live.bootCommit !== boot ||
         !Number.isFinite(Date.parse(live.bootedAt))) throw Error('phase1_source_drift')
-    const before = marker.current()
-    if (before !== null && before !== boot) throw Error('phase1_marker_drift')
-    if (operation === 'enable') {
-      if (before !== null || (await runtime.idle()).state !== 'idle_verified') throw Error('phase1_enable_state')
-      if (!relay().ready()) throw Error('phase1_worker_not_ready')
-      const proof = readEvidence(path.join(artifacts, 'phase1-service-proof.json'))
-      const { service, logonSid, serviceSid, verified, checkedAtUtc, bootCommit, bootedAt, checks } = proof.data
-      const checkedAt = Date.parse(checkedAtUtc)
-      const required = ['request_create_read_delete', 'response_read_delete', 'preference_atomic_replace',
-        'key_heartbeat_read_only', 'diagnostics_read_delete_denied', 'out_of_scope_canary_denied', 'parent_delete_child_denied']
-      if (service !== 'AromaXiangXiangBackend' || logonSid !== 'S-1-5-19' ||
-          serviceSid !== 'S-1-5-80-949002174-267234052-1105664803-670341952-899816923' ||
-          bootCommit !== boot || bootedAt !== live.bootedAt || verified !== true ||
-          !required.every(check => Array.isArray(checks) && checks.includes(check)) ||
-          !Number.isFinite(checkedAt) || checkedAt < Date.parse(live.bootedAt) || checkedAt > Date.now()) {
-        throw Error('phase1_service_proof_unconfirmed')
-      }
-      return { boot, bootedAt, tree, before, deploymentHash: row.digest, serviceProofHash: proof.digest }
+    if (before !== null || (await runtime.idle()).state !== 'idle_verified') throw Error('phase1_enable_state')
+    if (!relay().ready()) throw Error('phase1_worker_not_ready')
+    const proof = readEvidence(path.join(artifacts, 'phase1-service-proof.json'))
+    const { service, logonSid, serviceSid, verified, checkedAtUtc, bootCommit, bootedAt, checks } = proof.data
+    const checkedAt = Date.parse(checkedAtUtc)
+    const required = ['request_create_read_delete', 'response_read_delete', 'preference_atomic_replace',
+      'key_heartbeat_read_only', 'diagnostics_read_delete_denied', 'out_of_scope_canary_denied', 'parent_delete_child_denied']
+    if (service !== 'AromaXiangXiangBackend' || logonSid !== 'S-1-5-19' ||
+        serviceSid !== 'S-1-5-80-949002174-267234052-1105664803-670341952-899816923' ||
+        bootCommit !== boot || bootedAt !== live.bootedAt || verified !== true ||
+        !required.every(check => Array.isArray(checks) && checks.includes(check)) ||
+        !Number.isFinite(checkedAt) || checkedAt < Date.parse(live.bootedAt) || checkedAt > Date.now()) {
+      throw Error('phase1_service_proof_unconfirmed')
     }
-    if (operation === 'disable' && before !== boot) throw Error('phase1_disable_state')
-    return { boot, bootedAt: live.bootedAt, tree, before, deploymentHash: row.digest }
+    return { boot, bootedAt, tree, before, deploymentHash: row.digest, serviceProofHash: proof.digest }
   }
 
   async function apply({ operation }, state, guard) {
@@ -127,4 +138,4 @@ if (require.main === module) main().catch(error => {
   console.error(/^[a-z_]+$/.test(error.message) ? error.message : 'phase1_entry_unavailable')
   process.exitCode = 1
 })
-module.exports = { argumentsOf, verifyDeployment }
+module.exports = { argumentsOf, verifyDeployment, shutdownState }
